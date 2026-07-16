@@ -160,7 +160,7 @@ export function Navbar({
     .slice(0, 6);
 
   const actionClassName =
-    "text-xs font-medium uppercase tracking-[0.14em] text-zinc-700 transition-colors hover:text-black";
+    "hidden md:inline-flex text-[0.95rem] font-medium uppercase tracking-[0.04em] text-zinc-700 transition-all duration-150 hover:font-semibold hover:text-black";
 
   const menuOverlay = (
     <div className="fixed inset-0 z-[9999] bg-black/45 backdrop-blur-sm">
@@ -330,42 +330,26 @@ export function Navbar({
             <Image
               src="/images/logo.jpg"
               alt="Sole Sneakers"
-              width={100}
-              height={100}
-              sizes="100px"
-              className="h-[82px] w-[82px] object-contain drop-shadow-[0_1px_1px_rgba(0,0,0,0.18)] sm:h-[100px] sm:w-[100px]"
+              width={116}
+              height={116}
+              sizes="116px"
+              className="h-[92px] w-[92px] object-contain drop-shadow-[0_1px_1px_rgba(0,0,0,0.18)] sm:h-[116px] sm:w-[116px]"
               priority
               unoptimized
             />
           </div>
         </Link>
 
-        <div className="flex min-w-0 flex-1 items-center justify-end gap-4 sm:gap-8">
-          <button
-            type="button"
-            onClick={handleSearchClick}
-            className={`${actionClassName} hidden md:inline-flex`}
-          >
-            Search
-          </button>
-
-          <button
-            type="button"
-            onClick={handleCartClick}
-            className={`${actionClassName} hidden md:inline-flex`}
-          >
-            {cartCount > 0 ? `Cart (${cartCount})` : "Cart"}
-          </button>
-
+        <div className="flex min-w-0 flex-1 items-center justify-end gap-5 sm:gap-9 lg:gap-10">
           {effectiveIsAuthenticated ? (
             <div className="group relative hidden md:block">
               <button
                 type="button"
-                className={`inline-flex items-center gap-1 ${actionClassName}`}
+                className="inline-flex items-center gap-1 text-[0.95rem] font-medium uppercase tracking-[0.04em] text-zinc-700 transition-all duration-150 hover:font-semibold hover:text-black"
                 aria-label="Account"
                 data-testid="navbar-user-menu"
               >
-                <span>Account</span>
+                <span>Login</span>
                 <ChevronDown className="h-3.5 w-3.5" />
               </button>
 
@@ -397,7 +381,7 @@ export function Navbar({
               </div>
             </div>
           ) : showAuthButtons ? (
-            <Link href={loginUrl} className={`${actionClassName} hidden md:inline-flex`}>
+            <Link href={loginUrl} className={actionClassName}>
               Login
             </Link>
           ) : (
@@ -407,6 +391,14 @@ export function Navbar({
               data-testid="navbar-auth-loading"
             />
           )}
+
+          <button type="button" onClick={handleSearchClick} className={actionClassName}>
+            Search
+          </button>
+
+          <button type="button" onClick={handleCartClick} className={actionClassName}>
+            {`Cart (${cartCount})`}
+          </button>
 
           <button
             type="button"
