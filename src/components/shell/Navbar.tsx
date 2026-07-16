@@ -160,7 +160,7 @@ export function Navbar({
     .slice(0, 6);
 
   const actionClassName =
-    "hidden md:inline-flex text-[0.95rem] font-medium uppercase tracking-[0.04em] text-zinc-700 transition-all duration-150 hover:font-semibold hover:text-black";
+    "inline-flex whitespace-nowrap text-xs font-medium uppercase text-zinc-600 transition-colors duration-150 hover:text-black hover:font-semibold";
 
   const menuOverlay = (
     <div className="fixed inset-0 z-[9999] bg-black/45 backdrop-blur-sm">
@@ -309,8 +309,8 @@ export function Navbar({
 
   return (
     <nav className="h-28 w-full border-b border-zinc-200 bg-white text-black sm:h-32">
-      <div className="relative flex h-full items-center justify-between px-5 sm:px-8 lg:px-14">
-        <div className="flex min-w-0 flex-1 items-center">
+      <div className="relative h-full px-5 sm:px-8 lg:px-14">
+        <div className="absolute left-5 top-1/2 -translate-y-1/2 sm:left-8 lg:left-14">
           <button
             type="button"
             onClick={() => setIsMenuOpen(true)}
@@ -330,22 +330,26 @@ export function Navbar({
             <Image
               src="/images/logo.jpg"
               alt="Sole Sneakers"
-              width={116}
-              height={116}
-              sizes="116px"
-              className="h-[92px] w-[92px] object-contain drop-shadow-[0_1px_1px_rgba(0,0,0,0.18)] sm:h-[116px] sm:w-[116px]"
+              width={124}
+              height={124}
+              sizes="124px"
+              className="h-[98px] w-[98px] object-contain drop-shadow-[0_1px_1px_rgba(0,0,0,0.18)] sm:h-[124px] sm:w-[124px]"
               priority
               unoptimized
             />
           </div>
         </Link>
 
-        <div className="flex min-w-0 flex-1 items-center justify-end gap-5 sm:gap-9 lg:gap-10">
+        <div
+          className="absolute right-5 top-1/2 hidden -translate-y-1/2 items-center md:flex sm:right-8 lg:right-14"
+          style={{ gap: "2.75rem" }}
+        >
           {effectiveIsAuthenticated ? (
-            <div className="group relative hidden md:block">
+            <div className="group relative">
               <button
                 type="button"
-                className="inline-flex items-center gap-1 text-[0.95rem] font-medium uppercase tracking-[0.04em] text-zinc-700 transition-all duration-150 hover:font-semibold hover:text-black"
+                className="inline-flex items-center gap-1 whitespace-nowrap text-xs font-medium uppercase text-zinc-600 transition-colors duration-150 hover:text-black hover:font-semibold"
+                style={{ letterSpacing: "0.02em" }}
                 aria-label="Account"
                 data-testid="navbar-user-menu"
               >
@@ -381,29 +385,45 @@ export function Navbar({
               </div>
             </div>
           ) : showAuthButtons ? (
-            <Link href={loginUrl} className={actionClassName}>
+            <Link
+              href={loginUrl}
+              className={actionClassName}
+              style={{ letterSpacing: "0.02em" }}
+            >
               Login
             </Link>
           ) : (
             <div
-              className="hidden h-4 w-16 animate-pulse bg-zinc-200 md:block"
+              className="h-4 w-16 animate-pulse bg-zinc-200"
               aria-label="Loading account"
               data-testid="navbar-auth-loading"
             />
           )}
 
-          <button type="button" onClick={handleSearchClick} className={actionClassName}>
+          <button
+            type="button"
+            onClick={handleSearchClick}
+            className={actionClassName}
+            style={{ letterSpacing: "0.02em" }}
+          >
             Search
-          </button>
-
-          <button type="button" onClick={handleCartClick} className={actionClassName}>
-            {`Cart (${cartCount})`}
           </button>
 
           <button
             type="button"
+            onClick={handleCartClick}
+            className={actionClassName}
+            style={{ letterSpacing: "0.02em" }}
+          >
+            {`Cart (${cartCount})`}
+          </button>
+        </div>
+
+        <div className="absolute right-5 top-1/2 flex -translate-y-1/2 items-center gap-4 sm:right-8 md:hidden">
+          <button
+            type="button"
             onClick={handleSearchClick}
-            className="text-zinc-800 transition-colors hover:text-black md:hidden"
+            className="text-zinc-800 transition-colors hover:text-black"
             aria-label="Search"
           >
             <Search className="h-5 w-5" />
@@ -412,7 +432,7 @@ export function Navbar({
           <button
             type="button"
             onClick={handleCartClick}
-            className="relative text-zinc-800 transition-colors hover:text-black md:hidden"
+            className="relative text-zinc-800 transition-colors hover:text-black"
             aria-label="Cart"
           >
             <ShoppingCart className="h-5 w-5" />
@@ -426,7 +446,7 @@ export function Navbar({
           {effectiveIsAuthenticated && (
             <Link
               href="/account"
-              className="text-zinc-800 transition-colors hover:text-black md:hidden"
+              className="text-zinc-800 transition-colors hover:text-black"
               aria-label="Account"
             >
               <User className="h-5 w-5" />
