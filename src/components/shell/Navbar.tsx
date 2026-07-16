@@ -160,7 +160,7 @@ export function Navbar({
     .slice(0, 6);
 
   const actionClassName =
-    "inline-flex whitespace-nowrap text-xs font-medium uppercase text-zinc-600 transition-colors duration-150 hover:text-black hover:font-semibold";
+    "inline-flex whitespace-nowrap text-xs font-semibold uppercase text-zinc-700 transition-all duration-150 hover:text-black hover:font-bold";
 
   const menuOverlay = (
     <div className="fixed inset-0 z-[9999] bg-black/45 backdrop-blur-sm">
@@ -340,83 +340,82 @@ export function Navbar({
           </div>
         </Link>
 
-        <div
-          className="absolute right-5 top-1/2 hidden -translate-y-1/2 items-center md:flex sm:right-8 lg:right-14"
-          style={{ gap: "2.75rem" }}
-        >
-          {effectiveIsAuthenticated ? (
-            <div className="group relative">
-              <button
-                type="button"
-                className="inline-flex items-center gap-1 whitespace-nowrap text-xs font-medium uppercase text-zinc-600 transition-colors duration-150 hover:text-black hover:font-semibold"
-                style={{ letterSpacing: "0.02em" }}
-                aria-label="Account"
-                data-testid="navbar-user-menu"
-              >
-                <span>Login</span>
-                <ChevronDown className="h-3.5 w-3.5" />
-              </button>
+        <div className="absolute right-6 top-1/2 hidden -translate-y-1/2 md:flex sm:right-8 lg:right-14">
+          <div className="flex items-center" style={{ gap: "1.75rem" }}>
+            {effectiveIsAuthenticated ? (
+              <div className="group relative">
+                <button
+                  type="button"
+                  className="inline-flex items-center gap-1 whitespace-nowrap text-xs font-semibold uppercase text-zinc-700 transition-all duration-150 hover:text-black hover:font-bold"
+                  style={{ letterSpacing: "0.02em" }}
+                  aria-label="Account"
+                  data-testid="navbar-user-menu"
+                >
+                  <span>Login</span>
+                  <ChevronDown className="h-3.5 w-3.5" />
+                </button>
 
-              <div className="pointer-events-none absolute right-0 top-full z-50 pt-3 opacity-0 transition duration-150 group-hover:pointer-events-auto group-hover:opacity-100">
-                <div className="w-64 border border-zinc-200 bg-white p-2 text-black shadow-2xl">
-                  {effectiveUserEmail && (
-                    <div className="border-b border-zinc-200 px-3 py-3 text-xs text-zinc-500">
-                      {effectiveUserEmail}
-                    </div>
-                  )}
-                  <Link
-                    href="/account"
-                    className="mt-1 flex items-center gap-2 px-3 py-3 text-sm transition-colors hover:bg-zinc-100"
-                  >
-                    <Settings className="h-4 w-4" />
-                    Account Settings
-                  </Link>
-                  <button
-                    type="button"
-                    onClick={() => {
-                      void handleLogout();
-                    }}
-                    className="flex w-full items-center gap-2 px-3 py-3 text-left text-sm transition-colors hover:bg-zinc-100"
-                  >
-                    <LogOut className="h-4 w-4" />
-                    Logout
-                  </button>
+                <div className="pointer-events-none absolute right-0 top-full z-50 pt-3 opacity-0 transition duration-150 group-hover:pointer-events-auto group-hover:opacity-100">
+                  <div className="w-64 border border-zinc-200 bg-white p-2 text-black shadow-2xl">
+                    {effectiveUserEmail && (
+                      <div className="border-b border-zinc-200 px-3 py-3 text-xs text-zinc-500">
+                        {effectiveUserEmail}
+                      </div>
+                    )}
+                    <Link
+                      href="/account"
+                      className="mt-1 flex items-center gap-2 px-3 py-3 text-sm transition-colors hover:bg-zinc-100"
+                    >
+                      <Settings className="h-4 w-4" />
+                      Account Settings
+                    </Link>
+                    <button
+                      type="button"
+                      onClick={() => {
+                        void handleLogout();
+                      }}
+                      className="flex w-full items-center gap-2 px-3 py-3 text-left text-sm transition-colors hover:bg-zinc-100"
+                    >
+                      <LogOut className="h-4 w-4" />
+                      Logout
+                    </button>
+                  </div>
                 </div>
               </div>
-            </div>
-          ) : showAuthButtons ? (
-            <Link
-              href={loginUrl}
+            ) : showAuthButtons ? (
+              <Link
+                href={loginUrl}
+                className={actionClassName}
+                style={{ letterSpacing: "0.02em" }}
+              >
+                Login
+              </Link>
+            ) : (
+              <div
+                className="h-4 w-16 animate-pulse bg-zinc-200"
+                aria-label="Loading account"
+                data-testid="navbar-auth-loading"
+              />
+            )}
+
+            <button
+              type="button"
+              onClick={handleSearchClick}
               className={actionClassName}
               style={{ letterSpacing: "0.02em" }}
             >
-              Login
-            </Link>
-          ) : (
-            <div
-              className="h-4 w-16 animate-pulse bg-zinc-200"
-              aria-label="Loading account"
-              data-testid="navbar-auth-loading"
-            />
-          )}
+              Search
+            </button>
 
-          <button
-            type="button"
-            onClick={handleSearchClick}
-            className={actionClassName}
-            style={{ letterSpacing: "0.02em" }}
-          >
-            Search
-          </button>
-
-          <button
-            type="button"
-            onClick={handleCartClick}
-            className={actionClassName}
-            style={{ letterSpacing: "0.02em" }}
-          >
-            {`Cart (${cartCount})`}
-          </button>
+            <button
+              type="button"
+              onClick={handleCartClick}
+              className={actionClassName}
+              style={{ letterSpacing: "0.02em" }}
+            >
+              {`Cart (${cartCount})`}
+            </button>
+          </div>
         </div>
 
         <div className="absolute right-5 top-1/2 flex -translate-y-1/2 items-center gap-4 sm:right-8 md:hidden">
