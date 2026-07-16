@@ -61,7 +61,9 @@ export default async function RootLayout({ children }: { children: React.ReactNo
                 userEmail={userEmail}
                 role={role}
               />
-              <main className="min-h-screen pt-16 pb-20 md:pb-0">{children}</main>
+              <main className="min-h-screen pt-28 pb-20 sm:pt-32 md:pb-0">
+                {children}
+              </main>
             </ClientShell>
           </CartProvider>
         </SessionProvider>

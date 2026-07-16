@@ -1,190 +1,123 @@
 import Image from "next/image";
 import Link from "next/link";
-import { ArrowRight } from "lucide-react";
 
 import { FeaturedItems } from "@/components/home/FeaturedItems";
 
 const categories = [
-  { slug: "sneakers", label: "Sneakers", image: "/images/home/sneakers.png" },
-  { slug: "clothing", label: "Clothing", image: "/images/home/clothing.png" },
+  {
+    slug: "sneakers",
+    label: "Sneakers",
+    accent: "from-stone-100 via-zinc-300 to-zinc-700",
+  },
+  {
+    slug: "clothing",
+    label: "Clothing",
+    accent: "from-[#e8d8c3] via-[#b58d68] to-[#3f2b1f]",
+  },
   {
     slug: "accessories",
     label: "Accessories",
-    image: "/images/home/accessories.png",
+    accent: "from-[#d7e1d5] via-[#7d8d78] to-[#1d261d]",
   },
   {
     slug: "electronics",
     label: "Electronics",
-    image: "/images/home/electronics.png",
+    accent: "from-[#d8d4ff] via-[#6b6f9c] to-[#141722]",
   },
 ];
 
 export default function HomePage() {
   return (
-    <div className="relative">
-      <section className="relative bg-black overflow-visible">
-        {/* HERO (image + content) */}
-        <div className="relative min-h-[78vh] flex items-start md:items-center">
-          {/* Background */}
-          <div className="absolute inset-0 pointer-events-none overflow-hidden">
-            <Image
-              src="/images/home/hero-inventory-2025-02.webp"
-              alt=""
-              fill
-              priority
-              sizes="100vw"
-              quality={90}
-              className="object-cover object-[45%_45%] sm:object-[60%_20%] lg:object-[45%_25%]"
-              style={{ filter: "contrast(1.06) brightness(0.82)" }}
-            />
+    <div className="bg-black">
+      <section
+        className="relative overflow-hidden bg-black text-white"
+        style={{ height: "70vh" }}
+      >
+        <Image
+          src="/images/hero-reference-3209.png"
+          alt="Sole Sneakers inventory stacked in a trunk"
+          fill
+          priority
+          sizes="100vw"
+          className="object-cover object-[54%_38%]"
+        />
+        <div className="absolute inset-0 bg-[linear-gradient(90deg,rgba(0,0,0,0.78)_0%,rgba(0,0,0,0.52)_26%,rgba(0,0,0,0.18)_52%,rgba(0,0,0,0.38)_100%)]" />
+        <div className="absolute inset-0 bg-[radial-gradient(circle_at_center,rgba(255,255,255,0.06),transparent_28%),linear-gradient(180deg,rgba(0,0,0,0.12)_0%,rgba(0,0,0,0.36)_100%)]" />
 
-            {/* Left content column fade */}
-            <div
-              className="absolute inset-0"
-              style={{
-                background:
-                  "linear-gradient(90deg, rgba(0,0,0,0.90) 0%, rgba(0,0,0,0.80) 34%, rgba(0,0,0,0.48) 52%, rgba(0,0,0,0.00) 70%)",
-              }}
-            />
+        <div
+          className="relative z-10 mx-auto flex h-full max-w-7xl items-center justify-center px-4 py-20 text-center sm:px-6 lg:px-8"
+          style={{ minHeight: "125vh" }}
+        >
+          <div className="max-w-5xl">
+            <h1 className="mx-auto max-w-5xl text-center text-[3.85rem] font-bold italic uppercase leading-[0.92] tracking-[-0.05em] text-white sm:text-[5.2rem] lg:text-[6.25rem]">
+              Curated heat.
+              <br />
+              In hand now.
+              <br />
+              Ready to ship.
+            </h1>
 
-            {/* Global vignette */}
-            <div
-              className="absolute inset-0"
-              style={{
-                background:
-                  "radial-gradient(85% 70% at 50% 45%, rgba(0,0,0,0) 0%, rgba(0,0,0,0.55) 65%, rgba(0,0,0,0.85) 100%)",
-              }}
-            />
-
-            {/* Hairline accent */}
-            <div className="absolute left-0 right-0 top-0 h-px bg-gradient-to-r from-transparent via-zinc-700/70 to-transparent" />
-          </div>
-
-          {/* Content (✅ padding-bottom lives here, NOT on the hero container) */}
-          <div className="relative z-10 w-full">
-            <div className="max-w-7xl mx-auto px-4 pt-8 sm:pt-16 md:py-28 pb-44 sm:pb-52 md:pb-60">
-              <div className="max-w-2xl">
-                <div className="text-[11px] sm:text-xs uppercase tracking-[0.2em] text-red-400 font-semibold mb-2 sm:mb-3">
-                  REALDEALKICKZSC
-                </div>
-
-                <h1 className="text-[2.75rem] sm:text-5xl md:text-7xl font-bold text-white tracking-tight leading-[0.95] mb-[22vh] sm:mb-0">
-                  AUTHENTIC.
-                  <br />
-                  VERIFIED.
-                  <br />
-                  READY.
-                </h1>
-
-                <div className="mt-6 sm:mt-10 grid grid-cols-2 gap-3 sm:flex sm:flex-row">
-                  <Link
-                    href="/store"
-                    className="inline-flex items-center justify-center gap-2 bg-red-600 hover:bg-red-700 text-white font-bold
-                              px-3 py-3 text-sm sm:px-8 sm:py-4 sm:text-base
-                              transition-colors cursor-pointer"
-                  >
-                    Shop Now
-                    <ArrowRight className="w-4 h-4 sm:w-5 sm:h-5" />
-                  </Link>
-
-                  <Link
-                    href="/contact"
-                    className="inline-flex items-center justify-center gap-2 border border-red-600 text-white hover:bg-red-600 font-bold
-                              px-3 py-3 text-sm sm:px-8 sm:py-4 sm:text-base
-                              transition-colors cursor-pointer"
-                  >
-                    Looking to Sell?
-                    <ArrowRight className="w-4 h-4 sm:w-5 sm:h-5" />
-                  </Link>
-                </div>
-
-                <p className="mt-4 sm:mt-6 text-sm sm:text-lg md:text-xl text-gray-300 max-w-xl">
-                  Sneakers &amp; streetwear you can trust: curated inventory, clear
-                  condition, and a straight-to-the-point buying experience.
-                </p>
-
-                <div className="mt-3 sm:mt-4">
-                  <Link
-                    href="/hours"
-                    className="text-xs sm:text-sm text-gray-300 hover:text-white transition-colors cursor-pointer"
-                  >
-                    See pickup hours &amp; meetup details →
-                  </Link>
-                </div>
-              </div>
-            </div>
-          </div>
-
-          {/* ✅ FEATURED ITEMS OVERLAY (half on / half off the hero image) */}
-          <div className="absolute left-0 right-0 bottom-0 z-20 translate-y-[55%] sm:translate-y-[65%] md:translate-y-[60%]">
-            <div className="max-w-7xl mx-auto px-4">
-              <FeaturedItems embedded />
+            <div className="mt-12 flex justify-center">
+              <Link
+                href="/store"
+                className="inline-flex min-w-[220px] items-center justify-center rounded-full bg-[#1e1e1e] px-14 py-5 text-[1.3rem] font-medium text-white shadow-[0_24px_50px_rgba(0,0,0,0.38)] transition-colors hover:bg-[#161616] sm:min-w-[240px] sm:text-[1.4rem]"
+              >
+                Shop Now
+              </Link>
             </div>
           </div>
         </div>
       </section>
 
-      {/* Spacer so the overlay (translated down) doesn't collide with next section */}
-      <div className="h-[280px] sm:h-[340px] md:h-[380px] lg:h-[420px] bg-black" />
-
-      {/* Decorative Divider - closer to Featured Items */}
-      <div className="bg-black md:pt-6 pb-16 md:pb-24">
-        <div className="max-w-7xl mx-auto px-4">
-          <div className="relative">
-            <div className="absolute inset-0 flex items-center" aria-hidden="true">
-              <div className="w-full border-t border-zinc-800"></div>
-            </div>
-            <div className="relative flex justify-center">
-              <span className="bg-black px-6 text-sm text-gray-400 uppercase tracking-wider">
-                Explore Our Collection
-              </span>
+      <section className="bg-black pb-16 pt-8 md:pb-20 md:pt-12">
+        <div className="mx-auto max-w-7xl px-4 sm:px-6 lg:px-8">
+          <div className="mb-8 flex items-end justify-between">
+            <div>
+              <div className="text-[0.68rem] uppercase tracking-[0.34em] text-zinc-500">
+                Featured product
+              </div>
+              <h2 className="mt-3 text-3xl font-semibold text-white md:text-4xl">
+                Latest pairs on deck
+              </h2>
             </div>
           </div>
+          <FeaturedItems />
         </div>
-      </div>
+      </section>
 
-      {/* SHOP BY CATEGORY (below) */}
       <section className="bg-black pb-12 md:pb-16">
-        <div className="max-w-7xl mx-auto px-4">
-          <div className="flex items-end justify-between mb-6 md:mb-8">
+        <div className="mx-auto max-w-7xl px-4 sm:px-6 lg:px-8">
+          <div className="mb-6 flex items-end justify-between md:mb-8">
             <div>
-              <h2 className="text-3xl md:text-4xl font-bold text-white mb-2">
-                Shop by Category
+              <div className="text-[0.68rem] uppercase tracking-[0.34em] text-zinc-500">
+                Browse
+              </div>
+              <h2 className="mt-3 text-3xl font-semibold text-white md:text-4xl">
+                Shop by category
               </h2>
-              <p className="text-gray-400 text-sm md:text-base">
-                Browse our curated collections
+              <p className="mt-2 text-sm text-zinc-400 md:text-base">
+                Keep the storefront fast: get to the section you want immediately.
               </p>
             </div>
           </div>
 
-          <div className="grid grid-cols-2 lg:grid-cols-4 gap-4">
-            {categories.map((c) => (
+          <div className="grid grid-cols-2 gap-4 lg:grid-cols-4">
+            {categories.map((category) => (
               <Link
-                key={c.slug}
-                href={`/store?category=${c.slug}`}
-                aria-label={`Shop ${c.label}`}
-                className="
-                  group relative overflow-hidden bg-black border border-zinc-800
-                  h-48 sm:h-56 lg:h-64
-                  focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-red-500 cursor-pointer
-                  shadow-[0_18px_40px_rgba(0,0,0,0.55)]
-                  hover:shadow-[0_22px_55px_rgba(0,0,0,0.70)]
-                  transition-shadow
-                "
+                key={category.slug}
+                href={`/store?category=${category.slug}`}
+                aria-label={`Shop ${category.label}`}
+                className="group relative overflow-hidden rounded-[2rem] border border-zinc-800 bg-black shadow-[0_20px_50px_rgba(0,0,0,0.45)]"
               >
                 <div
-                  className="absolute inset-0 bg-center bg-cover transition-all duration-500 ease-out
-                             group-hover:scale-110 grayscale-0 group-hover:grayscale group-hover:brightness-75"
-                  style={{ backgroundImage: `url(${c.image})` }}
+                  className={`absolute inset-0 bg-gradient-to-br ${category.accent} transition-transform duration-500 group-hover:scale-110`}
                 />
-
-                <div className="absolute inset-0 bg-gradient-to-t from-black/75 via-black/25 to-black/10" />
-                <div className="absolute left-0 right-0 bottom-0 h-px bg-red-600/0 group-hover:bg-red-600/70 transition-colors" />
-
-                <div className="absolute bottom-4 left-4 right-4">
-                  <h3 className="text-xl font-bold text-white">{c.label}</h3>
-                  <p className="text-gray-200 text-sm group-hover:text-white transition-colors">
-                    Explore →
+                <div className="absolute inset-0 bg-[radial-gradient(circle_at_top_left,rgba(255,255,255,0.32),transparent_34%),radial-gradient(circle_at_bottom_right,rgba(255,255,255,0.18),transparent_26%)]" />
+                <div className="absolute inset-0 bg-gradient-to-t from-black via-black/35 to-black/5" />
+                <div className="relative flex h-48 flex-col justify-end p-5 sm:h-56 lg:h-64">
+                  <h3 className="text-xl font-semibold text-white">{category.label}</h3>
+                  <p className="mt-1 text-sm text-zinc-300 transition-colors group-hover:text-white">
+                    Explore now
                   </p>
                 </div>
               </Link>

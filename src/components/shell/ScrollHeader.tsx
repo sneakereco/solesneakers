@@ -80,7 +80,7 @@ export function ScrollHeader({
   return (
     <header
       ref={headerRef}
-      className={`fixed top-0 left-0 right-0 z-50 bg-black border-b border-zinc-800/70 transition-transform duration-300 ${
+      className={`fixed top-0 left-0 right-0 z-50 bg-white transition-transform duration-300 ease-out ${
         isVisible ? "translate-y-0" : "-translate-y-full"
       }`}
     >

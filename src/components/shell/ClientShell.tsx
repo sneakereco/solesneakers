@@ -8,7 +8,6 @@ import { AdminSidebar } from "@/components/admin/AdminSidebar";
 import { SearchOverlay } from "@/components/search/SearchOverlay";
 import { CartDrawer } from "@/components/cart/CartDrawer";
 import { ChatDrawer } from "@/components/chat/ChatDrawer";
-import { ChatLauncher } from "@/components/chat/ChatLauncher";
 import { Footer } from "@/components/shell/Footer";
 import { MobileBottomNav } from "@/components/shell/MobileBottomNav";
 import type { ProfileRole } from "@/config/constants/roles";
@@ -131,7 +130,6 @@ export function ClientShell({
       <Suspense fallback={null}>
         <ChatQueryOpener onOpenChat={openChat} />
       </Suspense>
-      {isStoreRoute && <ChatLauncher />}
       {isStoreRoute && (
         <ChatDrawer isOpen={chatOpen} onClose={() => setChatOpen(false)} />
       )}
