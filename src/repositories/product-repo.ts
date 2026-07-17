@@ -25,6 +25,7 @@ type ProductRow = Tables<"products">;
 type VariantRow = Tables<"product_variants">;
 type ImageRow = Tables<"product_images">;
 type TagRow = Tables<"tags">;
+type SearchableProductRow = Pick<ProductRow, "id" | "brand" | "name" | "model">;
 
 export type ProductWithDetails = ProductRow & {
   variants: VariantRow[];
@@ -343,7 +344,9 @@ export class ProductRepository {
       inventoryUnitTotal = 0;
     } else {
       // Build the base query with all filters
-      let baseQuery = this.supabase.from("products").select("id", { count: "exact" });
+      let baseQuery = this.supabase
+        .from("products")
+        .select("id, brand, name, model", { count: "exact" });
 
       baseQuery = baseQuery.eq("is_active", true);
       baseQuery = this.applyArchivedFilter(baseQuery, archivedStatus);
@@ -425,7 +428,17 @@ export class ProductRepository {
         throw error;
       }
 
-      ids = (data ?? []).map((row: { id: string }) => row.id);
+      const candidateRows = (data ?? []) as SearchableProductRow[];
+      ids = hasSearchQuery
+        ? candidateRows
+            .map((product) => ({
+              id: product.id,
+              score: this.calculateSearchRelevance(product, filters.q, searchFields),
+            }))
+            .sort((left, right) => right.score - left.score)
+            .slice(offset, offset + limit)
+            .map((candidate) => candidate.id)
+        : candidateRows.map((row) => row.id);
       total = count ?? 0;
       skuTotal =
         searchMode === "inventory"
@@ -450,62 +463,62 @@ export class ProductRepository {
       return { products: [], total, skuTotal, inventoryUnitTotal, page, limit };
     }
 
-    let detailQuery = this.supabase
-      .from("products")
-      .select(
-        "*, variants:product_variants(*), images:product_images(*), tags:product_tags(tag:tags(*))",
-      )
-      .in("id", ids)
-      .eq("is_active", true);
-    detailQuery = this.applyArchivedFilter(detailQuery, archivedStatus);
-
-    if (!includeUnpublished) {
-      detailQuery = detailQuery.lte("go_live_at", nowIso);
+    // PostgREST serializes .in() values into the request URL. Broad searches can
+    // produce hundreds of UUIDs, so fetch details in bounded batches.
+    const detailIdBatches: string[][] = [];
+    const detailIdBatchSize = 100;
+    for (let index = 0; index < ids.length; index += detailIdBatchSize) {
+      detailIdBatches.push(ids.slice(index, index + detailIdBatchSize));
     }
 
-    if (filters.stockStatus === "out_of_stock") {
-      detailQuery = detailQuery.eq("is_out_of_stock", true);
-    } else if (filters.stockStatus === "in_stock") {
-      if (searchMode !== "inventory") {
-        detailQuery = detailQuery.eq("is_out_of_stock", false);
-      }
-    } else if (!includeOutOfStock) {
-      detailQuery = detailQuery.eq("is_out_of_stock", false);
-    }
+    const detailBatches = await Promise.all(
+      detailIdBatches.map(async (idBatch) => {
+        let detailQuery = this.supabase
+          .from("products")
+          .select(
+            "*, variants:product_variants(*), images:product_images(*), tags:product_tags(tag:tags(*))",
+          )
+          .in("id", idBatch)
+          .eq("is_active", true);
+        detailQuery = this.applyArchivedFilter(detailQuery, archivedStatus);
 
-    if (filters.tenantId) {
-      detailQuery = detailQuery.eq("tenant_id", filters.tenantId);
-    }
+        if (!includeUnpublished) {
+          detailQuery = detailQuery.lte("go_live_at", nowIso);
+        }
 
-    const { data: details, error: detailsError } = await detailQuery;
+        if (filters.stockStatus === "out_of_stock") {
+          detailQuery = detailQuery.eq("is_out_of_stock", true);
+        } else if (filters.stockStatus === "in_stock") {
+          if (searchMode !== "inventory") {
+            detailQuery = detailQuery.eq("is_out_of_stock", false);
+          }
+        } else if (!includeOutOfStock) {
+          detailQuery = detailQuery.eq("is_out_of_stock", false);
+        }
 
-    if (detailsError) {
-      throw detailsError;
-    }
+        if (filters.tenantId) {
+          detailQuery = detailQuery.eq("tenant_id", filters.tenantId);
+        }
+
+        const { data, error } = await detailQuery;
+        if (error) {
+          throw error;
+        }
+        return data ?? [];
+      }),
+    );
+    const details = detailBatches.flat();
 
     const byId = new Map(
-      (details ?? []).map((raw) => [
+      details.map((raw) => [
         raw.id,
         this.transformProduct(raw as ProductWithRelations),
       ]),
     );
 
-    let products = ids.map((id) => byId.get(id)).filter(Boolean) as ProductWithDetails[];
-
-    // Apply relevance sorting for searches with query (both inventory and storefront)
-    if (filters.q?.trim()) {
-      const productsWithScores = products.map((product) => ({
-        product,
-        score: this.calculateSearchRelevance(product, filters.q, searchFields),
-      }));
-
-      // Sort by relevance score (highest first)
-      productsWithScores.sort((a, b) => b.score - a.score);
-
-      // Apply pagination AFTER scoring
-      const paginatedScores = productsWithScores.slice(offset, offset + limit);
-      products = paginatedScores.map((item) => item.product);
-    }
+    const products = ids
+      .map((id) => byId.get(id))
+      .filter(Boolean) as ProductWithDetails[];
 
     return {
       products,
@@ -1405,7 +1418,7 @@ export class ProductRepository {
    * Higher scores indicate better matches.
    */
   private calculateSearchRelevance(
-    product: ProductRow,
+    product: SearchableProductRow,
     searchQuery: string | undefined,
     searchFields: string[],
   ): number {
@@ -1423,7 +1436,7 @@ export class ProductRepository {
 
     // Helper to get field values
     const getFieldValue = (field: string): string => {
-      const value = product[field as keyof ProductRow];
+      const value = product[field as keyof SearchableProductRow];
       return String(value ?? "").toLowerCase();
     };
 

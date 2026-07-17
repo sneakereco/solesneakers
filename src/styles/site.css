@@ -34,6 +34,41 @@ body:has([data-auth-shell]) {
   color: #27272a !important;
 }
 
+@keyframes search-drop-in {
+  from {
+    opacity: 0;
+    transform: translateY(-0.75rem);
+  }
+  to {
+    opacity: 1;
+    transform: translateY(0);
+  }
+}
+
+@keyframes search-backdrop-in {
+  from {
+    opacity: 0;
+  }
+  to {
+    opacity: 1;
+  }
+}
+
+.search-drop-panel {
+  animation: search-drop-in 180ms ease-out both;
+}
+
+.search-overlay-backdrop {
+  animation: search-backdrop-in 180ms ease-out both;
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .search-drop-panel,
+  .search-overlay-backdrop {
+    animation: none;
+  }
+}
+
 * {
   border-radius: 0 !important;
 }
@@ -300,10 +335,9 @@ body[data-route="admin"] main {
   }
 
   .variant-row__fields {
-    grid-template-columns: minmax(0, 7rem) minmax(0, 8rem) minmax(0, 6.5rem) minmax(
-        0,
-        6.5rem
-      ) minmax(0, 4.5rem);
+    grid-template-columns:
+      minmax(0, 7rem) minmax(0, 8rem) minmax(0, 6.5rem) minmax(0, 6.5rem)
+      minmax(0, 4.5rem);
     gap: 0.75rem;
   }
 
@@ -314,9 +348,8 @@ body[data-route="admin"] main {
 
 @media (min-width: 1280px) {
   .variant-row__fields {
-    grid-template-columns: minmax(0, 8rem) minmax(0, 10rem) minmax(0, 7.5rem) minmax(
-        0,
-        7.5rem
-      ) minmax(0, 5rem);
+    grid-template-columns:
+      minmax(0, 8rem) minmax(0, 10rem) minmax(0, 7.5rem) minmax(0, 7.5rem)
+      minmax(0, 5rem);
   }
 }
