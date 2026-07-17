@@ -4,14 +4,9 @@
 import { useReducer } from "react";
 import { useRouter, useSearchParams } from "next/navigation";
 import Link from "next/link";
-import { ArrowLeft } from "lucide-react";
 
 import { AuthHeader } from "@/components/auth/ui/AuthHeader";
 import { authStyles } from "@/components/auth/ui/authStyles";
-
-// import { SocialButton } from "../ui/SocialButton";
-
-import { PasswordField } from "./PasswordField";
 
 interface PasswordLoginFormProps {
   onRequiresEmailVerification: (email: string) => void;
@@ -107,100 +102,75 @@ export function PasswordLoginForm({
   }
 
   return (
-    <div className="space-y-6">
-      <Link
-        href={nextUrl}
-        className="inline-flex items-center gap-2 text-sm text-zinc-500 hover:text-white transition-colors"
-      >
-        <ArrowLeft className="w-4 h-4" />
-        Back to shopping
-      </Link>
+    <form onSubmit={(e) => void handleSubmit(e)} className="space-y-5">
+      <AuthHeader title="Login" description="Enter your email and password to login:" />
 
-      <form onSubmit={(e) => void handleSubmit(e)} className="space-y-6">
-        <AuthHeader title="Sign in" />
+      {state.error && <div className={authStyles.errorBox}>{state.error}</div>}
 
-        {state.error && <div className={authStyles.errorBox}>{state.error}</div>}
+      <div className="space-y-4">
+        <input
+          id="email"
+          name="email"
+          type="email"
+          required
+          autoComplete="email"
+          className={authStyles.input}
+          placeholder="E-mail"
+          data-testid="login-email"
+          disabled={state.isSubmitting}
+        />
 
-        {/* <div className="space-y-3">
-          <SocialButton provider="google" label="Continue with Google" />
-        </div>
-
-        <div className={authStyles.divider}>
-          <div className={authStyles.dividerLine} />
-          <span>or</span>
-          <div className={authStyles.dividerLine} />
-        </div> */}
-
-        <div className="space-y-4">
-          <div className="space-y-2">
-            <label htmlFor="email" className="block text-sm font-medium text-white">
-              Email
-            </label>
-            <input
-              id="email"
-              name="email"
-              type="email"
-              required
-              autoComplete="email"
-              className={authStyles.input}
-              data-testid="login-email"
-              disabled={state.isSubmitting}
-            />
-          </div>
-
-          <div>
-            <div className="flex items-center justify-between mb-2">
-              <label htmlFor="password" className="block text-sm font-medium text-white">
-                Password
-              </label>
-              <button
-                type="button"
-                onClick={onForgotPassword}
-                className="text-xs text-red-600 hover:text-red-500 transition-colors"
-              >
-                Forgot?
-              </button>
-            </div>
-            <PasswordField
-              name="password"
-              label=""
-              value={state.password}
-              onChange={(password) => dispatch({ type: "SET_PASSWORD", password })}
-              autoComplete="current-password"
-              dataTestId="login-password"
-            />
-          </div>
-        </div>
-
-        <div className="space-y-3">
-          <button
-            type="submit"
+        <div className="flex h-14 items-center justify-between border border-zinc-300 bg-white px-5 sm:h-[min(3.2vw,3.85rem)] sm:min-h-12">
+          <input
+            id="password"
+            name="password"
+            type="password"
+            required
+            autoComplete="current-password"
+            value={state.password}
+            onChange={(e) => dispatch({ type: "SET_PASSWORD", password: e.target.value })}
+            className="h-full min-w-0 flex-1 bg-transparent text-[1.02rem] text-zinc-800 placeholder:text-zinc-500 focus:outline-none"
+            placeholder="Password"
+            data-testid="login-password"
             disabled={state.isSubmitting}
-            className={authStyles.primaryButton}
-            data-testid="login-submit"
-          >
-            {state.isSubmitting ? "Signing in..." : "Sign in"}
-          </button>
-
+          />
           <button
             type="button"
-            onClick={onSwitchToOtp}
-            className="w-full text-center text-sm text-zinc-500 hover:text-white transition-colors"
+            onClick={onForgotPassword}
+            className="ml-4 shrink-0 text-[0.95rem] text-zinc-600 transition-colors hover:text-zinc-900"
           >
-            Sign in with email code instead
+            Forgot your password?
           </button>
         </div>
+      </div>
 
-        <p className="text-sm text-center text-zinc-500">
-          Don't have an account?{" "}
-          <Link
-            href={`/auth/register${nextUrl !== "/" ? `?next=${encodeURIComponent(nextUrl)}` : ""}`}
-            className={authStyles.inlineAccentLink}
-          >
-            Create account
-          </Link>
-        </p>
-      </form>
-    </div>
+      <button
+        type="submit"
+        disabled={state.isSubmitting}
+        className={authStyles.primaryButton}
+        data-testid="login-submit"
+      >
+        {state.isSubmitting ? "Logging in..." : "Login"}
+      </button>
+
+      <p className="pt-2 text-center text-[0.98rem] text-zinc-600">
+        Don't have an account?{" "}
+        <Link
+          href={`/auth/register${nextUrl !== "/" ? `?next=${encodeURIComponent(nextUrl)}` : ""}`}
+          className={authStyles.inlineAccentLink}
+        >
+          Sign up
+        </Link>
+      </p>
+      <button
+        type="button"
+        onClick={onSwitchToOtp}
+        className="hidden"
+        tabIndex={-1}
+        aria-hidden="true"
+      >
+        Sign in with email code instead
+      </button>
+    </form>
   );
 }

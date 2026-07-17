@@ -3,6 +3,8 @@
 
 import type { ComponentPropsWithoutRef } from "react";
 
+import { authStyles } from "./authStyles";
+
 export interface SixDigitCodeFieldProps
   extends Omit<ComponentPropsWithoutRef<"input">, "onChange" | "value"> {
   id: string;
@@ -30,7 +32,7 @@ export function SixDigitCodeField({
   return (
     <div className="space-y-2">
       {label && (
-        <label htmlFor={id} className="block text-sm font-medium text-white">
+        <label htmlFor={id} className="block text-sm font-medium text-zinc-700">
           {label}
         </label>
       )}
@@ -47,7 +49,7 @@ export function SixDigitCodeField({
         onChange={(e) => handleChange(e.currentTarget.value)}
         disabled={disabled}
         autoFocus={autoFocus}
-        className="h-11 w-full bg-zinc-900 border border-zinc-800 px-4 text-left text-lg font-mono tracking-[0.5em] text-white focus:outline-none focus:border-zinc-700 transition-colors disabled:opacity-50"
+        className={`${authStyles.input} px-5 text-left text-[1.2rem] tracking-[0.38em] disabled:opacity-100`}
         {...rest}
       />
     </div>

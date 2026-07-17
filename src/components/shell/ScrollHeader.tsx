@@ -2,7 +2,6 @@
 "use client";
 
 import { useCallback, useEffect, useRef, useState } from "react";
-import { usePathname } from "next/navigation";
 
 import { useCart } from "@/components/cart/CartProvider";
 import type { ProfileRole } from "@/config/constants/roles";
@@ -20,13 +19,7 @@ export function ScrollHeader({
   userEmail,
   role = null,
 }: ScrollHeaderProps) {
-  const pathname = usePathname();
   const { itemCount } = useCart();
-  const isAuthRoute = pathname.startsWith("/auth");
-  const isAdminRoute = pathname.startsWith("/admin");
-  const isCheckoutRoute = pathname.startsWith("/checkout");
-  const isLockedRoute = pathname.startsWith("/locked");
-  const hideHeader = isAuthRoute || isAdminRoute || isCheckoutRoute || isLockedRoute;
 
   // ✅ Hooks must be unconditional
   const [isVisible, setIsVisible] = useState(true);
@@ -41,13 +34,6 @@ export function ScrollHeader({
   }, [isVisible]);
 
   useEffect(() => {
-    // If auth route, don't attach listeners and keep it visible state reset
-    if (hideHeader) {
-      setIsVisible(true);
-      lastScrollYRef.current = 0;
-      return;
-    }
-
     const handleScroll = () => {
       const currentScrollY = window.scrollY;
       const last = lastScrollYRef.current;
@@ -65,17 +51,13 @@ export function ScrollHeader({
 
     window.addEventListener("scroll", handleScroll, { passive: true });
     return () => window.removeEventListener("scroll", handleScroll);
-  }, [hideHeader]);
+  }, []);
 
   useEffect(() => {
     updateHeaderOffset();
     window.addEventListener("resize", updateHeaderOffset);
     return () => window.removeEventListener("resize", updateHeaderOffset);
   }, [updateHeaderOffset]);
-
-  if (hideHeader) {
-    return null;
-  }
 
   return (
     <header

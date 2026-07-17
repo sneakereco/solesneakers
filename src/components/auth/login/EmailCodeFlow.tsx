@@ -221,7 +221,7 @@ export function EmailCodeFlow({
       <div className="space-y-4">
         {canShowEmailInput && (
           <div className="space-y-2">
-            <label htmlFor="email" className="block text-sm font-medium text-zinc-300">
+            <label htmlFor="email" className="block text-sm font-medium text-zinc-700">
               {emailLabel}
             </label>
             <input
@@ -241,7 +241,7 @@ export function EmailCodeFlow({
         )}
 
         {emailReadOnly && !canShowEmailInput && (
-          <div className="rounded-lg border border-zinc-800 bg-zinc-900/30 px-4 py-3 text-sm text-zinc-400">
+          <div className="border border-zinc-300 bg-zinc-100 px-4 py-5 text-[1.05rem] text-zinc-500">
             {state.email || "Unknown email"}
           </div>
         )}

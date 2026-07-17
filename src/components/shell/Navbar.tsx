@@ -93,7 +93,7 @@ export function Navbar({
   );
 
   const loginUrl = useMemo(() => {
-    if (pathname === "/") {
+    if (pathname === "/" || pathname.startsWith("/auth")) {
       return "/auth/login";
     }
     return `/auth/login?next=${encodeURIComponent(pathname)}`;
@@ -333,7 +333,7 @@ export function Navbar({
               width={124}
               height={124}
               sizes="124px"
-              className="h-[98px] w-[98px] object-contain drop-shadow-[0_1px_1px_rgba(0,0,0,0.18)] sm:h-[124px] sm:w-[124px]"
+              className="h-[98px] w-[98px] object-contain sm:h-[124px] sm:w-[124px]"
               priority
               unoptimized
             />

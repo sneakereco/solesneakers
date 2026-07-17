@@ -39,7 +39,7 @@ export default function HomePage() {
           fill
           priority
           sizes="100vw"
-          className="object-cover object-[54%_38%]"
+          className="object-cover object-[54%_24%]"
         />
         <div className="absolute inset-0 bg-[linear-gradient(90deg,rgba(0,0,0,0.78)_0%,rgba(0,0,0,0.52)_26%,rgba(0,0,0,0.18)_52%,rgba(0,0,0,0.38)_100%)]" />
         <div className="absolute inset-0 bg-[radial-gradient(circle_at_center,rgba(255,255,255,0.06),transparent_28%),linear-gradient(180deg,rgba(0,0,0,0.12)_0%,rgba(0,0,0,0.36)_100%)]" />

@@ -9,9 +9,15 @@ export function AuthHeader({
   description?: string;
 }) {
   return (
-    <div className="mb-8">
-      <h1 className="text-2xl font-bold text-white mb-2">{title}</h1>
-      {description && <p className="text-sm text-zinc-500">{description}</p>}
+    <div className="text-center">
+      <h1 className="text-[1.75rem] font-normal uppercase tracking-[0.015em] text-zinc-900 sm:text-[min(1.46vw,1.75rem)]">
+        {title}
+      </h1>
+      {description && (
+        <p className="mx-auto mt-[min(1.06vw,1.25rem)] max-w-[31rem] text-[1rem] leading-[min(1.46vw,1.75rem)] text-zinc-800">
+          {description}
+        </p>
+      )}
     </div>
   );
 }

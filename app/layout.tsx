@@ -5,12 +5,9 @@ import { SpeedInsights } from "@vercel/speed-insights/next";
 import { Analytics } from "@vercel/analytics/next";
 
 import { CartProvider } from "@/components/cart/CartProvider";
-import { ScrollHeader } from "@/components/shell/ScrollHeader";
-import { ClientShell } from "@/components/shell/ClientShell";
 import { SessionProvider } from "@/contexts/SessionContext";
 import { getServerSession } from "@/lib/auth/session";
-import { isAdminRole } from "@/config/constants/roles";
-import "@/styles/global.css";
+import "@/styles/site.css";
 
 export const metadata: Metadata = {
   title: "Realdealkickzsc - Premium Sneakers & Streetwear",
@@ -34,12 +31,7 @@ export const viewport: Viewport = {
 
 export default async function RootLayout({ children }: { children: React.ReactNode }) {
   const session = await getServerSession();
-  const isAuthenticated = Boolean(session);
-
   const role = session?.role ?? null;
-  const isAdmin = role ? isAdminRole(role) : false;
-
-  const userEmail = session?.user.email ?? session?.profile?.email;
   const userId = session?.user.id ?? null;
 
   // OPTIMIZATION: Prepare session for client-side context
@@ -52,20 +44,9 @@ export default async function RootLayout({ children }: { children: React.ReactNo
 
   return (
     <html lang="en">
-      <body className="bg-black text-white">
+      <body>
         <SessionProvider initialUser={sessionUser} initialRole={role}>
-          <CartProvider userId={userId}>
-            <ClientShell isAdmin={isAdmin} userEmail={userEmail} role={role}>
-              <ScrollHeader
-                isAuthenticated={isAuthenticated}
-                userEmail={userEmail}
-                role={role}
-              />
-              <main className="min-h-screen pt-28 pb-20 sm:pt-32 md:pb-0">
-                {children}
-              </main>
-            </ClientShell>
-          </CartProvider>
+          <CartProvider userId={userId}>{children}</CartProvider>
         </SessionProvider>
         <SpeedInsights />
         <Analytics />

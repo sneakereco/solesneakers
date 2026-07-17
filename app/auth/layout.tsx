@@ -1,4 +1,8 @@
 // app/auth/layout.tsx
+import type { Viewport } from "next";
+
+import AuthShell from "@/components/auth/ui/AuthShell";
+
 export const metadata = {
   robots: {
     index: false,
@@ -9,6 +13,10 @@ export const metadata = {
 export const dynamic = "force-dynamic";
 export const fetchCache = "force-no-store";
 
+export const viewport: Viewport = {
+  themeColor: "#f8f8f6",
+};
+
 export default function AuthLayout({ children }: { children: React.ReactNode }) {
-  return <div className="min-h-screen bg-black -mt-16">{children}</div>;
+  return <AuthShell>{children}</AuthShell>;
 }

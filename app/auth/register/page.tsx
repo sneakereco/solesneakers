@@ -2,7 +2,6 @@
 import { redirect } from "next/navigation";
 
 import { createSupabaseServerClient } from "@/lib/supabase/server";
-import AuthShell from "@/components/auth/ui/AuthShell";
 import { RegisterForm } from "@/components/auth/register/RegisterForm";
 
 export default async function RegisterPage() {
@@ -15,9 +14,5 @@ export default async function RegisterPage() {
     redirect("/account");
   }
 
-  return (
-    <AuthShell leftVariant="register">
-      <RegisterForm />
-    </AuthShell>
-  );
+  return <RegisterForm />;
 }

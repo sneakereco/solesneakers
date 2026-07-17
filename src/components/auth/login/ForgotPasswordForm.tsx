@@ -262,10 +262,10 @@ export function ForgotPasswordForm({ onBackToLogin }: ForgotPasswordFormProps) {
   return (
     <div className="space-y-5">
       <AuthHeader
-        title={state.step === "request" ? "Reset password" : "Create new password"}
+        title={state.step === "request" ? "Forgot password" : "Reset password"}
         description={
           state.step === "request"
-            ? "Enter your email to receive a reset code."
+            ? "Enter your email and we will send you a reset code."
             : "Enter the code from your email and choose a new password."
         }
       />
@@ -275,23 +275,16 @@ export function ForgotPasswordForm({ onBackToLogin }: ForgotPasswordFormProps) {
 
       {state.step === "request" && (
         <form onSubmit={(e) => void handleRequestSubmit(e)} className="space-y-4">
-          <div className="space-y-1.5">
-            <label
-              htmlFor="forgot-email"
-              className="block text-xs sm:text-sm font-medium text-neutral-700 dark:text-neutral-200"
-            >
-              Email
-            </label>
-            <input
-              id="forgot-email"
-              type="email"
-              required
-              autoComplete="email"
-              value={state.email}
-              onChange={(e) => dispatch({ type: "SET_EMAIL", email: e.target.value })}
-              className={authStyles.input}
-            />
-          </div>
+          <input
+            id="forgot-email"
+            type="email"
+            required
+            autoComplete="email"
+            value={state.email}
+            onChange={(e) => dispatch({ type: "SET_EMAIL", email: e.target.value })}
+            className={authStyles.input}
+            placeholder="E-mail"
+          />
 
           <button
             type="submit"
@@ -301,7 +294,7 @@ export function ForgotPasswordForm({ onBackToLogin }: ForgotPasswordFormProps) {
             {state.isSubmitting ? "Sending code..." : "Send reset code"}
           </button>
 
-          <div className="flex justify-start">
+          <div className="flex justify-center pt-1">
             <button
               type="button"
               onClick={onBackToLogin}
@@ -315,20 +308,12 @@ export function ForgotPasswordForm({ onBackToLogin }: ForgotPasswordFormProps) {
 
       {state.step === "reset" && (
         <form onSubmit={(e) => void handleResetSubmit(e)} className="space-y-4">
-          <div className="space-y-1.5">
-            <label
-              htmlFor="reset-email"
-              className="block text-xs sm:text-sm font-medium text-neutral-700 dark:text-neutral-200"
-            >
-              Email
-            </label>
-            <input
-              id="reset-email"
-              value={state.email}
-              disabled
-              className={authStyles.inputDisabled}
-            />
-          </div>
+          <input
+            id="reset-email"
+            value={state.email}
+            disabled
+            className={authStyles.inputDisabled}
+          />
 
           <SplitCodeInputWithResend
             id="reset-code"
@@ -346,20 +331,22 @@ export function ForgotPasswordForm({ onBackToLogin }: ForgotPasswordFormProps) {
 
           <PasswordField
             name="new-password"
-            label="New password"
+            label=""
             value={state.password}
             onChange={(password) => dispatch({ type: "SET_PASSWORD", password })}
             autoComplete="new-password"
+            placeholder="New password"
           />
 
           <PasswordField
             name="confirm-password"
-            label="Confirm password"
+            label=""
             value={state.confirmPassword}
             onChange={(confirmPassword) =>
               dispatch({ type: "SET_CONFIRM_PASSWORD", confirmPassword })
             }
             autoComplete="new-password"
+            placeholder="Confirm password"
           />
 
           <PasswordRequirements password={state.password} />
@@ -372,7 +359,7 @@ export function ForgotPasswordForm({ onBackToLogin }: ForgotPasswordFormProps) {
             {state.isSubmitting ? "Updating password..." : "Update password"}
           </button>
 
-          <div className="flex justify-start">
+          <div className="flex justify-center pt-1">
             <button
               type="button"
               onClick={onBackToLogin}

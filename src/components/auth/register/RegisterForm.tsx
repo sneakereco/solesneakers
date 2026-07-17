@@ -4,7 +4,6 @@
 import { useReducer } from "react";
 import { useRouter, useSearchParams } from "next/navigation";
 import Link from "next/link";
-import { ArrowLeft } from "lucide-react";
 
 import { isPasswordValid } from "@/lib/validation/password";
 import { AuthHeader } from "@/components/auth/ui/AuthHeader";
@@ -119,114 +118,94 @@ export function RegisterForm() {
   }
 
   return (
-    <div className="space-y-6">
-      <Link
-        href={nextUrl}
-        className="inline-flex items-center gap-2 text-sm text-zinc-500 hover:text-white transition-colors"
-      >
-        <ArrowLeft className="w-4 h-4" />
-        Back to shopping
-      </Link>
+    <form onSubmit={(e) => void handleSubmit(e)} className="space-y-5">
+      <AuthHeader
+        title="Sign up"
+        description="Enter your email and create a password to sign up:"
+      />
 
-      <form onSubmit={(e) => void handleSubmit(e)} className="space-y-6">
-        <AuthHeader
-          title="Create account"
-          description="Join thousands of verified buyers"
+      {state.error && <div className={authStyles.errorBox}>{state.error}</div>}
+
+      <div className="space-y-4">
+        <input
+          id="email"
+          name="email"
+          type="email"
+          required
+          autoComplete="email"
+          className={authStyles.input}
+          placeholder="E-mail"
+          disabled={state.isSubmitting}
         />
 
-        {state.error && <div className={authStyles.errorBox}>{state.error}</div>}
-
-        {/* <div className="space-y-3">
-          <SocialButton provider="google" label="Continue with Google" />
-        </div>
-
-        <div className={authStyles.divider}>
-          <div className={authStyles.dividerLine} />
-          <span>or</span>
-          <div className={authStyles.dividerLine} />
-        </div> */}
-
-        <div className="space-y-4">
-          <div className="space-y-2">
-            <label htmlFor="email" className="block text-sm font-medium text-white">
-              Email
-            </label>
-            <input
-              id="email"
-              name="email"
-              type="email"
-              required
-              autoComplete="email"
-              className={authStyles.input}
-              disabled={state.isSubmitting}
-            />
-          </div>
-
-          <PasswordField
-            name="password"
-            label="Password"
-            value={state.password}
-            onChange={(password) => dispatch({ type: "SET_PASSWORD", password })}
-            autoComplete="new-password"
-          />
-
-          <PasswordField
-            name="confirmPassword"
-            label="Confirm password"
-            value={state.confirmPassword}
-            onChange={(confirmPassword) =>
-              dispatch({ type: "SET_CONFIRM_PASSWORD", confirmPassword })
-            }
-            autoComplete="new-password"
-          />
-
-          <PasswordRequirements password={state.password} />
-        </div>
-
-        <label className="flex items-start gap-3 cursor-pointer">
-          <input
-            type="checkbox"
-            checked={state.updatesOptIn}
-            onChange={(e) =>
-              dispatch({ type: "SET_UPDATES_OPT_IN", value: e.target.checked })
-            }
-            className="rdk-checkbox mt-0.5"
-            disabled={state.isSubmitting}
-          />
-          <span className="text-sm text-zinc-400">
-            Send me drop alerts and exclusive offers
-          </span>
-        </label>
-
-        <button
-          type="submit"
+        <PasswordField
+          name="password"
+          label=""
+          value={state.password}
+          onChange={(password) => dispatch({ type: "SET_PASSWORD", password })}
+          autoComplete="new-password"
+          placeholder="Password"
           disabled={state.isSubmitting}
-          className={authStyles.primaryButton}
+        />
+
+        <PasswordField
+          name="confirmPassword"
+          label=""
+          value={state.confirmPassword}
+          onChange={(confirmPassword) =>
+            dispatch({ type: "SET_CONFIRM_PASSWORD", confirmPassword })
+          }
+          autoComplete="new-password"
+          placeholder="Confirm password"
+          disabled={state.isSubmitting}
+        />
+
+        <PasswordRequirements password={state.password} />
+      </div>
+
+      <label className="flex cursor-pointer items-start gap-3">
+        <input
+          type="checkbox"
+          checked={state.updatesOptIn}
+          onChange={(e) =>
+            dispatch({ type: "SET_UPDATES_OPT_IN", value: e.target.checked })
+          }
+          className="mt-0.5 h-[18px] w-[18px] appearance-none border border-zinc-400 bg-white checked:border-zinc-900 checked:bg-zinc-900 focus:outline-none"
+          disabled={state.isSubmitting}
+        />
+        <span className="text-[0.95rem] leading-6 text-zinc-600">
+          Send me drop alerts and exclusive offers
+        </span>
+      </label>
+
+      <button
+        type="submit"
+        disabled={state.isSubmitting}
+        className={authStyles.primaryButton}
+      >
+        {state.isSubmitting ? "Creating account..." : "Sign up"}
+      </button>
+
+      <p className="text-center text-[0.76rem] uppercase tracking-[0.08em] text-zinc-500">
+        By signing up, you agree to our{" "}
+        <Link href="/legal/terms" className="underline hover:text-zinc-400">
+          Terms
+        </Link>{" "}
+        and{" "}
+        <Link href="/legal/privacy" className="underline hover:text-zinc-400">
+          Privacy Policy
+        </Link>
+      </p>
+
+      <p className="pt-3 text-center text-[0.98rem] text-zinc-600">
+        Already have an account?{" "}
+        <Link
+          href={`/auth/login${nextUrl !== "/" ? `?next=${encodeURIComponent(nextUrl)}` : ""}`}
+          className={authStyles.inlineAccentLink}
         >
-          {state.isSubmitting ? "Creating account..." : "Create account"}
-        </button>
-
-        <p className="text-xs text-center text-zinc-600">
-          By signing up, you agree to our{" "}
-          <Link href="/legal/terms" className="underline hover:text-zinc-400">
-            Terms
-          </Link>{" "}
-          and{" "}
-          <Link href="/legal/privacy" className="underline hover:text-zinc-400">
-            Privacy Policy
-          </Link>
-        </p>
-
-        <p className="text-sm text-center text-zinc-500">
-          Already have an account?{" "}
-          <Link
-            href={`/auth/login${nextUrl !== "/" ? `?next=${encodeURIComponent(nextUrl)}` : ""}`}
-            className={authStyles.inlineAccentLink}
-          >
-            Sign in
-          </Link>
-        </p>
-      </form>
-    </div>
+          Login
+        </Link>
+      </p>
+    </form>
   );
 }

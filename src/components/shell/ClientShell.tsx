@@ -5,65 +5,49 @@ import { Suspense, useCallback, useState, useEffect } from "react";
 import { usePathname, useSearchParams } from "next/navigation";
 
 import { AdminSidebar } from "@/components/admin/AdminSidebar";
-import { SearchOverlay } from "@/components/search/SearchOverlay";
-import { CartDrawer } from "@/components/cart/CartDrawer";
 import { ChatDrawer } from "@/components/chat/ChatDrawer";
 import { Footer } from "@/components/shell/Footer";
 import { MobileBottomNav } from "@/components/shell/MobileBottomNav";
+import { StorefrontHeader } from "@/components/shell/StorefrontHeader";
 import type { ProfileRole } from "@/config/constants/roles";
 
 export function ClientShell({
   children,
   isAdmin = false,
+  isAuthenticated = false,
   userEmail = null,
   role = null,
 }: {
   children: React.ReactNode;
   isAdmin?: boolean;
+  isAuthenticated?: boolean;
   userEmail?: string | null;
   role?: ProfileRole | null;
 }) {
   const pathname = usePathname();
-  const [searchOpen, setSearchOpen] = useState(false);
-  const [cartOpen, setCartOpen] = useState(false);
   const [chatOpen, setChatOpen] = useState(false);
   const openChat = useCallback(() => setChatOpen(true), []);
 
   useEffect(() => {
-    const handleOpenSearch = () => setSearchOpen(true);
-    const handleOpenCart = () => setCartOpen(true);
     const handleOpenChat = () => setChatOpen(true);
 
-    window.addEventListener("openSearch", handleOpenSearch);
-    window.addEventListener("openCart", handleOpenCart);
     window.addEventListener("openChat", handleOpenChat);
 
     return () => {
-      window.removeEventListener("openSearch", handleOpenSearch);
-      window.removeEventListener("openCart", handleOpenCart);
       window.removeEventListener("openChat", handleOpenChat);
     };
   }, []);
 
   useEffect(() => {
-    const isAdminRoute = pathname.startsWith("/admin");
-    const isAuthRoute = pathname.startsWith("/auth");
-    const routeValue = isAdminRoute ? "admin" : isAuthRoute ? "auth" : "store";
-    document.body.dataset.route = routeValue;
-  }, [pathname]);
+    document.body.dataset.route = "store";
 
-  const isAdminRoute = pathname.startsWith("/admin");
-  const isAuthRoute = pathname.startsWith("/auth");
-  const isCheckoutRoute = pathname.startsWith("/checkout");
-  const isLockedRoute = pathname.startsWith("/locked");
-  const isStoreRoute =
-    !isAdminRoute && !isAuthRoute && !isCheckoutRoute && !isLockedRoute;
+    return () => {
+      delete document.body.dataset.route;
+    };
+  }, [pathname]);
 
   useEffect(() => {
     if (!pathname) {
-      return;
-    }
-    if (pathname.startsWith("/admin") || pathname.startsWith("/auth")) {
       return;
     }
 
@@ -116,25 +100,32 @@ export function ClientShell({
     }
   }, [pathname]); // ✅ OPTIMIZATION: Removed searchParams - only track pathname changes
 
-  const showAdminSidebar = isAdmin && isStoreRoute && Boolean(role);
+  const showAdminSidebar = isAdmin && Boolean(role);
 
   return (
     <>
       {showAdminSidebar && (
         <AdminSidebar userEmail={userEmail} role={role as ProfileRole} />
       )}
-      <div className={showAdminSidebar ? "md:ml-64" : undefined}>{children}</div>
+      <div
+        className={`${showAdminSidebar ? "md:ml-64" : ""} min-h-screen bg-black text-white`.trim()}
+      >
+        <StorefrontHeader
+          isAuthenticated={isAuthenticated}
+          userEmail={userEmail ?? undefined}
+          role={role}
+        />
+        <main className="min-h-screen pt-28 pb-20 text-white sm:pt-32 md:pb-0">
+          {children}
+        </main>
+      </div>
 
-      <SearchOverlay isOpen={searchOpen} onClose={() => setSearchOpen(false)} />
-      <CartDrawer isOpen={cartOpen} onClose={() => setCartOpen(false)} />
       <Suspense fallback={null}>
         <ChatQueryOpener onOpenChat={openChat} />
       </Suspense>
-      {isStoreRoute && (
-        <ChatDrawer isOpen={chatOpen} onClose={() => setChatOpen(false)} />
-      )}
-      {isStoreRoute && <Footer />}
-      {isStoreRoute && <MobileBottomNav />}
+      <ChatDrawer isOpen={chatOpen} onClose={() => setChatOpen(false)} />
+      <Footer />
+      <MobileBottomNav />
     </>
   );
 }

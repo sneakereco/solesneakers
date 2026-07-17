@@ -4,14 +4,18 @@
 import { useState } from "react";
 import { Eye, EyeOff } from "lucide-react";
 
+import { authStyles } from "@/components/auth/ui/authStyles";
+
 interface PasswordFieldProps {
   name: string;
   label: string;
   value: string;
   onChange: (value: string) => void;
+  placeholder?: string;
   autoComplete?: string;
   required?: boolean;
   dataTestId?: string;
+  disabled?: boolean;
 }
 
 export function PasswordField({
@@ -19,16 +23,18 @@ export function PasswordField({
   label,
   value,
   onChange,
+  placeholder,
   autoComplete,
   required = true,
   dataTestId,
+  disabled = false,
 }: PasswordFieldProps) {
   const [visible, setVisible] = useState(false);
 
   return (
     <div className="space-y-2">
       {label && (
-        <label htmlFor={name} className="block text-sm font-medium text-white">
+        <label htmlFor={name} className="block text-sm font-medium text-zinc-700">
           {label}
         </label>
       )}
@@ -41,13 +47,16 @@ export function PasswordField({
           autoComplete={autoComplete}
           value={value}
           onChange={(e) => onChange(e.target.value)}
-          className="h-11 w-full bg-zinc-900 border border-zinc-800 px-4 pr-11 text-sm text-white placeholder:text-zinc-600 focus:outline-none focus:border-zinc-700 transition-colors"
+          disabled={disabled}
+          className={`${authStyles.input} pr-14`}
+          placeholder={placeholder}
           data-testid={dataTestId}
         />
         <button
           type="button"
           onClick={() => setVisible(!visible)}
-          className="absolute right-3 top-1/2 -translate-y-1/2 text-zinc-500 hover:text-zinc-300 transition-colors"
+          disabled={disabled}
+          className="absolute right-4 top-1/2 -translate-y-1/2 text-zinc-500 transition-colors hover:text-zinc-800 disabled:cursor-not-allowed disabled:opacity-50"
           aria-label={visible ? "Hide password" : "Show password"}
         >
           {visible ? <EyeOff className="w-4 h-4" /> : <Eye className="w-4 h-4" />}

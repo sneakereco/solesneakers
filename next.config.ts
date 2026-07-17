@@ -64,36 +64,20 @@ const nextConfig = {
       process.env.NODE_ENV === "production" ? { exclude: ["error", "warn"] } : false, // Remove console.logs in production
   },
 
-  // OPTIMIZATION 5: Headers for better caching
+  // Let Next.js own framework asset caching. Dev chunk URLs are stable, so marking
+  // them immutable causes browsers to keep stale CSS and JavaScript across edits.
   headers() {
+    if (process.env.NODE_ENV !== "production") {
+      return [];
+    }
+
     return [
-      // Store page caching
       {
         source: "/store/:path*",
         headers: [
           {
             key: "Cache-Control",
             value: "public, s-maxage=60, stale-while-revalidate=120",
-          },
-        ],
-      },
-      // Image optimization caching
-      {
-        source: "/_next/image",
-        headers: [
-          {
-            key: "Cache-Control",
-            value: "public, max-age=31536000, immutable",
-          },
-        ],
-      },
-      // Static assets caching
-      {
-        source: "/_next/static/:path*",
-        headers: [
-          {
-            key: "Cache-Control",
-            value: "public, max-age=31536000, immutable",
           },
         ],
       },
