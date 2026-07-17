@@ -100,6 +100,12 @@ body:has([data-auth-shell]) {
   animation: store-menu-panel-in 180ms ease-out both;
 }
 
+@media (min-width: 768px) {
+  .store-menu-panel {
+    box-shadow: -1px 0 0 #e4e4e7;
+  }
+}
+
 @media (prefers-reduced-motion: reduce) {
   .search-drop-panel,
   .search-overlay-backdrop,

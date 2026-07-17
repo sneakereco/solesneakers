@@ -75,16 +75,22 @@ function DrawerLink({
   children,
   href,
   onNavigate,
+  variant = "nested",
 }: {
   children: React.ReactNode;
   href: string;
   onNavigate: () => void;
+  variant?: "nested" | "row";
 }) {
   return (
     <Link
       href={href}
       onClick={onNavigate}
-      className="block py-3 text-[0.9rem] text-zinc-700 transition-colors hover:text-black"
+      className={
+        variant === "row"
+          ? "flex min-h-[61px] items-center border-b border-zinc-200 text-[13px] font-normal uppercase tracking-[0.02em] text-zinc-800 transition-colors hover:text-black"
+          : "block py-3 text-[0.9rem] text-zinc-700 transition-colors hover:text-black"
+      }
     >
       {children}
     </Link>
@@ -113,7 +119,7 @@ function SizeGroup({
       <button
         type="button"
         onClick={onToggle}
-        className="flex min-h-16 w-full items-center justify-between py-4 text-left text-xs font-medium uppercase tracking-[0.02em] text-zinc-800"
+        className="flex min-h-[61px] w-full items-center justify-between py-4 text-left text-[13px] font-normal uppercase tracking-[0.02em] text-zinc-800"
         aria-expanded={isOpen}
       >
         <span>{label}</span>
@@ -251,7 +257,7 @@ export function StoreMenuDrawer({ isOpen, onClose }: StoreMenuDrawerProps) {
                 key={panel}
                 type="button"
                 onClick={() => setActivePanel(panel)}
-                className="flex min-h-[61px] w-full items-center justify-between border-b border-zinc-200 text-left text-xs font-medium uppercase tracking-[0.02em] text-zinc-800 transition-colors hover:text-black"
+                className="flex min-h-[61px] w-full items-center justify-between border-b border-zinc-200 text-left text-[13px] font-normal uppercase tracking-[0.02em] text-zinc-800 transition-colors hover:text-black"
                 aria-expanded={activePanel === panel}
               >
                 <span>{label}</span>
@@ -262,7 +268,7 @@ export function StoreMenuDrawer({ isOpen, onClose }: StoreMenuDrawerProps) {
             <Link
               href="/store"
               onClick={closeMenu}
-              className="flex min-h-[61px] items-center border-b border-zinc-200 text-xs font-medium uppercase tracking-[0.02em] text-zinc-800 transition-colors hover:text-black"
+              className="flex min-h-[61px] items-center border-b border-zinc-200 text-[13px] font-normal uppercase tracking-[0.02em] text-zinc-800 transition-colors hover:text-black"
             >
               Shop All
             </Link>
@@ -270,25 +276,24 @@ export function StoreMenuDrawer({ isOpen, onClose }: StoreMenuDrawerProps) {
         </div>
 
         {activePanel && (
-          <section className="store-menu-panel absolute inset-0 z-10 h-full w-full bg-white md:static md:w-[392px] md:shrink-0 md:border-l md:border-zinc-200">
+          <section className="store-menu-panel absolute inset-0 z-10 h-full w-full bg-white md:static md:w-[392px] md:shrink-0">
             <PanelHeader title={panelTitle} onBack={() => setActivePanel(null)} />
 
             <div className="h-[calc(100dvh-5rem)] overflow-y-auto overscroll-contain px-7 pb-10 md:px-8">
               {activePanel === "brand" && (
-                <DrawerLink href="/brands" onNavigate={closeMenu}>
-                  <span className="text-xs font-medium uppercase tracking-[0.02em]">
-                    All Brands
-                  </span>
+                <DrawerLink href="/brands" onNavigate={closeMenu} variant="row">
+                  All Brands
                 </DrawerLink>
               )}
 
               {activePanel === "category" && (
-                <div className="divide-y divide-zinc-200">
+                <div>
                   {CATEGORY_LINKS.map((category) => (
                     <DrawerLink
                       key={category.value}
                       href={buildStoreHref({ category: category.value })}
                       onNavigate={closeMenu}
+                      variant="row"
                     >
                       {category.label}
                     </DrawerLink>
