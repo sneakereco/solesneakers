@@ -41,6 +41,12 @@ export async function GET(request: NextRequest) {
     sizeShoe: searchParams.getAll("sizeShoe").filter(Boolean),
     sizeClothing: searchParams.getAll("sizeClothing").filter(Boolean),
     condition: searchParams.getAll("condition").filter(Boolean),
+    priceMinCents: searchParams.has("priceMin")
+      ? Number.parseInt(searchParams.get("priceMin") ?? "", 10) * 100
+      : undefined,
+    priceMaxCents: searchParams.has("priceMax")
+      ? Number.parseInt(searchParams.get("priceMax") ?? "", 10) * 100
+      : undefined,
     sort: sortParam && sortParam.trim().length > 0 ? sortParam : "newest",
     page: Number.parseInt(searchParams.get("page") ?? "1", 10),
     limit: Number.parseInt(searchParams.get("limit") ?? "20", 10),

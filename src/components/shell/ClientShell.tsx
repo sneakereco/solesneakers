@@ -108,14 +108,14 @@ export function ClientShell({
         <AdminSidebar userEmail={userEmail} role={role as ProfileRole} />
       )}
       <div
-        className={`${showAdminSidebar ? "md:ml-64" : ""} min-h-screen bg-black text-white`.trim()}
+        className={`${showAdminSidebar ? "md:ml-64" : ""} min-h-screen bg-[var(--storefront-surface)] text-black`.trim()}
       >
         <StorefrontHeader
           isAuthenticated={isAuthenticated}
           userEmail={userEmail ?? undefined}
           role={role}
         />
-        <main className="min-h-screen pt-28 pb-20 text-white sm:pt-32 md:pb-0">
+        <main className="min-h-screen bg-[var(--storefront-surface)] pt-28 pb-20 text-black sm:pt-32 md:pb-0">
           {children}
         </main>
       </div>

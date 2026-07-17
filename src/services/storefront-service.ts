@@ -138,6 +138,8 @@ export class StorefrontService {
       categories,
       availableShoeSizes: sizeData.shoe,
       availableClothingSizes: sizeData.clothing,
+      shoeSizeCounts: sizeData.shoeCounts,
+      clothingSizeCounts: sizeData.clothingCounts,
       availableConditions,
     };
   }

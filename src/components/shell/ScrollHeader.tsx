@@ -1,7 +1,6 @@
-// src/components/shell/ScrollHeader.tsx
 "use client";
 
-import { useCallback, useEffect, useRef, useState } from "react";
+import { useEffect, useRef } from "react";
 
 import { useCart } from "@/components/cart/CartProvider";
 import type { ProfileRole } from "@/config/constants/roles";
@@ -14,58 +13,130 @@ interface ScrollHeaderProps {
   role?: ProfileRole | null;
 }
 
+const DIRECTION_THRESHOLD = 12;
+const HEADER_TRANSITION = "transform 260ms cubic-bezier(0.22, 1, 0.36, 1)";
+
 export function ScrollHeader({
   isAuthenticated = false,
   userEmail,
   role = null,
 }: ScrollHeaderProps) {
   const { itemCount } = useCart();
-
-  // ✅ Hooks must be unconditional
-  const [isVisible, setIsVisible] = useState(true);
-  const lastScrollYRef = useRef(0);
   const headerRef = useRef<HTMLElement | null>(null);
 
-  const updateHeaderOffset = useCallback(() => {
-    const headerHeight = headerRef.current?.offsetHeight ?? 0;
-    const baseGap = 0;
-    const offset = isVisible ? headerHeight + baseGap : baseGap;
-    document.documentElement.style.setProperty("--rdk-header-offset", `${offset}px`);
-  }, [isVisible]);
-
   useEffect(() => {
-    const handleScroll = () => {
-      const currentScrollY = window.scrollY;
-      const last = lastScrollYRef.current;
+    const header = headerRef.current;
+    if (!header) {
+      return;
+    }
 
-      if (currentScrollY < 10) {
-        setIsVisible(true);
-      } else if (currentScrollY > last) {
-        setIsVisible(false);
-      } else {
-        setIsVisible(true);
-      }
+    const root = document.documentElement;
+    const reducedMotion = window.matchMedia("(prefers-reduced-motion: reduce)");
+    let headerHeight = header.offsetHeight;
+    let lastScrollY = window.scrollY;
+    let direction: "up" | "down" | null = null;
+    let directionTravel = 0;
+    let hasClearedHeader = lastScrollY >= headerHeight;
+    let floatingVisible = false;
+    let animationFrame = 0;
 
-      lastScrollYRef.current = currentScrollY;
+    const applyPosition = (hiddenPixels: number, animate: boolean) => {
+      const clampedHiddenPixels = Math.min(headerHeight, Math.max(0, hiddenPixels));
+      const visibleHeight = Math.max(0, headerHeight - clampedHiddenPixels);
+
+      header.style.transition =
+        animate && !reducedMotion.matches ? HEADER_TRANSITION : "none";
+      header.style.transform = `translate3d(0, -${clampedHiddenPixels}px, 0)`;
+      root.style.setProperty("--rdk-header-offset", `${visibleHeight}px`);
+      root.style.setProperty("--rdk-visible-header-height", `${visibleHeight}px`);
     };
 
-    window.addEventListener("scroll", handleScroll, { passive: true });
-    return () => window.removeEventListener("scroll", handleScroll);
-  }, []);
+    const update = () => {
+      animationFrame = 0;
+      const currentScrollY = Math.max(0, window.scrollY);
+      const delta = currentScrollY - lastScrollY;
+      const nextDirection = delta > 0 ? "down" : delta < 0 ? "up" : direction;
 
-  useEffect(() => {
-    updateHeaderOffset();
-    window.addEventListener("resize", updateHeaderOffset);
-    return () => window.removeEventListener("resize", updateHeaderOffset);
-  }, [updateHeaderOffset]);
+      if (nextDirection && nextDirection !== direction) {
+        direction = nextDirection;
+        directionTravel = 0;
+      }
+      directionTravel += Math.abs(delta);
+
+      if (!hasClearedHeader && currentScrollY < headerHeight) {
+        // Before the header has naturally left the viewport, move it exactly
+        // with the page instead of invoking floating-header behavior.
+        applyPosition(currentScrollY, false);
+      } else {
+        if (!hasClearedHeader) {
+          hasClearedHeader = true;
+          floatingVisible = false;
+        }
+
+        if (currentScrollY > headerHeight) {
+          if (directionTravel >= DIRECTION_THRESHOLD && direction === "up") {
+            floatingVisible = true;
+            directionTravel = 0;
+          } else if (directionTravel >= DIRECTION_THRESHOLD && direction === "down") {
+            floatingVisible = false;
+            directionTravel = 0;
+          }
+
+          applyPosition(floatingVisible ? 0 : headerHeight, true);
+        } else if (floatingVisible) {
+          // A revealed floating header remains stable while returning to the top.
+          applyPosition(0, true);
+        } else {
+          // If it stayed hidden, let it re-enter with its original document slot.
+          applyPosition(currentScrollY, false);
+        }
+      }
+
+      if (currentScrollY <= 1) {
+        hasClearedHeader = false;
+        floatingVisible = false;
+        direction = null;
+        directionTravel = 0;
+        applyPosition(0, false);
+      }
+
+      lastScrollY = currentScrollY;
+    };
+
+    const scheduleUpdate = () => {
+      if (!animationFrame) {
+        animationFrame = window.requestAnimationFrame(update);
+      }
+    };
+
+    const handleResize = () => {
+      headerHeight = header.offsetHeight;
+      scheduleUpdate();
+    };
+
+    applyPosition(
+      hasClearedHeader ? headerHeight : Math.min(lastScrollY, headerHeight),
+      false,
+    );
+    window.addEventListener("scroll", scheduleUpdate, { passive: true });
+    window.addEventListener("resize", handleResize);
+
+    return () => {
+      window.removeEventListener("scroll", scheduleUpdate);
+      window.removeEventListener("resize", handleResize);
+      if (animationFrame) {
+        window.cancelAnimationFrame(animationFrame);
+      }
+      root.style.removeProperty("--rdk-header-offset");
+      root.style.removeProperty("--rdk-visible-header-height");
+    };
+  }, []);
 
   return (
     <header
       ref={headerRef}
       data-storefront-header
-      className={`fixed top-0 left-0 right-0 z-50 bg-[var(--storefront-surface)] transition-transform duration-300 ease-out ${
-        isVisible ? "translate-y-0" : "-translate-y-full"
-      }`}
+      className="fixed inset-x-0 top-0 z-50 will-change-transform"
     >
       <Navbar
         isAuthenticated={isAuthenticated}

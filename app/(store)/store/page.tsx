@@ -1,71 +1,86 @@
-// app/store/page.tsx
-// OPTIMIZED VERSION - Page navigation with improved filter visuals
-
 import Link from "next/link";
 
-import { FilterPanel } from "@/components/store/FilterPanel";
 import { ProductGrid } from "@/components/store/ProductGrid";
 import { StoreControls } from "@/components/store/StoreControls";
+import { StorefrontFilterBar } from "@/components/store/StorefrontFilterBar";
 import { createSupabasePublicClient } from "@/lib/supabase/public";
-import { StorefrontService } from "@/services/storefront-service";
 import { storeProductsQuerySchema } from "@/lib/validation/storefront";
 import type { ProductFilters } from "@/repositories/product-repo";
+import { StorefrontService } from "@/services/storefront-service";
 
-// OPTIMIZATION: Enable ISR with longer revalidation
-export const revalidate = 60; // Revalidate every 60 seconds
+export const revalidate = 60;
 
-const getArrayParam = (
-  searchParams: Record<string, string | string[] | undefined> | undefined,
-  key: string,
-) => {
+type StoreSearchParams = Record<string, string | string[] | undefined>;
+
+const getArrayParam = (searchParams: StoreSearchParams | undefined, key: string) => {
   const value = searchParams?.[key];
   if (Array.isArray(value)) {
     return value.filter(Boolean);
   }
-  if (typeof value === "string" && value.trim().length > 0) {
-    return [value];
-  }
-  return [];
+  return typeof value === "string" && value.trim() ? [value] : [];
 };
 
-const getStringParam = (
-  searchParams: Record<string, string | string[] | undefined> | undefined,
-  key: string,
-) => {
+const getStringParam = (searchParams: StoreSearchParams | undefined, key: string) => {
   const value = searchParams?.[key];
-  if (Array.isArray(value)) {
-    return value[0];
+  return Array.isArray(value) ? value[0] : value;
+};
+
+const getPositiveInteger = (value: string | undefined, fallback: number) => {
+  const parsed = Number.parseInt(value ?? "", 10);
+  return Number.isFinite(parsed) && parsed > 0 ? parsed : fallback;
+};
+
+const getNonNegativeInteger = (value: string | undefined) => {
+  const parsed = Number.parseInt(value ?? "", 10);
+  return Number.isFinite(parsed) && parsed >= 0 ? parsed : undefined;
+};
+
+const formatLabel = (value: string) =>
+  value.replace(/_/g, " ").replace(/\b\w/g, (character) => character.toUpperCase());
+
+const formatPriceLabel = (min?: number, max?: number) => {
+  if (typeof min === "number" && typeof max === "number") {
+    return `$${min} - $${max}`;
   }
-  return typeof value === "string" ? value : undefined;
+  if (typeof min === "number") {
+    return `$${min} and Up`;
+  }
+  if (typeof max === "number") {
+    return `Under $${max + 1}`;
+  }
+  return null;
 };
 
 export default async function StorePage({
   searchParams,
 }: {
-  searchParams?:
-    | Promise<Record<string, string | string[] | undefined>>
-    | Record<string, string | string[] | undefined>;
+  searchParams?: Promise<StoreSearchParams> | StoreSearchParams;
 }) {
   const resolvedSearchParams = searchParams ? await searchParams : undefined;
-  const qParam = getStringParam(resolvedSearchParams, "q");
-  const sortParam = getStringParam(resolvedSearchParams, "sort");
-  const pageParam = getStringParam(resolvedSearchParams, "page");
-  const limitParam = getStringParam(resolvedSearchParams, "limit");
-
-  const pageValue = Number.parseInt(pageParam ?? "", 10);
-  const limitValue = Number.parseInt(limitParam ?? "", 10);
+  const query = getStringParam(resolvedSearchParams, "q")?.trim() ?? "";
+  const priceMin = getNonNegativeInteger(
+    getStringParam(resolvedSearchParams, "priceMin"),
+  );
+  const priceMax = getNonNegativeInteger(
+    getStringParam(resolvedSearchParams, "priceMax"),
+  );
+  const requestedSort = getStringParam(resolvedSearchParams, "sort")?.trim();
+  const requestedView = getStringParam(resolvedSearchParams, "view");
+  const view: "grid" | "list" = requestedView === "list" ? "list" : "grid";
 
   const rawFilters = {
-    q: qParam && qParam.trim().length > 0 ? qParam : undefined,
+    q: query || undefined,
     category: getArrayParam(resolvedSearchParams, "category"),
     brand: getArrayParam(resolvedSearchParams, "brand"),
     model: getArrayParam(resolvedSearchParams, "model"),
     sizeShoe: getArrayParam(resolvedSearchParams, "sizeShoe"),
     sizeClothing: getArrayParam(resolvedSearchParams, "sizeClothing"),
     condition: getArrayParam(resolvedSearchParams, "condition"),
-    sort: sortParam && sortParam.trim().length > 0 ? sortParam : "newest",
-    page: Number.isFinite(pageValue) ? pageValue : 1,
-    limit: Number.isFinite(limitValue) ? limitValue : 20,
+    priceMinCents: typeof priceMin === "number" ? priceMin * 100 : undefined,
+    priceMaxCents: typeof priceMax === "number" ? priceMax * 100 : undefined,
+    sort: requestedSort || (query ? "relevance" : "newest"),
+    page: getPositiveInteger(getStringParam(resolvedSearchParams, "page"), 1),
+    limit: getPositiveInteger(getStringParam(resolvedSearchParams, "limit"), 24),
   };
 
   const parsed = storeProductsQuerySchema.safeParse(rawFilters);
@@ -73,53 +88,37 @@ export default async function StorePage({
     ? parsed.data
     : {
         ...rawFilters,
-        sort: "newest",
+        sort: query ? "relevance" : "newest",
         page: 1,
-        limit: 20,
+        limit: 24,
         includeOutOfStock: false,
       };
 
   const storeQueryParams = new URLSearchParams();
-  if (resolvedSearchParams) {
-    Object.entries(resolvedSearchParams).forEach(([key, value]) => {
-      if (!value || key === "from") {
-        return;
-      }
-      if (Array.isArray(value)) {
-        value.filter(Boolean).forEach((entry) => storeQueryParams.append(key, entry));
-        return;
-      }
-      if (typeof value === "string" && value.trim().length > 0) {
-        storeQueryParams.append(key, value);
-      }
-    });
-  }
-  const storeHref = storeQueryParams.toString()
-    ? `/store?${storeQueryParams.toString()}`
-    : "/store";
+  Object.entries(resolvedSearchParams ?? {}).forEach(([key, value]) => {
+    if (!value || key === "from") {
+      return;
+    }
+    if (Array.isArray(value)) {
+      value.filter(Boolean).forEach((entry) => storeQueryParams.append(key, entry));
+    } else if (value.trim()) {
+      storeQueryParams.append(key, value);
+    }
+  });
+  const storeHref = storeQueryParams.size > 0 ? `/store?${storeQueryParams}` : "/store";
 
-  const supabase = createSupabasePublicClient();
-  const service = new StorefrontService(supabase);
-
-  // OPTIMIZATION: Parallel data fetching
-  const [productsResult, filterData] = await Promise.all([
+  const service = new StorefrontService(createSupabasePublicClient());
+  const [initialProductsResult, filterData] = await Promise.all([
     service.listProducts(filters),
     service.listFilters({ filters }),
   ]);
 
+  let productsResult = initialProductsResult;
   let pageCount = Math.max(1, Math.ceil(productsResult.total / productsResult.limit));
-
-  // Handle page overflow
   if (productsResult.total > 0 && productsResult.page > pageCount) {
-    const adjustedFilters = { ...filters, page: pageCount };
-    const adjustedResult = await service.listProducts(adjustedFilters);
-    pageCount = Math.max(1, Math.ceil(adjustedResult.total / adjustedResult.limit));
+    productsResult = await service.listProducts({ ...filters, page: pageCount });
+    pageCount = Math.max(1, Math.ceil(productsResult.total / productsResult.limit));
   }
-
-  const brandOptions = filterData.brands.map((brand) => ({
-    value: brand.label,
-    label: brand.label,
-  }));
 
   const selectedCategories = filters.category ?? [];
   const selectedBrands = filters.brand ?? [];
@@ -127,11 +126,7 @@ export default async function StorePage({
   const selectedShoeSizes = filters.sizeShoe ?? [];
   const selectedClothingSizes = filters.sizeClothing ?? [];
   const selectedConditions = filters.condition ?? [];
-  const query = filters.q ?? "";
-
-  const formatLabel = (value: string) =>
-    value.replace(/_/g, " ").replace(/\b\w/g, (match) => match.toUpperCase());
-
+  const priceLabel = formatPriceLabel(priceMin, priceMax);
   const activeFilterLabels = Array.from(
     new Set([
       ...selectedCategories.map(formatLabel),
@@ -140,57 +135,41 @@ export default async function StorePage({
       ...selectedShoeSizes,
       ...selectedClothingSizes,
       ...selectedConditions.map(formatLabel),
+      ...(priceLabel ? [priceLabel] : []),
     ]),
   );
 
-  const browseLabel = (() => {
-    if (query) {
-      return `Search: "${query}"`;
-    }
-    if (activeFilterLabels.length === 0) {
-      return `Shop All`;
-    }
-    if (activeFilterLabels.length === 1) {
-      return `${activeFilterLabels[0]}`;
-    }
-    return `Multiple Categories`;
-  })();
-
-  const breadcrumbItems = (() => {
-    const items: Array<{ label: string; href?: string }> = [
-      { label: "Home", href: "/" },
-      { label: "Shop", href: "/store" },
-    ];
-
-    if (query || activeFilterLabels.length > 0) {
-      items.push({ label: browseLabel });
-    }
-
-    return items;
-  })();
+  const browseLabel = query
+    ? `Search: "${query}"`
+    : activeFilterLabels.length === 0
+      ? "New Arrivals"
+      : activeFilterLabels.length === 1
+        ? activeFilterLabels[0]
+        : "Filtered Collection";
 
   return (
-    <div className="max-w-7xl mx-auto px-4 py-8">
-      <div className="mb-8">
-        <div className="flex flex-wrap items-center gap-2 text-xs uppercase tracking-[0.2em] text-zinc-500 mb-3">
-          {breadcrumbItems.map((item, index) => {
-            const isLast = index === breadcrumbItems.length - 1;
-            return (
-              <div key={`${item.label}-${index}`} className="flex items-center gap-2">
-                {item.href && !isLast ? (
-                  <Link href={item.href} className="hover:text-white transition-colors">
-                    {item.label}
-                  </Link>
-                ) : (
-                  <span className={isLast ? "text-zinc-300" : ""}>{item.label}</span>
-                )}
-                {!isLast && <span className="text-zinc-700">/</span>}
-              </div>
-            );
-          })}
+    <div className="min-h-screen bg-[var(--storefront-surface)] text-black">
+      <section className="relative min-h-[190px] border-b border-zinc-300 px-5 sm:px-8 lg:px-12">
+        <nav
+          className="flex items-center gap-2 pt-6 text-[0.62rem] uppercase tracking-[0.08em] text-zinc-500"
+          aria-label="Breadcrumb"
+        >
+          <Link href="/" className="transition-colors hover:text-black">
+            Home
+          </Link>
+          <span>/</span>
+          <Link href="/store" className="transition-colors hover:text-black">
+            Shop
+          </Link>
+          <span>/</span>
+          <span>{browseLabel}</span>
+        </nav>
+        <div className="flex justify-center px-4 pb-12 pt-9 text-center">
+          <h1 className="text-3xl font-medium uppercase tracking-[0.025em] text-zinc-950 sm:text-[2rem]">
+            {browseLabel}
+          </h1>
         </div>
-        <h1 className="text-4xl font-bold text-white mb-2">{browseLabel}</h1>
-      </div>
+      </section>
 
       <StoreControls
         total={productsResult.total}
@@ -198,68 +177,50 @@ export default async function StorePage({
         pageCount={pageCount}
         limit={productsResult.limit}
         sort={filters.sort ?? "newest"}
+        view={view}
         showPagination={false}
       />
 
-      <div className="grid grid-cols-1 lg:grid-cols-4 gap-8">
-        <div className="hidden lg:block">
-          <div
-            className="sticky transition-[top] duration-300"
-            style={{ top: "var(--rdk-header-offset, 0px)" }}
-          >
-            <FilterPanel
-              selectedCategories={selectedCategories}
-              selectedBrands={selectedBrands}
-              selectedModels={selectedModels}
-              selectedShoeSizes={selectedShoeSizes}
-              selectedClothingSizes={selectedClothingSizes}
-              selectedConditions={selectedConditions}
-              categories={filterData.categories}
-              brands={brandOptions}
-              modelsByBrand={filterData.modelsByBrand}
-              brandsByCategory={filterData.brandsByCategory}
-              availableShoeSizes={filterData.availableShoeSizes}
-              availableClothingSizes={filterData.availableClothingSizes}
-              availableConditions={filterData.availableConditions}
-              totalProducts={productsResult.total}
-            />
-          </div>
-        </div>
+      <StorefrontFilterBar
+        brands={filterData.brands.map((brand) => brand.label)}
+        categories={filterData.categories}
+        conditions={filterData.availableConditions}
+        shoeSizes={filterData.availableShoeSizes}
+        clothingSizes={filterData.availableClothingSizes}
+        shoeSizeCounts={filterData.shoeSizeCounts}
+        clothingSizeCounts={filterData.clothingSizeCounts}
+        selectedBrands={selectedBrands}
+        selectedCategories={selectedCategories}
+        selectedConditions={selectedConditions}
+        selectedShoeSizes={selectedShoeSizes}
+        selectedClothingSizes={selectedClothingSizes}
+        priceMin={priceMin}
+        priceMax={priceMax}
+      />
 
-        <div className="lg:col-span-3">
-          <ProductGrid products={productsResult.products} storeHref={storeHref} />
-        </div>
-      </div>
-
-      <div className="lg:hidden">
-        <FilterPanel
-          selectedCategories={selectedCategories}
-          selectedBrands={selectedBrands}
-          selectedModels={selectedModels}
-          selectedShoeSizes={selectedShoeSizes}
-          selectedClothingSizes={selectedClothingSizes}
-          selectedConditions={selectedConditions}
-          categories={filterData.categories}
-          brands={brandOptions}
-          modelsByBrand={filterData.modelsByBrand}
-          brandsByCategory={filterData.brandsByCategory}
-          availableShoeSizes={filterData.availableShoeSizes}
-          availableClothingSizes={filterData.availableClothingSizes}
-          availableConditions={filterData.availableConditions}
-          totalProducts={productsResult.total}
+      <section
+        className={
+          view === "list"
+            ? "px-3 py-8 sm:px-6 lg:px-10 lg:py-12"
+            : "px-3 py-12 sm:px-6 lg:px-10 lg:py-16"
+        }
+      >
+        <ProductGrid
+          products={productsResult.products}
+          storeHref={storeHref}
+          view={view}
         />
-      </div>
+      </section>
 
-      <div className="mt-10">
-        <StoreControls
-          total={productsResult.total}
-          page={productsResult.page}
-          pageCount={pageCount}
-          limit={productsResult.limit}
-          sort={filters.sort ?? "newest"}
-          showSortControls={false}
-        />
-      </div>
+      <StoreControls
+        total={productsResult.total}
+        page={productsResult.page}
+        pageCount={pageCount}
+        limit={productsResult.limit}
+        sort={filters.sort ?? "newest"}
+        view={view}
+        showSortControls={false}
+      />
     </div>
   );
 }

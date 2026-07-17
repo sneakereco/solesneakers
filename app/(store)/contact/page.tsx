@@ -1,86 +1,29 @@
-// app/(main)/contact/page.tsx
-import Image from "next/image";
-
 import { ContactForm } from "@/components/contact/ContactForm";
+import { SUPPORT_EMAIL } from "@/config/constants/contact";
 
 export default function ContactPage() {
   return (
-    <div className="max-w-7xl mx-auto px-4 pt-8 pb-16">
-      <h1 className="text-4xl font-bold text-white mb-4">Contact Us</h1>
-      <div className="text-zinc-400 mb-12 space-y-4">
-        <p>
-          Trying to sell sneakers, clothing, accessories, or anything you think we might
-          want? Reach out. We&apos;re always buying.
-        </p>
-        <p>
-          You can contact us through{" "}
-          <a href="#contact-form" className="text-red-400 hover:underline">
-            this contact form
-          </a>
-          , the{" "}
-          <a href="/account" className="text-red-400 hover:underline">
-            onsite messaging system
-          </a>
-          , by emailing us at{" "}
+    <div className="min-h-screen bg-[var(--storefront-surface)] px-5 pb-20 pt-12 text-black sm:px-8 sm:pb-28 lg:px-12">
+      <h1 className="text-center text-3xl font-normal uppercase tracking-[0.02em] sm:text-[2rem]">
+        Contact Us
+      </h1>
+
+      <section
+        className="storefront-contact-card mx-auto mt-14 w-full bg-white px-6 py-8 shadow-[0_2px_18px_rgba(0,0,0,0.1)] sm:px-8 sm:py-10"
+        style={{ maxWidth: "1180px" }}
+      >
+        <ContactForm source="contact_form" variant="storefront" />
+        <p className="mt-7 text-center text-sm text-zinc-800 sm:text-base">
+          All messages will be sent to{" "}
           <a
-            href="mailto:realdealholyspill@gmail.com"
-            className="text-red-400 hover:underline"
+            href={`mailto:${SUPPORT_EMAIL}`}
+            className="text-blue-600 underline underline-offset-2"
           >
-            realdealholyspill@gmail.com
-          </a>
-          , or by sending us a DM on Instagram at{" "}
-          <a
-            href="https://instagram.com/realdealkickzsc"
-            target="_blank"
-            rel="noopener noreferrer"
-            className="text-red-400 hover:underline"
-          >
-            @realdealkickzsc
+            {SUPPORT_EMAIL}
           </a>
           .
         </p>
-        <p>
-          Need help putting together a fit? We offer fit services too. Submit your size,
-          style, and any specific colors, shoes, or clothing you want included, and we
-          will build a full outfit for you. You purchase it, and we will ship everything
-          straight to you.
-        </p>
-        <p>Have questions or need anything else? Feel free to reach out.</p>
-      </div>
-
-      <div className="grid md:grid-cols-2 gap-12 items-stretch">
-        {/* Contact Form */}
-        <div className="h-full">
-          <ContactForm source="contact_form" />
-        </div>
-
-        <div className="hidden md:block">
-          {/* Image stack (matches the reference orientation) */}
-          <div className="relative h-full min-h-[420px] overflow-visible">
-            {/* Front / left card */}
-            <div className="absolute left-[8%] top-[6%] w-[64%] max-w-[340px] aspect-[3/4] border border-zinc-800 bg-black shadow-2xl -rotate-[12deg] overflow-hidden z-20">
-              <Image
-                src="/images/fits/fit-1.png"
-                alt="Outfit styling example 1"
-                fill
-                sizes="(min-width: 768px) 26vw, 70vw"
-                className="object-cover"
-              />
-            </div>
-
-            {/* Back / right card */}
-            <div className="absolute left-[40%] top-[20%] w-[58%] max-w-[320px] aspect-[3/4] border border-zinc-800 bg-black shadow-2xl rotate-[10deg] overflow-hidden z-10">
-              <Image
-                src="/images/fits/fit-2.png"
-                alt="Outfit styling example 2"
-                fill
-                sizes="(min-width: 768px) 24vw, 70vw"
-                className="object-cover"
-              />
-            </div>
-          </div>
-        </div>
-      </div>
+      </section>
     </div>
   );
 }

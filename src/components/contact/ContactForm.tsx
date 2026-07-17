@@ -10,6 +10,7 @@ type ContactFormSource = "contact_form" | "bug_report";
 
 type ContactFormProps = {
   source?: ContactFormSource;
+  variant?: "default" | "storefront";
   initialSubject?: string;
   initialMessage?: string;
   messagePlaceholder?: string;
@@ -17,6 +18,7 @@ type ContactFormProps = {
 
 export function ContactForm({
   source = "contact_form",
+  variant = "default",
   initialSubject = "",
   initialMessage = "",
   messagePlaceholder,
@@ -171,7 +173,10 @@ export function ContactForm({
       const payload = new FormData();
       payload.append("name", formData.name);
       payload.append("email", formData.email);
-      payload.append("subject", formData.subject);
+      payload.append(
+        "subject",
+        formData.subject || (variant === "storefront" ? "Website contact form" : ""),
+      );
       payload.append("message", formData.message);
       payload.append("source", source);
       attachments.forEach((file) => payload.append("attachments", file));
@@ -226,6 +231,13 @@ export function ContactForm({
     (source === "bug_report"
       ? "Share the steps, where it happened, and what you expected to see."
       : undefined);
+  const isStorefront = variant === "storefront";
+  const labelClassName = isStorefront
+    ? "mb-3 block text-sm font-semibold text-black"
+    : "mb-2 block text-sm font-semibold text-white";
+  const inputClassName = isStorefront
+    ? "storefront-contact-field w-full border border-zinc-300 bg-white px-4 py-4 text-base text-zinc-700 placeholder:text-zinc-500 focus:border-black focus:outline-none focus:ring-1 focus:ring-black"
+    : "w-full rounded border border-zinc-800/70 bg-zinc-900 px-4 py-3 text-white focus:border-zinc-600 focus:outline-none focus:ring-1 focus:ring-zinc-700";
 
   return (
     <form
@@ -233,121 +245,134 @@ export function ContactForm({
       onSubmit={(event) => {
         void handleSubmit(event);
       }}
-      className="space-y-6"
+      className={isStorefront ? "space-y-7" : "space-y-6"}
     >
       <div>
-        <label htmlFor="name" className="block text-sm font-semibold text-white mb-2">
-          Name <span className="text-red-500">*</span>
+        <label htmlFor="name" className={labelClassName}>
+          Name {!isStorefront && <span className="text-red-500">*</span>}
         </label>
         <input
           type="text"
           id="name"
           required
+          placeholder={isStorefront ? "Your Name" : undefined}
           value={formData.name}
           onChange={(e) => setFormData({ ...formData, name: e.target.value })}
-          className="w-full px-4 py-3 bg-zinc-900 border border-zinc-800/70 rounded text-white focus:outline-none focus:border-zinc-600 focus:ring-1 focus:ring-zinc-700"
+          className={inputClassName}
         />
       </div>
 
       <div>
-        <label htmlFor="email" className="block text-sm font-semibold text-white mb-2">
-          Email <span className="text-red-500">*</span>
+        <label htmlFor="email" className={labelClassName}>
+          Email {!isStorefront && <span className="text-red-500">*</span>}
         </label>
         <input
           type="email"
           id="email"
           required
+          placeholder={isStorefront ? "Your Email" : undefined}
           value={formData.email}
           onChange={(e) => setFormData({ ...formData, email: e.target.value })}
-          className="w-full px-4 py-3 bg-zinc-900 border border-zinc-800/70 rounded text-white focus:outline-none focus:border-zinc-600 focus:ring-1 focus:ring-zinc-700"
+          className={inputClassName}
         />
       </div>
 
-      <div>
-        <label htmlFor="subject" className="block text-sm font-semibold text-white mb-2">
-          Subject <span className="text-red-500">*</span>
-        </label>
-        <input
-          type="text"
-          id="subject"
-          required
-          value={formData.subject}
-          onChange={(e) => setFormData({ ...formData, subject: e.target.value })}
-          className="w-full px-4 py-3 bg-zinc-900 border border-zinc-800/70 rounded text-white focus:outline-none focus:border-zinc-600 focus:ring-1 focus:ring-zinc-700"
-        />
-      </div>
+      {!isStorefront && (
+        <div>
+          <label
+            htmlFor="subject"
+            className="block text-sm font-semibold text-white mb-2"
+          >
+            Subject <span className="text-red-500">*</span>
+          </label>
+          <input
+            type="text"
+            id="subject"
+            required
+            value={formData.subject}
+            onChange={(e) => setFormData({ ...formData, subject: e.target.value })}
+            className="w-full px-4 py-3 bg-zinc-900 border border-zinc-800/70 rounded text-white focus:outline-none focus:border-zinc-600 focus:ring-1 focus:ring-zinc-700"
+          />
+        </div>
+      )}
 
       <div>
-        <label htmlFor="message" className="block text-sm font-semibold text-white mb-2">
-          Message <span className="text-red-500">*</span>
+        <label htmlFor="message" className={labelClassName}>
+          Message {!isStorefront && <span className="text-red-500">*</span>}
         </label>
         <textarea
           id="message"
           required
-          rows={6}
+          rows={isStorefront ? 5 : 6}
           value={formData.message}
-          placeholder={resolvedPlaceholder}
+          placeholder={isStorefront ? "Your Message" : resolvedPlaceholder}
           onChange={(e) => setFormData({ ...formData, message: e.target.value })}
-          className="w-full px-4 py-3 bg-zinc-900 border border-zinc-800/70 rounded text-white focus:outline-none focus:border-zinc-600 focus:ring-1 focus:ring-zinc-700"
+          className={`${inputClassName} resize-y`}
         />
       </div>
 
-      <div>
-        <label
-          htmlFor="attachments"
-          className="block text-sm font-semibold text-white mb-2"
-        >
-          {attachmentsLabel}
-        </label>
-        <div
-          className={`rounded border border-dashed px-4 py-4 transition-colors ${
-            isDragging
-              ? "border-red-500/70 bg-red-500/5"
-              : "border-zinc-700 bg-zinc-900/40"
-          }`}
-          onDrop={handleDrop}
-          onDragOver={handleDragOver}
-          onDragLeave={handleDragLeave}
-        >
-          <input
-            id="attachments"
-            type="file"
-            accept={allowedTypes.join(",")}
-            multiple
-            onChange={(e) => handleAttachments(e.target.files)}
-            className="block w-full text-sm text-zinc-300 cursor-pointer file:mr-4 file:rounded file:border-0 file:bg-red-600 file:px-4 file:py-2 file:text-sm file:font-semibold file:text-white file:cursor-pointer hover:file:bg-red-700"
-          />
-          <p className="text-xs text-zinc-500 mt-2">{attachmentsHint}</p>
-          {attachmentError && (
-            <p className="text-xs text-red-400 mt-2">{attachmentError}</p>
-          )}
-          {attachments.length > 0 && (
-            <div className="mt-4 grid grid-cols-2 sm:grid-cols-3 gap-3">
-              {previews.map((preview, index) => (
-                <div key={`${preview.file.name}-${index}`} className="relative">
-                  <img
-                    src={preview.url}
-                    alt={preview.file.name}
-                    className="h-20 w-full object-cover rounded border border-zinc-800"
-                  />
-                  <button
-                    type="button"
-                    onClick={() => removeAttachment(index)}
-                    className="absolute top-2 right-2 rounded bg-black/70 px-2 py-1 text-[11px] text-white hover:bg-black"
-                  >
-                    Remove
-                  </button>
-                </div>
-              ))}
-            </div>
-          )}
+      {!isStorefront && (
+        <div>
+          <label
+            htmlFor="attachments"
+            className="block text-sm font-semibold text-white mb-2"
+          >
+            {attachmentsLabel}
+          </label>
+          <div
+            className={`rounded border border-dashed px-4 py-4 transition-colors ${
+              isDragging
+                ? "border-red-500/70 bg-red-500/5"
+                : "border-zinc-700 bg-zinc-900/40"
+            }`}
+            onDrop={handleDrop}
+            onDragOver={handleDragOver}
+            onDragLeave={handleDragLeave}
+          >
+            <input
+              id="attachments"
+              type="file"
+              accept={allowedTypes.join(",")}
+              multiple
+              onChange={(e) => handleAttachments(e.target.files)}
+              className="block w-full text-sm text-zinc-300 cursor-pointer file:mr-4 file:rounded file:border-0 file:bg-red-600 file:px-4 file:py-2 file:text-sm file:font-semibold file:text-white file:cursor-pointer hover:file:bg-red-700"
+            />
+            <p className="text-xs text-zinc-500 mt-2">{attachmentsHint}</p>
+            {attachmentError && (
+              <p className="text-xs text-red-400 mt-2">{attachmentError}</p>
+            )}
+            {attachments.length > 0 && (
+              <div className="mt-4 grid grid-cols-2 sm:grid-cols-3 gap-3">
+                {previews.map((preview, index) => (
+                  <div key={`${preview.file.name}-${index}`} className="relative">
+                    <img
+                      src={preview.url}
+                      alt={preview.file.name}
+                      className="h-20 w-full object-cover rounded border border-zinc-800"
+                    />
+                    <button
+                      type="button"
+                      onClick={() => removeAttachment(index)}
+                      className="absolute top-2 right-2 rounded bg-black/70 px-2 py-1 text-[11px] text-white hover:bg-black"
+                    >
+                      Remove
+                    </button>
+                  </div>
+                ))}
+              </div>
+            )}
+          </div>
         </div>
-      </div>
+      )}
 
       <button
         type="submit"
         disabled={status === "sending"}
-        className="w-full py-3 bg-red-600 hover:bg-red-700 text-white font-bold transition-colors disabled:opacity-50 cursor-pointer"
+        className={
+          isStorefront
+            ? "storefront-contact-field w-full cursor-pointer bg-black py-4 text-sm font-semibold uppercase text-white transition-colors hover:bg-zinc-800 disabled:opacity-50"
+            : "w-full cursor-pointer bg-red-600 py-3 font-bold text-white transition-colors hover:bg-red-700 disabled:opacity-50"
+        }
       >
         {status === "sending" ? "Sending..." : "Send Message"}
       </button>

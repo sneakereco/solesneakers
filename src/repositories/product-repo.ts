@@ -10,7 +10,16 @@ export interface ProductFilters {
   sizeShoe?: string[];
   sizeClothing?: string[];
   condition?: string[];
-  sort?: "newest" | "price_asc" | "price_desc" | "name_asc" | "name_desc";
+  priceMinCents?: number;
+  priceMaxCents?: number;
+  sort?:
+    | "relevance"
+    | "newest"
+    | "oldest"
+    | "price_asc"
+    | "price_desc"
+    | "name_asc"
+    | "name_desc";
   page?: number;
   limit?: number;
   stockStatus?: "in_stock" | "out_of_stock" | "archived" | "all";
@@ -84,6 +93,7 @@ type ImageInsert = TablesInsert<"product_images">;
 
 type TagInsert = TablesInsert<"tags">;
 const BULK_MUTATION_BATCH_SIZE = 100;
+const QUERY_PAGE_SIZE = 1000;
 
 // Helper types for query results
 type FilterDataRow = {
@@ -93,6 +103,7 @@ type FilterDataRow = {
 };
 
 type SizeAvailabilityRow = {
+  product_id: string;
   size_label: string | null;
   product?: {
     size_type?: string | null;
@@ -306,6 +317,9 @@ export class ProductRepository {
     const archivedStatus = filters.archivedStatus ?? "active";
     const offset = (page - 1) * limit;
     const isPriceSort = sort === "price_asc" || sort === "price_desc";
+    const hasPriceFilter =
+      typeof filters.priceMinCents === "number" ||
+      typeof filters.priceMaxCents === "number";
     const includeUnpublished = searchMode === "inventory";
     const nowIso = new Date().toISOString();
     const searchFields =
@@ -346,7 +360,12 @@ export class ProductRepository {
       // Build the base query with all filters
       let baseQuery = this.supabase
         .from("products")
-        .select("id, brand, name, model", { count: "exact" });
+        .select(
+          hasPriceFilter
+            ? "id, brand, name, model, product_variants!inner(id)"
+            : "id, brand, name, model",
+          { count: "exact" },
+        );
 
       baseQuery = baseQuery.eq("is_active", true);
       baseQuery = this.applyArchivedFilter(baseQuery, archivedStatus);
@@ -390,6 +409,21 @@ export class ProductRepository {
       if (Array.isArray(sizeProductIds)) {
         baseQuery = baseQuery.in("id", sizeProductIds);
       }
+      if (hasPriceFilter) {
+        baseQuery = baseQuery.gt("product_variants.stock", 0);
+        if (typeof filters.priceMinCents === "number") {
+          baseQuery = baseQuery.gte(
+            "product_variants.sale_price_cents",
+            filters.priceMinCents,
+          );
+        }
+        if (typeof filters.priceMaxCents === "number") {
+          baseQuery = baseQuery.lte(
+            "product_variants.sale_price_cents",
+            filters.priceMaxCents,
+          );
+        }
+      }
 
       // Determine if we have a search query
       const hasSearchQuery = Boolean(filters.q?.trim());
@@ -401,8 +435,12 @@ export class ProductRepository {
       if (!hasSearchQuery) {
         // No search - use normal sorting and pagination
         switch (sort) {
+          case "relevance":
           case "newest":
             query = query.order("created_at", { ascending: false });
+            break;
+          case "oldest":
+            query = query.order("created_at", { ascending: true });
             break;
           case "name_asc":
             query = query
@@ -420,7 +458,21 @@ export class ProductRepository {
         // For searches, fetch more results to score and rank them
         // Fetch up to 500 results to ensure good ranking
         const fetchLimit = 500;
-        query = query.order("created_at", { ascending: false }).range(0, fetchLimit - 1);
+        switch (sort) {
+          case "oldest":
+            query = query.order("created_at", { ascending: true });
+            break;
+          case "name_asc":
+            query = query.order("name", { ascending: true });
+            break;
+          case "name_desc":
+            query = query.order("name", { ascending: false });
+            break;
+          default:
+            query = query.order("created_at", { ascending: false });
+            break;
+        }
+        query = query.range(0, fetchLimit - 1);
       }
 
       const { data, error, count } = await query;
@@ -428,17 +480,22 @@ export class ProductRepository {
         throw error;
       }
 
-      const candidateRows = (data ?? []) as SearchableProductRow[];
-      ids = hasSearchQuery
-        ? candidateRows
-            .map((product) => ({
-              id: product.id,
-              score: this.calculateSearchRelevance(product, filters.q, searchFields),
-            }))
-            .sort((left, right) => right.score - left.score)
-            .slice(offset, offset + limit)
-            .map((candidate) => candidate.id)
-        : candidateRows.map((row) => row.id);
+      // Supabase's select-string parser cannot infer the conditional inner relation,
+      // but the product columns retain this stable runtime shape.
+      const candidateRows = (data ?? []) as unknown as SearchableProductRow[];
+      ids =
+        hasSearchQuery && sort === "relevance"
+          ? candidateRows
+              .map((product) => ({
+                id: product.id,
+                score: this.calculateSearchRelevance(product, filters.q, searchFields),
+              }))
+              .sort((left, right) => right.score - left.score)
+              .slice(offset, offset + limit)
+              .map((candidate) => candidate.id)
+          : hasSearchQuery
+            ? candidateRows.slice(offset, offset + limit).map((row) => row.id)
+            : candidateRows.map((row) => row.id);
       total = count ?? 0;
       skuTotal =
         searchMode === "inventory"
@@ -510,10 +567,7 @@ export class ProductRepository {
     const details = detailBatches.flat();
 
     const byId = new Map(
-      details.map((raw) => [
-        raw.id,
-        this.transformProduct(raw as ProductWithRelations),
-      ]),
+      details.map((raw) => [raw.id, this.transformProduct(raw as ProductWithRelations)]),
     );
 
     const products = ids
@@ -1165,22 +1219,38 @@ export class ProductRepository {
 
   async listFilterData(opts?: { includeOutOfStock?: boolean }): Promise<FilterDataRow[]> {
     const includeOutOfStock = Boolean(opts?.includeOutOfStock);
-    let query = this.supabase
-      .from("products")
-      .select("brand, model, category")
-      .eq("is_active", true)
-      .lte("go_live_at", new Date().toISOString());
+    const rows: FilterDataRow[] = [];
+    let rangeStart = 0;
 
-    if (!includeOutOfStock) {
-      query = query.eq("is_out_of_stock", false);
+    while (true) {
+      let query = this.supabase
+        .from("products")
+        .select("id, brand, model, category")
+        .eq("is_active", true)
+        .lte("go_live_at", new Date().toISOString())
+        .order("id", { ascending: true });
+
+      if (!includeOutOfStock) {
+        query = query.eq("is_out_of_stock", false);
+      }
+
+      const { data, error } = await query.range(
+        rangeStart,
+        rangeStart + QUERY_PAGE_SIZE - 1,
+      );
+      if (error) {
+        throw error;
+      }
+
+      const batch = (data ?? []) as FilterDataRow[];
+      rows.push(...batch);
+      if (batch.length < QUERY_PAGE_SIZE) {
+        break;
+      }
+      rangeStart += QUERY_PAGE_SIZE;
     }
 
-    const { data, error } = await query.limit(2000);
-
-    if (error) {
-      throw error;
-    }
-    return (data ?? []).map((row) => ({
+    return rows.map((row) => ({
       brand: row.brand ?? null,
       model: row.model ?? null,
       category: row.category ?? null,
@@ -1189,64 +1259,99 @@ export class ProductRepository {
 
   async listAvailableSizes(filters?: ProductFilters) {
     const includeOutOfStock = Boolean(filters?.includeOutOfStock);
-    let query = this.supabase
-      .from("product_variants")
-      .select("size_label, product:products!inner(size_type, is_active, is_out_of_stock)")
-      .gt("stock", 0)
-      .eq("product.is_active", true)
-      .lte("product.go_live_at", new Date().toISOString());
+    const rows: SizeAvailabilityRow[] = [];
+    let rangeStart = 0;
 
-    if (filters?.tenantId) {
-      query = query.eq("product.tenant_id", filters.tenantId);
+    while (true) {
+      let query = this.supabase
+        .from("product_variants")
+        .select(
+          "id, product_id, size_label, product:products!inner(size_type, is_active, is_out_of_stock)",
+        )
+        .gt("stock", 0)
+        .eq("product.is_active", true)
+        .lte("product.go_live_at", new Date().toISOString())
+        .order("id", { ascending: true });
+
+      if (filters?.tenantId) {
+        query = query.eq("product.tenant_id", filters.tenantId);
+      }
+
+      if (filters?.stockStatus === "out_of_stock") {
+        query = query.eq("product.is_out_of_stock", true);
+      } else if (filters?.stockStatus === "in_stock") {
+        query = query.eq("product.is_out_of_stock", false);
+      } else if (!includeOutOfStock) {
+        query = query.eq("product.is_out_of_stock", false);
+      }
+
+      query = this.applyTextSearch(query, filters?.q, this.storefrontSearchFields, {
+        foreignTable: "product",
+      });
+
+      if (filters?.category?.length) {
+        query = query.in("product.category", filters.category);
+      }
+      if (filters?.brand?.length) {
+        query = query.in("product.brand", filters.brand);
+      }
+      if (filters?.model?.length) {
+        query = query.in("product.model", filters.model);
+      }
+      if (filters?.condition?.length) {
+        query = query.in("product.condition", filters.condition);
+      }
+
+      const { data, error } = await query.range(
+        rangeStart,
+        rangeStart + QUERY_PAGE_SIZE - 1,
+      );
+      if (error) {
+        throw error;
+      }
+
+      const batch = (data ?? []) as SizeAvailabilityRow[];
+      rows.push(...batch);
+      if (batch.length < QUERY_PAGE_SIZE) {
+        break;
+      }
+      rangeStart += QUERY_PAGE_SIZE;
     }
 
-    if (filters?.stockStatus === "out_of_stock") {
-      query = query.eq("product.is_out_of_stock", true);
-    } else if (filters?.stockStatus === "in_stock") {
-      query = query.eq("product.is_out_of_stock", false);
-    } else if (!includeOutOfStock) {
-      query = query.eq("product.is_out_of_stock", false);
-    }
+    const shoeProductsBySize = new Map<string, Set<string>>();
+    const clothingProductsBySize = new Map<string, Set<string>>();
 
-    query = this.applyTextSearch(query, filters?.q, this.storefrontSearchFields, {
-      foreignTable: "product",
-    });
-
-    if (filters?.category?.length) {
-      query = query.in("product.category", filters.category);
-    }
-    if (filters?.brand?.length) {
-      query = query.in("product.brand", filters.brand);
-    }
-    if (filters?.model?.length) {
-      query = query.in("product.model", filters.model);
-    }
-    if (filters?.condition?.length) {
-      query = query.in("product.condition", filters.condition);
-    }
-
-    const { data, error } = await query.limit(5000);
-
-    if (error) {
-      throw error;
-    }
-
-    const shoe = new Set<string>();
-    const clothing = new Set<string>();
-
-    for (const row of (data ?? []) as SizeAvailabilityRow[]) {
+    for (const row of rows) {
       const sizeLabel = row.size_label?.trim();
       if (!sizeLabel) {
         continue;
       }
-      if (row.product?.size_type === "shoe") {
-        shoe.add(sizeLabel);
-      } else if (row.product?.size_type === "clothing") {
-        clothing.add(sizeLabel);
+      const target =
+        row.product?.size_type === "shoe"
+          ? shoeProductsBySize
+          : row.product?.size_type === "clothing"
+            ? clothingProductsBySize
+            : null;
+      if (!target) {
+        continue;
       }
+      const productIds = target.get(sizeLabel) ?? new Set<string>();
+      productIds.add(row.product_id);
+      target.set(sizeLabel, productIds);
     }
 
-    return { shoe: Array.from(shoe), clothing: Array.from(clothing) };
+    const shoe = Array.from(shoeProductsBySize.keys());
+    const clothing = Array.from(clothingProductsBySize.keys());
+    return {
+      shoe,
+      clothing,
+      shoeCounts: Object.fromEntries(
+        shoe.map((size) => [size, shoeProductsBySize.get(size)?.size ?? 0]),
+      ),
+      clothingCounts: Object.fromEntries(
+        clothing.map((size) => [size, clothingProductsBySize.get(size)?.size ?? 0]),
+      ),
+    };
   }
 
   async listAvailableConditions(filters?: ProductFilters) {
@@ -1514,17 +1619,22 @@ export class ProductRepository {
       filters.sizeShoe?.length || filters.sizeClothing?.length,
     );
 
-    let sizeProductIds: string[] | null = null;
-    if (hasSizeFilters) {
-      sizeProductIds = await this.listProductIdsForSizes(filters);
-      if (Array.isArray(sizeProductIds) && sizeProductIds.length === 0) {
-        return { ids: [], total: 0 };
-      }
+    const sizeProductIds = hasSizeFilters
+      ? await this.listProductIdsForSizes(filters)
+      : null;
+    if (Array.isArray(sizeProductIds) && sizeProductIds.length === 0) {
+      return { ids: [], total: 0 };
     }
 
+    const hasPriceFilter =
+      typeof filters.priceMinCents === "number" ||
+      typeof filters.priceMaxCents === "number";
     let countQuery = this.supabase
       .from("products")
-      .select("id", { count: "exact", head: true })
+      .select(hasPriceFilter ? "id, product_variants!inner(id)" : "id", {
+        count: "exact",
+        head: true,
+      })
       .eq("is_active", true);
 
     if (!includeUnpublished) {
@@ -1563,6 +1673,21 @@ export class ProductRepository {
     if (Array.isArray(sizeProductIds)) {
       countQuery = countQuery.in("id", sizeProductIds);
     }
+    if (hasPriceFilter) {
+      countQuery = countQuery.gt("product_variants.stock", 0);
+      if (typeof filters.priceMinCents === "number") {
+        countQuery = countQuery.gte(
+          "product_variants.sale_price_cents",
+          filters.priceMinCents,
+        );
+      }
+      if (typeof filters.priceMaxCents === "number") {
+        countQuery = countQuery.lte(
+          "product_variants.sale_price_cents",
+          filters.priceMaxCents,
+        );
+      }
+    }
 
     const { count: total, error: countError } = await countQuery;
     if (countError) {
@@ -1592,6 +1717,13 @@ export class ProductRepository {
 
       if (Array.isArray(sizeProductIds)) {
         query = query.in("product_id", sizeProductIds);
+      }
+
+      if (typeof filters.priceMinCents === "number") {
+        query = query.gte("sale_price_cents", filters.priceMinCents);
+      }
+      if (typeof filters.priceMaxCents === "number") {
+        query = query.lte("sale_price_cents", filters.priceMaxCents);
       }
 
       // Tenant scoping
@@ -1675,26 +1807,38 @@ export class ProductRepository {
     const productIds = new Set<string>();
 
     for (const group of selectedSizeGroups) {
-      let query = this.supabase
-        .from("product_variants")
-        .select("product_id, product:products!inner(size_type)")
-        .eq("product.size_type", group.sizeType)
-        .in("size_label", group.labels)
-        .gt("stock", 0);
+      let rangeStart = 0;
 
-      if (filters.tenantId) {
-        query = query.eq("tenant_id", filters.tenantId);
-      }
+      while (true) {
+        let query = this.supabase
+          .from("product_variants")
+          .select("id, product_id, product:products!inner(size_type)")
+          .eq("product.size_type", group.sizeType)
+          .in("size_label", group.labels)
+          .gt("stock", 0)
+          .order("id", { ascending: true });
 
-      const { data, error } = await query;
-      if (error) {
-        throw error;
-      }
-
-      for (const row of data ?? []) {
-        if (row.product_id) {
-          productIds.add(row.product_id);
+        if (filters.tenantId) {
+          query = query.eq("tenant_id", filters.tenantId);
         }
+
+        const { data, error } = await query.range(
+          rangeStart,
+          rangeStart + QUERY_PAGE_SIZE - 1,
+        );
+        if (error) {
+          throw error;
+        }
+
+        for (const row of data ?? []) {
+          if (row.product_id) {
+            productIds.add(row.product_id);
+          }
+        }
+        if ((data?.length ?? 0) < QUERY_PAGE_SIZE) {
+          break;
+        }
+        rangeStart += QUERY_PAGE_SIZE;
       }
     }
 

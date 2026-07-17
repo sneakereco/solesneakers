@@ -39,6 +39,14 @@ body:has([data-auth-shell]) {
   mix-blend-mode: multiply;
 }
 
+.storefront-contact-card {
+  border-radius: 0.75rem !important;
+}
+
+.storefront-contact-field {
+  border-radius: 0.25rem !important;
+}
+
 @keyframes search-drop-in {
   from {
     opacity: 0;

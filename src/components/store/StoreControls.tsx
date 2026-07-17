@@ -1,12 +1,8 @@
-// src/components/store/StoreControls.tsx
-// OPTIMIZED VERSION - Pagination + Sort controls
 "use client";
 
-import { useMemo, useCallback, useTransition } from "react";
+import { useEffect, useRef, useState, useTransition } from "react";
 import { useRouter, useSearchParams } from "next/navigation";
-import { ChevronLeft, ChevronRight } from "lucide-react";
-
-import { RdkSelect } from "@/components/ui/Select";
+import { ChevronDown, ChevronLeft, ChevronRight, Grid2X2, List } from "lucide-react";
 
 interface StoreControlsProps {
   total: number;
@@ -14,222 +10,211 @@ interface StoreControlsProps {
   pageCount: number;
   limit: number;
   sort: string;
+  view?: "grid" | "list";
   showSortControls?: boolean;
   showPagination?: boolean;
 }
 
-const PAGE_SIZE_OPTIONS = [20, 40, 60, 100];
 const MAX_PAGE_BUTTONS = 5;
 const SORT_OPTIONS = [
-  { value: "newest", label: "Newest" },
-  { value: "price_asc", label: "Price: Low to High" },
-  { value: "price_desc", label: "Price: High to Low" },
+  { value: "relevance", label: "Relevance" },
   { value: "name_asc", label: "Title: A-Z" },
   { value: "name_desc", label: "Title: Z-A" },
+  { value: "oldest", label: "Date: Old to New" },
+  { value: "newest", label: "Date: New to Old" },
+  { value: "price_asc", label: "Price: Low to High" },
+  { value: "price_desc", label: "Price: High to Low" },
 ];
 
 export function StoreControls({
   total,
   page,
   pageCount,
-  limit,
   sort,
+  view = "grid",
   showSortControls = true,
   showPagination = true,
 }: StoreControlsProps) {
   const router = useRouter();
   const searchParams = useSearchParams();
-
-  // OPTIMIZATION: Use useTransition for smoother page transitions
+  const sortContainerRef = useRef<HTMLDivElement>(null);
+  const [sortOpen, setSortOpen] = useState(false);
   const [isPending, startTransition] = useTransition();
 
-  // OPTIMIZATION: Memoize calculations
-  const showingStart = useMemo(
-    () => (total === 0 ? 0 : (page - 1) * limit + 1),
-    [total, page, limit],
-  );
+  useEffect(() => {
+    if (!sortOpen) {
+      return;
+    }
 
-  const showingEnd = useMemo(
-    () => (total === 0 ? 0 : Math.min(page * limit, total)),
-    [total, page, limit],
-  );
+    const handlePointerDown = (event: PointerEvent) => {
+      if (!sortContainerRef.current?.contains(event.target as Node)) {
+        setSortOpen(false);
+      }
+    };
+    const handleKeyDown = (event: KeyboardEvent) => {
+      if (event.key === "Escape") {
+        setSortOpen(false);
+      }
+    };
 
-  const pageNumbers = useMemo(() => {
+    window.addEventListener("pointerdown", handlePointerDown);
+    window.addEventListener("keydown", handleKeyDown);
+    return () => {
+      window.removeEventListener("pointerdown", handlePointerDown);
+      window.removeEventListener("keydown", handleKeyDown);
+    };
+  }, [sortOpen]);
+
+  const updateParams = (updates: Record<string, string | number>) => {
+    const params = new URLSearchParams(searchParams.toString());
+    Object.entries(updates).forEach(([key, value]) => params.set(key, String(value)));
+
+    startTransition(() => {
+      router.push(`/store?${params.toString()}`);
+    });
+  };
+
+  const pageNumbers = (() => {
     if (pageCount <= 1) {
       return [1];
     }
-
     const half = Math.floor(MAX_PAGE_BUTTONS / 2);
     let start = Math.max(1, page - half);
-    let end = Math.min(pageCount, start + MAX_PAGE_BUTTONS - 1);
-
+    const end = Math.min(pageCount, start + MAX_PAGE_BUTTONS - 1);
     if (end - start < MAX_PAGE_BUTTONS - 1) {
       start = Math.max(1, end - MAX_PAGE_BUTTONS + 1);
     }
+    return Array.from({ length: end - start + 1 }, (_, index) => start + index);
+  })();
 
-    const pages: number[] = [];
-    for (let i = start; i <= end; i += 1) {
-      pages.push(i);
-    }
-    return pages;
-  }, [page, pageCount]);
-
-  // OPTIMIZATION: Memoize page size options
-  const pageSizeOptions = useMemo(
-    () =>
-      PAGE_SIZE_OPTIONS.map((size) => ({
-        value: String(size),
-        label: String(size),
-      })),
-    [],
-  );
-
-  // OPTIMIZATION: Use useCallback for event handlers
-  const updateParams = useCallback(
-    (updates: Partial<{ page: number; limit: number; sort: string }>) => {
-      const params = new URLSearchParams(searchParams.toString());
-
-      if (updates.sort) {
-        params.set("sort", updates.sort);
-      }
-      if (typeof updates.limit === "number") {
-        params.set("limit", String(updates.limit));
-      }
-      if (typeof updates.page === "number") {
-        params.set("page", String(updates.page));
-      }
-
-      startTransition(() => {
-        router.push(`/store?${params.toString()}`);
-      });
-    },
-    [router, searchParams, startTransition],
-  );
-
-  const handleSortChange = useCallback(
-    (value: string) => {
-      updateParams({ sort: value, page: 1 });
-    },
-    [updateParams],
-  );
-
-  const handleLimitChange = useCallback(
-    (value: number) => {
-      updateParams({ limit: value, page: 1 });
-    },
-    [updateParams],
-  );
-
-  const goToPage = useCallback(
-    (nextPage: number) => {
-      if (nextPage < 1 || nextPage > pageCount || nextPage === page) {
-        return;
-      }
-      updateParams({ page: nextPage });
-    },
-    [page, pageCount, updateParams],
-  );
+  const selectedSort =
+    SORT_OPTIONS.find((option) => option.value === sort) ?? SORT_OPTIONS[4];
 
   return (
-    <div className={`mb-6 space-y-4 ${isPending ? "opacity-60" : ""}`}>
+    <>
       {showSortControls && (
-        <div className="flex flex-wrap items-center justify-between gap-4">
-          <div className="text-gray-400 text-[12px] sm:text-sm">
-            {total === 0
-              ? "No products found"
-              : `Showing ${showingStart}-${showingEnd} of ${total}`}
-          </div>
-          <div className="flex items-center gap-1.5 flex-nowrap">
-            <label className="text-gray-400 text-[11px] sm:text-sm whitespace-nowrap leading-none">
-              Sort by:
-            </label>
-            <RdkSelect
-              value={sort}
-              onChange={handleSortChange}
-              options={SORT_OPTIONS}
-              className="w-[110px] sm:min-w-[160px]"
-              buttonClassName="h-7 px-2 text-[11px] sm:text-sm"
-              menuClassName="text-[11px] sm:text-sm"
-            />
-            <label className="text-gray-400 text-[11px] sm:text-sm whitespace-nowrap leading-none">
-              Per page:
-            </label>
-            <RdkSelect
-              value={String(limit)}
-              onChange={(value) => handleLimitChange(Number(value))}
-              options={pageSizeOptions}
-              className="w-[72px] sm:min-w-[90px]"
-              buttonClassName="h-7 px-1.5 text-[11px] sm:text-sm gap-1"
-              menuClassName="text-[11px] sm:text-sm"
-            />
-          </div>
-        </div>
-      )}
-
-      {showPagination && (
-        <div className="flex flex-col sm:flex-row sm:items-center sm:justify-between gap-3">
-          {/* Controls row */}
-          <div className="flex items-center gap-2 min-w-0">
-            {/* Prev */}
-            <button
-              type="button"
-              onClick={() => goToPage(page - 1)}
-              disabled={page <= 1 || isPending}
-              className="inline-flex items-center gap-1 border border-zinc-800/70 px-2.5 py-2 text-xs text-zinc-300 hover:text-white hover:border-red-600/40 disabled:opacity-40 disabled:cursor-not-allowed transition shrink-0"
-              aria-label="Previous page"
-            >
-              <ChevronLeft className="w-4 h-4" />
-              <span className="hidden sm:inline">Prev</span>
-            </button>
-
-            {/* Page numbers (scrolls on mobile instead of overflowing) */}
-            <div
-              className="flex-1 min-w-0 overflow-x-auto [-ms-overflow-style:none] [scrollbar-width:none] [&::-webkit-scrollbar]:hidden"
-              aria-label="Pagination pages"
-            >
-              <div className="flex items-center gap-1 w-max px-0.5">
-                {pageNumbers.map((pageNumber) => (
-                  <button
-                    key={pageNumber}
-                    type="button"
-                    onClick={() => goToPage(pageNumber)}
-                    disabled={isPending}
-                    aria-current={pageNumber === page ? "page" : undefined}
-                    aria-label={`Page ${pageNumber}`}
-                    className={`h-8 w-8 sm:h-9 sm:w-9 text-xs border transition shrink-0 ${
-                      pageNumber === page
-                        ? "border-red-500 text-white"
-                        : "border-zinc-800/70 text-zinc-300 hover:text-white hover:border-red-600/40"
-                    } disabled:opacity-40 disabled:cursor-not-allowed`}
-                  >
-                    {pageNumber}
-                  </button>
-                ))}
-              </div>
+        <div
+          className={`sticky z-40 border-y border-zinc-300 bg-[var(--storefront-surface)] transition-[top,opacity] duration-300 ease-out ${isPending ? "opacity-60" : ""}`}
+          style={{ top: "var(--rdk-visible-header-height, 0px)" }}
+          data-storefront-toolbar
+        >
+          <div className="grid min-h-14 grid-cols-[96px_1fr] md:grid-cols-[112px_1fr_224px]">
+            <div className="flex items-center justify-center gap-5 border-r border-zinc-300">
+              <button
+                type="button"
+                onClick={() => updateParams({ view: "grid", page: 1 })}
+                className={view === "grid" ? "text-black" : "text-zinc-400"}
+                aria-label="Grid view"
+                aria-pressed={view === "grid"}
+              >
+                <Grid2X2
+                  className="h-5 w-5"
+                  fill={view === "grid" ? "currentColor" : "none"}
+                />
+              </button>
+              <button
+                type="button"
+                onClick={() => updateParams({ view: "list", page: 1 })}
+                className={view === "list" ? "text-black" : "text-zinc-400"}
+                aria-label="List view"
+                aria-pressed={view === "list"}
+              >
+                <List className="h-6 w-6" />
+              </button>
             </div>
 
-            {/* Next */}
-            <button
-              type="button"
-              onClick={() => goToPage(page + 1)}
-              disabled={page >= pageCount || isPending}
-              className="inline-flex items-center gap-1 border border-zinc-800/70 px-2.5 py-2 text-xs text-zinc-300 hover:text-white hover:border-red-600/40 disabled:opacity-40 disabled:cursor-not-allowed transition shrink-0"
-              aria-label="Next page"
-            >
-              <span className="hidden sm:inline">Next</span>
-              <ChevronRight className="w-4 h-4" />
-            </button>
-          </div>
+            <div className="hidden items-center justify-center text-[0.72rem] uppercase text-zinc-600 md:flex">
+              {total} {total === 1 ? "Product" : "Products"}
+            </div>
 
-          {/* Page count label (never forces overflow on mobile) */}
-          <div className="text-[11px] sm:text-xs uppercase tracking-[0.2em] text-zinc-500">
-            Page {page} of {pageCount}
+            <div
+              ref={sortContainerRef}
+              className="relative md:border-l md:border-zinc-300"
+            >
+              <button
+                type="button"
+                onClick={() => setSortOpen((open) => !open)}
+                className="flex h-full min-h-14 w-full items-center justify-center gap-2 px-4 text-[0.7rem] uppercase text-zinc-600"
+                aria-expanded={sortOpen}
+                aria-haspopup="listbox"
+              >
+                <span>{selectedSort.label}</span>
+                <ChevronDown
+                  className={`h-3.5 w-3.5 transition-transform ${sortOpen ? "rotate-180" : ""}`}
+                />
+              </button>
+
+              {sortOpen && (
+                <div
+                  className="absolute right-0 top-full z-40 max-h-[25rem] w-[min(19rem,100vw)] overflow-y-auto border border-zinc-300 bg-white py-2 shadow-lg"
+                  role="listbox"
+                  aria-label="Sort products"
+                >
+                  {SORT_OPTIONS.map((option) => (
+                    <button
+                      key={option.value}
+                      type="button"
+                      onClick={() => {
+                        setSortOpen(false);
+                        updateParams({ sort: option.value, page: 1 });
+                      }}
+                      className={`block w-full px-5 py-3 text-left text-sm transition-colors hover:bg-zinc-100 ${
+                        option.value === sort ? "font-medium text-black" : "text-zinc-600"
+                      }`}
+                      role="option"
+                      aria-selected={option.value === sort}
+                    >
+                      {option.label}
+                    </button>
+                  ))}
+                </div>
+              )}
+            </div>
           </div>
         </div>
       )}
 
-      {/* OPTIMIZATION: Show loading indicator */}
-      {isPending && <div className="text-xs text-gray-500 text-center">Loading...</div>}
-    </div>
+      {showPagination && pageCount > 1 && (
+        <nav
+          className={`flex flex-wrap items-center justify-center gap-2 py-10 transition-opacity ${isPending ? "opacity-60" : ""}`}
+          aria-label="Product pagination"
+        >
+          <button
+            type="button"
+            onClick={() => updateParams({ page: page - 1 })}
+            disabled={page <= 1 || isPending}
+            className="inline-flex h-10 items-center gap-1 border border-zinc-300 px-4 text-xs uppercase text-zinc-700 transition-colors hover:border-black hover:text-black disabled:cursor-not-allowed disabled:opacity-35"
+          >
+            <ChevronLeft className="h-4 w-4" />
+            Previous
+          </button>
+          {pageNumbers.map((pageNumber) => (
+            <button
+              key={pageNumber}
+              type="button"
+              onClick={() => updateParams({ page: pageNumber })}
+              disabled={isPending}
+              aria-current={pageNumber === page ? "page" : undefined}
+              className={`h-10 w-10 border text-sm transition-colors ${
+                pageNumber === page
+                  ? "border-black bg-black text-white"
+                  : "border-zinc-300 text-zinc-700 hover:border-black"
+              }`}
+            >
+              {pageNumber}
+            </button>
+          ))}
+          <button
+            type="button"
+            onClick={() => updateParams({ page: page + 1 })}
+            disabled={page >= pageCount || isPending}
+            className="inline-flex h-10 items-center gap-1 border border-zinc-300 px-4 text-xs uppercase text-zinc-700 transition-colors hover:border-black hover:text-black disabled:cursor-not-allowed disabled:opacity-35"
+          >
+            Next
+            <ChevronRight className="h-4 w-4" />
+          </button>
+        </nav>
+      )}
+    </>
   );
 }
