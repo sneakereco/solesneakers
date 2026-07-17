@@ -1,6 +1,6 @@
 // src/config/pickup.ts
 
-export const PICKUP_LOCATION_SUMMARY = "Simpsonville, SC";
+export const PICKUP_LOCATION_SUMMARY = "Winston-Salem, NC";
 
 export const PICKUP_INSTRUCTIONS = [
   "Pickup is by appointment only. Reply to this email to schedule a time.",

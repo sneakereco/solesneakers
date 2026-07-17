@@ -1,5 +1,6 @@
 import type { ReactNode } from "react";
 
+import { Footer } from "@/components/shell/Footer";
 import { StorefrontHeader } from "@/components/shell/StorefrontHeader";
 
 type AuthShellProps = {
@@ -18,6 +19,7 @@ export default function AuthShell({ children }: AuthShellProps) {
           {children}
         </div>
       </main>
+      <Footer />
     </div>
   );
 }

@@ -59,7 +59,7 @@ export function Navbar({
     "inline-flex whitespace-nowrap text-xs font-semibold uppercase text-zinc-700 transition-all duration-150 hover:text-black hover:font-bold";
 
   return (
-    <nav className="h-28 w-full border-b border-zinc-200 bg-white text-black sm:h-32">
+    <nav className="h-28 w-full border-b border-zinc-200 bg-[var(--storefront-surface)] text-black sm:h-32">
       <div className="relative h-full px-5 sm:px-8 lg:px-14">
         <div className="absolute left-5 top-1/2 -translate-y-1/2 sm:left-8 lg:left-14">
           <button

@@ -62,7 +62,8 @@ export function ScrollHeader({
   return (
     <header
       ref={headerRef}
-      className={`fixed top-0 left-0 right-0 z-50 bg-white transition-transform duration-300 ease-out ${
+      data-storefront-header
+      className={`fixed top-0 left-0 right-0 z-50 bg-[var(--storefront-surface)] transition-transform duration-300 ease-out ${
         isVisible ? "translate-y-0" : "-translate-y-full"
       }`}
     >
