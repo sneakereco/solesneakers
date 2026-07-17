@@ -6,6 +6,7 @@
 :root {
   --background: #ffffff;
   --foreground: #000000;
+  --auth-surface: #f8f8f6;
   color-scheme: light;
 }
 
@@ -16,14 +17,14 @@ body {
 }
 
 body:has([data-auth-shell]) {
-  background: #f8f8f6 !important;
+  background: var(--auth-surface) !important;
   color: #000000 !important;
   color-scheme: light;
 }
 
 [data-auth-shell] {
   min-height: 100vh;
-  background: #f8f8f6 !important;
+  background: var(--auth-surface) !important;
   color: #000000 !important;
   color-scheme: light;
   forced-color-adjust: none;
@@ -32,6 +33,15 @@ body:has([data-auth-shell]) {
 [data-auth-content] input {
   background: #ffffff !important;
   color: #27272a !important;
+}
+
+[data-auth-shell] > header,
+[data-auth-shell] > header nav {
+  background-color: var(--auth-surface);
+}
+
+[data-auth-shell] > header img[alt="Sole Sneakers"] {
+  mix-blend-mode: multiply;
 }
 
 @keyframes search-drop-in {
