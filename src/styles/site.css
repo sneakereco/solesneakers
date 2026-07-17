@@ -64,6 +64,26 @@ body:has([data-auth-shell]) {
   }
 }
 
+@keyframes store-menu-drawer-in {
+  from {
+    transform: translateX(-100%);
+  }
+  to {
+    transform: translateX(0);
+  }
+}
+
+@keyframes store-menu-panel-in {
+  from {
+    opacity: 0;
+    transform: translateX(-1rem);
+  }
+  to {
+    opacity: 1;
+    transform: translateX(0);
+  }
+}
+
 .search-drop-panel {
   animation: search-drop-in 180ms ease-out both;
 }
@@ -72,9 +92,19 @@ body:has([data-auth-shell]) {
   animation: search-backdrop-in 180ms ease-out both;
 }
 
+.store-menu-drawer {
+  animation: store-menu-drawer-in 240ms ease-out both;
+}
+
+.store-menu-panel {
+  animation: store-menu-panel-in 180ms ease-out both;
+}
+
 @media (prefers-reduced-motion: reduce) {
   .search-drop-panel,
-  .search-overlay-backdrop {
+  .search-overlay-backdrop,
+  .store-menu-drawer,
+  .store-menu-panel {
     animation: none;
   }
 }

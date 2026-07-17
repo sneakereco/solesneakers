@@ -1,0 +1,365 @@
+"use client";
+
+import { useEffect, useEffectEvent, useRef, useState } from "react";
+import { createPortal } from "react-dom";
+import Link from "next/link";
+import { ChevronLeft, ChevronRight, Minus, Plus, X } from "lucide-react";
+
+import {
+  CLOTHING_ALPHA_SIZES,
+  JEAN_SIZES,
+  SHOE_SIZE_GROUPS,
+} from "@/config/constants/sizes";
+
+type MenuPanel = "brand" | "size" | "category";
+
+type StoreMenuDrawerProps = {
+  isOpen: boolean;
+  onClose: () => void;
+};
+
+type SizeOption = {
+  label: string;
+  value: string;
+};
+
+const CATEGORY_LINKS = [
+  { label: "Sneakers", value: "sneakers" },
+  { label: "Clothing", value: "clothing" },
+  { label: "Accessories", value: "accessories" },
+  { label: "Electronics", value: "electronics" },
+];
+
+const CLOTHING_LABELS: Record<string, string> = {
+  XXS: "XX-Small",
+  XS: "X-Small",
+  SMALL: "Small",
+  MEDIUM: "Medium",
+  LARGE: "Large",
+  XL: "X-Large",
+  "2XL": "XX-Large",
+  "3XL": "XXX-Large",
+};
+
+const buildStoreHref = (params: Record<string, string>) => {
+  const searchParams = new URLSearchParams(params);
+  const query = searchParams.toString();
+  return query ? `/store?${query}` : "/store";
+};
+
+const getShoeOptions = (sizes: readonly string[], pattern: RegExp): SizeOption[] =>
+  sizes.flatMap((value) => {
+    const match = value.match(pattern);
+    return match ? [{ label: `Size ${match[1]}`, value }] : [];
+  });
+
+const clothingOptions = CLOTHING_ALPHA_SIZES.map((value) => ({
+  value,
+  label: CLOTHING_LABELS[value] ?? value,
+}));
+
+const jeanOptions = JEAN_SIZES.map((value) => ({
+  value,
+  label: `Waist ${value}`,
+}));
+
+const mensOptions = getShoeOptions(SHOE_SIZE_GROUPS.mens, /^(\d+(?:\.\d+)?)M\b/);
+const womensOptions = getShoeOptions(
+  [...SHOE_SIZE_GROUPS.youth, ...SHOE_SIZE_GROUPS.mens],
+  /\/\s*(\d+(?:\.\d+)?)W\b/,
+);
+const youthOptions = getShoeOptions(SHOE_SIZE_GROUPS.youth, /^(\d+(?:\.\d+)?)Y\b/);
+const euOptions = getShoeOptions(SHOE_SIZE_GROUPS.eu, /^EU\s+(\d+(?:\.\d+)?)/);
+
+function DrawerLink({
+  children,
+  href,
+  onNavigate,
+}: {
+  children: React.ReactNode;
+  href: string;
+  onNavigate: () => void;
+}) {
+  return (
+    <Link
+      href={href}
+      onClick={onNavigate}
+      className="block py-3 text-[0.9rem] text-zinc-700 transition-colors hover:text-black"
+    >
+      {children}
+    </Link>
+  );
+}
+
+function SizeGroup({
+  category,
+  isOpen,
+  label,
+  onNavigate,
+  onToggle,
+  options,
+  queryKey,
+}: {
+  category: "clothing" | "sneakers";
+  isOpen: boolean;
+  label: string;
+  onNavigate: () => void;
+  onToggle: () => void;
+  options: SizeOption[];
+  queryKey: "sizeClothing" | "sizeShoe";
+}) {
+  return (
+    <section className="border-b border-zinc-200">
+      <button
+        type="button"
+        onClick={onToggle}
+        className="flex min-h-16 w-full items-center justify-between py-4 text-left text-xs font-medium uppercase tracking-[0.02em] text-zinc-800"
+        aria-expanded={isOpen}
+      >
+        <span>{label}</span>
+        {isOpen ? <Minus className="h-4 w-4" /> : <Plus className="h-4 w-4" />}
+      </button>
+
+      {isOpen && (
+        <div className="mb-5 ml-2 border-l border-zinc-200 pl-6">
+          {options.map((option) => (
+            <DrawerLink
+              key={`${label}-${option.value}`}
+              href={buildStoreHref({ category, [queryKey]: option.value })}
+              onNavigate={onNavigate}
+            >
+              {option.label}
+            </DrawerLink>
+          ))}
+        </div>
+      )}
+    </section>
+  );
+}
+
+function PanelHeader({ title, onBack }: { title: string; onBack: () => void }) {
+  return (
+    <div className="flex h-20 items-center gap-4 border-b border-zinc-200 px-7 md:border-b-0 md:px-8">
+      <button
+        type="button"
+        onClick={onBack}
+        className="inline-flex h-10 w-10 items-center justify-center text-zinc-700 md:hidden"
+        aria-label="Back to main menu"
+      >
+        <ChevronLeft className="h-5 w-5" />
+      </button>
+      <h2 className="text-xs font-medium uppercase tracking-[0.04em] md:hidden">
+        {title}
+      </h2>
+    </div>
+  );
+}
+
+export function StoreMenuDrawer({ isOpen, onClose }: StoreMenuDrawerProps) {
+  const [isMounted, setIsMounted] = useState(false);
+  const [activePanel, setActivePanel] = useState<MenuPanel | null>(null);
+  const [expandedSizes, setExpandedSizes] = useState<Record<string, boolean>>({});
+  const closeButtonRef = useRef<HTMLButtonElement>(null);
+  const closeFromEffect = useEffectEvent(onClose);
+
+  useEffect(() => {
+    setIsMounted(true);
+  }, []);
+
+  useEffect(() => {
+    if (!isOpen) {
+      setActivePanel(null);
+      return;
+    }
+
+    const previousOverflow = document.body.style.overflow;
+    document.body.style.overflow = "hidden";
+    closeButtonRef.current?.focus();
+
+    const handleKeyDown = (event: KeyboardEvent) => {
+      if (event.key === "Escape") {
+        closeFromEffect();
+      }
+    };
+
+    window.addEventListener("keydown", handleKeyDown);
+    return () => {
+      document.body.style.overflow = previousOverflow;
+      window.removeEventListener("keydown", handleKeyDown);
+    };
+  }, [isOpen]);
+
+  if (!isMounted || !isOpen) {
+    return null;
+  }
+
+  const closeMenu = () => {
+    setActivePanel(null);
+    onClose();
+  };
+
+  const toggleSize = (key: string) => {
+    setExpandedSizes((current) => ({ ...current, [key]: !current[key] }));
+  };
+
+  const panelTitle =
+    activePanel === "brand"
+      ? "Shop by Brand"
+      : activePanel === "size"
+        ? "Shop by Size"
+        : "Shop by Category";
+
+  const drawer = (
+    <div
+      className="fixed inset-0 z-[9999] bg-black/40"
+      onMouseDown={(event) => {
+        if (event.target === event.currentTarget) {
+          closeMenu();
+        }
+      }}
+    >
+      <aside
+        className={`store-menu-drawer relative flex h-[100dvh] w-full overflow-hidden bg-white text-black shadow-2xl transition-[max-width] duration-300 ${
+          activePanel ? "max-w-[392px] md:max-w-[784px]" : "max-w-[392px]"
+        }`}
+        role="dialog"
+        aria-modal="true"
+        aria-label="Store menu"
+      >
+        <div className="h-full w-full shrink-0 bg-white md:w-[392px]">
+          <div className="flex h-20 items-center px-6 md:px-8">
+            <button
+              ref={closeButtonRef}
+              type="button"
+              onClick={closeMenu}
+              className="inline-flex h-10 w-10 items-center justify-start text-zinc-800 transition-colors hover:text-black"
+              aria-label="Close menu"
+            >
+              <X className="h-6 w-6" strokeWidth={1.5} />
+            </button>
+          </div>
+
+          <nav className="px-7 md:px-8" aria-label="Store navigation">
+            {(
+              [
+                ["brand", "Shop by Brand"],
+                ["size", "Shop by Size"],
+                ["category", "Shop by Category"],
+              ] as const
+            ).map(([panel, label]) => (
+              <button
+                key={panel}
+                type="button"
+                onClick={() => setActivePanel(panel)}
+                className="flex min-h-[61px] w-full items-center justify-between border-b border-zinc-200 text-left text-xs font-medium uppercase tracking-[0.02em] text-zinc-800 transition-colors hover:text-black"
+                aria-expanded={activePanel === panel}
+              >
+                <span>{label}</span>
+                <ChevronRight className="h-4 w-4" strokeWidth={1.5} />
+              </button>
+            ))}
+
+            <Link
+              href="/store"
+              onClick={closeMenu}
+              className="flex min-h-[61px] items-center border-b border-zinc-200 text-xs font-medium uppercase tracking-[0.02em] text-zinc-800 transition-colors hover:text-black"
+            >
+              Shop All
+            </Link>
+          </nav>
+        </div>
+
+        {activePanel && (
+          <section className="store-menu-panel absolute inset-0 z-10 h-full w-full bg-white md:static md:w-[392px] md:shrink-0 md:border-l md:border-zinc-200">
+            <PanelHeader title={panelTitle} onBack={() => setActivePanel(null)} />
+
+            <div className="h-[calc(100dvh-5rem)] overflow-y-auto overscroll-contain px-7 pb-10 md:px-8">
+              {activePanel === "brand" && (
+                <DrawerLink href="/brands" onNavigate={closeMenu}>
+                  <span className="text-xs font-medium uppercase tracking-[0.02em]">
+                    All Brands
+                  </span>
+                </DrawerLink>
+              )}
+
+              {activePanel === "category" && (
+                <div className="divide-y divide-zinc-200">
+                  {CATEGORY_LINKS.map((category) => (
+                    <DrawerLink
+                      key={category.value}
+                      href={buildStoreHref({ category: category.value })}
+                      onNavigate={closeMenu}
+                    >
+                      {category.label}
+                    </DrawerLink>
+                  ))}
+                </div>
+              )}
+
+              {activePanel === "size" && (
+                <div>
+                  <SizeGroup
+                    label="Clothing"
+                    category="clothing"
+                    queryKey="sizeClothing"
+                    options={clothingOptions}
+                    isOpen={!!expandedSizes.clothing}
+                    onToggle={() => toggleSize("clothing")}
+                    onNavigate={closeMenu}
+                  />
+                  <SizeGroup
+                    label="Jeans"
+                    category="clothing"
+                    queryKey="sizeClothing"
+                    options={jeanOptions}
+                    isOpen={!!expandedSizes.jeans}
+                    onToggle={() => toggleSize("jeans")}
+                    onNavigate={closeMenu}
+                  />
+                  <SizeGroup
+                    label="Men's"
+                    category="sneakers"
+                    queryKey="sizeShoe"
+                    options={mensOptions}
+                    isOpen={!!expandedSizes.mens}
+                    onToggle={() => toggleSize("mens")}
+                    onNavigate={closeMenu}
+                  />
+                  <SizeGroup
+                    label="Women's"
+                    category="sneakers"
+                    queryKey="sizeShoe"
+                    options={womensOptions}
+                    isOpen={!!expandedSizes.womens}
+                    onToggle={() => toggleSize("womens")}
+                    onNavigate={closeMenu}
+                  />
+                  <SizeGroup
+                    label="Youth"
+                    category="sneakers"
+                    queryKey="sizeShoe"
+                    options={youthOptions}
+                    isOpen={!!expandedSizes.youth}
+                    onToggle={() => toggleSize("youth")}
+                    onNavigate={closeMenu}
+                  />
+                  <SizeGroup
+                    label="European"
+                    category="sneakers"
+                    queryKey="sizeShoe"
+                    options={euOptions}
+                    isOpen={!!expandedSizes.eu}
+                    onToggle={() => toggleSize("eu")}
+                    onNavigate={closeMenu}
+                  />
+                </div>
+              )}
+            </div>
+          </section>
+        )}
+      </aside>
+    </div>
+  );
+
+  return createPortal(drawer, document.body);
+}

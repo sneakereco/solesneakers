@@ -107,6 +107,7 @@ export const SHOE_SIZE_GROUPS = {
 } as const;
 
 export const CLOTHING_ALPHA_SIZES = [
+  "XXS",
   "XS",
   "SMALL",
   "MEDIUM",
