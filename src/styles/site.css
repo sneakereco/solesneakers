@@ -47,6 +47,62 @@ body:has([data-auth-shell]) {
   border-radius: 0.25rem !important;
 }
 
+.policy-content {
+  color: #18181b;
+  font-size: 1.05rem;
+  line-height: 1.7;
+}
+
+.policy-content :is(.text-white, .text-zinc-400, .text-red-400) {
+  color: inherit !important;
+}
+
+.policy-content h2 {
+  margin-top: 1.9rem !important;
+  margin-bottom: 1rem !important;
+  color: #09090b !important;
+  font-size: clamp(1.65rem, 2.5vw, 2.25rem) !important;
+  font-weight: 400 !important;
+  line-height: 1.15 !important;
+  letter-spacing: 0.01em;
+  text-transform: uppercase;
+}
+
+.policy-content h3 {
+  margin-top: 1.5rem !important;
+  margin-bottom: 0.6rem !important;
+  color: #18181b !important;
+  font-size: 1.15rem !important;
+  font-weight: 600 !important;
+}
+
+.policy-content p + p {
+  margin-top: 1rem;
+}
+
+.policy-content ul {
+  margin-top: 0.75rem;
+  padding-left: 1.5rem;
+  list-style: disc;
+}
+
+.policy-content li + li {
+  margin-top: 0.3rem;
+}
+
+.policy-content a {
+  color: inherit !important;
+  text-decoration: underline;
+  text-underline-offset: 0.2rem;
+}
+
+@media (max-width: 639px) {
+  .policy-content {
+    font-size: 1rem;
+    line-height: 1.65;
+  }
+}
+
 @keyframes search-drop-in {
   from {
     opacity: 0;

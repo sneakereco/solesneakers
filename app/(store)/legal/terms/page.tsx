@@ -1,11 +1,8 @@
-// app/legal/terms/page.tsx
+import { PolicyPage } from "@/components/legal/PolicyPage";
+
 export default function TermsPage() {
   return (
-    <div className="max-w-4xl mx-auto px-4 pt-8 pb-16">
-      <h1 className="text-4xl font-bold text-white mb-4">
-        Terms of Service - Realdealkickzsc
-      </h1>
-
+    <PolicyPage title="Terms of Service">
       <div className="prose prose-invert max-w-none">
         <div className="text-zinc-400 space-y-6">
           <p className="text-sm">Last updated: December 30, 2025</p>
@@ -248,6 +245,6 @@ export default function TermsPage() {
           </section>
         </div>
       </div>
-    </div>
+    </PolicyPage>
   );
 }

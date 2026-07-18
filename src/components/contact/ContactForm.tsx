@@ -232,6 +232,7 @@ export function ContactForm({
       ? "Share the steps, where it happened, and what you expected to see."
       : undefined);
   const isStorefront = variant === "storefront";
+  const showExtendedFields = !isStorefront || source === "bug_report";
   const labelClassName = isStorefront
     ? "mb-3 block text-sm font-semibold text-black"
     : "mb-2 block text-sm font-semibold text-white";
@@ -277,21 +278,19 @@ export function ContactForm({
         />
       </div>
 
-      {!isStorefront && (
+      {showExtendedFields && (
         <div>
-          <label
-            htmlFor="subject"
-            className="block text-sm font-semibold text-white mb-2"
-          >
-            Subject <span className="text-red-500">*</span>
+          <label htmlFor="subject" className={labelClassName}>
+            Subject {!isStorefront && <span className="text-red-500">*</span>}
           </label>
           <input
             type="text"
             id="subject"
             required
+            placeholder={isStorefront ? "Bug report" : undefined}
             value={formData.subject}
             onChange={(e) => setFormData({ ...formData, subject: e.target.value })}
-            className="w-full px-4 py-3 bg-zinc-900 border border-zinc-800/70 rounded text-white focus:outline-none focus:border-zinc-600 focus:ring-1 focus:ring-zinc-700"
+            className={inputClassName}
           />
         </div>
       )}
@@ -305,25 +304,28 @@ export function ContactForm({
           required
           rows={isStorefront ? 5 : 6}
           value={formData.message}
-          placeholder={isStorefront ? "Your Message" : resolvedPlaceholder}
+          placeholder={
+            isStorefront && source !== "bug_report" ? "Your Message" : resolvedPlaceholder
+          }
           onChange={(e) => setFormData({ ...formData, message: e.target.value })}
           className={`${inputClassName} resize-y`}
         />
       </div>
 
-      {!isStorefront && (
+      {showExtendedFields && (
         <div>
-          <label
-            htmlFor="attachments"
-            className="block text-sm font-semibold text-white mb-2"
-          >
+          <label htmlFor="attachments" className={labelClassName}>
             {attachmentsLabel}
           </label>
           <div
-            className={`rounded border border-dashed px-4 py-4 transition-colors ${
-              isDragging
-                ? "border-red-500/70 bg-red-500/5"
-                : "border-zinc-700 bg-zinc-900/40"
+            className={`storefront-contact-field border border-dashed px-4 py-4 transition-colors ${
+              isStorefront
+                ? isDragging
+                  ? "border-black bg-zinc-100"
+                  : "border-zinc-300 bg-white"
+                : isDragging
+                  ? "border-red-500/70 bg-red-500/5"
+                  : "border-zinc-700 bg-zinc-900/40"
             }`}
             onDrop={handleDrop}
             onDragOver={handleDragOver}
@@ -335,7 +337,11 @@ export function ContactForm({
               accept={allowedTypes.join(",")}
               multiple
               onChange={(e) => handleAttachments(e.target.files)}
-              className="block w-full text-sm text-zinc-300 cursor-pointer file:mr-4 file:rounded file:border-0 file:bg-red-600 file:px-4 file:py-2 file:text-sm file:font-semibold file:text-white file:cursor-pointer hover:file:bg-red-700"
+              className={
+                isStorefront
+                  ? "block w-full cursor-pointer text-sm text-zinc-600 file:mr-4 file:cursor-pointer file:border-0 file:bg-black file:px-4 file:py-2 file:text-sm file:font-semibold file:text-white hover:file:bg-zinc-800"
+                  : "block w-full cursor-pointer text-sm text-zinc-300 file:mr-4 file:cursor-pointer file:rounded file:border-0 file:bg-red-600 file:px-4 file:py-2 file:text-sm file:font-semibold file:text-white hover:file:bg-red-700"
+              }
             />
             <p className="text-xs text-zinc-500 mt-2">{attachmentsHint}</p>
             {attachmentError && (

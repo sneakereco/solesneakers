@@ -9,7 +9,7 @@ import { PICKUP_LOCATION_SUMMARY } from "@/config/pickup";
 
 const TERMS_LINKS = [
   { label: "Privacy Policy", href: "/privacy" },
-  { label: "Refund & Exchange Policy", href: "/refunds" },
+  { label: "Returns and Refunds Policy", href: "/refunds" },
   { label: "Shipping Policy", href: "/shipping" },
   { label: "Terms of Service", href: "/terms" },
 ];
@@ -19,7 +19,6 @@ const CUSTOMER_RESOURCE_LINKS = [
   { label: "Contact Us", href: "/contact" },
   { label: "Hours & Pickups", href: "/hours" },
   { label: "Shipping Information", href: "/shipping" },
-  { label: "Returns & Refunds", href: "/refunds" },
   { label: "Report a Problem", href: "/bug-report" },
 ];
 
