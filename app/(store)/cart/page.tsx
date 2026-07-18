@@ -7,6 +7,7 @@ import Script from "next/script";
 import { Minus, Plus, ShoppingBag, Trash2 } from "lucide-react";
 
 import { useCart } from "@/components/cart/CartProvider";
+import { ShippingEstimate } from "@/components/cart/ShippingEstimate";
 
 const formatPrice = (priceCents: number) =>
   new Intl.NumberFormat("en-US", {
@@ -150,6 +151,7 @@ export default function CartPage() {
           </section>
 
           <aside className="border border-zinc-300 bg-white p-6 lg:sticky lg:top-36">
+            <ShippingEstimate className="-mx-6 -mt-6 mb-6 border-b border-zinc-200" />
             <h2 className="text-lg font-medium uppercase tracking-[0.02em]">
               Order Summary
             </h2>

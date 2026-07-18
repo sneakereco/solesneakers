@@ -260,8 +260,9 @@ export function ProductDetail({ product }: ProductDetailProps) {
             {showShipping && (
               <div className="mt-4 space-y-3 text-sm leading-6 text-zinc-600">
                 <p>
-                  We aim to ship within 24 hours. Shipping options and rates are shown at
-                  checkout.
+                  Orders placed before 3:00 PM ET ship the same day. Orders placed at or
+                  after 3:00 PM ET ship the following day. Shipping options and rates are
+                  shown at checkout.
                 </p>
                 <p>Returns are handled according to our published store policies.</p>
                 <div className="flex flex-wrap gap-x-5 gap-y-2">

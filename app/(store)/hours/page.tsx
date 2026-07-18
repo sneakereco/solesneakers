@@ -1,91 +1,77 @@
-// app/hours/page.tsx
+import Link from "next/link";
+import { Clock3, MapPin } from "lucide-react";
+
+import {
+  INSTAGRAM_HANDLE,
+  INSTAGRAM_URL,
+  SUPPORT_EMAIL,
+} from "@/config/constants/contact";
+import { PICKUP_HOURS, PICKUP_SERVICE_AREAS } from "@/config/pickup";
+
 export default function HoursPage() {
   return (
-    <div className="max-w-6xl mx-auto px-4 pt-8 pb-16">
-      <h1 className="text-4xl font-bold text-white mb-4">Hours</h1>
-      <p className="text-zinc-400 mb-4">
-        Pickup and meetup available in Simpsonville, South Carolina. Local pickups are
-        available and you can select local pickup at checkout.
-      </p>
-      <p className="text-zinc-400 mb-10">
-        We are always looking to buy sneakers no matter the condition and no matter the
-        quantity. If you are interested in selling, reach out on{" "}
-        <a
-          href="https://instagram.com/realdealkickzsc"
-          target="_blank"
-          rel="noopener noreferrer"
-          className="text-red-400 hover:underline"
-        >
-          Instagram
-        </a>
-        ,{" "}
-        <a
-          href="mailto:realdealholyspill@gmail.com"
-          className="text-red-400 hover:underline"
-        >
-          email us
-        </a>
-        , submit through the{" "}
-        <a href="/contact" className="text-red-400 hover:underline">
-          contact form
-        </a>
-        , or use the{" "}
-        <a href="/account" className="text-red-400 hover:underline">
-          onsite messaging system
-        </a>
-        .
+    <div className="min-h-screen bg-[var(--storefront-surface)] px-5 pb-24 pt-16 text-black sm:px-8 lg:px-12">
+      <h1 className="text-center text-3xl font-normal uppercase tracking-[0.02em] sm:text-[2rem]">
+        Hours &amp; Pickups
+      </h1>
+      <p className="mx-auto mt-8 max-w-[48rem] text-center text-base leading-7 text-zinc-600">
+        Local meets are available by appointment at an agreed-upon business in the
+        Winston-Salem, High Point, Kernersville, and Greensboro areas of North Carolina.
       </p>
 
-      <div className="grid md:grid-cols-2 gap-8 items-stretch">
-        <div className="bg-zinc-900 border border-zinc-800 p-8 h-full min-h-[360px] flex flex-col">
-          <h2 className="text-2xl font-bold text-white mb-4">Business Hours</h2>
-          <p className="text-zinc-400 mb-6">
-            We offer local pickups and meetups by appointment.
+      <div className="mx-auto mt-14 grid max-w-[70rem] grid-cols-1 gap-6 md:grid-cols-2">
+        <section className="border border-zinc-300 bg-white px-7 py-8 sm:px-9 sm:py-10">
+          <Clock3 className="h-7 w-7" strokeWidth={1.5} aria-hidden="true" />
+          <h2 className="mt-6 text-xl font-normal uppercase tracking-[0.02em]">
+            Local Meet Hours
+          </h2>
+          <p className="mt-5 text-lg">{PICKUP_HOURS}</p>
+          <p className="mt-4 text-sm leading-6 text-zinc-600">
+            Meetups are scheduled in advance. Once a time is confirmed, we will provide
+            the agreed-upon business location and meetup details.
           </p>
-          <div className="space-y-2 text-zinc-400">
-            <div className="flex justify-between">
-              <span>Monday</span>
-              <span>11:00 AM - 8:00 PM</span>
-            </div>
-            <div className="flex justify-between">
-              <span>Tuesday</span>
-              <span>11:00 AM - 8:00 PM</span>
-            </div>
-            <div className="flex justify-between">
-              <span>Wednesday</span>
-              <span>11:00 AM - 8:00 PM</span>
-            </div>
-            <div className="flex justify-between">
-              <span>Thursday</span>
-              <span>11:00 AM - 8:00 PM</span>
-            </div>
-            <div className="flex justify-between">
-              <span>Friday</span>
-              <span>11:00 AM - 8:00 PM</span>
-            </div>
-            <div className="flex justify-between">
-              <span>Saturday</span>
-              <span>11:00 AM - 8:00 PM</span>
-            </div>
-            <div className="flex justify-between">
-              <span>Sunday</span>
-              <span>Closed</span>
-            </div>
-          </div>
-        </div>
+        </section>
 
-        <div className="bg-zinc-900 border border-zinc-800 overflow-hidden h-full min-h-[360px]">
-          <iframe
-            title="Map of Simpsonville, South Carolina"
-            src="https://www.openstreetmap.org/export/embed.html?bbox=-82.3326%2C34.6985%2C-82.1687%2C34.7876&layer=mapnik&marker=34.743%2C-82.2507"
-            width="100%"
-            height="360"
-            style={{ border: 0 }}
-            loading="lazy"
-            className="w-full h-full"
-          />
-        </div>
+        <section className="border border-zinc-300 bg-white px-7 py-8 sm:px-9 sm:py-10">
+          <MapPin className="h-7 w-7" strokeWidth={1.5} aria-hidden="true" />
+          <h2 className="mt-6 text-xl font-normal uppercase tracking-[0.02em]">
+            Service Area
+          </h2>
+          <ul className="mt-5 divide-y divide-zinc-200 border-y border-zinc-200">
+            {PICKUP_SERVICE_AREAS.map((area) => (
+              <li key={area} className="py-3 text-sm text-zinc-700">
+                {area}, NC
+              </li>
+            ))}
+          </ul>
+        </section>
       </div>
+
+      <section className="mx-auto mt-6 max-w-[70rem] border border-zinc-300 bg-white px-7 py-8 text-center sm:px-9">
+        <h2 className="text-lg font-normal uppercase tracking-[0.02em]">
+          Schedule a Local Meet
+        </h2>
+        <p className="mx-auto mt-4 max-w-[48rem] text-sm leading-6 text-zinc-600">
+          Contact us with your preferred city, date, and time. We will confirm
+          availability and coordinate a business location for the meetup.
+        </p>
+        <div className="mt-6 flex flex-wrap justify-center gap-x-6 gap-y-3 text-sm">
+          <a href={`mailto:${SUPPORT_EMAIL}`} className="underline underline-offset-4">
+            {SUPPORT_EMAIL}
+          </a>
+          <a
+            href={INSTAGRAM_URL}
+            target="_blank"
+            rel="noopener noreferrer"
+            className="underline underline-offset-4"
+          >
+            {INSTAGRAM_HANDLE}
+          </a>
+          <Link href="/contact" className="underline underline-offset-4">
+            Contact form
+          </Link>
+        </div>
+      </section>
     </div>
   );
 }

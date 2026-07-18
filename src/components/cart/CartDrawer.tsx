@@ -7,6 +7,7 @@ import { useRouter } from "next/navigation";
 import { Minus, Plus, ShoppingBag, Trash2, X } from "lucide-react";
 
 import { useCart } from "./CartProvider";
+import { ShippingEstimate } from "./ShippingEstimate";
 
 interface CartDrawerProps {
   isOpen: boolean;
@@ -103,6 +104,7 @@ export function CartDrawer({ isOpen, onClose }: CartDrawerProps) {
           </div>
         ) : (
           <>
+            <ShippingEstimate className="shrink-0 border-b border-zinc-200" />
             <div className="min-h-0 flex-1 overflow-y-auto px-5 py-3 sm:px-6">
               {items.map((item) => {
                 const canIncrease =

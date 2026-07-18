@@ -1,15 +1,16 @@
 import { PolicyPage } from "@/components/legal/PolicyPage";
+import { SUPPORT_EMAIL } from "@/config/constants/contact";
+import { PICKUP_LOCATION_SUMMARY } from "@/config/pickup";
 
 export default function ShippingPage() {
   return (
     <PolicyPage title="Shipping Policy">
       <div className="prose prose-invert max-w-none">
         <div className="text-zinc-400 space-y-6">
-          <p className="text-sm">Last updated: December 30, 2025</p>
+          <p className="text-sm">Last updated: July 18, 2026</p>
           <p>
-            This Shipping Policy applies to orders placed through [YOUR DOMAIN] (the
-            &quot;Site&quot;) operated by Realdealkickzsc (&quot;we,&quot; &quot;us,&quot;
-            &quot;our&quot;).
+            This Shipping Policy applies to orders placed through the Sole Sneakers
+            website (the &quot;Site&quot;).
           </p>
 
           <section>
@@ -17,18 +18,19 @@ export default function ShippingPage() {
               1) Processing Time (When We Ship)
             </h2>
             <p>
-              We aim to ship orders within 24 hours of the order being placed, unless
-              stated otherwise, and provided no unforeseen events occur that prevent
-              shipment in that timeframe.
+              Orders placed before 3:00 PM Eastern Time are scheduled to ship the same
+              day. Orders placed at or after 3:00 PM Eastern Time are scheduled to ship
+              the following day.
             </p>
             <p>Important clarifications:</p>
             <ul className="list-disc pl-6 mt-2 space-y-1">
               <li>
-                &quot;Within 24 hours&quot; refers to processing time, not delivery time.
+                The 3:00 PM cutoff refers to order processing and shipment, not delivery
+                time.
               </li>
               <li>
-                Processing time may be measured in business hours and may be affected by
-                weekends and holidays.
+                The shipping estimate shown in the cart updates automatically using
+                Eastern Time.
               </li>
               <li>
                 Some orders may require additional time for verification (for example,
@@ -41,12 +43,9 @@ export default function ShippingPage() {
             <h2 className="text-2xl font-bold text-white mt-8 mb-4">
               2) Exceptions (When Shipping May Take Longer)
             </h2>
-            <p>
-              Shipping may take longer than 24 hours in cases including, but not limited
-              to:
-            </p>
+            <p>Shipping may take longer in cases including, but not limited to:</p>
             <ul className="list-disc pl-6 mt-2 space-y-1">
-              <li>holidays or weekends</li>
+              <li>holidays or carrier closures</li>
               <li>weather events or natural disasters</li>
               <li>carrier disruptions, delays, or service outages</li>
               <li>high order volume</li>
@@ -103,9 +102,9 @@ export default function ShippingPage() {
             <h2 className="text-2xl font-bold text-white mt-8 mb-4">7) Questions</h2>
             <p>If you have any shipping questions, contact us at:</p>
             <p className="mt-2">
-              Email: realdealholyspill@gmail.com
+              Email: {SUPPORT_EMAIL}
               <br />
-              Location: Simpsonville, South Carolina, USA
+              Location: {PICKUP_LOCATION_SUMMARY}
             </p>
           </section>
         </div>

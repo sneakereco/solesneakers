@@ -718,7 +718,10 @@ export function CheckoutForm({
           {fulfillment === "ship" && (
             <div className="mt-4 border border-zinc-800/70 bg-zinc-950/40 rounded p-4 text-sm text-gray-400 space-y-2">
               <p className="font-medium text-white mb-2">Shipping Information</p>
-              <p>We aim to ship within 24 hours (processing time, not delivery).</p>
+              <p>
+                Orders placed before 3:00 PM ET ship the same day. Orders placed at or
+                after 3:00 PM ET ship the following day.
+              </p>
               <div className="flex flex-wrap gap-x-4 gap-y-2 mt-2">
                 <Link
                   href="/shipping"
