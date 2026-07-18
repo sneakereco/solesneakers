@@ -1,11 +1,10 @@
-// src/components/cart/CartDrawer.tsx (UPDATE - add checkout navigation)
-
 "use client";
 
-import { X, Minus, Plus, Trash2 } from "lucide-react";
+import { useEffect } from "react";
 import Image from "next/image";
 import Link from "next/link";
 import { useRouter } from "next/navigation";
+import { Minus, Plus, ShoppingBag, Trash2, X } from "lucide-react";
 
 import { useCart } from "./CartProvider";
 
@@ -14,167 +13,228 @@ interface CartDrawerProps {
   onClose: () => void;
 }
 
+const formatPrice = (priceCents: number) =>
+  new Intl.NumberFormat("en-US", {
+    style: "currency",
+    currency: "USD",
+    minimumFractionDigits: 2,
+    maximumFractionDigits: 2,
+  }).format(priceCents / 100);
+
 export function CartDrawer({ isOpen, onClose }: CartDrawerProps) {
   const router = useRouter();
-  const { items, removeItem, updateQuantity, total } = useCart();
+  const { items, itemCount, removeItem, updateQuantity, total } = useCart();
+
+  useEffect(() => {
+    if (!isOpen) {
+      return;
+    }
+
+    const previousOverflow = document.body.style.overflow;
+    const handleKeyDown = (event: KeyboardEvent) => {
+      if (event.key === "Escape") {
+        onClose();
+      }
+    };
+
+    document.body.style.overflow = "hidden";
+    window.addEventListener("keydown", handleKeyDown);
+
+    return () => {
+      document.body.style.overflow = previousOverflow;
+      window.removeEventListener("keydown", handleKeyDown);
+    };
+  }, [isOpen, onClose]);
 
   const handleCheckout = () => {
     onClose();
     router.push("/checkout");
   };
 
-  if (!isOpen) {
-    return null;
-  }
-
   return (
-    <div className="fixed inset-0 z-50">
-      <div className="absolute inset-0 bg-black/60" onClick={onClose} />
+    <div
+      className={`fixed inset-0 z-[80] ${isOpen ? "pointer-events-auto" : "pointer-events-none"}`}
+      aria-hidden={!isOpen}
+    >
+      <button
+        type="button"
+        className={`absolute inset-0 cursor-default bg-black/40 transition-opacity duration-[240ms] ease-out motion-reduce:transition-none ${
+          isOpen ? "opacity-100" : "opacity-0"
+        }`}
+        onClick={onClose}
+        tabIndex={isOpen ? 0 : -1}
+        aria-label="Close cart"
+      />
 
-      <div className="absolute inset-x-0 bottom-0 h-[90vh] max-h-[90vh] w-full bg-black border-t border-zinc-800/70 overflow-y-auto no-scrollbar rounded-t-2xl md:rounded-none md:inset-y-0 md:right-0 md:left-auto md:h-auto md:max-h-none md:max-w-2xl md:border-t-0 md:border-l">
-        <div className="p-4 sm:p-6 md:p-8">
-          <div className="flex items-center justify-between mb-4 sm:mb-6">
-            <h2 className="text-xl sm:text-2xl font-bold text-white">Cart</h2>
-            <button onClick={onClose} className="text-gray-400 hover:text-white">
-              <X className="w-5 h-5 sm:w-6 sm:h-6" />
-            </button>
+      <aside
+        role="dialog"
+        aria-modal="true"
+        aria-labelledby="cart-drawer-title"
+        inert={!isOpen}
+        className={`absolute inset-y-0 right-0 flex w-full flex-col bg-white text-black shadow-2xl transition-transform duration-[240ms] ease-out motion-reduce:transition-none sm:max-w-[34rem] ${
+          isOpen ? "translate-x-0" : "translate-x-full"
+        }`}
+      >
+        <header className="relative flex min-h-16 shrink-0 items-center justify-center border-b border-zinc-200 px-14">
+          <h2 id="cart-drawer-title" className="text-xl font-normal">
+            My cart <span aria-hidden="true">&#8226;</span> {itemCount}
+          </h2>
+          <button
+            type="button"
+            onClick={onClose}
+            className="absolute right-5 top-1/2 -translate-y-1/2 cursor-pointer p-2 text-black transition-colors hover:text-zinc-500"
+            aria-label="Close cart"
+          >
+            <X className="h-6 w-6" strokeWidth={1.7} />
+          </button>
+        </header>
+
+        {items.length === 0 ? (
+          <div className="flex flex-1 flex-col items-center justify-center px-6 pb-16 text-center">
+            <ShoppingBag className="h-8 w-8" strokeWidth={1.7} />
+            <p className="mt-4 text-base">Your cart is empty</p>
+            <Link
+              href="/store"
+              onClick={onClose}
+              className="mt-7 bg-zinc-900 px-8 py-3 text-sm font-medium uppercase text-white transition-colors hover:bg-black"
+            >
+              Shop Now
+            </Link>
           </div>
+        ) : (
+          <>
+            <div className="min-h-0 flex-1 overflow-y-auto px-5 py-3 sm:px-6">
+              {items.map((item) => {
+                const canIncrease =
+                  typeof item.maxStock === "number"
+                    ? item.quantity < item.maxStock
+                    : true;
 
-          {items.length === 0 ? (
-            <p className="text-gray-400 text-center py-12">Your cart is empty</p>
-          ) : (
-            <>
-              <div className="space-y-3 sm:space-y-4 mb-6">
-                {items.map((item) => {
-                  const canIncrease =
-                    typeof item.maxStock === "number"
-                      ? item.quantity < item.maxStock
-                      : true;
-                  return (
-                    <div
-                      key={`${item.productId}-${item.variantId}`}
-                      className="bg-zinc-900 p-3 sm:p-4 rounded"
+                return (
+                  <article
+                    key={`${item.productId}-${item.variantId}`}
+                    className="grid grid-cols-[6rem_minmax(0,1fr)] gap-4 border-b border-zinc-200 py-6"
+                  >
+                    <Link
+                      href={`/store/${item.productId}`}
+                      onClick={onClose}
+                      className="relative h-28 w-24 bg-[var(--storefront-surface)]"
                     >
-                      <div className="flex flex-col sm:flex-row sm:items-start gap-3 sm:gap-4">
+                      <Image
+                        src={item.imageUrl}
+                        alt={item.titleDisplay}
+                        fill
+                        sizes="96px"
+                        className="object-contain p-1 mix-blend-multiply"
+                      />
+                    </Link>
+
+                    <div className="min-w-0">
+                      <div className="flex items-start justify-between gap-4">
                         <Link
                           href={`/store/${item.productId}`}
                           onClick={onClose}
-                          className="flex items-start gap-3 sm:gap-4 flex-1 min-w-0"
+                          className="min-w-0"
                         >
-                          <div className="w-16 h-16 sm:w-20 sm:h-20 relative flex-shrink-0">
-                            <Image
-                              src={item.imageUrl}
-                              alt={item.titleDisplay}
-                              fill
-                              className="object-cover rounded"
-                            />
-                          </div>
-                          <div className="flex-1 min-w-0">
-                            <h3 className="text-white font-semibold text-sm sm:text-base">
-                              {item.titleDisplay}
-                            </h3>
-                            {item.brand ? (
-                              <p className="text-xs text-gray-500 mt-1">{item.brand}</p>
-                            ) : null}
-                            <p className="text-xs sm:text-sm text-gray-400 mt-2">
-                              Size: {item.sizeLabel}
+                          <h3 className="text-sm font-medium uppercase leading-5 text-zinc-950">
+                            {item.titleDisplay}
+                          </h3>
+                          {item.brand && (
+                            <p className="mt-1 text-xs uppercase text-zinc-500">
+                              {item.brand}
                             </p>
-                            <p className="text-xs sm:text-sm text-gray-300 mt-1">
-                              Price: ${(item.priceCents / 100).toFixed(2)}
-                            </p>
-                          </div>
+                          )}
                         </Link>
-                        <div className="flex w-full sm:w-auto items-center justify-between sm:flex-col sm:items-end gap-2 sm:gap-3">
+                        <p className="shrink-0 text-sm font-medium">
+                          {formatPrice(item.priceCents * item.quantity)}
+                        </p>
+                      </div>
+
+                      <p className="mt-3 text-xs text-zinc-500">
+                        Size: {item.sizeLabel === "N/A" ? "One size" : item.sizeLabel}
+                      </p>
+
+                      <div className="mt-4 flex items-center justify-between gap-4">
+                        <div className="inline-grid grid-cols-3 border border-zinc-300">
                           <button
-                            onClick={() => removeItem(item.productId, item.variantId)}
-                            className="text-gray-400 hover:text-red-500"
+                            type="button"
+                            onClick={() =>
+                              updateQuantity(
+                                item.productId,
+                                item.variantId,
+                                item.quantity - 1,
+                              )
+                            }
+                            className="flex h-9 w-9 cursor-pointer items-center justify-center transition-colors hover:bg-zinc-100"
+                            aria-label={`Decrease quantity for ${item.titleDisplay}`}
                           >
-                            <Trash2 className="w-4 h-4" />
+                            <Minus className="h-3.5 w-3.5" />
                           </button>
-                          <div className="flex items-center gap-2">
-                            <button
-                              onClick={() =>
-                                updateQuantity(
-                                  item.productId,
-                                  item.variantId,
-                                  item.quantity - 1,
-                                )
-                              }
-                              className="w-7 h-7 flex items-center justify-center bg-zinc-800 rounded hover:bg-zinc-700"
-                            >
-                              <Minus className="w-3 h-3 text-white" />
-                            </button>
-                            <span className="text-white text-sm w-8 text-center">
-                              {item.quantity}
-                            </span>
-                            <button
-                              onClick={() =>
-                                updateQuantity(
-                                  item.productId,
-                                  item.variantId,
-                                  item.quantity + 1,
-                                )
-                              }
-                              disabled={!canIncrease}
-                              className={`w-7 h-7 flex items-center justify-center rounded ${
-                                canIncrease
-                                  ? "bg-zinc-800 hover:bg-zinc-700"
-                                  : "bg-zinc-900 opacity-50 cursor-not-allowed"
-                              }`}
-                            >
-                              <Plus className="w-3 h-3 text-white" />
-                            </button>
-                          </div>
-                          <div className="text-sm sm:text-base font-semibold text-white">
-                            ${((item.priceCents * item.quantity) / 100).toFixed(2)}
-                          </div>
+                          <span className="flex h-9 min-w-9 items-center justify-center border-x border-zinc-300 text-sm">
+                            {item.quantity}
+                          </span>
+                          <button
+                            type="button"
+                            onClick={() =>
+                              updateQuantity(
+                                item.productId,
+                                item.variantId,
+                                item.quantity + 1,
+                              )
+                            }
+                            disabled={!canIncrease}
+                            className="flex h-9 w-9 cursor-pointer items-center justify-center transition-colors hover:bg-zinc-100 disabled:cursor-not-allowed disabled:text-zinc-300"
+                            aria-label={`Increase quantity for ${item.titleDisplay}`}
+                          >
+                            <Plus className="h-3.5 w-3.5" />
+                          </button>
                         </div>
+
+                        <button
+                          type="button"
+                          onClick={() => removeItem(item.productId, item.variantId)}
+                          className="cursor-pointer p-2 text-zinc-500 transition-colors hover:text-black"
+                          aria-label={`Remove ${item.titleDisplay} from cart`}
+                        >
+                          <Trash2 className="h-4 w-4" strokeWidth={1.7} />
+                        </button>
                       </div>
                     </div>
-                  );
-                })}
-              </div>
+                  </article>
+                );
+              })}
+            </div>
 
-              <div className="border-t border-zinc-800/70 pt-4 mb-4 space-y-2 text-xs sm:text-sm text-gray-400">
-                <div className="flex justify-between">
-                  <span>Subtotal</span>
-                  <span>${(total / 100).toFixed(2)}</span>
-                </div>
-                <div className="flex justify-between">
-                  <span>Shipping</span>
-                  <span>Calculated at checkout</span>
-                </div>
-                <div className="flex justify-between">
-                  <span>Tax</span>
-                  <span>Calculated at checkout</span>
-                </div>
-                <div className="flex justify-between text-base sm:text-lg font-bold text-white pt-2">
-                  <span>Total</span>
-                  <span>${(total / 100).toFixed(2)}+</span>
-                </div>
+            <footer className="shrink-0 border-t border-zinc-200 bg-white px-5 pb-6 pt-5 sm:px-6">
+              <div className="flex items-center justify-between text-base font-medium">
+                <span>Subtotal</span>
+                <span>{formatPrice(total)}</span>
               </div>
-
-              <div className="grid grid-cols-1 gap-3">
-                <button
-                  onClick={handleCheckout}
-                  className="w-full bg-red-600 hover:bg-red-700 text-white font-bold py-2.5 sm:py-3 rounded transition text-sm sm:text-base"
-                >
-                  Checkout
-                </button>
-                <div className="text-center">
-                  <Link
-                    href="/cart"
-                    onClick={onClose}
-                    className="text-sm text-gray-300 hover:text-white underline underline-offset-4"
-                  >
-                    Expand cart
-                  </Link>
-                </div>
-              </div>
-            </>
-          )}
-        </div>
-      </div>
+              <button
+                type="button"
+                onClick={handleCheckout}
+                className="mt-5 w-full cursor-pointer bg-zinc-900 px-6 py-4 text-sm font-medium uppercase text-white transition-colors hover:bg-black"
+              >
+                Checkout <span aria-hidden="true">&#8226;</span> {formatPrice(total)}
+              </button>
+              <Link
+                href="/store"
+                onClick={onClose}
+                className="mt-5 block text-center text-sm underline underline-offset-4"
+              >
+                Continue shopping
+              </Link>
+              <Link
+                href="/cart"
+                onClick={onClose}
+                className="mt-3 block text-center text-xs text-zinc-500 underline underline-offset-4"
+              >
+                View full cart
+              </Link>
+            </footer>
+          </>
+        )}
+      </aside>
     </div>
   );
 }

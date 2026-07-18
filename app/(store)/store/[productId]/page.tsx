@@ -7,7 +7,6 @@ import type { Metadata } from "next";
 import { createSupabasePublicClient } from "@/lib/supabase/public";
 import { ProductRepository } from "@/repositories/product-repo";
 import { ProductDetail } from "@/components/store/ProductDetail";
-import { BackToStoreLink } from "@/components/store/BackToStoreLink";
 
 const PRODUCT_REVALIDATE_SECONDS = 60;
 export const revalidate = 60;
@@ -61,7 +60,7 @@ export async function generateMetadata({
 
   // Construct title
   const title = product.name;
-  const fullTitle = `${title} | Realdealkickzsc`;
+  const fullTitle = `${title} | Sole Sneakers`;
 
   // Construct description
   const conditionText = product.condition === "new" ? "Brand New" : "Pre-Owned";
@@ -84,7 +83,7 @@ export async function generateMetadata({
         },
       ],
       type: "website",
-      siteName: "Realdealkickzsc",
+      siteName: "Sole Sneakers",
     },
     twitter: {
       card: "summary_large_image",
@@ -126,12 +125,5 @@ export default async function ProductDetailPage({
     notFound();
   }
 
-  return (
-    <div>
-      <div className="max-w-7xl mx-auto px-4 py-4">
-        <BackToStoreLink />
-      </div>
-      <ProductDetail product={product} />
-    </div>
-  );
+  return <ProductDetail product={product} />;
 }

@@ -1,38 +1,37 @@
-// app/cart/page.tsx
-
 "use client";
 
-import { useRouter } from "next/navigation";
 import Image from "next/image";
 import Link from "next/link";
+import { useRouter } from "next/navigation";
 import Script from "next/script";
-import { Minus, Plus, Trash2, ShoppingCart } from "lucide-react";
+import { Minus, Plus, ShoppingBag, Trash2 } from "lucide-react";
 
 import { useCart } from "@/components/cart/CartProvider";
 
+const formatPrice = (priceCents: number) =>
+  new Intl.NumberFormat("en-US", {
+    style: "currency",
+    currency: "USD",
+    minimumFractionDigits: 2,
+    maximumFractionDigits: 2,
+  }).format(priceCents / 100);
+
 export default function CartPage() {
   const router = useRouter();
-  const { items, removeItem, updateQuantity, total } = useCart();
-
-  const handleCheckout = () => {
-    router.push("/checkout");
-  };
-
+  const { items, itemCount, removeItem, updateQuantity, total } = useCart();
   const nofraudCode = process.env.NEXT_PUBLIC_NOFRAUD_CUSTOMER_CODE;
 
   if (items.length === 0) {
     return (
-      <div className="max-w-4xl mx-auto px-4 py-16 sm:py-20 text-center">
-        <ShoppingCart className="w-12 h-12 sm:w-16 sm:h-16 text-gray-600 mx-auto mb-5 sm:mb-6" />
-        <h1 className="text-2xl sm:text-3xl font-bold text-white mb-3 sm:mb-4">
+      <div className="flex min-h-[36rem] flex-col items-center justify-center bg-[var(--storefront-surface)] px-5 pb-24 text-center text-black">
+        <ShoppingBag className="h-10 w-10" strokeWidth={1.5} />
+        <h1 className="mt-5 text-3xl font-normal uppercase tracking-[0.02em]">
           Your cart is empty
         </h1>
-        <p className="text-sm sm:text-base text-gray-400 mb-6 sm:mb-8">
-          Add some items to get started
-        </p>
+        <p className="mt-3 text-sm text-zinc-600">Add an item to begin your order.</p>
         <Link
           href="/store"
-          className="inline-block bg-red-600 hover:bg-red-700 text-white font-bold px-6 sm:px-8 py-3 rounded transition text-sm sm:text-base"
+          className="mt-8 bg-zinc-900 px-10 py-4 text-sm font-medium uppercase text-white transition-colors hover:bg-black"
         >
           Shop Now
         </Link>
@@ -48,139 +47,133 @@ export default function CartPage() {
           strategy="afterInteractive"
         />
       )}
-      <div className="max-w-6xl mx-auto px-4 py-6 sm:py-8">
-        <h1 className="text-2xl sm:text-4xl font-bold text-white mb-6 sm:mb-8">
-          Shopping Cart
+
+      <div className="min-h-screen bg-[var(--storefront-surface)] px-5 pb-24 pt-12 text-black sm:px-8 lg:px-12">
+        <h1 className="text-center text-3xl font-normal uppercase tracking-[0.02em] sm:text-[2rem]">
+          Shopping Cart <span className="text-zinc-500">({itemCount})</span>
         </h1>
 
-        <div className="grid grid-cols-1 lg:grid-cols-3 gap-6 lg:gap-8">
-          {/* Cart Items */}
-          <div className="lg:col-span-2 space-y-4">
+        <div className="mx-auto mt-14 grid max-w-[90rem] grid-cols-1 items-start gap-10 lg:grid-cols-[minmax(0,1fr)_24rem] lg:gap-14">
+          <section aria-label="Cart items" className="border-t border-zinc-300">
             {items.map((item) => {
               const canIncrease =
                 typeof item.maxStock === "number" ? item.quantity < item.maxStock : true;
+
               return (
-                <div
+                <article
                   key={`${item.productId}-${item.variantId}`}
-                  className="bg-zinc-900 border border-zinc-800/70 rounded p-4 flex flex-col sm:flex-row sm:items-start gap-4"
+                  className="grid grid-cols-[7rem_minmax(0,1fr)] gap-5 border-b border-zinc-300 py-7 sm:grid-cols-[10rem_minmax(0,1fr)] sm:gap-8"
                 >
                   <Link
                     href={`/store/${item.productId}`}
-                    className="flex gap-4 flex-1 min-w-0"
+                    className="relative h-32 w-28 bg-[var(--storefront-surface)] sm:h-44 sm:w-40"
                   >
-                    <div className="w-20 h-20 sm:w-24 sm:h-24 relative flex-shrink-0">
-                      <Image
-                        src={item.imageUrl}
-                        alt={item.titleDisplay}
-                        fill
-                        className="object-cover rounded"
-                      />
-                    </div>
-
-                    <div className="flex-1 min-w-0">
-                      <h3 className="text-white font-bold text-base sm:text-lg truncate">
-                        {item.titleDisplay}
-                      </h3>
-                      <p className="text-gray-400 text-xs sm:text-sm">
-                        Size: {item.sizeLabel}
-                      </p>
-                      <p className="text-white font-bold text-sm sm:text-base mt-2">
-                        ${(item.priceCents / 100).toFixed(2)}
-                      </p>
-                    </div>
+                    <Image
+                      src={item.imageUrl}
+                      alt={item.titleDisplay}
+                      fill
+                      sizes="(min-width: 640px) 160px, 112px"
+                      className="object-contain p-2 mix-blend-multiply"
+                    />
                   </Link>
 
-                  <div className="mt-2 sm:mt-0 flex w-full sm:w-auto items-center justify-between sm:flex-col sm:items-end sm:justify-between gap-3 sm:gap-4">
-                    <button
-                      onClick={() => removeItem(item.productId, item.variantId)}
-                      className="text-gray-400 hover:text-red-500"
-                    >
-                      <Trash2 className="w-4 h-4 sm:w-5 sm:h-5" />
-                    </button>
+                  <div className="flex min-w-0 flex-col">
+                    <div className="flex items-start justify-between gap-4">
+                      <Link href={`/store/${item.productId}`} className="min-w-0">
+                        <h2 className="text-sm font-medium uppercase leading-5 sm:text-base sm:leading-6">
+                          {item.titleDisplay}
+                        </h2>
+                        {item.brand && (
+                          <p className="mt-1 text-xs uppercase text-zinc-500 sm:text-sm">
+                            {item.brand}
+                          </p>
+                        )}
+                      </Link>
+                      <p className="shrink-0 text-sm font-medium sm:text-base">
+                        {formatPrice(item.priceCents * item.quantity)}
+                      </p>
+                    </div>
 
-                    <div className="flex items-center gap-2 sm:gap-3">
+                    <p className="mt-4 text-xs text-zinc-500 sm:text-sm">
+                      Size: {item.sizeLabel === "N/A" ? "One size" : item.sizeLabel}
+                    </p>
+
+                    <div className="mt-auto flex items-end justify-between gap-4 pt-5">
+                      <div className="inline-grid grid-cols-3 border border-zinc-300">
+                        <button
+                          type="button"
+                          onClick={() =>
+                            updateQuantity(
+                              item.productId,
+                              item.variantId,
+                              item.quantity - 1,
+                            )
+                          }
+                          className="flex h-10 w-10 cursor-pointer items-center justify-center hover:bg-white"
+                          aria-label={`Decrease quantity for ${item.titleDisplay}`}
+                        >
+                          <Minus className="h-4 w-4" />
+                        </button>
+                        <span className="flex h-10 min-w-10 items-center justify-center border-x border-zinc-300 text-sm">
+                          {item.quantity}
+                        </span>
+                        <button
+                          type="button"
+                          onClick={() =>
+                            updateQuantity(
+                              item.productId,
+                              item.variantId,
+                              item.quantity + 1,
+                            )
+                          }
+                          disabled={!canIncrease}
+                          className="flex h-10 w-10 cursor-pointer items-center justify-center hover:bg-white disabled:cursor-not-allowed disabled:text-zinc-300"
+                          aria-label={`Increase quantity for ${item.titleDisplay}`}
+                        >
+                          <Plus className="h-4 w-4" />
+                        </button>
+                      </div>
+
                       <button
-                        onClick={() =>
-                          updateQuantity(
-                            item.productId,
-                            item.variantId,
-                            item.quantity - 1,
-                          )
-                        }
-                        className="w-7 h-7 sm:w-8 sm:h-8 flex items-center justify-center bg-zinc-800 rounded hover:bg-zinc-700"
+                        type="button"
+                        onClick={() => removeItem(item.productId, item.variantId)}
+                        className="cursor-pointer p-2 text-zinc-500 transition-colors hover:text-black"
+                        aria-label={`Remove ${item.titleDisplay} from cart`}
                       >
-                        <Minus className="w-4 h-4 text-white" />
-                      </button>
-                      <span className="text-white font-semibold text-sm sm:text-base w-8 text-center">
-                        {item.quantity}
-                      </span>
-                      <button
-                        onClick={() =>
-                          updateQuantity(
-                            item.productId,
-                            item.variantId,
-                            item.quantity + 1,
-                          )
-                        }
-                        disabled={!canIncrease}
-                        className={`w-7 h-7 sm:w-8 sm:h-8 flex items-center justify-center rounded ${
-                          canIncrease
-                            ? "bg-zinc-800 hover:bg-zinc-700"
-                            : "bg-zinc-900 opacity-50 cursor-not-allowed"
-                        }`}
-                      >
-                        <Plus className="w-4 h-4 text-white" />
+                        <Trash2 className="h-5 w-5" strokeWidth={1.6} />
                       </button>
                     </div>
                   </div>
-                </div>
+                </article>
               );
             })}
-          </div>
+          </section>
 
-          {/* Order Summary */}
-          <div className="lg:col-span-1">
-            <div className="bg-zinc-900 border border-zinc-800/70 rounded p-5 sm:p-6 lg:sticky lg:top-20">
-              <h2 className="text-lg sm:text-xl font-bold text-white mb-5 sm:mb-6">
-                Order Summary
-              </h2>
-
-              <div className="space-y-3 mb-6 text-sm sm:text-base">
-                <div className="flex justify-between text-gray-400">
-                  <span>Subtotal</span>
-                  <span>${(total / 100).toFixed(2)}</span>
-                </div>
-                <div className="flex justify-between text-gray-400">
-                  <span>Shipping</span>
-                  <span>Calculated at checkout</span>
-                </div>
-                <div className="flex justify-between text-gray-400">
-                  <span>Tax</span>
-                  <span>Calculated at checkout</span>
-                </div>
-                <div className="border-t border-zinc-800/70 pt-3">
-                  <div className="flex justify-between text-lg sm:text-xl font-bold text-white">
-                    <span>Total</span>
-                    <span>${(total / 100).toFixed(2)}+</span>
-                  </div>
-                </div>
-              </div>
-
-              <button
-                onClick={handleCheckout}
-                className="w-full bg-red-600 hover:bg-red-700 text-white font-bold py-2.5 sm:py-3 rounded transition mb-3 text-sm sm:text-base"
-              >
-                Proceed to Checkout
-              </button>
-
-              <Link
-                href="/store"
-                className="block text-center text-gray-400 hover:text-white text-sm"
-              >
-                Continue Shopping
-              </Link>
+          <aside className="border border-zinc-300 bg-white p-6 lg:sticky lg:top-36">
+            <h2 className="text-lg font-medium uppercase tracking-[0.02em]">
+              Order Summary
+            </h2>
+            <div className="mt-7 flex items-center justify-between border-b border-zinc-200 pb-5 text-base">
+              <span>Subtotal</span>
+              <span className="font-medium">{formatPrice(total)}</span>
             </div>
-          </div>
+            <p className="mt-4 text-xs leading-5 text-zinc-500">
+              Shipping and taxes are calculated at checkout.
+            </p>
+            <button
+              type="button"
+              onClick={() => router.push("/checkout")}
+              className="mt-7 w-full cursor-pointer bg-zinc-900 px-6 py-4 text-sm font-medium uppercase text-white transition-colors hover:bg-black"
+            >
+              Checkout <span aria-hidden="true">&#8226;</span> {formatPrice(total)}
+            </button>
+            <Link
+              href="/store"
+              className="mt-5 block text-center text-sm underline underline-offset-4"
+            >
+              Continue shopping
+            </Link>
+          </aside>
         </div>
       </div>
     </>
