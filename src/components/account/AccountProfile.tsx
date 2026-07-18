@@ -9,7 +9,6 @@ import { logError } from "@/lib/utils/log";
 import { PasswordRequirements } from "@/components/auth/register/PasswordRequirements";
 import { isPasswordValid } from "@/lib/validation/password";
 import { Toast } from "@/components/ui/Toast";
-import { ToggleSwitch } from "@/components/ui/ToggleSwitch";
 
 type ShippingProfile = Tables<"shipping_profiles">;
 
@@ -67,8 +66,6 @@ export function AccountProfile({ userEmail }: { userEmail: string }) {
   const [isSigningOut, setIsSigningOut] = useState(false);
   const [addresses, setAddresses] = useState<AccountAddress[]>([]);
   const [isAddressesLoading, setIsAddressesLoading] = useState(false);
-  const [chatNotificationsEnabled, setChatNotificationsEnabled] = useState(true);
-  const [isChatSaving, setIsChatSaving] = useState(false);
   const [isAddressSaving, setIsAddressSaving] = useState(false);
   const [isDefaultSaving, setIsDefaultSaving] = useState(false);
   const [setAsDefault, setSetAsDefault] = useState(false);
@@ -87,7 +84,6 @@ export function AccountProfile({ userEmail }: { userEmail: string }) {
     loadProfile();
     loadOrders();
     loadAddresses();
-    loadChatNotifications();
   }, []);
 
   const loadProfile = async () => {
@@ -110,40 +106,6 @@ export function AccountProfile({ userEmail }: { userEmail: string }) {
       logError(error, { layer: "frontend", event: "account_load_orders" });
     } finally {
       setIsOrdersLoading(false);
-    }
-  };
-
-  const loadChatNotifications = async () => {
-    try {
-      const response = await fetch("/api/account/notifications", { cache: "no-store" });
-      const data = await response.json();
-      setChatNotificationsEnabled(Boolean(data.chat_notifications_enabled));
-    } catch (error) {
-      logError(error, { layer: "frontend", event: "account_load_chat_notifications" });
-    }
-  };
-
-  const handleSaveChatNotifications = async () => {
-    setIsChatSaving(true);
-    setMessage("");
-    try {
-      const response = await fetch("/api/account/notifications", {
-        method: "PATCH",
-        headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({ chat_notifications_enabled: chatNotificationsEnabled }),
-      });
-
-      const data = await response.json().catch(() => null);
-      if (!response.ok) {
-        setMessage(data?.error ?? "Failed to update chat notifications");
-        return;
-      }
-
-      setMessage("Chat notification preference updated.");
-    } catch {
-      setMessage("Failed to update chat notifications");
-    } finally {
-      setIsChatSaving(false);
     }
   };
 
@@ -449,33 +411,6 @@ export function AccountProfile({ userEmail }: { userEmail: string }) {
         <p className="text-gray-500 text-[12px] sm:text-sm mt-2">
           Email changes are not currently supported
         </p>
-      </div>
-
-      <div className="bg-zinc-900 border border-zinc-800/70 rounded p-4 sm:p-6 mb-6">
-        <h2 className="text-lg sm:text-xl font-semibold text-white mb-3 sm:mb-4">
-          Chat Notifications
-        </h2>
-        <p className="text-gray-400 text-[12px] sm:text-sm mb-4">
-          Get email updates when admins reply to your chat.
-        </p>
-        <div className="flex items-center justify-between gap-4 text-[12px] sm:text-sm text-zinc-300">
-          <span>Email me about chat replies</span>
-          <ToggleSwitch
-            checked={chatNotificationsEnabled}
-            onChange={setChatNotificationsEnabled}
-            ariaLabel="Chat notification preference"
-          />
-        </div>
-        <button
-          type="button"
-          onClick={() => {
-            void handleSaveChatNotifications();
-          }}
-          disabled={isChatSaving}
-          className="mt-4 bg-red-600 hover:bg-red-700 disabled:bg-gray-600 text-white font-semibold px-5 py-2 text-[12px] sm:text-sm rounded transition"
-        >
-          {isChatSaving ? "Saving..." : "Save Preference"}
-        </button>
       </div>
 
       {/* Saved Addresses */}

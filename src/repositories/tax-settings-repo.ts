@@ -73,7 +73,6 @@ export class TaxSettingsRepository {
           home_state: settings.homeState,
           business_name: settings.businessName ?? null,
           tax_id_number: settings.taxIdNumber ?? null,
-          // stripe_tax_settings_id column was dropped in migration 20260320 — not sent to DB
           tax_enabled: settings.taxEnabled ?? false,
           tax_code_overrides: settings.taxCodeOverrides ?? {},
           updated_at: new Date().toISOString(),

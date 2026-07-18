@@ -19,11 +19,6 @@ import {
 } from "lucide-react";
 
 import {
-  RefundOrderModal,
-  type RefundRequestPayload,
-  type RefundableOrder,
-} from "@/components/admin/orders/RefundOrderModal";
-import {
   AdminOrderItemDetailsModal,
   getOrderItemFinancials,
 } from "@/components/admin/orders/OrderItemDetailsModal";
@@ -109,9 +104,6 @@ type Order = {
 
 type PaymentTransaction = {
   id: string;
-  payrilla_reference_number?: number | null;
-  payrilla_auth_code?: string | null;
-  payrilla_status?: string | null;
   card_type?: string | null;
   card_last4?: string | null;
   card_expiry_month?: number | null;
@@ -119,8 +111,6 @@ type PaymentTransaction = {
   avs_result_code?: string | null;
   cvv2_result_code?: string | null;
   three_ds_status?: string | null;
-  nofraud_transaction_id?: string | null;
-  nofraud_decision?: string | null;
   amount_authorized?: number | null;
   amount_captured?: number | null;
   billing_name?: string | null;
@@ -332,32 +322,6 @@ function getCvvLabel(code: string | null | undefined) {
   return map[code] ?? { label: `Code: ${code}`, color: "text-zinc-400" };
 }
 
-function getNoFraudBadge(decision: string | null | undefined) {
-  if (!decision) {
-    return <span className="text-zinc-500">-</span>;
-  }
-
-  const map: Record<string, { label: string; cls: string }> = {
-    pass: { label: "Pass", cls: "bg-emerald-900/50 text-emerald-400 border-emerald-800" },
-    fail: { label: "Fail", cls: "bg-red-900/50 text-red-400 border-red-800" },
-    review: { label: "Review", cls: "bg-amber-900/50 text-amber-400 border-amber-800" },
-    fraudulent: { label: "Fraudulent", cls: "bg-red-900/50 text-red-400 border-red-800" },
-    skipped: { label: "Skipped", cls: "bg-zinc-800 text-zinc-400 border-zinc-700" },
-  };
-
-  const meta = map[decision] ?? {
-    label: decision,
-    cls: "bg-zinc-800 text-zinc-400 border-zinc-700",
-  };
-
-  return (
-    <span
-      className={`inline-flex items-center border px-2 py-0.5 text-xs font-medium ${meta.cls}`}
-    >
-      {meta.label}
-    </span>
-  );
-}
 function getDeclineDescription(eventData: Record<string, unknown>) {
   const errorCode = String(eventData.error_code ?? eventData.decline_code ?? "").trim();
   const statusCode = String(eventData.status_code ?? "").trim();
@@ -436,7 +400,7 @@ function getEventMeta(
     case "fraud_check_review":
       return {
         icon: <Clock className="h-4 w-4 text-amber-400" />,
-        label: "Under review - NoFraud investigating",
+        label: "Fraud screening review",
       };
     case "fraud_check_skipped":
       return {
@@ -622,8 +586,6 @@ export default function TransactionDetailPage() {
   const [isLoading, setIsLoading] = useState(true);
   const [error, setError] = useState<string | null>(null);
   const [emailPreview, setEmailPreview] = useState<EmailLog | null>(null);
-  const [refundOpen, setRefundOpen] = useState(false);
-  const [isRefundSubmitting, setIsRefundSubmitting] = useState(false);
   const [toast, setToast] = useState<{
     message: string;
     tone: "success" | "error" | "info";
@@ -685,47 +647,6 @@ export default function TransactionDetailPage() {
       document.body.style.overflow = previousOverflow;
     };
   }, [emailPreview, selectedPaymentEventId]);
-
-  const confirmRefund = async (payload: RefundRequestPayload) => {
-    if (!order) {
-      return;
-    }
-
-    setIsRefundSubmitting(true);
-    try {
-      const response = await fetch(`/api/admin/orders/${order.id}/refund`, {
-        method: "POST",
-        headers: { "Content-Type": "application/json" },
-        body: JSON.stringify(payload),
-      });
-      const data = await response.json().catch(() => ({}));
-
-      if (response.ok && data?.success !== false) {
-        const label =
-          payload.type === "full"
-            ? "Full refund processed."
-            : payload.type === "product"
-              ? "Product refund processed."
-              : "Custom refund processed.";
-        const warning = typeof data?.warning === "string" ? data.warning : null;
-        setToast({
-          message: warning ? `${label} ${warning}` : label,
-          tone: warning ? "info" : "success",
-        });
-        setRefundOpen(false);
-        await loadTransaction();
-      } else {
-        setToast({
-          message: (data as { error?: string }).error ?? "Refund failed.",
-          tone: "error",
-        });
-      }
-    } catch {
-      setToast({ message: "Refund failed.", tone: "error" });
-    } finally {
-      setIsRefundSubmitting(false);
-    }
-  };
 
   const handleResendEmail = async (emailType: string) => {
     if (!order || resendingEmail) {
@@ -824,17 +745,6 @@ export default function TransactionDetailPage() {
   const effectiveItemCost = Math.max(0, totalItemCost - refundedItemCost);
   const sellerRevenue = Math.max(displayTotal - processingFee - refundedAmount, 0);
   const totalProfit = sellerRevenue - effectiveItemCost;
-  const isRefundable =
-    ["paid", "shipped", "partially_refunded", "refund_failed"].includes(
-      order.status ?? "",
-    ) && Math.round(total * 100) - refundedCents > 0;
-
-  const refundableOrder: RefundableOrder = {
-    id: order.id,
-    total: order.total,
-    refund_amount: order.refund_amount,
-    items: items as unknown as RefundableOrder["items"],
-  };
 
   const customerEmail =
     order.profiles?.email ?? order.guest_email ?? paymentTx?.customer_email ?? null;
@@ -911,15 +821,6 @@ export default function TransactionDetailPage() {
           )}
         </div>
         <div className="flex flex-col items-end gap-2">
-          {isRefundable && (
-            <button
-              type="button"
-              onClick={() => setRefundOpen(true)}
-              className="bg-red-600 px-4 py-1.5 text-sm text-white transition hover:bg-red-700"
-            >
-              Issue refund
-            </button>
-          )}
           {refundedCents > 0 && (
             <div className="text-right text-sm text-red-400">
               -{fmtMoney(refundedAmount)} refunded
@@ -1463,45 +1364,6 @@ export default function TransactionDetailPage() {
               </DetailRow>
               <DetailRow label="Created">{fmtDate(order.created_at)}</DetailRow>
               <DetailRow label="Updated">{fmtDate(order.updated_at)}</DetailRow>
-              {paymentTx?.payrilla_status && (
-                <DetailRow label="Payment status">{paymentTx.payrilla_status}</DetailRow>
-              )}
-              {paymentTx?.payrilla_reference_number !== null &&
-                paymentTx?.payrilla_reference_number !== undefined && (
-                  <DetailRow label="Reference #">
-                    {paymentTx.payrilla_reference_number}
-                  </DetailRow>
-                )}
-              {paymentTx?.id && (
-                <DetailRow label="Payment ID">
-                  <span className="font-mono text-xs">{paymentTx.id}</span>
-                </DetailRow>
-              )}
-              {paymentTx?.amount_authorized !== null &&
-                paymentTx?.amount_authorized !== undefined && (
-                  <DetailRow label="Amount authorized">
-                    {fmtMoney(paymentTx.amount_authorized)}
-                  </DetailRow>
-                )}
-              {paymentTx?.amount_captured !== null &&
-                paymentTx?.amount_captured !== undefined && (
-                  <DetailRow label="Amount captured">
-                    {fmtMoney(paymentTx.amount_captured)}
-                  </DetailRow>
-                )}
-              {paymentTx?.payrilla_auth_code && (
-                <DetailRow label="Auth code">{paymentTx.payrilla_auth_code}</DetailRow>
-              )}
-              {paymentTx && (
-                <DetailRow label="NoFraud decision">
-                  {getNoFraudBadge(paymentTx.nofraud_decision)}
-                </DetailRow>
-              )}
-              {paymentTx?.nofraud_transaction_id && (
-                <DetailRow label="NoFraud ID">
-                  {paymentTx.nofraud_transaction_id}
-                </DetailRow>
-              )}
               {paymentTx?.customer_ip && (
                 <DetailRow label="Customer IP">{paymentTx.customer_ip}</DetailRow>
               )}
@@ -1731,14 +1593,6 @@ export default function TransactionDetailPage() {
           </div>
         </div>
       )}
-
-      <RefundOrderModal
-        open={refundOpen}
-        order={refundableOrder}
-        submitting={isRefundSubmitting}
-        onClose={() => setRefundOpen(false)}
-        onConfirm={confirmRefund}
-      />
 
       <AdminOrderItemDetailsModal
         open={itemModalOpen}

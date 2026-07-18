@@ -3,7 +3,6 @@ import type { Config } from "jest";
 
 const testEnvDefaults: Record<string, string> = {
   NEXT_PUBLIC_SITE_URL: "https://example.com",
-  NEXT_PUBLIC_GUEST_CHECKOUT_ENABLED: "true",
   NEXT_PUBLIC_SUPABASE_URL: "https://example.supabase.co",
   NEXT_PUBLIC_SUPABASE_PUBLISHABLE_KEY: "test-publishable-key",
   SUPABASE_SECRET_KEY: "test-secret-key",
@@ -26,15 +25,6 @@ const testEnvDefaults: Record<string, string> = {
   AWS_ACCESS_KEY_ID: "test-access-key",
   AWS_SECRET_ACCESS_KEY: "test-secret-access-key",
   ORDER_ACCESS_TOKEN_SECRET: "1234567890abcdef",
-  LIGHTSPEED_ACCESS_TOKEN: "test-lightspeed-access-token",
-  LIGHTSPEED_DOMAIN_PREFIX: "test-lightspeed-domain",
-  LIGHTSPEED_WEBHOOK_SIGNING_SECRET: "",
-  PAYRILLA_API_URL: "https://api.payrillagateway.com/api/v2",
-  NEXT_PUBLIC_PAYRILLA_TOKENIZATION_URL:
-    "https://tokenization.sandbox.payrillagateway.com/tokenization/v0.3",
-  ZIPTAX_API_KEY: "test-ziptax-key",
-  NOFRAUD_API_KEY: "test-nofraud-key",
-  NEXT_PUBLIC_NOFRAUD_CUSTOMER_CODE: "test-nofraud-customer-code",
   NODE_ENV: "test",
 };
 

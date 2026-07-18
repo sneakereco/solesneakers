@@ -59,7 +59,6 @@ const getStatusMeta = (status: string | null | undefined) => {
 type PaymentSummary = {
   card_type?: string | null;
   card_last4?: string | null;
-  payrilla_status?: string | null;
 } | null;
 
 type OrderShipping = {

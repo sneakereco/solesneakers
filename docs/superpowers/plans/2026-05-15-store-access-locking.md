@@ -378,7 +378,6 @@ children: [
   { href: "/admin/settings/store-access", label: "Store Access" },
   { href: "/admin/settings/shipping", label: "Shipping" },
   { href: "/admin/settings/taxes", label: "Taxes" },
-  { href: "/admin/settings/transfers", label: "Bank" },
 ],
 ```
 

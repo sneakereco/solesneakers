@@ -1,35 +1,18 @@
-﻿# Monitoring Guide
+# Monitoring Guide
 
-This document describes the current monitoring and observability approach.
+## Health
 
-## Logs
-- Structured JSON logging via `src/lib/log.ts`.
-- Logs include `requestId`, `layer`, `route`, and redacted metadata.
-- Email addresses are masked before output.
-- Logs are written to stdout/stderr (Vercel logs in production).
+- `/api/healthz` verifies the application process is responsive.
+- `/api/readyz` verifies required dependencies are ready.
 
-## Request IDs
-- The proxy adds `x-request-id` to all responses.
-- Use `x-request-id` to correlate client errors with server logs.
+## Operational Signals
 
-## Health checks
-- `GET /api/healthz` (liveness)
-- `GET /api/readyz` (readiness)
+Monitor structured server errors by route, request ID, and status code. Alert on sustained increases in authentication failures, order API failures, shipping webhook failures, email delivery failures, and database latency.
 
-## Stripe and Shippo
-- Stripe webhook processing logs are tagged with `stripeEventId`.
-- Shippo failures are logged from `shipping-label-service`.
+## Shipping Webhooks
 
-## Rate limiting
-- Proxy rate limiting emits structured logs when limits are exceeded.
-- Upstash dashboard provides request metrics and usage in production; local/dev uses the in-memory limiter.
+Shipping webhook failures should include a request ID and provider event identifier. Confirm signature validation, inspect the associated order, and replay only when the handler is idempotent.
 
-## External observability
-- `src/config/ci-env.ts` includes placeholders for Sentry and PostHog.
-- There is no runtime instrumentation in code yet; Vercel logs are the current source of truth.
+## Releases
 
-## Recommended alerts
-- High rate of 4xx/5xx in `/api/checkout/*`
-- Spike in `/api/webhooks/stripe` failures
-- Elevated rate limit blocks across high-traffic routes
-- Email send failures (SES timeouts)
+Each release should pass type checking, changed-file lint, unit tests, and a production build. Database migration failures block deployment.

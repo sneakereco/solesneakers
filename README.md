@@ -1,78 +1,32 @@
-﻿# Real Deal Kickz (RDK)
+# Sole Sneakers
 
-Real Deal Kickz is a full-stack ecommerce storefront and admin console built on Next.js App Router with Supabase and Stripe.
+Sole Sneakers is a Next.js App Router storefront and administration console backed by Supabase.
 
-## Stack
-- Next.js 16 App Router (React 19)
-- Supabase Postgres + Auth (SSR helpers)
-- Stripe Checkout + Stripe Connect (admin payouts)
-- Shippo (shipping rates and labels)
-- Upstash Redis (rate limiting; memory fallback in dev/test)
-- AWS SES (transactional email)
-- Tailwind CSS
+## Current Capabilities
 
-## Repo layout
-- `app/`: App Router pages and API route handlers
-- `src/components/`: UI components
-- `src/services/`: business logic
-- `src/repositories/`: database access
-- `src/lib/`: shared helpers (supabase, auth, logging, idempotency)
-- `src/proxy/` and `proxy.ts`: request proxy pipeline
-- `src/config/`: env validation, security config, constants
-- `supabase/`: migrations and seed data
-- `tests/`: unit, integration, RLS, and Playwright E2E
+- Responsive storefront, product discovery, cart, account, and policy pages
+- Supabase authentication, customer profiles, addresses, and order history
+- First-party product, variant, inventory, catalog, customer, fulfillment, pickup, and tax administration
+- Shippo shipping rates, labels, tracking, and webhook processing
+- Amazon SES transactional email
+- Role-based admin access and audit history
 
-## Local development
-1) Install dependencies:
-```
-npm ci
-```
-2) Create local env:
-```
-cp .env.example .env.local
-# PowerShell: Copy-Item .env.example .env.local
-```
-Fill in values in `.env.local`.
-Upstash is optional for local dev; the proxy uses an in-memory rate limiter when Upstash is not configured.
+Checkout is intentionally unavailable until a replacement payment and tax implementation is selected. The application does not create unpaid orders as a fallback.
 
-3) Start Supabase locally:
-```
-npm run supabase:start
-```
+## Development
 
-4) Start Next.js:
-```
+```bash
+npm install
 npm run dev
 ```
 
-Optional HTTPS (for local OAuth callbacks and Supabase auth redirects):
+Common validation commands:
+
+```bash
+npm run typecheck
+npm run lint
+npm run test:jest:unit -- --runInBand
+npm run build
 ```
-npm run caddy:start
-```
-This serves Next.js at `https://localhost:8444` and Supabase at `https://localhost:8443`.
 
-## Tests
-- Lint: `npm run lint`
-- Typecheck: `npm run typecheck`
-- Unit + integration: `npm run test:jest`
-- E2E: `npm run test:e2e`
-
-E2E configuration flags:
-- `E2E_MODE=local|vercel`
-- `E2E_BASE_URL` (set to target Vercel)
-- `E2E_SEED_STRATEGY=cli|remote|none`
-- `E2E_TEST_MODE=1` and `NEXT_PUBLIC_E2E_TEST_MODE=1` enable test-only bypasses
-
-See `package.json` and `tests/` for test entry points and coverage areas.
-
-## Documentation
-- `docs/PROJECT_OVERVIEW.md` (full system overview for rebuild planning)
-- `docs/ARCHITECTURE.md`
-- `docs/API_SPEC.md`
-- `docs/SECURITY.md`
-- `docs/DEPLOYMENT_PIPELINE.md`
-- `docs/INFRA_GUIDE.md`
-- `docs/MONITORING_GUIDE.md`
-- `docs/PROXY_PIPELINE.md`
-- `docs/RUNBOOK.md`
-- `docs/SYSTEM_DESIGN.md`
+Environment variables are validated in `src/config/env.ts`. Database changes are forward-only Supabase migrations in `supabase/migrations`.

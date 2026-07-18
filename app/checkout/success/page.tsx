@@ -317,23 +317,10 @@ function SuccessContent() {
             </a>
             .
           </p>
-          {isAuthenticated && (
-            <p className="text-sm text-gray-400">
-              You can also use the in-app pickup chat below if you prefer.
-            </p>
-          )}
         </div>
       )}
 
       <div className="space-y-3">
-        {isAuthenticated && isPickup && (
-          <button
-            onClick={() => window.dispatchEvent(new CustomEvent("openChat"))}
-            className="w-full bg-zinc-800 hover:bg-zinc-700 text-white font-semibold py-3 rounded transition"
-          >
-            Open pickup chat
-          </button>
-        )}
         {isAuthenticated && (
           <button
             onClick={() => router.push("/account")}

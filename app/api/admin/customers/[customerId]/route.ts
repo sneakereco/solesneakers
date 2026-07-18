@@ -27,7 +27,6 @@ type CustomerOrderRow = {
     email?: string | null;
     full_name?: string | null;
     created_at?: string | null;
-    payrilla_customer_token?: string | null;
   } | null;
   shipping?:
     | {
@@ -56,7 +55,6 @@ type CustomerOrderRow = {
 type PaymentRow = {
   id: string;
   order_id: string;
-  payrilla_status?: string | null;
   card_type?: string | null;
   card_last4?: string | null;
   card_expiry_month?: number | null;
@@ -78,10 +76,7 @@ type PaymentRow = {
   updated_at?: string | null;
 };
 
-type ProfileRow = Pick<
-  Tables<"profiles">,
-  "id" | "created_at" | "full_name" | "email" | "payrilla_customer_token"
->;
+type ProfileRow = Pick<Tables<"profiles">, "id" | "created_at" | "full_name" | "email">;
 
 type AddressRow = Pick<
   Tables<"user_addresses">,
@@ -194,7 +189,7 @@ export async function GET(
           refund_amount,
           created_at,
           updated_at,
-          profiles!user_id(id, email, full_name, created_at, payrilla_customer_token),
+          profiles!user_id(id, email, full_name, created_at),
           shipping:order_shipping(*)
           `,
         )
@@ -298,7 +293,7 @@ export async function GET(
     let paymentsQuery = (admin as any)
       .from("payment_transactions")
       .select(
-        "id, order_id, payrilla_status, card_type, card_last4, card_expiry_month, card_expiry_year, amount_authorized, amount_captured, amount_refunded, customer_email, billing_name, billing_address, billing_city, billing_state, billing_zip, billing_country, billing_phone, avs_result_code, cvv2_result_code, created_at, updated_at",
+        "id, order_id, card_type, card_last4, card_expiry_month, card_expiry_year, amount_authorized, amount_captured, amount_refunded, customer_email, billing_name, billing_address, billing_city, billing_state, billing_zip, billing_country, billing_phone, avs_result_code, cvv2_result_code, created_at, updated_at",
       )
       .in("order_id", orderIds)
       .order("created_at", { ascending: false });
@@ -319,7 +314,7 @@ export async function GET(
         await Promise.all([
           admin
             .from("profiles")
-            .select("id, created_at, full_name, email, payrilla_customer_token")
+            .select("id, created_at, full_name, email")
             .eq("id", identity.userId)
             .maybeSingle(),
           admin
@@ -341,7 +336,7 @@ export async function GET(
       // eslint-disable-next-line @typescript-eslint/no-explicit-any
       const { data: profile } = await (admin as any)
         .from("profiles")
-        .select("id, created_at, full_name, email, payrilla_customer_token")
+        .select("id, created_at, full_name, email")
         .eq("email", identity.email)
         .maybeSingle();
 
@@ -351,7 +346,7 @@ export async function GET(
         // eslint-disable-next-line @typescript-eslint/no-explicit-any
         const { data: fallbackProfiles } = await (admin as any)
           .from("profiles")
-          .select("id, created_at, full_name, email, payrilla_customer_token")
+          .select("id, created_at, full_name, email")
           .not("email", "is", null);
 
         matchedProfile =
@@ -461,7 +456,7 @@ export async function GET(
           id: payment.id,
           label: [
             payment.card_type ?? "Card",
-            payment.card_last4 ? `•••• ${payment.card_last4}` : "",
+            payment.card_last4 ? `â€¢â€¢â€¢â€¢ ${payment.card_last4}` : "",
           ]
             .filter(Boolean)
             .join(" "),
@@ -475,7 +470,7 @@ export async function GET(
           billingAddress: formatAddress(payment),
           phone: payment.billing_phone ?? null,
           email: payment.customer_email ?? null,
-          origin: "Payrilla transaction history",
+          origin: "Transaction history",
           cvcCheck: payment.cvv2_result_code ?? null,
           streetZipCheck: payment.avs_result_code ?? null,
         });
@@ -494,7 +489,7 @@ export async function GET(
         id: "guest-created",
         title: "Guest profile created",
         description:
-          "Guest was created to show payments that weren’t associated with an account.",
+          "Guest was created to show payments that werenâ€™t associated with an account.",
         createdAt: customerSince,
       });
     }
@@ -582,7 +577,6 @@ export async function GET(
           totalSpend,
           paymentCount: paymentsTable.length,
           primaryPaymentMethod: paymentMethodsMap.values().next().value?.label ?? null,
-          payrillaCustomerToken: matchedProfile?.payrilla_customer_token ?? null,
         },
         payments: paymentsTable.sort(
           (a, b) => new Date(b.createdAt).getTime() - new Date(a.createdAt).getTime(),

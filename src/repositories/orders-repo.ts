@@ -239,7 +239,7 @@ export class OrdersRepository {
 
     const { data, error } = await this.supabase.rpc("mark_order_paid_and_decrement", {
       p_order_id: orderId,
-      p_stripe_payment_intent_id: paymentTransactionId, // RPC param name unchanged for DB compat
+      p_payment_transaction_id: paymentTransactionId,
       p_items: payload,
     });
 
@@ -311,28 +311,6 @@ export class OrdersRepository {
     return data ?? [];
   }
 
-  async listOrdersForAnalytics(params?: { status?: string[]; since?: string }) {
-    let query = this.supabase
-      .from("orders")
-      .select(
-        "id, created_at, subtotal, total, refund_amount, items:order_items(quantity, unit_cost, refunded_at)",
-      )
-      .order("created_at", { ascending: false });
-
-    if (params?.status?.length) {
-      query = query.in("status", params.status);
-    }
-    if (params?.since) {
-      query = query.gte("created_at", params.since);
-    }
-
-    const { data, error } = await query;
-    if (error) {
-      throw error;
-    }
-    return data ?? [];
-  }
-
   async listOrdersPaged(params?: {
     status?: string[];
     fulfillment?: string;
@@ -347,7 +325,7 @@ export class OrdersRepository {
     let query = this.supabase
       .from("orders")
       .select(
-        "*, profiles!user_id(email), items:order_items(*, product:products(id, name, brand, model, category, created_at, description, images:product_images(url, is_primary, sort_order), tags:product_tags(tag:tags(label, group_key))), variant:product_variants(id, sku, size_label, sale_price_cents, unit_cost_cents)), shipping:order_shipping(*), payment:payment_transactions(card_type, card_last4, payrilla_status)",
+        "*, profiles!user_id(email), items:order_items(*, product:products(id, name, brand, model, category, created_at, description, images:product_images(url, is_primary, sort_order), tags:product_tags(tag:tags(label, group_key))), variant:product_variants(id, sku, size_label, sale_price_cents, unit_cost_cents)), shipping:order_shipping(*), payment:payment_transactions(card_type, card_last4)",
         { count: "exact" },
       )
       .order("created_at", { ascending: false });

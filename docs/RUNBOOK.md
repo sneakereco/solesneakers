@@ -1,50 +1,34 @@
-﻿# Runbook
+# Runbook
 
-This runbook provides operational steps for common incidents.
+## Storefront Or Admin Failure
 
-## Quick health checks
-- `GET /api/healthz` and `GET /api/readyz`
-- Check Vercel logs for `requestId` and error spikes
+1. Check `/api/healthz` and `/api/readyz`.
+2. Review the latest deployment and structured logs by request ID.
+3. Confirm Supabase availability and connection configuration.
+4. Reproduce against the affected route with the correct role.
+5. Roll back the application release if the failure is release-specific and no migration makes rollback unsafe.
 
-## Incident: checkout failures
-1) Verify Stripe status dashboard.
-2) Check `/api/checkout/session` and `/api/checkout/confirm-payment` logs.
-3) Inspect `orders` table for stuck `pending` orders.
-4) Confirm Stripe event delivery to `/api/webhooks/stripe`.
-5) If needed, replay Stripe events in the Stripe dashboard.
+## Inventory Failure
 
-## Incident: payment stuck in processing
-1) Check Stripe payment intent status.
-2) Confirm `confirm-payment` responses for `processing` vs `succeeded`.
-3) Validate `stripe_events` contains the event ID (idempotency).
+1. Confirm the admin session and role.
+2. Inspect product and variant rows in Supabase.
+3. Check API validation errors and request IDs.
+4. Do not repair stock with client-side writes; use an audited server or database operation.
 
-## Incident: shipping label failures
-1) Check `/api/admin/shipping/labels` logs.
-2) Verify Shippo API token and account status.
-3) Confirm address and parcel inputs.
+## Shipping Failure
 
-## Incident: admin access denied
-1) Confirm user profile role in `profiles`.
-2) Verify `admin_session` cookie is present and valid.
-3) Check MFA status (AAL2) for the user.
+1. Confirm the order shipping address and fulfillment state.
+2. Check Shippo availability and credentials.
+3. Inspect label or webhook logs by request ID.
+4. Replay webhook delivery only after confirming idempotency.
 
-## Incident: rate limiting blocks legitimate users
-1) Check Upstash usage and logs (if `rateLimit.store = "upstash"`).
-2) Review `security.proxy.rateLimitPrefixes`, `rateLimit.bypassPrefixes`, and `rateLimit.applyInLocalDev`.
-3) Adjust limits in `src/config/security.ts` if needed and redeploy.
+## Checkout Requests
 
-## Incident: email delivery errors
-1) Check SES send failures in logs (`order_email_failed`).
-2) Verify SES credentials and region.
-3) Confirm SES sending limits.
+Checkout is intentionally unavailable. Do not bypass this state by creating pending orders without an atomic payment, tax, total-validation, and inventory-decrement workflow.
 
-## Recovery actions
-- Rotate secrets via env vars and redeploy.
-- Pause marketing campaigns that spike traffic if rate limits are hit.
-- Disable Stripe webhook processing only as a last resort.
+## Database Migration Failure
 
-## Escalation
-- App errors: engineering owner
-- Payments: Stripe support
-- Shipping: Shippo support
-- Database: Supabase support
+1. Stop the deployment.
+2. Identify whether the migration partially applied.
+3. Create a new forward repair migration.
+4. Never edit an already applied migration in place.

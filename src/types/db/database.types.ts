@@ -92,61 +92,6 @@ export type Database = {
           },
         ];
       };
-      admin_notifications: {
-        Row: {
-          admin_id: string;
-          chat_id: string | null;
-          created_at: string;
-          id: string;
-          message: string;
-          order_id: string | null;
-          read_at: string | null;
-          type: string;
-        };
-        Insert: {
-          admin_id: string;
-          chat_id?: string | null;
-          created_at?: string;
-          id?: string;
-          message: string;
-          order_id?: string | null;
-          read_at?: string | null;
-          type: string;
-        };
-        Update: {
-          admin_id?: string;
-          chat_id?: string | null;
-          created_at?: string;
-          id?: string;
-          message?: string;
-          order_id?: string | null;
-          read_at?: string | null;
-          type?: string;
-        };
-        Relationships: [
-          {
-            foreignKeyName: "admin_notifications_admin_id_fkey";
-            columns: ["admin_id"];
-            isOneToOne: false;
-            referencedRelation: "profiles";
-            referencedColumns: ["id"];
-          },
-          {
-            foreignKeyName: "admin_notifications_chat_id_fkey";
-            columns: ["chat_id"];
-            isOneToOne: false;
-            referencedRelation: "chats";
-            referencedColumns: ["id"];
-          },
-          {
-            foreignKeyName: "admin_notifications_order_id_fkey";
-            columns: ["order_id"];
-            isOneToOne: false;
-            referencedRelation: "orders";
-            referencedColumns: ["id"];
-          },
-        ];
-      };
       catalog_aliases: {
         Row: {
           alias_label: string;
@@ -415,8 +360,6 @@ export type Database = {
           delivery_event_snapshot: Json | null;
           device_fingerprint: string | null;
           id: string;
-          nofraud_decision: string | null;
-          nofraud_transaction_id: string | null;
           order_id: string;
           order_snapshot: Json | null;
           payment_amount: number | null;
@@ -441,8 +384,6 @@ export type Database = {
           delivery_event_snapshot?: Json | null;
           device_fingerprint?: string | null;
           id?: string;
-          nofraud_decision?: string | null;
-          nofraud_transaction_id?: string | null;
           order_id: string;
           order_snapshot?: Json | null;
           payment_amount?: number | null;
@@ -467,8 +408,6 @@ export type Database = {
           delivery_event_snapshot?: Json | null;
           device_fingerprint?: string | null;
           id?: string;
-          nofraud_decision?: string | null;
-          nofraud_transaction_id?: string | null;
           order_id?: string;
           order_snapshot?: Json | null;
           payment_amount?: number | null;
@@ -495,109 +434,6 @@ export type Database = {
             columns: ["tenant_id"];
             isOneToOne: false;
             referencedRelation: "tenants";
-            referencedColumns: ["id"];
-          },
-        ];
-      };
-      chat_messages: {
-        Row: {
-          body: string;
-          chat_id: string;
-          created_at: string;
-          id: string;
-          sender_id: string | null;
-          sender_role: string;
-        };
-        Insert: {
-          body: string;
-          chat_id: string;
-          created_at?: string;
-          id?: string;
-          sender_id?: string | null;
-          sender_role: string;
-        };
-        Update: {
-          body?: string;
-          chat_id?: string;
-          created_at?: string;
-          id?: string;
-          sender_id?: string | null;
-          sender_role?: string;
-        };
-        Relationships: [
-          {
-            foreignKeyName: "chat_messages_chat_id_fkey";
-            columns: ["chat_id"];
-            isOneToOne: false;
-            referencedRelation: "chats";
-            referencedColumns: ["id"];
-          },
-          {
-            foreignKeyName: "chat_messages_sender_id_fkey";
-            columns: ["sender_id"];
-            isOneToOne: false;
-            referencedRelation: "profiles";
-            referencedColumns: ["id"];
-          },
-        ];
-      };
-      chats: {
-        Row: {
-          closed_at: string | null;
-          closed_by: string | null;
-          created_at: string;
-          guest_email: string | null;
-          id: string;
-          order_id: string | null;
-          source: string;
-          status: string;
-          updated_at: string;
-          user_id: string | null;
-        };
-        Insert: {
-          closed_at?: string | null;
-          closed_by?: string | null;
-          created_at?: string;
-          guest_email?: string | null;
-          id?: string;
-          order_id?: string | null;
-          source?: string;
-          status?: string;
-          updated_at?: string;
-          user_id?: string | null;
-        };
-        Update: {
-          closed_at?: string | null;
-          closed_by?: string | null;
-          created_at?: string;
-          guest_email?: string | null;
-          id?: string;
-          order_id?: string | null;
-          source?: string;
-          status?: string;
-          updated_at?: string;
-          user_id?: string | null;
-        };
-        Relationships: [
-          {
-            foreignKeyName: "chats_closed_by_fkey";
-            columns: ["closed_by"];
-            isOneToOne: false;
-            referencedRelation: "profiles";
-            referencedColumns: ["id"];
-          },
-          {
-            foreignKeyName: "chats_order_id_fkey";
-            columns: ["order_id"];
-            isOneToOne: false;
-            referencedRelation: "orders";
-            referencedColumns: ["id"];
-          },
-          {
-            foreignKeyName: "chats_user_id_fkey";
-            columns: ["user_id"];
-            isOneToOne: false;
-            referencedRelation: "profiles";
             referencedColumns: ["id"];
           },
         ];
@@ -813,57 +649,6 @@ export type Database = {
         };
         Relationships: [];
       };
-      deleted_product_recovery: {
-        Row: {
-          deleted_at: string;
-          deleted_by_user_id: string | null;
-          id: string;
-          lightspeed_link_snapshots: Json;
-          lightspeed_product_snapshots: Json;
-          local_product_snapshot: Json;
-          metadata: Json;
-          product_id: string | null;
-          tenant_id: string;
-        };
-        Insert: {
-          deleted_at?: string;
-          deleted_by_user_id?: string | null;
-          id?: string;
-          lightspeed_link_snapshots?: Json;
-          lightspeed_product_snapshots?: Json;
-          local_product_snapshot?: Json;
-          metadata?: Json;
-          product_id?: string | null;
-          tenant_id: string;
-        };
-        Update: {
-          deleted_at?: string;
-          deleted_by_user_id?: string | null;
-          id?: string;
-          lightspeed_link_snapshots?: Json;
-          lightspeed_product_snapshots?: Json;
-          local_product_snapshot?: Json;
-          metadata?: Json;
-          product_id?: string | null;
-          tenant_id?: string;
-        };
-        Relationships: [
-          {
-            foreignKeyName: "deleted_product_recovery_deleted_by_user_id_fkey";
-            columns: ["deleted_by_user_id"];
-            isOneToOne: false;
-            referencedRelation: "users";
-            referencedColumns: ["id"];
-          },
-          {
-            foreignKeyName: "deleted_product_recovery_tenant_id_fkey";
-            columns: ["tenant_id"];
-            isOneToOne: false;
-            referencedRelation: "tenants";
-            referencedColumns: ["id"];
-          },
-        ];
-      };
       featured_items: {
         Row: {
           created_at: string;
@@ -902,227 +687,6 @@ export type Database = {
           },
           {
             foreignKeyName: "featured_items_tenant_id_fkey";
-            columns: ["tenant_id"];
-            isOneToOne: false;
-            referencedRelation: "tenants";
-            referencedColumns: ["id"];
-          },
-        ];
-      };
-      lightspeed_product_links: {
-        Row: {
-          created_at: string;
-          external_sku: string;
-          id: string;
-          last_error: string | null;
-          last_lightspeed_modified_at: string | null;
-          last_sync_direction: string | null;
-          last_website_modified_at: string | null;
-          lightspeed_family_id: string | null;
-          lightspeed_inventory_item_id: string | null;
-          lightspeed_product_id: string | null;
-          lightspeed_variant_id: string | null;
-          product_id: string | null;
-          sync_state: string;
-          tenant_id: string;
-          tombstoned_at: string | null;
-          updated_at: string;
-          variant_id: string | null;
-        };
-        Insert: {
-          created_at?: string;
-          external_sku: string;
-          id?: string;
-          last_error?: string | null;
-          last_lightspeed_modified_at?: string | null;
-          last_sync_direction?: string | null;
-          last_website_modified_at?: string | null;
-          lightspeed_family_id?: string | null;
-          lightspeed_inventory_item_id?: string | null;
-          lightspeed_product_id?: string | null;
-          lightspeed_variant_id?: string | null;
-          product_id?: string | null;
-          sync_state?: string;
-          tenant_id: string;
-          tombstoned_at?: string | null;
-          updated_at?: string;
-          variant_id?: string | null;
-        };
-        Update: {
-          created_at?: string;
-          external_sku?: string;
-          id?: string;
-          last_error?: string | null;
-          last_lightspeed_modified_at?: string | null;
-          last_sync_direction?: string | null;
-          last_website_modified_at?: string | null;
-          lightspeed_family_id?: string | null;
-          lightspeed_inventory_item_id?: string | null;
-          lightspeed_product_id?: string | null;
-          lightspeed_variant_id?: string | null;
-          product_id?: string | null;
-          sync_state?: string;
-          tenant_id?: string;
-          tombstoned_at?: string | null;
-          updated_at?: string;
-          variant_id?: string | null;
-        };
-        Relationships: [
-          {
-            foreignKeyName: "lightspeed_product_links_product_id_fkey";
-            columns: ["product_id"];
-            isOneToOne: false;
-            referencedRelation: "products";
-            referencedColumns: ["id"];
-          },
-          {
-            foreignKeyName: "lightspeed_product_links_tenant_id_fkey";
-            columns: ["tenant_id"];
-            isOneToOne: false;
-            referencedRelation: "tenants";
-            referencedColumns: ["id"];
-          },
-          {
-            foreignKeyName: "lightspeed_product_links_variant_id_fkey";
-            columns: ["variant_id"];
-            isOneToOne: false;
-            referencedRelation: "product_variants";
-            referencedColumns: ["id"];
-          },
-        ];
-      };
-      lightspeed_sync_run_items: {
-        Row: {
-          action: string;
-          apply_status: string | null;
-          approved: boolean | null;
-          change_type: string;
-          created_at: string;
-          entity_key: string;
-          entity_type: string;
-          failure_reason: string | null;
-          id: string;
-          payload: Json;
-          sync_run_id: string;
-          tenant_id: string;
-        };
-        Insert: {
-          action: string;
-          apply_status?: string | null;
-          approved?: boolean | null;
-          change_type: string;
-          created_at?: string;
-          entity_key: string;
-          entity_type: string;
-          failure_reason?: string | null;
-          id?: string;
-          payload?: Json;
-          sync_run_id: string;
-          tenant_id: string;
-        };
-        Update: {
-          action?: string;
-          apply_status?: string | null;
-          approved?: boolean | null;
-          change_type?: string;
-          created_at?: string;
-          entity_key?: string;
-          entity_type?: string;
-          failure_reason?: string | null;
-          id?: string;
-          payload?: Json;
-          sync_run_id?: string;
-          tenant_id?: string;
-        };
-        Relationships: [
-          {
-            foreignKeyName: "lightspeed_sync_run_items_sync_run_id_fkey";
-            columns: ["sync_run_id"];
-            isOneToOne: false;
-            referencedRelation: "lightspeed_sync_runs";
-            referencedColumns: ["id"];
-          },
-          {
-            foreignKeyName: "lightspeed_sync_run_items_tenant_id_fkey";
-            columns: ["tenant_id"];
-            isOneToOne: false;
-            referencedRelation: "tenants";
-            referencedColumns: ["id"];
-          },
-        ];
-      };
-      lightspeed_sync_runs: {
-        Row: {
-          completed_at: string | null;
-          created_at: string;
-          id: string;
-          source_of_truth: string;
-          started_by: string | null;
-          status: string;
-          summary: Json;
-          tenant_id: string;
-        };
-        Insert: {
-          completed_at?: string | null;
-          created_at?: string;
-          id?: string;
-          source_of_truth: string;
-          started_by?: string | null;
-          status?: string;
-          summary?: Json;
-          tenant_id: string;
-        };
-        Update: {
-          completed_at?: string | null;
-          created_at?: string;
-          id?: string;
-          source_of_truth?: string;
-          started_by?: string | null;
-          status?: string;
-          summary?: Json;
-          tenant_id?: string;
-        };
-        Relationships: [
-          {
-            foreignKeyName: "lightspeed_sync_runs_tenant_id_fkey";
-            columns: ["tenant_id"];
-            isOneToOne: false;
-            referencedRelation: "tenants";
-            referencedColumns: ["id"];
-          },
-        ];
-      };
-      lightspeed_webhook_events: {
-        Row: {
-          created_at: string;
-          event_id: string;
-          id: string;
-          payload: Json;
-          processed_at: string | null;
-          tenant_id: string | null;
-          topic: string;
-        };
-        Insert: {
-          created_at?: string;
-          event_id: string;
-          id?: string;
-          payload: Json;
-          processed_at?: string | null;
-          tenant_id?: string | null;
-          topic: string;
-        };
-        Update: {
-          created_at?: string;
-          event_id?: string;
-          id?: string;
-          payload?: Json;
-          processed_at?: string | null;
-          tenant_id?: string | null;
-          topic?: string;
-        };
-        Relationships: [
-          {
-            foreignKeyName: "lightspeed_webhook_events_tenant_id_fkey";
             columns: ["tenant_id"];
             isOneToOne: false;
             referencedRelation: "tenants";
@@ -1454,10 +1018,7 @@ export type Database = {
           label_created_at: string | null;
           label_created_by: string | null;
           label_url: string | null;
-          nofraud_decision: string | null;
-          nofraud_transaction_id: string | null;
           payment_transaction_id: string | null;
-          payrilla_transaction_id: string | null;
           pickup_instructions: string | null;
           pickup_location_id: string | null;
           public_token: string | null;
@@ -1468,7 +1029,6 @@ export type Database = {
           shipping: number;
           shipping_carrier: string | null;
           status: string | null;
-          stripe_session_id: string | null;
           subtotal: number;
           tax_amount: number | null;
           tax_calculation_id: string | null;
@@ -1496,10 +1056,7 @@ export type Database = {
           label_created_at?: string | null;
           label_created_by?: string | null;
           label_url?: string | null;
-          nofraud_decision?: string | null;
-          nofraud_transaction_id?: string | null;
           payment_transaction_id?: string | null;
-          payrilla_transaction_id?: string | null;
           pickup_instructions?: string | null;
           pickup_location_id?: string | null;
           public_token?: string | null;
@@ -1510,7 +1067,6 @@ export type Database = {
           shipping: number;
           shipping_carrier?: string | null;
           status?: string | null;
-          stripe_session_id?: string | null;
           subtotal: number;
           tax_amount?: number | null;
           tax_calculation_id?: string | null;
@@ -1538,10 +1094,7 @@ export type Database = {
           label_created_at?: string | null;
           label_created_by?: string | null;
           label_url?: string | null;
-          nofraud_decision?: string | null;
-          nofraud_transaction_id?: string | null;
           payment_transaction_id?: string | null;
-          payrilla_transaction_id?: string | null;
           pickup_instructions?: string | null;
           pickup_location_id?: string | null;
           public_token?: string | null;
@@ -1552,7 +1105,6 @@ export type Database = {
           shipping?: number;
           shipping_carrier?: string | null;
           status?: string | null;
-          stripe_session_id?: string | null;
           subtotal?: number;
           tax_amount?: number | null;
           tax_calculation_id?: string | null;
@@ -1671,12 +1223,7 @@ export type Database = {
           customer_ip: string | null;
           cvv2_result_code: string | null;
           id: string;
-          nofraud_decision: string | null;
-          nofraud_transaction_id: string | null;
           order_id: string;
-          payrilla_auth_code: string | null;
-          payrilla_reference_number: number | null;
-          payrilla_status: string;
           tenant_id: string | null;
           three_ds_eci: string | null;
           three_ds_status: string | null;
@@ -1706,12 +1253,7 @@ export type Database = {
           customer_ip?: string | null;
           cvv2_result_code?: string | null;
           id?: string;
-          nofraud_decision?: string | null;
-          nofraud_transaction_id?: string | null;
           order_id: string;
-          payrilla_auth_code?: string | null;
-          payrilla_reference_number?: number | null;
-          payrilla_status?: string;
           tenant_id?: string | null;
           three_ds_eci?: string | null;
           three_ds_status?: string | null;
@@ -1741,12 +1283,7 @@ export type Database = {
           customer_ip?: string | null;
           cvv2_result_code?: string | null;
           id?: string;
-          nofraud_decision?: string | null;
-          nofraud_transaction_id?: string | null;
           order_id?: string;
-          payrilla_auth_code?: string | null;
-          payrilla_reference_number?: number | null;
-          payrilla_status?: string;
           tenant_id?: string | null;
           three_ds_eci?: string | null;
           three_ds_status?: string | null;
@@ -1765,82 +1302,6 @@ export type Database = {
             columns: ["tenant_id"];
             isOneToOne: false;
             referencedRelation: "tenants";
-            referencedColumns: ["id"];
-          },
-        ];
-      };
-      payment_webhook_events: {
-        Row: {
-          created: number;
-          id: string;
-          order_id: string | null;
-          payload_hash: string;
-          processed_at: string | null;
-          type: string;
-          webhook_event_id: string;
-        };
-        Insert: {
-          created: number;
-          id?: string;
-          order_id?: string | null;
-          payload_hash: string;
-          processed_at?: string | null;
-          type: string;
-          webhook_event_id: string;
-        };
-        Update: {
-          created?: number;
-          id?: string;
-          order_id?: string | null;
-          payload_hash?: string;
-          processed_at?: string | null;
-          type?: string;
-          webhook_event_id?: string;
-        };
-        Relationships: [
-          {
-            foreignKeyName: "stripe_events_order_id_fkey";
-            columns: ["order_id"];
-            isOneToOne: false;
-            referencedRelation: "orders";
-            referencedColumns: ["id"];
-          },
-        ];
-      };
-      payout_settings: {
-        Row: {
-          account_label: string | null;
-          account_last4: string | null;
-          created_at: string;
-          id: string;
-          primary_admin_id: string;
-          provider: string | null;
-          updated_at: string;
-        };
-        Insert: {
-          account_label?: string | null;
-          account_last4?: string | null;
-          created_at?: string;
-          id?: string;
-          primary_admin_id: string;
-          provider?: string | null;
-          updated_at?: string;
-        };
-        Update: {
-          account_label?: string | null;
-          account_last4?: string | null;
-          created_at?: string;
-          id?: string;
-          primary_admin_id?: string;
-          provider?: string | null;
-          updated_at?: string;
-        };
-        Relationships: [
-          {
-            foreignKeyName: "payout_settings_primary_admin_id_fkey";
-            columns: ["primary_admin_id"];
-            isOneToOne: false;
-            referencedRelation: "profiles";
             referencedColumns: ["id"];
           },
         ];
@@ -2040,45 +1501,30 @@ export type Database = {
       };
       profiles: {
         Row: {
-          admin_order_notifications_enabled: boolean;
-          chat_notifications_enabled: boolean;
           created_at: string | null;
           email: string | null;
           full_name: string | null;
           id: string;
           is_primary_admin: boolean;
-          payrilla_account_id: string | null;
-          payrilla_customer_token: string | null;
           role: string | null;
-          stripe_customer_id: string | null;
           tenant_id: string | null;
         };
         Insert: {
-          admin_order_notifications_enabled?: boolean;
-          chat_notifications_enabled?: boolean;
           created_at?: string | null;
           email?: string | null;
           full_name?: string | null;
           id: string;
           is_primary_admin?: boolean;
-          payrilla_account_id?: string | null;
-          payrilla_customer_token?: string | null;
           role?: string | null;
-          stripe_customer_id?: string | null;
           tenant_id?: string | null;
         };
         Update: {
-          admin_order_notifications_enabled?: boolean;
-          chat_notifications_enabled?: boolean;
           created_at?: string | null;
           email?: string | null;
           full_name?: string | null;
           id?: string;
           is_primary_admin?: boolean;
-          payrilla_account_id?: string | null;
-          payrilla_customer_token?: string | null;
           role?: string | null;
-          stripe_customer_id?: string | null;
           tenant_id?: string | null;
         };
         Relationships: [
@@ -2332,36 +1778,6 @@ export type Database = {
           },
         ];
       };
-      site_pageviews: {
-        Row: {
-          created_at: string;
-          id: string;
-          path: string;
-          referrer: string | null;
-          session_id: string;
-          user_id: string | null;
-          visitor_id: string;
-        };
-        Insert: {
-          created_at?: string;
-          id?: string;
-          path: string;
-          referrer?: string | null;
-          session_id: string;
-          user_id?: string | null;
-          visitor_id: string;
-        };
-        Update: {
-          created_at?: string;
-          id?: string;
-          path?: string;
-          referrer?: string | null;
-          session_id?: string;
-          user_id?: string | null;
-          visitor_id?: string;
-        };
-        Relationships: [];
-      };
       state_sales_tracking: {
         Row: {
           created_at: string;
@@ -2482,100 +1898,6 @@ export type Database = {
           zip_code?: string;
         };
         Relationships: [];
-      };
-      tenant_lightspeed_settings: {
-        Row: {
-          access_token: string | null;
-          account_id: string | null;
-          created_at: string;
-          domain_prefix: string | null;
-          id: string;
-          refresh_token: string | null;
-          retailer_id: string | null;
-          sync_enabled: boolean;
-          tenant_id: string;
-          token_expires_at: string | null;
-          updated_at: string;
-          webhook_secret: string | null;
-        };
-        Insert: {
-          access_token?: string | null;
-          account_id?: string | null;
-          created_at?: string;
-          domain_prefix?: string | null;
-          id?: string;
-          refresh_token?: string | null;
-          retailer_id?: string | null;
-          sync_enabled?: boolean;
-          tenant_id: string;
-          token_expires_at?: string | null;
-          updated_at?: string;
-          webhook_secret?: string | null;
-        };
-        Update: {
-          access_token?: string | null;
-          account_id?: string | null;
-          created_at?: string;
-          domain_prefix?: string | null;
-          id?: string;
-          refresh_token?: string | null;
-          retailer_id?: string | null;
-          sync_enabled?: boolean;
-          tenant_id?: string;
-          token_expires_at?: string | null;
-          updated_at?: string;
-          webhook_secret?: string | null;
-        };
-        Relationships: [
-          {
-            foreignKeyName: "tenant_lightspeed_settings_tenant_id_fkey";
-            columns: ["tenant_id"];
-            isOneToOne: false;
-            referencedRelation: "tenants";
-            referencedColumns: ["id"];
-          },
-        ];
-      };
-      tenant_payrilla_credentials: {
-        Row: {
-          api_key_encrypted: string;
-          created_at: string;
-          id: string;
-          is_active: boolean;
-          payrilla_merchant_id: string | null;
-          tenant_id: string;
-          tokenization_key_encrypted: string;
-          updated_at: string;
-        };
-        Insert: {
-          api_key_encrypted: string;
-          created_at?: string;
-          id?: string;
-          is_active?: boolean;
-          payrilla_merchant_id?: string | null;
-          tenant_id: string;
-          tokenization_key_encrypted: string;
-          updated_at?: string;
-        };
-        Update: {
-          api_key_encrypted?: string;
-          created_at?: string;
-          id?: string;
-          is_active?: boolean;
-          payrilla_merchant_id?: string | null;
-          tenant_id?: string;
-          tokenization_key_encrypted?: string;
-          updated_at?: string;
-        };
-        Relationships: [
-          {
-            foreignKeyName: "tenant_payrilla_credentials_tenant_id_fkey";
-            columns: ["tenant_id"];
-            isOneToOne: true;
-            referencedRelation: "tenants";
-            referencedColumns: ["id"];
-          },
-        ];
       };
       tenant_store_access_settings: {
         Row: {
@@ -2848,7 +2170,7 @@ export type Database = {
         Args: {
           p_items: Json;
           p_order_id: string;
-          p_stripe_payment_intent_id: string;
+          p_payment_transaction_id: string;
         };
         Returns: boolean;
       };

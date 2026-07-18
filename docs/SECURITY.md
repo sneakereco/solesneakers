@@ -1,70 +1,27 @@
-﻿# Security
+# Security
 
-This document describes the current security posture of the codebase. It is derived from the implementation, not legacy docs.
+## Authentication And Authorization
 
-## Core principles
-- Defense in depth with a request proxy pipeline in `proxy.ts`.
-- Supabase RLS enforced for user data; admin access is server validated.
-- No secrets in the client bundle; only `NEXT_PUBLIC_*` values are exposed.
-- Structured logging with PII masking.
+- Supabase Auth owns customer and admin sessions.
+- Admin routes enforce role checks on the server.
+- Service-role credentials are server-only.
+- Row-level security remains enabled for exposed tables.
 
-## Authentication and sessions
-- User authentication is handled by Supabase Auth.
-- Admin access requires:
-  - an authenticated Supabase user
-  - profile role in `admin`, `super_admin`, or `dev`
-  - a short-lived admin session cookie (`admin_session`)
-  - MFA when required by Supabase AAL policies
+## Request Security
 
-## RBAC
-Roles and permissions are centralized in `src/config/constants/roles.ts`:
-- `dev`: full access
-- `super_admin`: full access except admin invites
-- `admin`: cannot invite, cannot view bank details
+- Validate request bodies and parameters before business logic.
+- Enforce CSRF protection on state-changing browser requests.
+- Verify webhook signatures before processing events.
+- Apply rate limits to authentication and public write endpoints.
+- Keep the content security policy synchronized with active external services only.
 
-## Request proxy pipeline
-All requests pass through the proxy pipeline in `proxy.ts`:
-- Canonicalization (lowercase, no duplicate slashes)
-- Bot filtering (UA checks)
-- CSRF protection for unsafe methods
-- Rate limiting for all routes (prefix-configurable) with Upstash in prod and memory fallback in dev/test
-- Admin guard for `/admin` and `/api/admin`
-- Response finalization with security headers and `x-request-id`
+## Data And Secrets
 
-Configuration lives in `src/config/security.ts`. Rate limiting can be scoped with `rateLimitPrefixes`, bypassed for webhooks, and toggled locally via `rateLimit.applyInLocalDev`. The proxy is the enforcement point for request IDs, security headers, and admin guardrails.
+- Never expose secrets through browser environment variables.
+- Avoid logging credentials, tokens, full payment data, or sensitive customer data.
+- Use request IDs for correlation.
+- Apply database changes through reviewed forward migrations.
 
-## Webhooks
-- Stripe webhooks must validate signatures before processing.
-- Shippo webhooks must validate their shared secret.
-- Stripe events are persisted for idempotency in the `stripe_events` table.
+## Incident Handling
 
-## Guest order access links
-- Guest order status links use expiring access tokens.
-- Raw tokens are never stored; only HMAC-SHA256 hashes (peppered with `ORDER_ACCESS_TOKEN_SECRET`) are persisted.
-- Tokens are validated server-side with the service role and never logged in plaintext.
-
-## Email safety
-- Reply-To is routed to the support/pickup inbox for order communications.
-- Do not rely on email `From:` or reply-to headers as authentication.
-- Guest email and shipping address data are used only for order fulfillment and support.
-
-## Logging and PII
-- Logs are structured JSON via `src/lib/log.ts`.
-- Email addresses are masked in logs.
-- Sensitive keys (tokens, cookies, passwords) are redacted.
-
-## Secrets and env vars
-- Secrets are loaded and validated in `src/config/env.ts`.
-- Client-exposed env vars are validated in `src/config/client-env.ts`.
-- Never place secrets in `NEXT_PUBLIC_*` variables.
-
-## Storage and files
-- Supabase Storage is used for product images (see Next.js remote image config).
-- File attachments to contact forms are limited by `security.contact.attachments`.
-
-## Vulnerability reporting
-- Report security issues to the engineering owner.
-- Include request IDs, timestamps, and any Stripe/Shippo event IDs.
-
-## Incident response
-See `docs/RUNBOOK.md` for triage steps and escalation.
+Revoke affected credentials, preserve structured logs, identify impacted records, and deploy a forward fix. Do not weaken authentication, authorization, signature verification, or fail-closed checkout behavior as a temporary workaround.

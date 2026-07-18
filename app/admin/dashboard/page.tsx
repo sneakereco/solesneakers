@@ -1,214 +1,109 @@
-// app/admin/dashboard/page.tsx
 "use client";
 
-import { createElement, useEffect, useState } from "react";
-import {
-  TrendingUp,
-  TrendingDown,
-  DollarSign,
-  ShoppingCart,
-  Package,
-  Users,
-} from "lucide-react";
+import { useEffect, useState } from "react";
 import Link from "next/link";
+import { DollarSign, Package, ShoppingCart } from "lucide-react";
 
 import { logError } from "@/lib/utils/log";
-import { SalesChart } from "@/components/admin/charts/SalesChart";
-import { TrafficChart } from "@/components/admin/charts/TrafficChart";
 
-type RecentOrder = {
+type OrderSummary = {
   id: string;
   user_id?: string | null;
   total?: number | null;
-  subtotal?: number | null;
+  status?: string | null;
 };
 
 export default function DashboardPage() {
-  const [summary, setSummary] = useState({ revenue: 0, orders: 0 });
-  const [salesTrend, setSalesTrend] = useState<Array<{ date: string; revenue: number }>>(
-    [],
-  );
-  const [trafficSummary, setTrafficSummary] = useState({
-    visits: 0,
-    uniqueVisitors: 0,
-    pageViews: 0,
-  });
-  const [trafficTrend, setTrafficTrend] = useState<
-    Array<{ date: string; visits: number }>
-  >([]);
   const [productsCount, setProductsCount] = useState(0);
-  const [recentOrders, setRecentOrders] = useState<RecentOrder[]>([]);
+  const [orders, setOrders] = useState<OrderSummary[]>([]);
 
   useEffect(() => {
-    const loadDashboard = async () => {
-      try {
-        const [analyticsResponse, productsResponse, ordersResponse] = await Promise.all([
-          fetch("/api/admin/analytics?range=7d"),
-          fetch("/api/store/products?limit=1"),
-          fetch("/api/admin/orders?status=paid&status=shipped"),
-        ]);
-
-        const analyticsData = await analyticsResponse.json();
-        if (analyticsResponse.ok) {
-          setSummary({
-            revenue: analyticsData.summary?.revenue ?? 0,
-            orders: analyticsData.summary?.orders ?? 0,
-          });
-          setSalesTrend(analyticsData.salesTrend || []);
-          setTrafficSummary(
-            analyticsData.trafficSummary || {
-              visits: 0,
-              uniqueVisitors: 0,
-              pageViews: 0,
-            },
-          );
-          setTrafficTrend(analyticsData.trafficTrend || []);
-        }
-
-        const productsData = await productsResponse.json();
-        setProductsCount(productsData.total ?? 0);
-
-        const ordersData = await ordersResponse.json();
-        setRecentOrders((ordersData.orders || []).slice(0, 3));
-      } catch (error) {
+    Promise.all([
+      fetch("/api/store/products?limit=1").then((response) => response.json()),
+      fetch("/api/admin/orders").then((response) => response.json()),
+    ])
+      .then(([productsData, ordersData]) => {
+        setProductsCount(Number(productsData.total ?? 0));
+        setOrders(ordersData.orders ?? []);
+      })
+      .catch((error) => {
         logError(error, { layer: "frontend", event: "admin_load_dashboard" });
-      }
-    };
-
-    loadDashboard();
+      });
   }, []);
 
+  const completedOrders = orders.filter((order) =>
+    ["paid", "shipped", "completed"].includes(order.status ?? ""),
+  );
+  const revenue = completedOrders.reduce(
+    (sum, order) => sum + Number(order.total ?? 0),
+    0,
+  );
+
   const stats = [
-    {
-      title: "Revenue",
-      value: `$${summary.revenue.toFixed(2)}`,
-      change: "-",
-      trend: summary.revenue > 0 ? "up" : "down",
-      icon: DollarSign,
-    },
-    {
-      title: "Orders",
-      value: `${summary.orders}`,
-      change: "-",
-      trend: summary.orders > 0 ? "up" : "down",
-      icon: ShoppingCart,
-    },
-    {
-      title: "Products",
-      value: `${productsCount}`,
-      change: "-",
-      trend: productsCount > 0 ? "up" : "down",
-      icon: Package,
-    },
-    {
-      title: "Visitors",
-      value: `${trafficSummary.uniqueVisitors}`,
-      change: "-",
-      trend: trafficSummary.uniqueVisitors > 0 ? "up" : "down",
-      icon: Users,
-    },
+    { label: "Revenue", value: `$${revenue.toFixed(2)}`, icon: DollarSign },
+    { label: "Orders", value: String(completedOrders.length), icon: ShoppingCart },
+    { label: "Products", value: String(productsCount), icon: Package },
   ];
 
   return (
     <div className="space-y-6">
       <div>
-        <h1 className="text-3xl font-bold text-white mb-2">Dashboard</h1>
-        <p className="text-gray-400">Welcome back! Here's what's happening.</p>
+        <h1 className="mb-2 text-3xl font-bold text-white">Dashboard</h1>
+        <p className="text-gray-400">Store operations at a glance.</p>
       </div>
 
-      {/* Stats */}
-      <div className="grid grid-cols-2 md:grid-cols-2 lg:grid-cols-4 gap-3 sm:gap-6">
-        {stats.map((stat) => {
-          const icon = stat.icon;
-          return (
-            <div
-              key={stat.title}
-              className="bg-zinc-900 border border-zinc-800/70 rounded p-6"
-            >
-              <div className="flex items-center justify-between mb-4">
-                <span className="text-gray-400 text-sm">{stat.title}</span>
-                {createElement(icon, { className: "w-5 h-5 text-gray-400" })}
-              </div>
-              <div className="flex items-end justify-between">
-                <span className="text-xl sm:text-3xl font-bold text-white">
-                  {stat.value}
-                </span>
-                <span
-                  className={`flex items-center gap-1 text-sm font-semibold ${
-                    stat.trend === "up" ? "text-green-400" : "text-red-400"
-                  }`}
-                >
-                  {stat.trend === "up" ? (
-                    <TrendingUp className="w-4 h-4" />
-                  ) : (
-                    <TrendingDown className="w-4 h-4" />
-                  )}
-                  {stat.change}
-                </span>
-              </div>
+      <div className="grid gap-3 sm:grid-cols-3 sm:gap-6">
+        {stats.map(({ label, value, icon: Icon }) => (
+          <div key={label} className="rounded border border-zinc-800/70 bg-zinc-900 p-6">
+            <div className="mb-4 flex items-center justify-between">
+              <span className="text-sm text-gray-400">{label}</span>
+              <Icon className="h-5 w-5 text-gray-400" />
             </div>
-          );
-        })}
+            <span className="text-3xl font-bold text-white">{value}</span>
+          </div>
+        ))}
       </div>
 
-      {/* Recent Sales */}
-      <div className="bg-zinc-900 border border-zinc-800/70 rounded p-6">
-        <div className="flex items-center justify-between mb-4">
-          <h2 className="text-xl font-semibold text-white">Recent Sales</h2>
-          <Link href="/admin/sales" className="text-red-500 hover:underline text-sm">
-            View all →
+      <div className="rounded border border-zinc-800/70 bg-zinc-900 p-6">
+        <div className="mb-4 flex items-center justify-between">
+          <h2 className="text-xl font-semibold text-white">Recent Orders</h2>
+          <Link
+            href="/admin/transactions"
+            className="text-sm text-red-500 hover:underline"
+          >
+            View all
           </Link>
         </div>
         <div className="overflow-x-auto">
           <table className="w-full">
             <thead>
-              <tr className="border-b border-zinc-800/70">
-                <th className="text-left text-gray-400 font-semibold py-3">Order</th>
-                <th className="hidden sm:table-cell text-left text-gray-400 font-semibold py-3">
-                  Customer
-                </th>
-                <th className="text-right text-gray-400 font-semibold py-3">Amount</th>
-                <th className="hidden sm:table-cell text-right text-gray-400 font-semibold py-3">
-                  Subtotal
-                </th>
+              <tr className="border-b border-zinc-800/70 text-left text-sm text-gray-400">
+                <th className="py-3">Order</th>
+                <th className="py-3">Status</th>
+                <th className="py-3 text-right">Amount</th>
               </tr>
             </thead>
             <tbody>
-              {recentOrders.map((order) => (
-                <tr key={order.id} className="border-b border-zinc-800/70">
-                  <td className="py-3 text-white">#{order.id.slice(0, 8)}</td>
-                  <td className="hidden sm:table-cell py-3 text-gray-400">
-                    {order.user_id ? order.user_id.slice(0, 6) : "Guest"}
+              {orders.slice(0, 5).map((order) => (
+                <tr key={order.id} className="border-b border-zinc-800/70 text-white">
+                  <td className="py-3">#{order.id.slice(0, 8)}</td>
+                  <td className="py-3 capitalize text-gray-400">
+                    {order.status ?? "pending"}
                   </td>
-                  <td className="py-3 text-right text-white">
+                  <td className="py-3 text-right">
                     ${Number(order.total ?? 0).toFixed(2)}
-                  </td>
-                  <td className="hidden sm:table-cell py-3 text-right text-green-400">
-                    +${Number(order.subtotal ?? 0).toFixed(2)}
                   </td>
                 </tr>
               ))}
+              {orders.length === 0 && (
+                <tr>
+                  <td colSpan={3} className="py-8 text-center text-gray-500">
+                    No orders yet.
+                  </td>
+                </tr>
+              )}
             </tbody>
           </table>
-        </div>
-      </div>
-
-      {/* Charts */}
-      <div className="grid grid-cols-1 lg:grid-cols-2 gap-6">
-        <div className="bg-zinc-900 border border-zinc-800/70 rounded p-4 sm:p-6">
-          <div className="flex items-center justify-between mb-4">
-            <h2 className="text-xl font-semibold text-white">Financials</h2>
-            <span className="text-sm text-gray-400">7d</span>
-          </div>
-          <SalesChart data={salesTrend} />
-        </div>
-
-        <div className="bg-zinc-900 border border-zinc-800/70 rounded p-4 sm:p-6">
-          <div className="flex items-center justify-between mb-4">
-            <h2 className="text-xl font-semibold text-white">Traffic</h2>
-            <span className="text-sm text-gray-400">7d</span>
-          </div>
-          <TrafficChart data={trafficTrend} />
         </div>
       </div>
     </div>

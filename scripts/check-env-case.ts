@@ -81,7 +81,7 @@ for (const file of filesToScan) {
 
     // We loop through the elements of matches
     for (const m of matches) {
-      // m looks like "process.env.STRIPE_SECRET_KEY", "STRIPE_SECRET_KEY", index: 35, input: "...entire line...". We get index 1
+      // Capture the environment key from each process.env access.
       const key = m[1];
 
       // Check for env var is not proper

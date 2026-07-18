@@ -1,69 +1,19 @@
-﻿# Infra Guide
+# Infrastructure Guide
 
-This document describes the infrastructure components used by the RDK stack.
+## Runtime
 
-## Core services
+- Next.js hosts the storefront, admin console, and API routes.
+- Supabase provides PostgreSQL, authentication, row-level security, and storage.
+- Shippo provides shipping rates, labels, tracking, and webhooks.
+- Amazon SES provides transactional email.
+- HERE Maps supports address and map validation where configured.
 
-- **Vercel**: hosting for Next.js (serverless + edge runtime)
-- **Supabase**: Postgres, Auth, Storage, and SSR helpers
-- **Stripe**: checkout payments and Connect payouts
-- **Shippo**: shipping rates and label purchase
-- **Upstash Redis**: rate limiting (prod; memory fallback in dev/test)
-- **AWS SES**: transactional email
+## Configuration
 
-## Supabase
+Server environment validation is defined in `src/config/env.ts`. Browser-safe configuration is defined in `src/config/client-env.ts`. CI defaults are defined in `src/config/ci-env.ts` and the Jest configuration files.
 
-- Local config: `supabase/config.toml`
-- Migrations: `supabase/migrations/*.sql`
-- Seed: `supabase/seed.sql`
-- Type generation: `npm run gen:types:local` or `npm run gen:types:hosted`
+Secrets must be supplied by the deployment environment and must never use a `NEXT_PUBLIC_` prefix.
 
-Local ports (default):
+## Database Changes
 
-- API: 54321
-- DB: 54322
-- Studio: 54323
-
-## Storage
-
-- Product images are stored in Supabase Storage.
-- Next.js remote image config allows Supabase Storage domains.
-
-## Stripe
-
-- Server SDK usage in `src/lib/stripe/stripe-server.ts` and `src/services/checkout-service.ts`.
-- Stripe Connect flows in `src/services/stripe-admin-service.ts`.
-- Webhooks: `/api/webhooks/stripe`.
-
-## Shippo
-
-- Server SDK usage in `src/services/shipping-label-service.ts`.
-- Webhooks: `/api/webhooks/shippo`.
-- `track_updated` is the webhook event for carrier lifecycle updates like in transit and delivered.
-- `label created` is not driven by the tracking webhook in this repo. Customer label-created emails are sent immediately from `app/api/admin/shipping/labels/route.ts` when the label purchase succeeds.
-- For Shippo-managed label-purchase events, subscribe separately to `transaction_created` or `transaction_updated`.
-- Shippo cannot deliver webhooks to `localhost`. For non-production testing, use a public HTTPS tunnel URL instead of `https://localhost:8444`.
-- Live carrier tracking updates require a live Shippo key. Test-mode tracking should use Shippo's mock tracking numbers.
-
-## Upstash Redis
-
-- Used by `src/proxy/rate-limit.ts` and `app/api/contact/route.ts`.
-- Set `UPSTASH_REDIS_REST_URL` and `UPSTASH_REDIS_REST_TOKEN` for production.
-- Local/dev uses the in-memory limiter when `security.proxy.rateLimit.store` is `memory` or Upstash is not configured.
-
-## Email (AWS SES)
-
-- Email sending via `src/lib/email/mailer.ts`.
-- Required env vars: `SES_SMTP_HOST`, `SES_SMTP_USER`, `SES_SMTP_PASS`, `SES_FROM_EMAIL`, `SES_FROM_NAME`.
-
-## Local HTTPS with Caddy
-
-For local HTTPS (auth callbacks):
-
-- Start with `npm run caddy:start`
-- Supabase is proxied to `https://localhost:8443`
-- Next.js is proxied to `https://localhost:8444`
-
-## Environment variables
-
-See `.env.example` and `src/config/env.ts` for the complete required list.
+All schema changes must be forward-only migrations in `supabase/migrations`. Never rewrite a migration that may have been applied to a shared environment. Regenerate or update `src/types/db/database.types.ts` whenever the deployed schema changes.

@@ -17,7 +17,6 @@ type CustomerDetail = {
   totalSpend: number;
   paymentCount: number;
   primaryPaymentMethod: string | null;
-  payrillaCustomerToken: string | null;
 };
 
 type CustomerPayment = {
@@ -64,7 +63,7 @@ const fmtMoney = new Intl.NumberFormat("en-US", {
 
 function fmtDate(iso: string | null | undefined, includeTime = true) {
   if (!iso) {
-    return "—";
+    return "â€”";
   }
 
   return new Date(iso).toLocaleString("en-US", {
@@ -154,7 +153,7 @@ export default function CustomerDetailPage() {
   }, [data]);
 
   if (isLoading) {
-    return <div className="text-sm text-zinc-500">Loading customer…</div>;
+    return <div className="text-sm text-zinc-500">Loading customerâ€¦</div>;
   }
 
   if (error || !data) {
@@ -267,7 +266,7 @@ export default function CustomerDetailPage() {
                           <div>
                             <p className="text-sm text-white">{method.label}</p>
                             <p className="text-xs text-zinc-500">
-                              Expires {method.expires ?? "—"} • Last used{" "}
+                              Expires {method.expires ?? "â€”"} â€¢ Last used{" "}
                               {fmtDate(method.lastUsedAt)}
                             </p>
                           </div>
@@ -283,22 +282,24 @@ export default function CustomerDetailPage() {
                         <div className="border-t border-zinc-800/70 px-4 py-4">
                           <div className="space-y-0">
                             <DetailRow label="Customer name">
-                              {method.customerName ?? "—"}
+                              {method.customerName ?? "â€”"}
                             </DetailRow>
-                            <DetailRow label="Last 4">{method.last4 ?? "—"}</DetailRow>
-                            <DetailRow label="Expires">{method.expires ?? "—"}</DetailRow>
+                            <DetailRow label="Last 4">{method.last4 ?? "â€”"}</DetailRow>
+                            <DetailRow label="Expires">
+                              {method.expires ?? "â€”"}
+                            </DetailRow>
                             <DetailRow label="Payment method ID">{method.id}</DetailRow>
                             <DetailRow label="Billing address">
-                              {method.billingAddress ?? "—"}
+                              {method.billingAddress ?? "â€”"}
                             </DetailRow>
-                            <DetailRow label="Phone">{method.phone ?? "—"}</DetailRow>
-                            <DetailRow label="Email">{method.email ?? "—"}</DetailRow>
+                            <DetailRow label="Phone">{method.phone ?? "â€”"}</DetailRow>
+                            <DetailRow label="Email">{method.email ?? "â€”"}</DetailRow>
                             <DetailRow label="Origin">{method.origin}</DetailRow>
                             <DetailRow label="CVC check">
-                              {method.cvcCheck ?? "—"}
+                              {method.cvcCheck ?? "â€”"}
                             </DetailRow>
                             <DetailRow label="Street / ZIP check">
-                              {method.streetZipCheck ?? "—"}
+                              {method.streetZipCheck ?? "â€”"}
                             </DetailRow>
                           </div>
                         </div>
@@ -377,8 +378,8 @@ export default function CustomerDetailPage() {
                 {data.customer.kind === "guest" ? "Guest customer" : "Account customer"}
               </DetailRow>
               <DetailRow label="Name">{data.customer.name}</DetailRow>
-              <DetailRow label="Email">{data.customer.email ?? "—"}</DetailRow>
-              <DetailRow label="Phone">{data.customer.phone ?? "—"}</DetailRow>
+              <DetailRow label="Email">{data.customer.email ?? "â€”"}</DetailRow>
+              <DetailRow label="Phone">{data.customer.phone ?? "â€”"}</DetailRow>
               <DetailRow label="Customer since">
                 {fmtDate(data.customer.customerSince)}
               </DetailRow>
@@ -386,16 +387,11 @@ export default function CustomerDetailPage() {
                 {fmtDate(data.customer.lastUpdated)}
               </DetailRow>
               <DetailRow label="Billing details">
-                {data.customer.billingDetails ?? "—"}
+                {data.customer.billingDetails ?? "â€”"}
               </DetailRow>
               <DetailRow label="Primary payment method">
-                {data.customer.primaryPaymentMethod ?? "—"}
+                {data.customer.primaryPaymentMethod ?? "â€”"}
               </DetailRow>
-              {data.customer.payrillaCustomerToken && (
-                <DetailRow label="Payrilla token">
-                  {data.customer.payrillaCustomerToken}
-                </DetailRow>
-              )}
             </div>
           </SectionCard>
         </div>

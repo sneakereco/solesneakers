@@ -18,7 +18,6 @@ import {
   type OrderItemEmail,
 } from "@/lib/email/orders";
 import type { TypedSupabaseClient } from "@/lib/supabase/server";
-import { EvidenceService } from "@/services/evidence-service";
 
 type EmailContent = { html: string; text: string };
 
@@ -104,27 +103,10 @@ const mapOrderItemsToEmailItems = (rows: DetailedOrderItemRow[]): OrderItemEmail
   });
 
 export class OrderEmailService {
-  private evidenceService: EvidenceService | null;
+  constructor(_supabase?: TypedSupabaseClient | null, _tenantId?: string | null) {}
 
-  /**
-   * @param supabase - When provided, email sends are recorded in email_audit_log
-   * @param tenantId - Required to scope audit log entries
-   */
-  constructor(
-    supabase?: TypedSupabaseClient | null,
-    private readonly tenantId?: string | null,
-  ) {
-    this.evidenceService = supabase && tenantId ? new EvidenceService(supabase) : null;
-  }
-
-  private async send(
-    to: string,
-    subject: string,
-    content: EmailContent,
-    orderId?: string | null,
-    emailType?: string,
-  ) {
-    const result = await sendEmailWithRetry(
+  private async send(to: string, subject: string, content: EmailContent) {
+    await sendEmailWithRetry(
       {
         to,
         subject,
@@ -134,20 +116,6 @@ export class OrderEmailService {
       },
       { maxAttempts: 3, baseDelayMs: 750, timeoutMs: 5000 },
     );
-
-    // Record in audit log (non-blocking, never throws)
-    if (this.evidenceService && this.tenantId && emailType) {
-      void this.evidenceService.recordEmailSent({
-        orderId: orderId ?? null,
-        tenantId: this.tenantId,
-        emailType,
-        recipientEmail: to,
-        subject,
-        htmlSnapshot: content.html,
-        plainTextSnapshot: content.text,
-        messageId: result?.messageId ?? null,
-      });
-    }
   }
 
   /**
@@ -158,13 +126,7 @@ export class OrderEmailService {
       return;
     }
     const content = buildOrderConfirmationEmail(input);
-    await this.send(
-      input.to,
-      emailSubjects.orderConfirmation(),
-      content,
-      input.orderId,
-      "order_confirmation",
-    );
+    await this.send(input.to, emailSubjects.orderConfirmation(), content);
   }
 
   /**
@@ -188,13 +150,7 @@ export class OrderEmailService {
     };
 
     const content = buildOrderConfirmationEmail(input);
-    await this.send(
-      params.to,
-      emailSubjects.orderConfirmation(),
-      content,
-      params.order.orderId,
-      "order_confirmation",
-    );
+    await this.send(params.to, emailSubjects.orderConfirmation(), content);
   }
 
   async sendPickupInstructions(input: PickupInstructionsEmailInput) {
@@ -202,13 +158,7 @@ export class OrderEmailService {
       return;
     }
     const content = buildPickupInstructionsEmail(input);
-    await this.send(
-      input.to,
-      emailSubjects.pickupInstructions(input.orderId),
-      content,
-      input.orderId,
-      "pickup_instructions",
-    );
+    await this.send(input.to, emailSubjects.pickupInstructions(input.orderId), content);
   }
 
   async sendOrderLabelCreated(input: OrderLabelCreatedEmailInput) {
@@ -216,13 +166,7 @@ export class OrderEmailService {
       return;
     }
     const content = buildOrderLabelCreatedEmail(input);
-    await this.send(
-      input.to,
-      emailSubjects.orderLabelCreated(input.orderId),
-      content,
-      input.orderId,
-      "shipping_update",
-    );
+    await this.send(input.to, emailSubjects.orderLabelCreated(input.orderId), content);
   }
 
   async sendOrderInTransit(input: OrderInTransitEmailInput) {
@@ -230,13 +174,7 @@ export class OrderEmailService {
       return;
     }
     const content = buildOrderInTransitEmail(input);
-    await this.send(
-      input.to,
-      emailSubjects.orderInTransit(input.orderId),
-      content,
-      input.orderId,
-      "shipping_update",
-    );
+    await this.send(input.to, emailSubjects.orderInTransit(input.orderId), content);
   }
 
   async sendOrderDelivered(input: OrderDeliveredEmailInput) {
@@ -244,13 +182,7 @@ export class OrderEmailService {
       return;
     }
     const content = buildOrderDeliveredEmail(input);
-    await this.send(
-      input.to,
-      emailSubjects.orderDelivered(input.orderId),
-      content,
-      input.orderId,
-      "delivery_confirmation",
-    );
+    await this.send(input.to, emailSubjects.orderDelivered(input.orderId), content);
   }
 
   async sendOrderRefunded(input: OrderRefundedEmailInput) {
@@ -258,12 +190,6 @@ export class OrderEmailService {
       return;
     }
     const content = buildOrderRefundedEmail(input);
-    await this.send(
-      input.to,
-      emailSubjects.orderRefunded(input.orderId),
-      content,
-      input.orderId,
-      "refund_notification",
-    );
+    await this.send(input.to, emailSubjects.orderRefunded(input.orderId), content);
   }
 }
