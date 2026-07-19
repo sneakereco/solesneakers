@@ -20,8 +20,9 @@ interface EditProductClientProps {
   initialBrands: Array<{
     id: string;
     label: string;
-    groupKey?: string | null;
   }>;
+  initialModels: Array<{ id: string; label: string }>;
+  initialSizes: Array<{ id: string; label: string; sizeType: string }>;
 }
 
 export function EditProductClient({
@@ -30,6 +31,8 @@ export function EditProductClient({
   isArchived = false,
   initialShippingDefaults,
   initialBrands,
+  initialModels,
+  initialSizes,
 }: EditProductClientProps) {
   const router = useRouter();
 
@@ -92,12 +95,10 @@ export function EditProductClient({
     size_type: product.size_type,
     shipping_price_cents: product.shipping_price_cents ?? null,
     go_live_at: product.go_live_at ?? undefined,
+    brand_id: product.brand_id,
+    model_id: product.model_id,
     variants: product.variants,
     images: product.images,
-    tags: (product.tags ?? []).map((tag) => ({
-      label: tag.label,
-      group_key: tag.group_key,
-    })),
   };
 
   if (isArchived) {
@@ -136,6 +137,8 @@ export function EditProductClient({
       onCancel={handleCancel}
       initialShippingDefaults={initialShippingDefaults}
       initialBrands={initialBrands}
+      initialModels={initialModels}
+      initialSizes={initialSizes}
     />
   );
 }

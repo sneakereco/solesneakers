@@ -11,7 +11,7 @@
     "test:jest:unit": "jest --config jest.config.ts",
     "test:jest:integration": "jest --config jest.integration.config.ts",
     "test:e2e": "npx playwright test",
-    "test:rls": "node ./tests/rls/rls-check.ts",
+    "test:rls": "tsx ./tests/rls/rls-check.ts",
     "format": "prettier --write .",
     "dev": "next dev",
     "dev:test": "next dev -p 3000",

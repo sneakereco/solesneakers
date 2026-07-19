@@ -7,7 +7,7 @@ import { ChevronDown, X } from "lucide-react";
 type FilterOption = {
   label: string;
   value: string;
-  param: "brand" | "condition" | "category" | "sizeShoe" | "sizeClothing";
+  param: "brandIds" | "condition" | "category" | "sizeIds";
   count?: number;
   group?: string;
 };
@@ -19,18 +19,17 @@ type PricePreset = {
 };
 
 type StorefrontFilterBarProps = {
-  brands: string[];
+  brands: Array<{ id: string; label: string }>;
   categories: string[];
   conditions: string[];
-  shoeSizes: string[];
-  clothingSizes: string[];
+  shoeSizes: Array<{ id: string; label: string }>;
+  clothingSizes: Array<{ id: string; label: string }>;
   shoeSizeCounts: Record<string, number>;
   clothingSizeCounts: Record<string, number>;
-  selectedBrands: string[];
+  selectedBrandIds: string[];
   selectedCategories: string[];
   selectedConditions: string[];
-  selectedShoeSizes: string[];
-  selectedClothingSizes: string[];
+  selectedSizeIds: string[];
   priceMin?: number;
   priceMax?: number;
 };
@@ -44,14 +43,13 @@ const PRICE_PRESETS: PricePreset[] = [
 ];
 
 const FILTER_QUERY_KEYS = [
-  "brand",
+  "brandIds",
   "condition",
   "category",
-  "sizeShoe",
-  "sizeClothing",
+  "sizeIds",
   "priceMin",
   "priceMax",
-  "model",
+  "modelIds",
 ];
 
 const naturalCompare = (left: string, right: string) =>
@@ -68,11 +66,10 @@ export function StorefrontFilterBar({
   clothingSizes,
   shoeSizeCounts,
   clothingSizeCounts,
-  selectedBrands,
+  selectedBrandIds,
   selectedCategories,
   selectedConditions,
-  selectedShoeSizes,
-  selectedClothingSizes,
+  selectedSizeIds,
   priceMin,
   priceMax,
 }: StorefrontFilterBarProps) {
@@ -141,11 +138,13 @@ export function StorefrontFilterBar({
     pushParams(params);
   };
 
-  const brandOptions: FilterOption[] = [...brands].sort(naturalCompare).map((value) => ({
-    label: value,
-    value,
-    param: "brand",
-  }));
+  const brandOptions: FilterOption[] = [...brands]
+    .sort((left, right) => naturalCompare(left.label, right.label))
+    .map((option) => ({
+      label: option.label,
+      value: option.id,
+      param: "brandIds",
+    }));
   const conditionOptions: FilterOption[] = conditions.map((value) => ({
     label: value === "used" ? "Pre-owned" : formatLabel(value),
     value,
@@ -157,34 +156,37 @@ export function StorefrontFilterBar({
     param: "category",
   }));
   const sizeOptions: FilterOption[] = [
-    ...[...shoeSizes].sort(naturalCompare).map((value) => ({
-      label: value,
-      value,
-      param: "sizeShoe" as const,
-      count: shoeSizeCounts[value],
-      group: "Footwear",
-    })),
-    ...[...clothingSizes].sort(naturalCompare).map((value) => ({
-      label: formatLabel(value),
-      value,
-      param: "sizeClothing" as const,
-      count: clothingSizeCounts[value],
-      group: "Clothing",
-    })),
+    ...[...shoeSizes]
+      .sort((left, right) => naturalCompare(left.label, right.label))
+      .map((option) => ({
+        label: option.label,
+        value: option.id,
+        param: "sizeIds" as const,
+        count: shoeSizeCounts[option.id],
+        group: "Footwear",
+      })),
+    ...[...clothingSizes]
+      .sort((left, right) => naturalCompare(left.label, right.label))
+      .map((option) => ({
+        label: option.label,
+        value: option.id,
+        param: "sizeIds" as const,
+        count: clothingSizeCounts[option.id],
+        group: "Clothing",
+      })),
   ];
 
   const selectedByFacet: Record<string, string[]> = {
-    brand: selectedBrands,
+    brand: selectedBrandIds,
     condition: selectedConditions,
     category: selectedCategories,
-    size: [...selectedShoeSizes, ...selectedClothingSizes],
+    size: selectedSizeIds,
   };
   const activeFilterCount =
-    selectedBrands.length +
+    selectedBrandIds.length +
     selectedCategories.length +
     selectedConditions.length +
-    selectedShoeSizes.length +
-    selectedClothingSizes.length +
+    selectedSizeIds.length +
     (typeof priceMin === "number" || typeof priceMax === "number" ? 1 : 0);
 
   const facets = [

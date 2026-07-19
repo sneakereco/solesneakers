@@ -38,11 +38,10 @@ export async function GET(
           id, product_name, brand, model, category, condition, variant_sku, size_label,
           quantity, unit_price, unit_cost, line_total, refund_amount, refunded_at,
           product:products(
-            id, name, brand, model, category, description, created_at,
-            images:product_images(url, is_primary, sort_order),
-            tags:product_tags(tag:tags(label, group_key))
+            id, name, category, description, created_at,
+            images:product_images(url, is_primary, sort_order)
           ),
-          variant:product_variants(id, sku, size_label, sale_price_cents, unit_cost_cents)
+          variant:product_variants(id, sku, sale_price_cents, unit_cost_cents)
         ),
         shipping_address:order_shipping(*)
         `,

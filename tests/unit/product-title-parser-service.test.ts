@@ -1,13 +1,13 @@
 import { ProductTitleParserService } from "@/services/product-title-parser-service";
 
-const mockListBrandsWithGroups = jest.fn();
+const mockListBrands = jest.fn();
 const mockListBrandAliases = jest.fn();
 const mockListModels = jest.fn();
 const mockListModelAliasesAll = jest.fn();
 
-jest.mock("@/repositories/catalog-repo", () => ({
-  CatalogRepository: jest.fn().mockImplementation(() => ({
-    listBrandsWithGroups: mockListBrandsWithGroups,
+jest.mock("@/repositories/tag-taxonomy-repo", () => ({
+  TagTaxonomyRepository: jest.fn().mockImplementation(() => ({
+    listBrands: mockListBrands,
     listBrandAliases: mockListBrandAliases,
     listModels: mockListModels,
     listModelAliasesAll: mockListModelAliasesAll,
@@ -18,11 +18,11 @@ describe("ProductTitleParserService", () => {
   beforeEach(() => {
     jest.clearAllMocks();
 
-    mockListBrandsWithGroups.mockResolvedValue([
+    mockListBrands.mockResolvedValue([
       {
         id: "brand-nike",
         canonical_label: "Nike",
-        group: { id: "group-1", key: "nike", label: "Nike" },
+        is_active: true,
       },
     ]);
     mockListBrandAliases.mockResolvedValue([]);
@@ -36,10 +36,10 @@ describe("ProductTitleParserService", () => {
     mockListModelAliasesAll.mockResolvedValue([]);
   });
 
-  it("reuses catalog lookups across multiple parses for the same tenant", async () => {
+  it("reuses taxonomy lookups across multiple parses for the same tenant", async () => {
     const service = new ProductTitleParserService({} as never);
 
-    await service.parseTitle({
+    const result = await service.parseTitle({
       titleRaw: "Nike Jordan 3 White Cement",
       category: "sneakers",
       tenantId: "tenant-1",
@@ -50,9 +50,14 @@ describe("ProductTitleParserService", () => {
       tenantId: "tenant-1",
     });
 
-    expect(mockListBrandsWithGroups).toHaveBeenCalledTimes(1);
+    expect(mockListBrands).toHaveBeenCalledTimes(1);
     expect(mockListBrandAliases).toHaveBeenCalledTimes(1);
     expect(mockListModels).toHaveBeenCalledTimes(1);
     expect(mockListModelAliasesAll).toHaveBeenCalledTimes(1);
+    expect(result.brand).toEqual(
+      expect.objectContaining({ id: "brand-nike", label: "Nike", source: "taxonomy" }),
+    );
+    expect(result.brand).not.toHaveProperty("groupKey");
+    expect(result.brand).not.toHaveProperty("isVerified");
   });
 });

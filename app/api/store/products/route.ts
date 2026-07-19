@@ -36,10 +36,9 @@ export async function GET(request: NextRequest) {
   const parsed = storeProductsQuerySchema.safeParse({
     q: qParam && qParam.trim().length > 0 ? qParam : undefined,
     category: searchParams.getAll("category").filter(Boolean),
-    brand: searchParams.getAll("brand").filter(Boolean),
-    model: searchParams.getAll("model").filter(Boolean),
-    sizeShoe: searchParams.getAll("sizeShoe").filter(Boolean),
-    sizeClothing: searchParams.getAll("sizeClothing").filter(Boolean),
+    brandIds: searchParams.getAll("brandIds").filter(Boolean),
+    modelIds: searchParams.getAll("modelIds").filter(Boolean),
+    sizeIds: searchParams.getAll("sizeIds").filter(Boolean),
     condition: searchParams.getAll("condition").filter(Boolean),
     priceMinCents: searchParams.has("priceMin")
       ? Number.parseInt(searchParams.get("priceMin") ?? "", 10) * 100

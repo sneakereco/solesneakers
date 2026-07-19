@@ -4,6 +4,8 @@ describe("productCreateSchema", () => {
   it("accepts a product payload with no images", () => {
     const result = productCreateSchema.safeParse({
       name: "Jordan 3 Retro",
+      brand_id: "00000000-0000-4000-8000-000000000001",
+      model_id: "00000000-0000-4000-8000-000000000002",
       category: "sneakers",
       condition: "used",
       size_type: "shoe",
@@ -12,17 +14,37 @@ describe("productCreateSchema", () => {
       variants: [
         {
           sku: "123456",
-          size_label: "10M / 11.5W",
+          size_id: "00000000-0000-4000-8000-000000000003",
           sale_price_cents: 25000,
           stock: 1,
           unit_cost_cents: 12000,
         },
       ],
       images: [],
-      tags: [],
-      excluded_auto_tag_keys: [],
     });
 
     expect(result.success).toBe(true);
+  });
+
+  it("rejects the retired generic tag contract", () => {
+    const result = productCreateSchema.safeParse({
+      name: "Jordan 3 Retro",
+      brand_id: "00000000-0000-4000-8000-000000000001",
+      category: "sneakers",
+      condition: "new",
+      size_type: "shoe",
+      variants: [
+        {
+          size_id: "00000000-0000-4000-8000-000000000003",
+          sale_price_cents: 25000,
+          stock: 1,
+          unit_cost_cents: 12000,
+        },
+      ],
+      images: [],
+      tags: [{ label: "Nike", group_key: "brand" }],
+    });
+
+    expect(result.success).toBe(false);
   });
 });

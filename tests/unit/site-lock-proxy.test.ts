@@ -112,7 +112,7 @@ describe("checkSiteLock", () => {
     });
     mockIsSiteLocked.mockReturnValue(true);
 
-    const request = new NextRequest("http://localhost/store?brand=nike", {
+    const request = new NextRequest("http://localhost/store?brandIds=brand-1", {
       headers: { accept: "text/html" },
     });
 
@@ -121,7 +121,7 @@ describe("checkSiteLock", () => {
     expect(response?.status).toBe(307);
     expect(response?.headers.get("location")).toContain("/locked");
     expect(response?.headers.get("location")).toContain(
-      encodeURIComponent("/store?brand=nike"),
+      encodeURIComponent("/store?brandIds=brand-1"),
     );
   });
 

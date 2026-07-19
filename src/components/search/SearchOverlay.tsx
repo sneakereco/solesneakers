@@ -16,8 +16,8 @@ interface SearchOverlayProps {
 type SearchResult = {
   id: string;
   name: string;
-  brand?: string | null;
-  model?: string | null;
+  brand?: { id: string; label: string } | null;
+  model?: { id: string; label: string } | null;
   condition?: string | null;
   images?: Array<{
     url?: string | null;
@@ -93,8 +93,8 @@ function buildSuggestions(results: SearchResult[], query: string) {
   };
 
   for (const product of results) {
-    addSuggestion(product.brand);
-    addSuggestion(product.model);
+    addSuggestion(product.brand?.label);
+    addSuggestion(product.model?.label);
 
     for (const word of product.name.split(/\s+/)) {
       const cleaned = word.replace(/^[^a-z0-9]+|[^a-z0-9]+$/gi, "");
@@ -348,7 +348,9 @@ export function SearchOverlay({ isOpen, onClose }: SearchOverlayProps) {
                                 {product.name}
                               </div>
                               <div className="mt-1 flex flex-wrap gap-x-2 text-sm text-zinc-400">
-                                {product.brand ? <span>{product.brand}</span> : null}
+                                {product.brand ? (
+                                  <span>{product.brand.label}</span>
+                                ) : null}
                                 {condition ? <span>{condition}</span> : null}
                               </div>
                               <div className="mt-2 text-[0.95rem] text-zinc-600">

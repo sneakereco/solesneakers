@@ -71,10 +71,9 @@ export default async function StorePage({
   const rawFilters = {
     q: query || undefined,
     category: getArrayParam(resolvedSearchParams, "category"),
-    brand: getArrayParam(resolvedSearchParams, "brand"),
-    model: getArrayParam(resolvedSearchParams, "model"),
-    sizeShoe: getArrayParam(resolvedSearchParams, "sizeShoe"),
-    sizeClothing: getArrayParam(resolvedSearchParams, "sizeClothing"),
+    brandIds: getArrayParam(resolvedSearchParams, "brandIds"),
+    modelIds: getArrayParam(resolvedSearchParams, "modelIds"),
+    sizeIds: getArrayParam(resolvedSearchParams, "sizeIds"),
     condition: getArrayParam(resolvedSearchParams, "condition"),
     priceMinCents: typeof priceMin === "number" ? priceMin * 100 : undefined,
     priceMaxCents: typeof priceMax === "number" ? priceMax * 100 : undefined,
@@ -121,19 +120,25 @@ export default async function StorePage({
   }
 
   const selectedCategories = filters.category ?? [];
-  const selectedBrands = filters.brand ?? [];
-  const selectedModels = filters.model ?? [];
-  const selectedShoeSizes = filters.sizeShoe ?? [];
-  const selectedClothingSizes = filters.sizeClothing ?? [];
+  const selectedBrandIds = filters.brandIds ?? [];
+  const selectedModelIds = filters.modelIds ?? [];
+  const selectedSizeIds = filters.sizeIds ?? [];
   const selectedConditions = filters.condition ?? [];
   const priceLabel = formatPriceLabel(priceMin, priceMax);
+  const facetLabels = new Map(
+    [
+      ...filterData.brands,
+      ...filterData.models,
+      ...filterData.availableShoeSizes,
+      ...filterData.availableClothingSizes,
+    ].map((option) => [option.id, option.label]),
+  );
   const activeFilterLabels = Array.from(
     new Set([
       ...selectedCategories.map(formatLabel),
-      ...selectedBrands,
-      ...selectedModels,
-      ...selectedShoeSizes,
-      ...selectedClothingSizes,
+      ...selectedBrandIds.map((id) => facetLabels.get(id) ?? id),
+      ...selectedModelIds.map((id) => facetLabels.get(id) ?? id),
+      ...selectedSizeIds.map((id) => facetLabels.get(id) ?? id),
       ...selectedConditions.map(formatLabel),
       ...(priceLabel ? [priceLabel] : []),
     ]),
@@ -182,18 +187,17 @@ export default async function StorePage({
       />
 
       <StorefrontFilterBar
-        brands={filterData.brands.map((brand) => brand.label)}
+        brands={filterData.brands}
         categories={filterData.categories}
         conditions={filterData.availableConditions}
         shoeSizes={filterData.availableShoeSizes}
         clothingSizes={filterData.availableClothingSizes}
         shoeSizeCounts={filterData.shoeSizeCounts}
         clothingSizeCounts={filterData.clothingSizeCounts}
-        selectedBrands={selectedBrands}
+        selectedBrandIds={selectedBrandIds}
         selectedCategories={selectedCategories}
         selectedConditions={selectedConditions}
-        selectedShoeSizes={selectedShoeSizes}
-        selectedClothingSizes={selectedClothingSizes}
+        selectedSizeIds={selectedSizeIds}
         priceMin={priceMin}
         priceMax={priceMax}
       />

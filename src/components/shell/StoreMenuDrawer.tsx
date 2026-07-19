@@ -5,12 +5,6 @@ import { createPortal } from "react-dom";
 import Link from "next/link";
 import { ChevronLeft, ChevronRight, Minus, Plus, X } from "lucide-react";
 
-import {
-  CLOTHING_ALPHA_SIZES,
-  JEAN_SIZES,
-  SHOE_SIZE_GROUPS,
-} from "@/config/constants/sizes";
-
 type MenuPanel = "brand" | "size" | "category";
 
 type StoreMenuDrawerProps = {
@@ -19,9 +13,12 @@ type StoreMenuDrawerProps = {
 };
 
 type SizeOption = {
+  id: string;
   label: string;
-  value: string;
+  sizeType: string;
 };
+
+type BrandOption = { id: string; label: string };
 
 const CATEGORY_LINKS = [
   { label: "Sneakers", value: "sneakers" },
@@ -30,46 +27,11 @@ const CATEGORY_LINKS = [
   { label: "Electronics", value: "electronics" },
 ];
 
-const CLOTHING_LABELS: Record<string, string> = {
-  XXS: "XX-Small",
-  XS: "X-Small",
-  SMALL: "Small",
-  MEDIUM: "Medium",
-  LARGE: "Large",
-  XL: "X-Large",
-  "2XL": "XX-Large",
-  "3XL": "XXX-Large",
-};
-
 const buildStoreHref = (params: Record<string, string>) => {
   const searchParams = new URLSearchParams(params);
   const query = searchParams.toString();
   return query ? `/store?${query}` : "/store";
 };
-
-const getShoeOptions = (sizes: readonly string[], pattern: RegExp): SizeOption[] =>
-  sizes.flatMap((value) => {
-    const match = value.match(pattern);
-    return match ? [{ label: `Size ${match[1]}`, value }] : [];
-  });
-
-const clothingOptions = CLOTHING_ALPHA_SIZES.map((value) => ({
-  value,
-  label: CLOTHING_LABELS[value] ?? value,
-}));
-
-const jeanOptions = JEAN_SIZES.map((value) => ({
-  value,
-  label: `Waist ${value}`,
-}));
-
-const mensOptions = getShoeOptions(SHOE_SIZE_GROUPS.mens, /^(\d+(?:\.\d+)?)M\b/);
-const womensOptions = getShoeOptions(
-  [...SHOE_SIZE_GROUPS.youth, ...SHOE_SIZE_GROUPS.mens],
-  /\/\s*(\d+(?:\.\d+)?)W\b/,
-);
-const youthOptions = getShoeOptions(SHOE_SIZE_GROUPS.youth, /^(\d+(?:\.\d+)?)Y\b/);
-const euOptions = getShoeOptions(SHOE_SIZE_GROUPS.eu, /^EU\s+(\d+(?:\.\d+)?)/);
 
 function DrawerLink({
   children,
@@ -104,7 +66,6 @@ function SizeGroup({
   onNavigate,
   onToggle,
   options,
-  queryKey,
 }: {
   category: "clothing" | "sneakers";
   isOpen: boolean;
@@ -112,7 +73,6 @@ function SizeGroup({
   onNavigate: () => void;
   onToggle: () => void;
   options: SizeOption[];
-  queryKey: "sizeClothing" | "sizeShoe";
 }) {
   return (
     <section className="border-b border-zinc-200">
@@ -130,8 +90,8 @@ function SizeGroup({
         <div className="mb-5 ml-2 border-l border-zinc-200 pl-6">
           {options.map((option) => (
             <DrawerLink
-              key={`${label}-${option.value}`}
-              href={buildStoreHref({ category, [queryKey]: option.value })}
+              key={`${label}-${option.id}`}
+              href={buildStoreHref({ category, sizeIds: option.id })}
               onNavigate={onNavigate}
             >
               {option.label}
@@ -165,6 +125,8 @@ export function StoreMenuDrawer({ isOpen, onClose }: StoreMenuDrawerProps) {
   const [isMounted, setIsMounted] = useState(false);
   const [activePanel, setActivePanel] = useState<MenuPanel | null>(null);
   const [expandedSizes, setExpandedSizes] = useState<Record<string, boolean>>({});
+  const [brands, setBrands] = useState<BrandOption[]>([]);
+  const [sizes, setSizes] = useState<SizeOption[]>([]);
   const closeButtonRef = useRef<HTMLButtonElement>(null);
   const closeFromEffect = useEffectEvent(onClose);
 
@@ -195,6 +157,26 @@ export function StoreMenuDrawer({ isOpen, onClose }: StoreMenuDrawerProps) {
     };
   }, [isOpen]);
 
+  useEffect(() => {
+    if (!isOpen || (brands.length > 0 && sizes.length > 0)) {
+      return;
+    }
+    const controller = new AbortController();
+    void fetch("/api/store/taxonomy", { signal: controller.signal })
+      .then((response) => (response.ok ? response.json() : Promise.reject(response)))
+      .then((data) => {
+        setBrands(data.brands ?? []);
+        setSizes(data.sizes ?? []);
+      })
+      .catch((error) => {
+        if ((error as { name?: string })?.name !== "AbortError") {
+          setBrands([]);
+          setSizes([]);
+        }
+      });
+    return () => controller.abort();
+  }, [brands.length, isOpen, sizes.length]);
+
   if (!isMounted || !isOpen) {
     return null;
   }
@@ -214,6 +196,19 @@ export function StoreMenuDrawer({ isOpen, onClose }: StoreMenuDrawerProps) {
       : activePanel === "size"
         ? "Shop by Size"
         : "Shop by Category";
+  const clothingOptions = sizes.filter(
+    (size) => size.sizeType === "clothing" && !/^\d+$/.test(size.label),
+  );
+  const jeanOptions = sizes.filter(
+    (size) => size.sizeType === "clothing" && /^\d+$/.test(size.label),
+  );
+  const shoeOptions = sizes.filter((size) => size.sizeType === "shoe");
+  const mensOptions = shoeOptions.filter((size) => /^\d+(?:\.\d+)?M\b/.test(size.label));
+  const womensOptions = shoeOptions.filter((size) =>
+    /\/\s*\d+(?:\.\d+)?W\b/.test(size.label),
+  );
+  const youthOptions = shoeOptions.filter((size) => /^\d+(?:\.\d+)?Y\b/.test(size.label));
+  const euOptions = shoeOptions.filter((size) => size.label.startsWith("EU "));
 
   const drawer = (
     <div
@@ -281,9 +276,21 @@ export function StoreMenuDrawer({ isOpen, onClose }: StoreMenuDrawerProps) {
 
             <div className="h-[calc(100dvh-5rem)] overflow-y-auto overscroll-contain px-7 pb-10 md:px-8">
               {activePanel === "brand" && (
-                <DrawerLink href="/brands" onNavigate={closeMenu} variant="row">
-                  All Brands
-                </DrawerLink>
+                <div>
+                  <DrawerLink href="/brands" onNavigate={closeMenu} variant="row">
+                    All Brands
+                  </DrawerLink>
+                  {brands.map((brand) => (
+                    <DrawerLink
+                      key={brand.id}
+                      href={buildStoreHref({ brandIds: brand.id })}
+                      onNavigate={closeMenu}
+                      variant="row"
+                    >
+                      {brand.label}
+                    </DrawerLink>
+                  ))}
+                </div>
               )}
 
               {activePanel === "category" && (
@@ -306,7 +313,6 @@ export function StoreMenuDrawer({ isOpen, onClose }: StoreMenuDrawerProps) {
                   <SizeGroup
                     label="Clothing"
                     category="clothing"
-                    queryKey="sizeClothing"
                     options={clothingOptions}
                     isOpen={!!expandedSizes.clothing}
                     onToggle={() => toggleSize("clothing")}
@@ -315,7 +321,6 @@ export function StoreMenuDrawer({ isOpen, onClose }: StoreMenuDrawerProps) {
                   <SizeGroup
                     label="Jeans"
                     category="clothing"
-                    queryKey="sizeClothing"
                     options={jeanOptions}
                     isOpen={!!expandedSizes.jeans}
                     onToggle={() => toggleSize("jeans")}
@@ -324,7 +329,6 @@ export function StoreMenuDrawer({ isOpen, onClose }: StoreMenuDrawerProps) {
                   <SizeGroup
                     label="Men's"
                     category="sneakers"
-                    queryKey="sizeShoe"
                     options={mensOptions}
                     isOpen={!!expandedSizes.mens}
                     onToggle={() => toggleSize("mens")}
@@ -333,7 +337,6 @@ export function StoreMenuDrawer({ isOpen, onClose }: StoreMenuDrawerProps) {
                   <SizeGroup
                     label="Women's"
                     category="sneakers"
-                    queryKey="sizeShoe"
                     options={womensOptions}
                     isOpen={!!expandedSizes.womens}
                     onToggle={() => toggleSize("womens")}
@@ -342,7 +345,6 @@ export function StoreMenuDrawer({ isOpen, onClose }: StoreMenuDrawerProps) {
                   <SizeGroup
                     label="Youth"
                     category="sneakers"
-                    queryKey="sizeShoe"
                     options={youthOptions}
                     isOpen={!!expandedSizes.youth}
                     onToggle={() => toggleSize("youth")}
@@ -351,7 +353,6 @@ export function StoreMenuDrawer({ isOpen, onClose }: StoreMenuDrawerProps) {
                   <SizeGroup
                     label="European"
                     category="sneakers"
-                    queryKey="sizeShoe"
                     options={euOptions}
                     isOpen={!!expandedSizes.eu}
                     onToggle={() => toggleSize("eu")}

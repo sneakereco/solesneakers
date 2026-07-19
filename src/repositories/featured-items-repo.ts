@@ -13,8 +13,8 @@ export type FeaturedItemWithProduct = FeaturedItemRow & {
   product: {
     id: string;
     name: string;
-    brand: string;
-    model: string | null;
+    brand: { id: string; label: string };
+    model: { id: string; label: string } | null;
     category: string;
     is_active: boolean;
     is_out_of_stock: boolean;
@@ -25,7 +25,7 @@ export type FeaturedItemWithProduct = FeaturedItemRow & {
     }>;
     variants?: Array<{
       id: string;
-      size_label: string;
+      size: { id: string; label: string };
       sale_price_cents: number;
       stock: number;
     }>;
@@ -65,13 +65,13 @@ export class FeaturedItemsRepository {
         product:products!inner(
           id,
           name,
-          brand,
-          model,
+          brand:tag_brands(id, canonical_label),
+          model:tag_models(id, canonical_label),
           category,
           is_active,
           is_out_of_stock,
           images:product_images(url, is_primary, sort_order),
-          variants:product_variants(id, size_label, sale_price_cents, stock)
+          variants:product_variants(id, size:tag_sizes(id, canonical_label), sale_price_cents, stock)
         )
       `,
       )
@@ -88,7 +88,29 @@ export class FeaturedItemsRepository {
       throw error;
     }
 
-    return (data ?? []) as FeaturedItemWithProduct[];
+    return (data ?? []).map((item) => {
+      const product = item.product;
+      return {
+        ...item,
+        product: {
+          ...product,
+          brand: {
+            id: product.brand?.id ?? "",
+            label: product.brand?.canonical_label ?? "",
+          },
+          model: product.model
+            ? { id: product.model.id, label: product.model.canonical_label }
+            : null,
+          variants: (product.variants ?? []).map((variant) => ({
+            ...variant,
+            size: {
+              id: variant.size?.id ?? "",
+              label: variant.size?.canonical_label ?? "",
+            },
+          })),
+        },
+      } as FeaturedItemWithProduct;
+    });
   }
 
   /**

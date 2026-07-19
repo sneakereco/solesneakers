@@ -1,16 +1,15 @@
 // src/services/product-title-parser.ts
 import type { Category } from "@/types/domain/product";
 
-export type CatalogBrandAlias = {
+export type TaxonomyBrandAlias = {
   brandId: string;
   brandLabel: string;
-  groupKey?: string | null;
   aliasLabel: string;
   aliasNormalized: string;
   priority: number;
 };
 
-export type CatalogModelAlias = {
+export type TaxonomyModelAlias = {
   modelId: string;
   modelLabel: string;
   brandId: string;
@@ -44,17 +43,14 @@ export type TitleParseResult = {
   brand: {
     id: string | null;
     label: string;
-    groupKey?: string | null;
-    isVerified: boolean;
     confidence: number;
-    source: "override" | "catalog" | "fuzzy" | "unknown";
+    source: "override" | "taxonomy" | "fuzzy" | "unknown";
   };
   model: {
     id: string | null;
     label: string | null;
-    isVerified: boolean;
     confidence: number;
-    source: "override" | "catalog" | "fuzzy" | "unknown";
+    source: "override" | "taxonomy" | "fuzzy" | "unknown";
   };
   name: string;
   parseConfidence: number;
@@ -123,7 +119,7 @@ function tokenizeWithRaw(value: string): Token[] {
   }));
 }
 
-function findExactMatch<T extends CatalogBrandAlias | CatalogModelAlias>(
+function findExactMatch<T extends TaxonomyBrandAlias | TaxonomyModelAlias>(
   tokens: string[],
   aliases: T[],
 ): MatchResult<T> | null {
@@ -210,7 +206,7 @@ function computeSimilarity(a: string, b: string): number {
   return maxLen === 0 ? 1 : 1 - distance / maxLen;
 }
 
-function findFuzzyMatch<T extends CatalogBrandAlias | CatalogModelAlias>(
+function findFuzzyMatch<T extends TaxonomyBrandAlias | TaxonomyModelAlias>(
   tokens: string[],
   aliases: T[],
 ): FuzzyMatchResult<T> | null {
@@ -270,12 +266,12 @@ function extractModelCandidate(
   return filtered[0]?.raw ?? null;
 }
 
-export function parseTitleWithCatalog(
+export function parseTitleWithTaxonomy(
   input: TitleParseInput,
-  catalog: {
-    brandAliases: CatalogBrandAlias[];
-    modelAliasesByBrand: Record<string, CatalogModelAlias[]>;
-    modelAliasesAll?: CatalogModelAlias[];
+  taxonomy: {
+    brandAliases: TaxonomyBrandAlias[];
+    modelAliasesByBrand: Record<string, TaxonomyModelAlias[]>;
+    modelAliasesAll?: TaxonomyModelAlias[];
     preferredBrandIds?: Set<string>;
   },
 ): TitleParseResult {
@@ -283,14 +279,14 @@ export function parseTitleWithCatalog(
   const tokensWithRaw = tokenizeWithRaw(titleRaw);
   const tokens = tokensWithRaw.map((token) => token.normalized).filter(Boolean);
 
-  const preferredBrandIds = catalog.preferredBrandIds ?? new Set<string>();
-  const globalModelAliases = catalog.modelAliasesAll ?? [];
+  const preferredBrandIds = taxonomy.preferredBrandIds ?? new Set<string>();
+  const globalModelAliases = taxonomy.modelAliasesAll ?? [];
 
   // 1) Try to detect a model globally (even if brand not found yet)
   let globalModelMatch: null | {
-    alias: CatalogModelAlias;
+    alias: TaxonomyModelAlias;
     confidence: number;
-    source: "catalog" | "fuzzy";
+    source: "taxonomy" | "fuzzy";
   } = null;
 
   if (
@@ -300,7 +296,7 @@ export function parseTitleWithCatalog(
   ) {
     const exactGlobal = findExactMatch(tokens, globalModelAliases);
     if (exactGlobal) {
-      globalModelMatch = { alias: exactGlobal.alias, confidence: 1, source: "catalog" };
+      globalModelMatch = { alias: exactGlobal.alias, confidence: 1, source: "taxonomy" };
     } else {
       const fuzzyGlobal = findFuzzyMatch(tokens, globalModelAliases);
       if (fuzzyGlobal && fuzzyGlobal.similarity >= MEDIUM_CONFIDENCE) {
@@ -317,18 +313,18 @@ export function parseTitleWithCatalog(
   const candidates: TitleParseResult["candidates"] = {};
 
   let brandMatch = null as null | {
-    alias: CatalogBrandAlias;
+    alias: TaxonomyBrandAlias;
     start: number;
     length: number;
     confidence: number;
     source: TitleParseResult["brand"]["source"];
   };
-  const fallbackBrandAlias = catalog.brandAliases.find(
+  const fallbackBrandAlias = taxonomy.brandAliases.find(
     (alias) => alias.aliasNormalized === "other",
   );
 
   const brandOverrides = input.brandOverrideId
-    ? catalog.brandAliases.filter((alias) => alias.brandId === input.brandOverrideId)
+    ? taxonomy.brandAliases.filter((alias) => alias.brandId === input.brandOverrideId)
     : [];
 
   if (input.brandOverrideId && brandOverrides.length > 0) {
@@ -342,17 +338,17 @@ export function parseTitleWithCatalog(
       source: "override",
     };
   } else if (tokens.length > 0) {
-    const exactBrand = findExactMatch(tokens, catalog.brandAliases);
+    const exactBrand = findExactMatch(tokens, taxonomy.brandAliases);
     if (exactBrand) {
       brandMatch = {
         alias: exactBrand.alias,
         start: exactBrand.start,
         length: exactBrand.length,
         confidence: 1,
-        source: "catalog",
+        source: "taxonomy",
       };
     } else {
-      const fuzzyBrand = findFuzzyMatch(tokens, catalog.brandAliases);
+      const fuzzyBrand = findFuzzyMatch(tokens, taxonomy.brandAliases);
       if (fuzzyBrand && fuzzyBrand.similarity >= MEDIUM_CONFIDENCE) {
         if (fuzzyBrand.similarity >= HIGH_CONFIDENCE) {
           brandMatch = {
@@ -385,7 +381,7 @@ export function parseTitleWithCatalog(
 
     // If no brand found, adopt inferred brand
     if (!brandMatch) {
-      const inferredBrandAlias = catalog.brandAliases.find(
+      const inferredBrandAlias = taxonomy.brandAliases.find(
         (b) => b.brandId === inferredBrandId,
       );
       if (inferredBrandAlias) {
@@ -401,7 +397,7 @@ export function parseTitleWithCatalog(
 
     // If brand found but inferred preferred brand exists (Nike models present), override
     if (brandMatch && inferredIsPreferred && !currentIsPreferred) {
-      const inferredBrandAlias = catalog.brandAliases.find(
+      const inferredBrandAlias = taxonomy.brandAliases.find(
         (b) => b.brandId === inferredBrandId,
       );
       if (inferredBrandAlias) {
@@ -410,7 +406,7 @@ export function parseTitleWithCatalog(
           start: brandMatch.start,
           length: brandMatch.length,
           confidence: Math.max(brandMatch.confidence, globalModelMatch.confidence),
-          source: "catalog",
+          source: "taxonomy",
         };
       }
     }
@@ -418,10 +414,8 @@ export function parseTitleWithCatalog(
 
   let brandLabel = brandMatch?.alias.brandLabel ?? "";
   let brandId = brandMatch?.alias.brandId ?? null;
-  let brandGroupKey = brandMatch?.alias.groupKey ?? null;
   let brandConfidence = brandMatch?.confidence ?? 0;
   let brandSource = brandMatch?.source ?? "unknown";
-  let brandIsVerified = Boolean(brandMatch && brandMatch.source !== "unknown");
 
   if (!brandMatch) {
     const candidate = extractBrandCandidate(tokensWithRaw);
@@ -435,22 +429,18 @@ export function parseTitleWithCatalog(
     if (fallbackBrandAlias) {
       brandLabel = fallbackBrandAlias.brandLabel;
       brandId = null;
-      brandGroupKey = fallbackBrandAlias.groupKey ?? null;
       brandConfidence = 0.2;
       brandSource = "unknown";
-      brandIsVerified = false;
     } else if (candidate) {
       brandLabel = candidate.trim();
       brandId = null;
-      brandGroupKey = null;
       brandConfidence = 0.2;
       brandSource = "unknown";
-      brandIsVerified = false;
     }
   }
 
   let modelMatch = null as null | {
-    alias: CatalogModelAlias;
+    alias: TaxonomyModelAlias;
     start: number;
     length: number;
     confidence: number;
@@ -460,7 +450,6 @@ export function parseTitleWithCatalog(
   let modelId: string | null = null;
   let modelConfidence = 0;
   let modelSource: TitleParseResult["model"]["source"] = "unknown";
-  let modelIsVerified = false;
 
   const isSneaker = input.category === "sneakers";
   if (!isSneaker) {
@@ -468,10 +457,9 @@ export function parseTitleWithCatalog(
     modelId = null;
     modelConfidence = 1;
     modelSource = "unknown";
-    modelIsVerified = true;
   }
   if (isSneaker && brandId) {
-    const modelAliases = catalog.modelAliasesByBrand[brandId] ?? [];
+    const modelAliases = taxonomy.modelAliasesByBrand[brandId] ?? [];
     if (input.modelOverrideId) {
       const overrideAliases = modelAliases.filter(
         (alias) => alias.modelId === input.modelOverrideId,
@@ -497,7 +485,7 @@ export function parseTitleWithCatalog(
           start: exactModel.start,
           length: exactModel.length,
           confidence: 1,
-          source: "catalog",
+          source: "taxonomy",
         };
       } else {
         const fuzzyModel = findFuzzyMatch(tokens, modelAliases);
@@ -527,9 +515,8 @@ export function parseTitleWithCatalog(
     modelId = modelMatch.alias.modelId;
     modelConfidence = modelMatch.confidence;
     modelSource = modelMatch.source;
-    modelIsVerified = modelMatch.source !== "unknown";
   } else if (isSneaker && brandId) {
-    const modelAliases = catalog.modelAliasesByBrand[brandId] ?? [];
+    const modelAliases = taxonomy.modelAliasesByBrand[brandId] ?? [];
     const fallbackLabel = normalizeLabel(`other ${brandLabel} models`);
     const fallbackAlias = modelAliases.find(
       (alias) => alias.aliasNormalized === fallbackLabel,
@@ -540,13 +527,11 @@ export function parseTitleWithCatalog(
       modelId = fallbackAlias.modelId;
       modelConfidence = 0.2;
       modelSource = "unknown";
-      modelIsVerified = false;
     } else {
       modelLabel = null;
       modelId = null;
       modelConfidence = 0;
       modelSource = "unknown";
-      modelIsVerified = false;
     }
 
     const candidate = extractModelCandidate(tokensWithRaw, brandMatch);
@@ -607,15 +592,12 @@ export function parseTitleWithCatalog(
     brand: {
       id: brandId,
       label: brandLabel,
-      groupKey: brandGroupKey ?? null,
-      isVerified: brandIsVerified,
       confidence: brandConfidence,
       source: brandSource,
     },
     model: {
       id: modelId,
       label: isSneaker ? modelLabel : null,
-      isVerified: modelIsVerified,
       confidence: modelConfidence,
       source: modelSource,
     },

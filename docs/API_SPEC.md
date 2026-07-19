@@ -6,7 +6,8 @@ The route implementations under `app/api` are authoritative. This document recor
 
 - `/api/auth/*`: registration, login, logout, verification, password recovery, OTP, and two-factor authentication
 - `/api/account/*`: addresses, password changes, shipping details, and order history
-- `/api/store/*`: products, filters, brands, and brand groups
+- `/api/store/products`: products filtered by canonical `brandIds`, `modelIds`, and `sizeIds`
+- `/api/store/taxonomy`: active canonical brand and size options for storefront navigation
 - `/api/cart/*`: cart validation, snapshot, and restoration
 - `/api/contact`: contact form delivery
 - `/api/email/*`: subscriber and confirmation flows
@@ -16,7 +17,7 @@ The route implementations under `app/api` are authoritative. This document recor
 ## Admin APIs
 
 - `/api/admin/products/*`: first-party inventory CRUD, duplication, and export
-- `/api/admin/catalog/*`: brands, brand groups, aliases, models, candidates, and title parsing
+- `/api/admin/tags/*`: canonical brands, models, aliases, candidates, sizes, and title parsing
 - `/api/admin/customers/*`: customer listing and detail
 - `/api/admin/orders/*`: order listing, fulfillment, pickup, and email resend
 - `/api/admin/transactions/*`: order transaction history
@@ -29,3 +30,7 @@ The route implementations under `app/api` are authoritative. This document recor
 ## Checkout
 
 No checkout mutation API is active. `/checkout` and `/checkout/start` fail closed with an unavailable state until a replacement payment and tax workflow is implemented.
+
+## Product Taxonomy Contract
+
+Product writes require `brand_id`, allow `model_id`, and require `size_id` on every variant. Product reads expose joined `{ id, label }` references for `brand`, optional `model`, and variant `size`. Generic product tags, copied product brand/model strings, and copied variant size labels are not supported. Order items retain text snapshots for historical display.

@@ -57,7 +57,6 @@ describe("ProductService archive behavior", () => {
       archived_at: "2026-06-07T20:00:00.000Z",
       variants: [],
       images: [],
-      tags: [],
       go_live_at: "2026-06-07T20:00:00.000Z",
     });
 
@@ -71,12 +70,13 @@ describe("ProductService archive behavior", () => {
         "product-1",
         {
           name: "Archived Product",
+          brand_id: "brand-1",
           category: "sneakers",
           condition: "new",
           size_type: "shoe",
           variants: [
             {
-              size_label: "9.5M / 11W",
+              size_id: "size-9-5",
               sale_price_cents: 10000,
               unit_cost_cents: 5000,
               stock: 1,

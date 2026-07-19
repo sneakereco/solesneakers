@@ -5,10 +5,9 @@ import type { Tables, TablesInsert, TablesUpdate } from "@/types/db/database.typ
 export interface ProductFilters {
   q?: string;
   category?: string[];
-  brand?: string[];
-  model?: string[];
-  sizeShoe?: string[];
-  sizeClothing?: string[];
+  brandIds?: string[];
+  modelIds?: string[];
+  sizeIds?: string[];
   condition?: string[];
   priceMinCents?: number;
   priceMaxCents?: number;
@@ -28,18 +27,24 @@ export interface ProductFilters {
 
   tenantId?: string;
   searchMode?: "storefront" | "inventory";
+
+  // Resolved by StorefrontService so taxonomy labels can participate in search.
+  matchingProductIds?: string[];
 }
 
 type ProductRow = Tables<"products">;
 type VariantRow = Tables<"product_variants">;
 type ImageRow = Tables<"product_images">;
-type TagRow = Tables<"tags">;
-type SearchableProductRow = Pick<ProductRow, "id" | "brand" | "name" | "model">;
+type BrandRow = Tables<"tag_brands">;
+type ModelRow = Tables<"tag_models">;
+type SizeRow = Tables<"tag_sizes">;
+type SearchableProductRow = Pick<ProductRow, "id" | "name">;
 
 export type ProductWithDetails = ProductRow & {
-  variants: VariantRow[];
+  brand: { id: string; label: string };
+  model: { id: string; label: string } | null;
+  variants: Array<VariantRow & { size: { id: string; label: string } }>;
   images: ImageRow[];
-  tags: TagRow[];
 };
 
 export type CartVariantDetails = {
@@ -70,7 +75,7 @@ export type InventoryExportRow = {
 
 type VariantExportRow = {
   sku: string | null;
-  size_label: string | null;
+  size?: { canonical_label: string | null };
   sale_price_cents: number | null;
   unit_cost_cents: number | null;
   stock: number | null;
@@ -91,29 +96,40 @@ type VariantInsert = TablesInsert<"product_variants">;
 type VariantUpdate = TablesUpdate<"product_variants">;
 type ImageInsert = TablesInsert<"product_images">;
 
-type TagInsert = TablesInsert<"tags">;
 const BULK_MUTATION_BATCH_SIZE = 100;
 const QUERY_PAGE_SIZE = 1000;
 
 // Helper types for query results
 type FilterDataRow = {
-  brand: string | null;
+  brand_id: string;
+  model_id: string | null;
+  brand?: { canonical_label: string };
+  model?: { canonical_label: string } | null;
+  category: string | null;
+};
+
+export type ProductFilterData = {
+  brandId: string;
+  brand: string;
+  modelId: string | null;
   model: string | null;
   category: string | null;
 };
 
 type SizeAvailabilityRow = {
   product_id: string;
-  size_label: string | null;
+  size_id: string;
+  size?: { canonical_label?: string | null };
   product?: {
     size_type?: string | null;
   };
 };
 
 type ProductWithRelations = ProductRow & {
-  variants?: VariantRow[];
+  brand?: BrandRow;
+  model?: ModelRow | null;
+  variants?: Array<VariantRow & { size?: SizeRow }>;
   images?: ImageRow[];
-  tags?: Array<{ tag: TagRow }>;
 };
 
 type VariantWithProduct = {
@@ -127,8 +143,10 @@ type VariantWithProduct = {
 type CheckoutProductRow = {
   id: string;
   name: string;
-  brand: string;
-  model: string | null;
+  brand_id: string;
+  model_id: string | null;
+  brand?: { canonical_label: string };
+  model?: { canonical_label: string } | null;
   category: string;
   condition: string;
   tenant_id: string | null;
@@ -136,7 +154,8 @@ type CheckoutProductRow = {
   variants?: Array<{
     id: string;
     sku: string;
-    size_label: string;
+    size_id: string;
+    size?: { canonical_label: string };
     sale_price_cents: number;
     unit_cost_cents: number;
     stock: number;
@@ -147,12 +166,14 @@ type CartVariantRow = {
   id: string;
   product_id: string;
   sku: string;
-  size_label: string;
+  size_id: string;
+  size?: { canonical_label: string };
   sale_price_cents: number;
   stock: number;
   product?: {
     id: string;
-    brand: string;
+    brand_id: string;
+    brand?: { canonical_label: string };
     name: string;
     is_active: boolean;
     is_out_of_stock: boolean;
@@ -172,9 +193,70 @@ export class ProductRepository {
 
   constructor(private readonly supabase: TypedSupabaseClient) {}
 
-  private readonly storefrontSearchFields = ["brand", "name", "model"];
+  private readonly storefrontSearchFields = ["name"];
 
-  private readonly inventorySearchFields = ["brand", "name", "model"];
+  private readonly inventorySearchFields = ["name"];
+
+  async listCanonicalSearchProductIds(input: string, tenantId?: string) {
+    const terms = this.buildSearchTerms(input);
+    if (terms.length === 0) {
+      return [];
+    }
+
+    const taxonomyClauses = terms.map((term) => {
+      const safe = term.replace(/[(),]/g, " ").replace(/\s+/g, " ").trim();
+      return `canonical_label.ilike.%${safe}%`;
+    });
+
+    const [brandsResult, modelsResult] = await Promise.all([
+      this.supabase
+        .from("tag_brands")
+        .select("id")
+        .eq("is_active", true)
+        .or(taxonomyClauses.join(","))
+        .limit(100),
+      this.supabase
+        .from("tag_models")
+        .select("id")
+        .eq("is_active", true)
+        .or(taxonomyClauses.join(","))
+        .limit(100),
+    ]);
+
+    if (brandsResult.error) {
+      throw brandsResult.error;
+    }
+    if (modelsResult.error) {
+      throw modelsResult.error;
+    }
+
+    const clauses = terms.map((term) => {
+      const safe = term.replace(/[(),]/g, " ").replace(/\s+/g, " ").trim();
+      return `name.ilike.%${safe}%`;
+    });
+    const brandIds = (brandsResult.data ?? []).map((brand) => brand.id);
+    const modelIds = (modelsResult.data ?? []).map((model) => model.id);
+
+    if (brandIds.length > 0) {
+      clauses.push(`brand_id.in.(${this.buildInClause(brandIds)})`);
+    }
+    if (modelIds.length > 0) {
+      clauses.push(`model_id.in.(${this.buildInClause(modelIds)})`);
+    }
+
+    let query = this.supabase.from("products").select("id").or(clauses.join(","));
+    if (tenantId) {
+      query = query.eq("tenant_id", tenantId);
+    }
+
+    // Keep the candidate ID filter below practical PostgREST URL limits.
+    const { data, error } = await query.limit(500);
+    if (error) {
+      throw error;
+    }
+
+    return (data ?? []).map((product) => product.id);
+  }
 
   private applyArchivedFilter<
     T extends {
@@ -202,7 +284,7 @@ export class ProductRepository {
       let query = this.supabase
         .from("products")
         .select(
-          "*, variants:product_variants(*), images:product_images(*), tags:product_tags(tag:tags(*))",
+          "*, brand:tag_brands(*), model:tag_models(*), variants:product_variants(*, size:tag_sizes(*)), images:product_images(*)",
         )
         .eq("tenant_id", tenantId);
 
@@ -238,7 +320,7 @@ export class ProductRepository {
     let query = this.supabase
       .from("product_variants")
       .select(
-        "sku, size_label, sale_price_cents, unit_cost_cents, stock, product:products!inner(name, condition, is_active, is_out_of_stock, tenant_id, category)",
+        "sku, size:tag_sizes(canonical_label), sale_price_cents, unit_cost_cents, stock, product:products!inner(name, condition, is_active, is_out_of_stock, tenant_id, category)",
       )
       .eq("product.is_active", true);
 
@@ -276,7 +358,7 @@ export class ProductRepository {
     // Order for stable printing
     query = query
       .order("sku", { ascending: true })
-      .order("size_label", { ascending: true });
+      .order("sort_order", { ascending: true });
 
     const { data, error } = await query.limit(20000);
     if (error) {
@@ -290,7 +372,7 @@ export class ProductRepository {
         const product = row.product;
         const sku = row.sku?.trim() ?? "";
         const name = product?.name?.trim() ?? "";
-        const size = row.size_label?.trim() ?? "";
+        const size = row.size?.canonical_label?.trim() ?? "";
         const type = product?.category?.trim() ?? "";
         const condition = product?.condition?.trim() ?? "";
 
@@ -322,6 +404,7 @@ export class ProductRepository {
       typeof filters.priceMaxCents === "number";
     const includeUnpublished = searchMode === "inventory";
     const nowIso = new Date().toISOString();
+    const hasResolvedSearch = Array.isArray(filters.matchingProductIds);
     const searchFields =
       searchMode === "inventory"
         ? this.inventorySearchFields
@@ -331,6 +414,9 @@ export class ProductRepository {
       ? null
       : await this.listProductIdsForSizes(filters);
     if (Array.isArray(sizeProductIds) && sizeProductIds.length === 0) {
+      return { products: [], total: 0, skuTotal: 0, inventoryUnitTotal: 0, page, limit };
+    }
+    if (hasResolvedSearch && filters.matchingProductIds!.length === 0) {
       return { products: [], total: 0, skuTotal: 0, inventoryUnitTotal: 0, page, limit };
     }
 
@@ -360,12 +446,9 @@ export class ProductRepository {
       // Build the base query with all filters
       let baseQuery = this.supabase
         .from("products")
-        .select(
-          hasPriceFilter
-            ? "id, brand, name, model, product_variants!inner(id)"
-            : "id, brand, name, model",
-          { count: "exact" },
-        );
+        .select(hasPriceFilter ? "id, name, product_variants!inner(id)" : "id, name", {
+          count: "exact",
+        });
 
       baseQuery = baseQuery.eq("is_active", true);
       baseQuery = this.applyArchivedFilter(baseQuery, archivedStatus);
@@ -390,17 +473,21 @@ export class ProductRepository {
       }
 
       // Text search
-      baseQuery = this.applyTextSearch(baseQuery, filters.q, searchFields);
+      if (hasResolvedSearch) {
+        baseQuery = baseQuery.in("id", filters.matchingProductIds!);
+      } else {
+        baseQuery = this.applyTextSearch(baseQuery, filters.q, searchFields);
+      }
 
       // Category / brand / condition filters
       if (filters.category?.length) {
         baseQuery = baseQuery.in("category", filters.category);
       }
-      if (filters.brand?.length) {
-        baseQuery = baseQuery.in("brand", filters.brand);
+      if (filters.brandIds?.length) {
+        baseQuery = baseQuery.in("brand_id", filters.brandIds);
       }
-      if (filters.model?.length) {
-        baseQuery = baseQuery.in("model", filters.model);
+      if (filters.modelIds?.length) {
+        baseQuery = baseQuery.in("model_id", filters.modelIds);
       }
       if (filters.condition?.length) {
         baseQuery = baseQuery.in("condition", filters.condition);
@@ -533,7 +620,7 @@ export class ProductRepository {
         let detailQuery = this.supabase
           .from("products")
           .select(
-            "*, variants:product_variants(*), images:product_images(*), tags:product_tags(tag:tags(*))",
+            "*, brand:tag_brands(*), model:tag_models(*), variants:product_variants(*, size:tag_sizes(*)), images:product_images(*)",
           )
           .in("id", idBatch)
           .eq("is_active", true);
@@ -595,7 +682,7 @@ export class ProductRepository {
     let query = this.supabase
       .from("product_variants")
       .select(
-        "sku, product:products!inner(id, brand, name, model, category, condition, tenant_id, is_active, is_out_of_stock, archived_at, go_live_at)",
+        "sku, product:products!inner(id, brand_id, name, model_id, category, condition, tenant_id, is_active, is_out_of_stock, archived_at, go_live_at)",
       )
       .eq("product.is_active", true);
 
@@ -641,11 +728,11 @@ export class ProductRepository {
     if (filters.category?.length) {
       query = query.in("product.category", filters.category);
     }
-    if (filters.brand?.length) {
-      query = query.in("product.brand", filters.brand);
+    if (filters.brandIds?.length) {
+      query = query.in("product.brand_id", filters.brandIds);
     }
-    if (filters.model?.length) {
-      query = query.in("product.model", filters.model);
+    if (filters.modelIds?.length) {
+      query = query.in("product.model_id", filters.modelIds);
     }
     if (filters.condition?.length) {
       query = query.in("product.condition", filters.condition);
@@ -685,7 +772,7 @@ export class ProductRepository {
     let query = this.supabase
       .from("product_variants")
       .select(
-        "stock, product:products!inner(id, brand, name, model, category, condition, tenant_id, is_active, is_out_of_stock, archived_at, go_live_at)",
+        "stock, product:products!inner(id, brand_id, name, model_id, category, condition, tenant_id, is_active, is_out_of_stock, archived_at, go_live_at)",
       )
       .eq("product.is_active", true);
 
@@ -731,11 +818,11 @@ export class ProductRepository {
     if (filters.category?.length) {
       query = query.in("product.category", filters.category);
     }
-    if (filters.brand?.length) {
-      query = query.in("product.brand", filters.brand);
+    if (filters.brandIds?.length) {
+      query = query.in("product.brand_id", filters.brandIds);
     }
-    if (filters.model?.length) {
-      query = query.in("product.model", filters.model);
+    if (filters.modelIds?.length) {
+      query = query.in("product.model_id", filters.modelIds);
     }
     if (filters.condition?.length) {
       query = query.in("product.condition", filters.condition);
@@ -791,16 +878,23 @@ export class ProductRepository {
       query = query.eq("is_out_of_stock", false);
     }
 
-    query = this.applyTextSearch(query, filters.q, searchFields);
+    if (Array.isArray(filters.matchingProductIds)) {
+      if (filters.matchingProductIds.length === 0) {
+        return [];
+      }
+      query = query.in("id", filters.matchingProductIds);
+    } else {
+      query = this.applyTextSearch(query, filters.q, searchFields);
+    }
 
     if (filters.category?.length) {
       query = query.in("category", filters.category);
     }
-    if (filters.brand?.length) {
-      query = query.in("brand", filters.brand);
+    if (filters.brandIds?.length) {
+      query = query.in("brand_id", filters.brandIds);
     }
-    if (filters.model?.length) {
-      query = query.in("model", filters.model);
+    if (filters.modelIds?.length) {
+      query = query.in("model_id", filters.modelIds);
     }
     if (filters.condition?.length) {
       query = query.in("condition", filters.condition);
@@ -828,7 +922,7 @@ export class ProductRepository {
     let query = this.supabase
       .from("products")
       .select(
-        "*, variants:product_variants(*), images:product_images(*), tags:product_tags(tag:tags(*))",
+        "*, brand:tag_brands(*), model:tag_models(*), variants:product_variants(*, size:tag_sizes(*)), images:product_images(*)",
       )
       .eq("id", id);
     if (!opts?.includeInactive) {
@@ -1162,62 +1256,22 @@ export class ProductRepository {
     }
   }
 
-  async upsertTag(tag: TagInsert) {
-    const { data, error } = await this.supabase
-      .from("tags")
-      .upsert(tag, { onConflict: "tenant_id,label,group_key" })
-      .select()
-      .single();
-
-    if (error) {
-      throw error;
-    }
-    return data as TagRow;
-  }
-
-  async linkProductTag(productId: string, tagId: string) {
-    const { error } = await this.supabase
-      .from("product_tags")
-      .insert({ product_id: productId, tag_id: tagId });
-
-    if (error && (error as { code?: string }).code !== "23505") {
-      throw error;
-    }
-  }
-
-  async unlinkProductTags(productId: string) {
-    const { error } = await this.supabase
-      .from("product_tags")
-      .delete()
-      .eq("product_id", productId);
-
-    if (error) {
-      throw error;
-    }
-  }
-
   async getBrands(): Promise<string[]> {
     const { data, error } = await this.supabase
-      .from("products")
-      .select("brand")
+      .from("tag_brands")
+      .select("canonical_label")
       .eq("is_active", true)
-      .eq("is_out_of_stock", false)
-      .lte("go_live_at", new Date().toISOString());
+      .order("canonical_label");
 
     if (error) {
       throw error;
     }
-    const brands = [
-      ...new Set(
-        (data ?? [])
-          .map((p) => p.brand)
-          .filter((brand): brand is string => Boolean(brand)),
-      ),
-    ];
-    return brands.sort();
+    return (data ?? []).map((brand) => brand.canonical_label);
   }
 
-  async listFilterData(opts?: { includeOutOfStock?: boolean }): Promise<FilterDataRow[]> {
+  async listFilterData(opts?: {
+    includeOutOfStock?: boolean;
+  }): Promise<ProductFilterData[]> {
     const includeOutOfStock = Boolean(opts?.includeOutOfStock);
     const rows: FilterDataRow[] = [];
     let rangeStart = 0;
@@ -1225,7 +1279,9 @@ export class ProductRepository {
     while (true) {
       let query = this.supabase
         .from("products")
-        .select("id, brand, model, category")
+        .select(
+          "id, brand_id, model_id, category, brand:tag_brands(canonical_label), model:tag_models(canonical_label)",
+        )
         .eq("is_active", true)
         .lte("go_live_at", new Date().toISOString())
         .order("id", { ascending: true });
@@ -1251,8 +1307,10 @@ export class ProductRepository {
     }
 
     return rows.map((row) => ({
-      brand: row.brand ?? null,
-      model: row.model ?? null,
+      brandId: row.brand_id,
+      brand: row.brand?.canonical_label ?? "",
+      modelId: row.model_id,
+      model: row.model?.canonical_label ?? null,
       category: row.category ?? null,
     }));
   }
@@ -1266,7 +1324,7 @@ export class ProductRepository {
       let query = this.supabase
         .from("product_variants")
         .select(
-          "id, product_id, size_label, product:products!inner(size_type, is_active, is_out_of_stock)",
+          "id, product_id, size_id, size:tag_sizes(canonical_label), product:products!inner(size_type, is_active, is_out_of_stock)",
         )
         .gt("stock", 0)
         .eq("product.is_active", true)
@@ -1285,18 +1343,25 @@ export class ProductRepository {
         query = query.eq("product.is_out_of_stock", false);
       }
 
-      query = this.applyTextSearch(query, filters?.q, this.storefrontSearchFields, {
-        foreignTable: "product",
-      });
+      if (Array.isArray(filters?.matchingProductIds)) {
+        if (filters.matchingProductIds.length === 0) {
+          break;
+        }
+        query = query.in("product.id", filters.matchingProductIds);
+      } else {
+        query = this.applyTextSearch(query, filters?.q, this.storefrontSearchFields, {
+          foreignTable: "product",
+        });
+      }
 
       if (filters?.category?.length) {
         query = query.in("product.category", filters.category);
       }
-      if (filters?.brand?.length) {
-        query = query.in("product.brand", filters.brand);
+      if (filters?.brandIds?.length) {
+        query = query.in("product.brand_id", filters.brandIds);
       }
-      if (filters?.model?.length) {
-        query = query.in("product.model", filters.model);
+      if (filters?.modelIds?.length) {
+        query = query.in("product.model_id", filters.modelIds);
       }
       if (filters?.condition?.length) {
         query = query.in("product.condition", filters.condition);
@@ -1318,11 +1383,17 @@ export class ProductRepository {
       rangeStart += QUERY_PAGE_SIZE;
     }
 
-    const shoeProductsBySize = new Map<string, Set<string>>();
-    const clothingProductsBySize = new Map<string, Set<string>>();
+    const shoeProductsBySize = new Map<
+      string,
+      { label: string; products: Set<string> }
+    >();
+    const clothingProductsBySize = new Map<
+      string,
+      { label: string; products: Set<string> }
+    >();
 
     for (const row of rows) {
-      const sizeLabel = row.size_label?.trim();
+      const sizeLabel = row.size?.canonical_label?.trim();
       if (!sizeLabel) {
         continue;
       }
@@ -1335,21 +1406,36 @@ export class ProductRepository {
       if (!target) {
         continue;
       }
-      const productIds = target.get(sizeLabel) ?? new Set<string>();
-      productIds.add(row.product_id);
-      target.set(sizeLabel, productIds);
+      const entry = target.get(row.size_id) ?? {
+        label: sizeLabel,
+        products: new Set<string>(),
+      };
+      entry.products.add(row.product_id);
+      target.set(row.size_id, entry);
     }
 
-    const shoe = Array.from(shoeProductsBySize.keys());
-    const clothing = Array.from(clothingProductsBySize.keys());
+    const shoe = Array.from(shoeProductsBySize, ([id, entry]) => ({
+      id,
+      label: entry.label,
+    }));
+    const clothing = Array.from(clothingProductsBySize, ([id, entry]) => ({
+      id,
+      label: entry.label,
+    }));
     return {
       shoe,
       clothing,
       shoeCounts: Object.fromEntries(
-        shoe.map((size) => [size, shoeProductsBySize.get(size)?.size ?? 0]),
+        shoe.map((size) => [
+          size.id,
+          shoeProductsBySize.get(size.id)?.products.size ?? 0,
+        ]),
       ),
       clothingCounts: Object.fromEntries(
-        clothing.map((size) => [size, clothingProductsBySize.get(size)?.size ?? 0]),
+        clothing.map((size) => [
+          size.id,
+          clothingProductsBySize.get(size.id)?.products.size ?? 0,
+        ]),
       ),
     };
   }
@@ -1359,7 +1445,7 @@ export class ProductRepository {
     let query = this.supabase
       .from("product_variants")
       .select(
-        "size_label, product:products!inner(size_type, condition, is_active, is_out_of_stock)",
+        "size_id, product:products!inner(size_type, condition, is_active, is_out_of_stock)",
       )
       .gt("stock", 0)
       .eq("product.is_active", true)
@@ -1377,18 +1463,25 @@ export class ProductRepository {
       query = query.eq("product.is_out_of_stock", false);
     }
 
-    query = this.applyTextSearch(query, filters?.q, this.storefrontSearchFields, {
-      foreignTable: "product",
-    });
+    if (Array.isArray(filters?.matchingProductIds)) {
+      if (filters.matchingProductIds.length === 0) {
+        return [];
+      }
+      query = query.in("product.id", filters.matchingProductIds);
+    } else {
+      query = this.applyTextSearch(query, filters?.q, this.storefrontSearchFields, {
+        foreignTable: "product",
+      });
+    }
 
     if (filters?.category?.length) {
       query = query.in("product.category", filters.category);
     }
-    if (filters?.brand?.length) {
-      query = query.in("product.brand", filters.brand);
+    if (filters?.brandIds?.length) {
+      query = query.in("product.brand_id", filters.brandIds);
     }
-    if (filters?.model?.length) {
-      query = query.in("product.model", filters.model);
+    if (filters?.modelIds?.length) {
+      query = query.in("product.model_id", filters.modelIds);
     }
     if (filters?.condition?.length) {
       query = query.in("product.condition", filters.condition);
@@ -1416,24 +1509,28 @@ export class ProductRepository {
   private transformProduct(raw: ProductWithRelations): ProductWithDetails {
     const variants = Array.isArray(raw.variants) ? raw.variants : [];
     const images = Array.isArray(raw.images) ? raw.images : [];
-    const tags = Array.isArray(raw.tags) ? raw.tags : [];
+    if (!raw.brand) {
+      throw new Error(`Product ${raw.id} is missing its brand relation.`);
+    }
 
     return {
       ...(raw as ProductRow),
-      variants: (variants as VariantRow[]).sort(
-        (a, b) => (a.sort_order ?? 0) - (b.sort_order ?? 0),
-      ),
+      brand: { id: raw.brand.id, label: raw.brand.canonical_label },
+      model: raw.model ? { id: raw.model.id, label: raw.model.canonical_label } : null,
+      variants: variants
+        .map((variant) => {
+          if (!variant.size) {
+            throw new Error(`Variant ${variant.id} is missing its size relation.`);
+          }
+          return {
+            ...variant,
+            size: { id: variant.size.id, label: variant.size.canonical_label },
+          };
+        })
+        .sort((a, b) => (a.sort_order ?? 0) - (b.sort_order ?? 0)),
       images: (images as ImageRow[]).sort(
         (a, b) => (a.sort_order ?? 0) - (b.sort_order ?? 0),
       ),
-      tags: tags
-        .map((pt) => {
-          if (pt && typeof pt === "object" && "tag" in pt) {
-            return pt.tag;
-          }
-          return null;
-        })
-        .filter((tag): tag is TagRow => tag !== null && tag !== undefined),
     };
   }
 
@@ -1615,9 +1712,7 @@ export class ProductRepository {
   ) {
     const { page = 1, limit = 20 } = filters;
     const offset = (page - 1) * limit;
-    const hasSizeFilters = Boolean(
-      filters.sizeShoe?.length || filters.sizeClothing?.length,
-    );
+    const hasSizeFilters = Boolean(filters.sizeIds?.length);
 
     const sizeProductIds = hasSizeFilters
       ? await this.listProductIdsForSizes(filters)
@@ -1655,17 +1750,28 @@ export class ProductRepository {
     }
 
     // Text search
-    countQuery = this.applyTextSearch(countQuery, filters.q, this.storefrontSearchFields);
+    if (Array.isArray(filters.matchingProductIds)) {
+      if (filters.matchingProductIds.length === 0) {
+        return { ids: [], total: 0 };
+      }
+      countQuery = countQuery.in("id", filters.matchingProductIds);
+    } else {
+      countQuery = this.applyTextSearch(
+        countQuery,
+        filters.q,
+        this.storefrontSearchFields,
+      );
+    }
 
     // Category / brand / condition filters
     if (filters.category?.length) {
       countQuery = countQuery.in("category", filters.category);
     }
-    if (filters.brand?.length) {
-      countQuery = countQuery.in("brand", filters.brand);
+    if (filters.brandIds?.length) {
+      countQuery = countQuery.in("brand_id", filters.brandIds);
     }
-    if (filters.model?.length) {
-      countQuery = countQuery.in("model", filters.model);
+    if (filters.modelIds?.length) {
+      countQuery = countQuery.in("model_id", filters.modelIds);
     }
     if (filters.condition?.length) {
       countQuery = countQuery.in("condition", filters.condition);
@@ -1718,6 +1824,9 @@ export class ProductRepository {
       if (Array.isArray(sizeProductIds)) {
         query = query.in("product_id", sizeProductIds);
       }
+      if (Array.isArray(filters.matchingProductIds)) {
+        query = query.in("product_id", filters.matchingProductIds);
+      }
 
       if (typeof filters.priceMinCents === "number") {
         query = query.gte("sale_price_cents", filters.priceMinCents);
@@ -1745,19 +1854,21 @@ export class ProductRepository {
       }
 
       // Text search on product fields
-      query = this.applyTextSearch(query, filters.q, this.storefrontSearchFields, {
-        foreignTable: "product",
-      });
+      if (!Array.isArray(filters.matchingProductIds)) {
+        query = this.applyTextSearch(query, filters.q, this.storefrontSearchFields, {
+          foreignTable: "product",
+        });
+      }
 
       // Category / brand / condition filters
       if (filters.category?.length) {
         query = query.in("product.category", filters.category);
       }
-      if (filters.brand?.length) {
-        query = query.in("product.brand", filters.brand);
+      if (filters.brandIds?.length) {
+        query = query.in("product.brand_id", filters.brandIds);
       }
-      if (filters.model?.length) {
-        query = query.in("product.model", filters.model);
+      if (filters.modelIds?.length) {
+        query = query.in("product.model_id", filters.modelIds);
       }
       if (filters.condition?.length) {
         query = query.in("product.condition", filters.condition);
@@ -1795,26 +1906,22 @@ export class ProductRepository {
   }
 
   private async listProductIdsForSizes(filters: ProductFilters) {
-    const selectedSizeGroups = [
-      { sizeType: "shoe", labels: filters.sizeShoe ?? [] },
-      { sizeType: "clothing", labels: filters.sizeClothing ?? [] },
-    ].filter((group) => group.labels.length > 0);
+    const selectedSizeIds = filters.sizeIds ?? [];
 
-    if (selectedSizeGroups.length === 0) {
+    if (selectedSizeIds.length === 0) {
       return null;
     }
 
     const productIds = new Set<string>();
 
-    for (const group of selectedSizeGroups) {
+    {
       let rangeStart = 0;
 
       while (true) {
         let query = this.supabase
           .from("product_variants")
-          .select("id, product_id, product:products!inner(size_type)")
-          .eq("product.size_type", group.sizeType)
-          .in("size_label", group.labels)
+          .select("id, product_id")
+          .in("size_id", selectedSizeIds)
           .gt("stock", 0)
           .order("id", { ascending: true });
 
@@ -1870,7 +1977,7 @@ export class ProductRepository {
     const { data, error } = await this.supabase
       .from("products")
       .select(
-        "id, name, brand, model, category, condition, tenant_id, shipping_price_cents, variants:product_variants(id, sku, size_label, sale_price_cents, unit_cost_cents, stock)",
+        "id, name, brand_id, model_id, brand:tag_brands(canonical_label), model:tag_models(canonical_label), category, condition, tenant_id, shipping_price_cents, variants:product_variants(id, sku, size_id, size:tag_sizes(canonical_label), sale_price_cents, unit_cost_cents, stock)",
       )
       .in("id", productIds)
       .eq("is_active", true)
@@ -1884,8 +1991,8 @@ export class ProductRepository {
     return (data ?? []).map((p: CheckoutProductRow) => ({
       id: p.id,
       name: p.name,
-      brand: p.brand,
-      model: p.model ?? null,
+      brand: p.brand?.canonical_label ?? "",
+      model: p.model?.canonical_label ?? null,
       titleDisplay: p.name,
       category: p.category,
       condition: p.condition,
@@ -1894,7 +2001,7 @@ export class ProductRepository {
       variants: (p.variants ?? []).map((v) => ({
         id: v.id,
         sku: v.sku,
-        sizeLabel: v.size_label,
+        sizeLabel: v.size?.canonical_label ?? "",
         salePriceCents: v.sale_price_cents,
         unitCostCents: v.unit_cost_cents,
         stock: v.stock,
@@ -1910,7 +2017,7 @@ export class ProductRepository {
     const { data, error } = await this.supabase
       .from("product_variants")
       .select(
-        "id, product_id, sku, size_label, sale_price_cents, stock, product:products(id, brand, name, is_active, is_out_of_stock, go_live_at)",
+        "id, product_id, sku, size_id, size:tag_sizes(canonical_label), sale_price_cents, stock, product:products(id, brand_id, brand:tag_brands(canonical_label), name, is_active, is_out_of_stock, go_live_at)",
       )
       .in("id", variantIds);
 
@@ -1957,11 +2064,11 @@ export class ProductRepository {
       return {
         variantId: row.id,
         productId: product?.id ?? row.product_id,
-        sizeLabel: row.size_label,
+        sizeLabel: row.size?.canonical_label ?? "",
         priceCents: row.sale_price_cents,
         sku: row.sku,
         stock: row.stock,
-        brand: product?.brand ?? "",
+        brand: product?.brand?.canonical_label ?? "",
         name: product?.name ?? "",
         titleDisplay: product?.name ?? "",
         isActive: (product?.is_active ?? false) && isLive,
@@ -1972,29 +2079,17 @@ export class ProductRepository {
   }
 
   async getModels(category?: string): Promise<string[]> {
-    let query = this.supabase
-      .from("products")
-      .select("model")
+    const query = this.supabase
+      .from("tag_models")
+      .select("canonical_label")
       .eq("is_active", true)
-      .eq("is_out_of_stock", false)
-      .lte("go_live_at", new Date().toISOString())
-      .not("model", "is", null);
-
-    if (category) {
-      query = query.eq("category", category);
-    }
+      .order("canonical_label");
 
     const { data, error } = await query;
     if (error) {
       throw error;
     }
-    const models = [
-      ...new Set(
-        (data ?? [])
-          .map((p) => p.model)
-          .filter((model): model is string => Boolean(model)),
-      ),
-    ];
-    return models.sort();
+    void category;
+    return (data ?? []).map((model) => model.canonical_label);
   }
 }

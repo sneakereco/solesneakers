@@ -1,6 +1,6 @@
 "use client";
 
-import { X, Package, Tag, Layers, Hash } from "lucide-react";
+import { X, Package, Layers, Hash } from "lucide-react";
 import { useEffect, useMemo, useState } from "react";
 
 import { ModalPortal } from "@/components/ui/ModalPortal";
@@ -10,13 +10,6 @@ export type AdminOrderItemImage = {
   url?: string | null;
   is_primary?: boolean | null;
   sort_order?: number | null;
-};
-
-type AdminOrderItemTagLink = {
-  tag?: {
-    label?: string | null;
-    group_key?: string | null;
-  } | null;
 };
 
 export type AdminOrderItem = {
@@ -42,11 +35,9 @@ export type AdminOrderItem = {
     created_at?: string | null;
     category?: string | null;
     description?: string | null;
-    tags?: AdminOrderItemTagLink[] | null;
   } | null;
   variant?: {
     sku?: string | null;
-    size_label?: string | null;
     sale_price_cents?: number | null;
     unit_cost_cents?: number | null;
   } | null;
@@ -111,15 +102,6 @@ export const getOrderItemFinancials = (
 
   return { quantity, unitCost, unitPrice, unitProfit };
 };
-
-const getTagLabels = (item: AdminOrderItem) =>
-  Array.from(
-    new Set(
-      (item.product?.tags ?? [])
-        .map((entry) => entry.tag?.label?.trim())
-        .filter((label): label is string => Boolean(label)),
-    ),
-  );
 
 // --- Components ---
 
@@ -220,7 +202,6 @@ export function AdminOrderItemDetailsModal({
 
   const productTitle = getTitle(item);
   const financials = getOrderItemFinancials(item);
-  const tagLabels = getTagLabels(item);
   const formattedUnitProfit = formatMoney(Math.abs(financials.unitProfit));
   const profitColor = financials.unitProfit >= 0 ? "green" : "red";
   const profitPrefix = financials.unitProfit >= 0 ? "+" : "-";
@@ -333,31 +314,7 @@ export function AdminOrderItemDetailsModal({
                     label="Model"
                     value={item.model || item.product?.model || "-"}
                   />
-                  <DetailRow
-                    label="Size"
-                    value={item.size_label || item.variant?.size_label || "N/A"}
-                    icon={Hash}
-                  />
-                </div>
-
-                <div className="mt-4 pt-4 border-t border-zinc-800/50">
-                  <div className="text-[10px] font-bold uppercase tracking-wider text-zinc-500 mb-2 flex items-center gap-1.5">
-                    <Tag className="h-3 w-3" /> Tags
-                  </div>
-                  {tagLabels.length ? (
-                    <div className="flex flex-wrap gap-1.5">
-                      {tagLabels.map((tag) => (
-                        <span
-                          key={tag}
-                          className="text-[10px] bg-zinc-800 text-zinc-300 px-1.5 py-0.5 rounded border border-zinc-700"
-                        >
-                          {tag}
-                        </span>
-                      ))}
-                    </div>
-                  ) : (
-                    <span className="text-zinc-500 text-xs italic">No tags</span>
-                  )}
+                  <DetailRow label="Size" value={item.size_label || "N/A"} icon={Hash} />
                 </div>
               </div>
 

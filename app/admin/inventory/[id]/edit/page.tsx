@@ -45,6 +45,8 @@ export default async function EditProductPage(props: EditProductPageProps) {
         isArchived={Boolean(initialData.product.archived_at)}
         initialShippingDefaults={initialData.shippingDefaults}
         initialBrands={initialData.brands}
+        initialModels={initialData.models}
+        initialSizes={initialData.sizes}
       />
     </div>
   );

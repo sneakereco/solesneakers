@@ -39,7 +39,7 @@ export function ProductDetail({ product }: ProductDetailProps) {
   );
 
   const [selectedVariantId, setSelectedVariantId] = useState(initialVariant?.id ?? "");
-  const selectedSizeLabelRef = useRef<string | null>(initialVariant?.size_label ?? null);
+  const selectedSizeIdRef = useRef<string | null>(initialVariant?.size.id ?? null);
   const [selectedImageIndex, setSelectedImageIndex] = useState(initialImageIndex);
   const [showShipping, setShowShipping] = useState(false);
   const [toast, setToast] = useState<{
@@ -65,21 +65,21 @@ export function ProductDetail({ product }: ProductDetailProps) {
   useEffect(() => {
     const current = product.variants.find((variant) => variant.id === selectedVariantId);
     if (current) {
-      selectedSizeLabelRef.current = current.size_label;
+      selectedSizeIdRef.current = current.size.id;
       return;
     }
 
-    const fallbackLabel = selectedSizeLabelRef.current;
-    const variantWithSameLabel = fallbackLabel
-      ? product.variants.find((variant) => variant.size_label === fallbackLabel)
+    const fallbackSizeId = selectedSizeIdRef.current;
+    const variantWithSameSize = fallbackSizeId
+      ? product.variants.find((variant) => variant.size.id === fallbackSizeId)
       : undefined;
     const nextVariant =
-      variantWithSameLabel ??
+      variantWithSameSize ??
       product.variants.find((variant) => variant.stock > 0) ??
       product.variants[0];
 
     if (nextVariant && nextVariant.id !== selectedVariantId) {
-      selectedSizeLabelRef.current = nextVariant.size_label;
+      selectedSizeIdRef.current = nextVariant.size.id;
       setSelectedVariantId(nextVariant.id);
     }
   }, [product.variants, selectedVariantId]);
@@ -100,8 +100,8 @@ export function ProductDetail({ product }: ProductDetailProps) {
     addItem({
       productId: product.id,
       variantId: selectedVariant.id,
-      sizeLabel: selectedVariant.size_label,
-      brand: product.brand,
+      sizeLabel: selectedVariant.size.label,
+      brand: product.brand.label,
       name: product.name,
       titleDisplay: product.name,
       priceCents: selectedVariant.sale_price_cents,
@@ -167,7 +167,7 @@ export function ProductDetail({ product }: ProductDetailProps) {
 
         <div className="border-t border-zinc-200 px-6 py-10 sm:px-10 lg:border-l lg:border-t-0 lg:px-8 lg:py-8 xl:px-10">
           <p className="text-[0.78rem] uppercase tracking-[0.02em] text-zinc-500">
-            {product.brand}
+            {product.brand.label}
           </p>
           <h1 className="mt-3 max-w-[34rem] text-[1.6rem] font-normal uppercase leading-[1.35] tracking-[0.01em] text-zinc-950 sm:text-[1.75rem]">
             {product.name}
@@ -184,7 +184,7 @@ export function ProductDetail({ product }: ProductDetailProps) {
                 const isSelected = variant.id === selectedVariant?.id;
                 const isUnavailable = variant.stock <= 0;
                 const sizeLabel =
-                  variant.size_label === "N/A" ? "One size" : variant.size_label;
+                  variant.size.label === "N/A" ? "One size" : variant.size.label;
 
                 return (
                   <button

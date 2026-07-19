@@ -4,12 +4,12 @@ import { X } from "lucide-react";
 import { useEffect, useMemo, useState } from "react";
 
 import { ModalPortal } from "@/components/ui/ModalPortal";
-import type { ProductWithDetails, ProductVariantRow } from "@/types/domain/product";
+import type { ProductWithDetails } from "@/types/domain/product";
 
 type InventoryProductDetailsModalProps = {
   open: boolean;
   product: ProductWithDetails | null;
-  variant: ProductVariantRow | null;
+  variant: ProductWithDetails["variants"][number] | null;
   onClose: () => void;
 };
 
@@ -168,7 +168,7 @@ export function InventoryProductDetailsModal({
                     Size
                   </div>
                   <div className="text-base font-semibold text-zinc-100">
-                    {variant.size_label || "N/A"}
+                    {variant.size.label || "N/A"}
                   </div>
                 </div>
                 <div className="rounded border border-zinc-800 bg-zinc-900/40 p-2.5">
@@ -188,7 +188,7 @@ export function InventoryProductDetailsModal({
                       Brand
                     </div>
                     <div className="text-sm font-medium text-zinc-200">
-                      {product.brand || "-"}
+                      {product.brand.label || "-"}
                     </div>
                   </div>
                   <div>
@@ -196,7 +196,7 @@ export function InventoryProductDetailsModal({
                       Model
                     </div>
                     <div className="text-sm font-medium text-zinc-200">
-                      {product.model || "-"}
+                      {product.model?.label || "-"}
                     </div>
                   </div>
                   <div>
@@ -221,25 +221,6 @@ export function InventoryProductDetailsModal({
                     </div>
                     <div className="mt-1 whitespace-pre-wrap text-sm text-zinc-300">
                       {product.description?.trim() || "-"}
-                    </div>
-                  </div>
-                  <div className="col-span-2">
-                    <div className="text-[10px] font-bold uppercase tracking-wider text-zinc-500">
-                      Tags
-                    </div>
-                    <div className="mt-1 flex flex-wrap gap-1.5">
-                      {product.tags.length > 0 ? (
-                        product.tags.map((tag) => (
-                          <span
-                            key={`${tag.group_key}:${tag.label}`}
-                            className="rounded border border-zinc-700 bg-zinc-800 px-1.5 py-0.5 text-[10px] text-zinc-300"
-                          >
-                            {tag.label}
-                          </span>
-                        ))
-                      ) : (
-                        <span className="text-sm text-zinc-400">-</span>
-                      )}
                     </div>
                   </div>
                 </div>

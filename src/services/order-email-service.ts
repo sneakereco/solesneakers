@@ -48,7 +48,7 @@ type DetailedOrderItemRow = {
     category?: string | null;
     images?: ProductImageRow[] | null;
   } | null;
-  variant: { sku?: string | null; size_label?: string | null } | null;
+  variant: { sku?: string | null } | null;
 };
 
 const safeHttpsUrl = (value?: string | null) => {
@@ -89,7 +89,7 @@ const mapOrderItemsToEmailItems = (rows: DetailedOrderItemRow[]): OrderItemEmail
 
     return {
       title,
-      sizeLabel: row.size_label ?? row.variant?.size_label ?? null,
+      sizeLabel: row.size_label ?? null,
       quantity: row.quantity,
       unitPrice: row.unit_price ?? 0,
       lineTotal: row.line_total,

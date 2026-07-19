@@ -32,7 +32,7 @@ export async function GET() {
       // Include variant info for size display
       variants:
         item.product.variants?.map((v) => ({
-          size_label: v.size_label,
+          size: v.size,
           stock: v.stock,
         })) ?? [],
     }));

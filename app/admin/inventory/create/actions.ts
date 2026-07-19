@@ -3,7 +3,7 @@
 
 import { createSupabaseServerClient } from "@/lib/supabase/server";
 import { requireAdmin } from "@/lib/auth/session";
-import { CatalogRepository } from "@/repositories/catalog-repo";
+import { TagTaxonomyRepository } from "@/repositories/tag-taxonomy-repo";
 import { ShippingDefaultsService } from "@/services/shipping-defaults-service";
 import { ensureTenantId } from "@/lib/auth/tenant";
 
@@ -12,13 +12,14 @@ export async function getFormInitialData() {
   const supabase = await createSupabaseServerClient();
   const tenantId = await ensureTenantId(session, supabase);
 
-  const catalogRepo = new CatalogRepository(supabase);
+  const taxonomyRepo = new TagTaxonomyRepository(supabase);
   const shippingDefaultsService = new ShippingDefaultsService(supabase);
 
   // Fetch shipping defaults and brands in parallel using direct service calls
-  const [shippingDefaults, brandsData] = await Promise.all([
+  const [shippingDefaults, brandsData, sizesData] = await Promise.all([
     shippingDefaultsService.list(tenantId),
-    catalogRepo.listBrandsWithGroups(tenantId),
+    taxonomyRepo.listBrands(tenantId),
+    taxonomyRepo.listSizes(tenantId),
   ]);
 
   return {
@@ -26,7 +27,11 @@ export async function getFormInitialData() {
     brands: brandsData.map((brand) => ({
       id: brand.id,
       label: brand.canonical_label,
-      groupKey: brand.group?.key ?? null,
+    })),
+    sizes: sizesData.map((size) => ({
+      id: size.id,
+      label: size.canonical_label,
+      sizeType: size.size_type,
     })),
   };
 }

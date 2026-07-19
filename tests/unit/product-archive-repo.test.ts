@@ -114,7 +114,6 @@ describe("ProductRepository archive behavior", () => {
             { id: "variant-2", sku: "SKU-2" },
           ],
           images: [],
-          tags: [],
         },
         {
           id: "product-2",
@@ -124,7 +123,6 @@ describe("ProductRepository archive behavior", () => {
             { id: "variant-5", sku: "SKU-5" },
           ],
           images: [],
-          tags: [],
         },
       ],
       error: null,
@@ -197,7 +195,6 @@ describe("ProductRepository archive behavior", () => {
           is_out_of_stock: false,
           variants: [{ id: "variant-1", sku: "SKU-1", stock: 2 }],
           images: [],
-          tags: [],
         },
         {
           id: "product-2",
@@ -205,7 +202,6 @@ describe("ProductRepository archive behavior", () => {
           is_out_of_stock: true,
           variants: [{ id: "variant-2", sku: "SKU-2", stock: 0 }],
           images: [],
-          tags: [],
         },
       ],
       error: null,

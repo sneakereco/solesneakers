@@ -16,13 +16,14 @@ interface CreateProductClientProps {
   initialBrands: Array<{
     id: string;
     label: string;
-    groupKey?: string | null;
   }>;
+  initialSizes: Array<{ id: string; label: string; sizeType: string }>;
 }
 
 export function CreateProductClient({
   initialShippingDefaults,
   initialBrands,
+  initialSizes,
 }: CreateProductClientProps) {
   const router = useRouter();
 
@@ -59,6 +60,7 @@ export function CreateProductClient({
       onCancel={handleCancel}
       initialShippingDefaults={initialShippingDefaults}
       initialBrands={initialBrands}
+      initialSizes={initialSizes}
     />
   );
 }

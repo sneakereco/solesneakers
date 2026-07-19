@@ -34,16 +34,16 @@ describe("ProductRepository.listForReconciliation", () => {
   it("paginates reconciliation products beyond the first 1000 rows", async () => {
     const pageOne = Array.from({ length: 1000 }, (_, index) => ({
       id: `product-${index + 1}`,
+      brand: { id: "brand-1", canonical_label: "Nike" },
       variants: [],
       images: [],
-      tags: [],
     }));
     const pageTwo = [
       {
         id: "product-1001",
+        brand: { id: "brand-1", canonical_label: "Nike" },
         variants: [],
         images: [],
-        tags: [],
       },
     ];
     const range = jest

@@ -10,14 +10,14 @@ import { logError } from "@/lib/utils/log";
 type FeaturedProduct = {
   id: string;
   name: string;
-  brand: string;
+  brand: { id: string; label: string };
   titleDisplay: string;
   category: string;
   primaryImage: string | null;
   minPrice: number;
   sortOrder: number;
   variants?: Array<{
-    size_label: string;
+    size: { id: string; label: string };
     stock: number;
   }>;
 };
@@ -200,7 +200,7 @@ export function FeaturedItems({ embedded = false }: FeaturedItemsProps) {
 
               const sizes = product.variants
                 ?.filter((v) => v.stock > 0)
-                .map((v) => v.size_label)
+                .map((v) => v.size.label)
                 .slice(0, 3);
 
               return (
@@ -230,7 +230,7 @@ export function FeaturedItems({ embedded = false }: FeaturedItemsProps) {
 
                     <div className="p-2 sm:p-3 flex flex-col flex-1">
                       <div className="text-[9px] sm:text-[10px] uppercase tracking-[0.2em] text-gray-400 mb-1">
-                        {product.brand}
+                        {product.brand.label}
                       </div>
 
                       <h3 className="text-white font-bold text-[11px] sm:text-xs line-clamp-2 min-h-[1.75rem] sm:min-h-[2rem] leading-tight">

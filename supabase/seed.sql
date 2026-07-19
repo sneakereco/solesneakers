@@ -1,599 +1,129 @@
 begin;
 
--- Create tenant (idempotent - only if not exists)
 insert into public.tenants (name)
 select 'Realdealkickzsc'
+where not exists (select 1 from public.tenants where name = 'Realdealkickzsc');
+
+insert into public.tag_brands (tenant_id, canonical_label)
+select null, label
+from (values ('Other'), ('Nike'), ('Air Jordan'), ('Adidas'), ('New Balance')) as seed(label)
 where not exists (
-  select 1 from public.tenants where name = 'Realdealkickzsc'
+  select 1 from public.tag_brands b
+  where b.tenant_id is null and lower(b.canonical_label) = lower(seed.label)
 );
 
--- ============================================================================
--- CATALOG SEED DATA (global, tenant_id null)
--- Only insert if not already exists
--- ============================================================================
-
--- Single brand group for all brands (idempotent)
-insert into public.catalog_brand_groups (tenant_id, key, label)
-select null, 'all_brands', 'All Brands'
-where not exists (
-  select 1 from public.catalog_brand_groups 
-  where key = 'all_brands' and tenant_id is null
-);
-
--- ============================================================================
--- SEED BRANDS (only insert new ones)
--- ============================================================================
-insert into public.catalog_brands (tenant_id, group_id, canonical_label, is_active, is_verified)
-select
-  null,
-  (select id from public.catalog_brand_groups where key = 'all_brands' and tenant_id is null limit 1),
-  brand_label,
-  true,
-  true
+insert into public.tag_models (tenant_id, brand_id, canonical_label)
+select null, brand.id, seed.model_label
 from (
   values
-    ('Air Jordan'),
-    ('Nike'),
-    ('New Balance'),
-    ('ASICS'),
-    ('Adidas'),
-    ('Vans'),
-    ('Louis Vuitton'),
-    ('Rick Owens'),
-    ('Prada'),
-    ('Balenciaga'),
-    ('Maison Mihara Yasuhiro'),
-    ('Maison Margiela'),
-    ('Marni'),
-    ('Gucci'),
-    ('Alexander McQueen'),
-    ('Off-White'),
-    ('Palm Angels'),
-    ('Timberland'),
-    ('Supreme'),
-    ('Sp5der'),
-    ('Vale'),
-    ('Chrome Hearts'),
-    ('Godspeed'),
-    ('GV Gallery'),
-    ('Denim Tears'),
-    ('A Bathing Ape'),
-    ('Bravest Studios'),
-    ('Dior'),
-    ('Amiri'),
-    ('Gallery Dept.'),
-    ('Essentials Fear of God'),
-    ('Hellstar'),
-    ('Burberry'),
-    ('Versace'),
-    ('Distant Studios'),
-    ('Dolce and Gabbana'),
-    ('Chanel'),
-    ('Lanvin'),
-    ('Saint Vanity'),
-    ('Mes Amis'),
-    ('GW'),
-    ('RetroVert'),
-    ('Prestige'),
-    ('Righteous'),
-    ('Bottega Desires'),
-    ('Other')
-) as input(brand_label)
+    ('Nike', 'Dunk'),
+    ('Nike', 'Air Force 1'),
+    ('Nike', 'Air Max'),
+    ('Air Jordan', 'Jordan 1'),
+    ('Air Jordan', 'Jordan 4'),
+    ('Adidas', 'Yeezy'),
+    ('New Balance', '990')
+) as seed(brand_label, model_label)
+join public.tag_brands brand
+  on brand.tenant_id is null and brand.canonical_label = seed.brand_label
 where not exists (
-  select 1 from public.catalog_brands
-  where canonical_label = input.brand_label and tenant_id is null
+  select 1 from public.tag_models model
+  where model.brand_id = brand.id
+    and model.tenant_id is null
+    and lower(model.canonical_label) = lower(seed.model_label)
 );
 
--- Set "Other" brand to unverified (update if exists)
-update public.catalog_brands
-set is_verified = false
-where canonical_label = 'Other' and tenant_id is null;
-
--- ============================================================================
--- SEED MODELS (only insert new ones)
--- ============================================================================
-
--- Nike Models
-insert into public.catalog_models (tenant_id, brand_id, canonical_label, is_active, is_verified)
-select
-  null,
-  (select id from public.catalog_brands where canonical_label = 'Nike' and tenant_id is null limit 1),
-  model_label,
-  true,
-  true
-from (
-  values
-    ('Air Force 1'),
-    ('Dunk Low'),
-    ('SB Dunk Low'),
-    ('SB Dunk High'),
-    ('Air Max 1'),
-    ('Air Max 97'),
-    ('Air Max Plus'),
-    ('Blazer'),
-    ('Vomero 5'),
-    ('P-6000'),
-    ('Kobe'),
-    ('Air Foamposite'),
-    ('KD'),
-    ('LeBron'),
-    ('Air DT Max'),
-    ('Air More Uptempo'),
-    ('AIR ZOOM FLIGHT 95')
-) as input(model_label)
-where not exists (
-  select 1 from public.catalog_models m
-  join public.catalog_brands b on b.id = m.brand_id
-  where m.canonical_label = input.model_label 
-    and b.canonical_label = 'Nike'
-    and m.tenant_id is null
-);
-
--- Air Jordan Models (1-40)
-with jordan_numbers as (
-  select generate_series(1, 40) as number_value
+insert into public.tag_aliases (
+  tenant_id, entity_type, brand_id, alias_label, alias_normalized, priority
 )
-insert into public.catalog_models (tenant_id, brand_id, canonical_label, is_active, is_verified)
-select
-  null,
-  (select id from public.catalog_brands where canonical_label = 'Air Jordan' and tenant_id is null limit 1),
-  number_value::text,
-  true,
-  true
-from jordan_numbers
-where not exists (
-  select 1 from public.catalog_models m
-  join public.catalog_brands b on b.id = m.brand_id
-  where m.canonical_label = jordan_numbers.number_value::text
-    and b.canonical_label = 'Air Jordan'
-    and m.tenant_id is null
-);
-
--- New Balance Models
-insert into public.catalog_models (tenant_id, brand_id, canonical_label, is_active, is_verified)
-select
-  null,
-  (select id from public.catalog_brands where canonical_label = 'New Balance' and tenant_id is null limit 1),
-  model_label,
-  true,
-  true
+select null, 'brand', brand.id, seed.alias_label, seed.alias_normalized, seed.priority
 from (
   values
-    ('327'),
-    ('550'),
-    ('990v6'),
-    ('990v3'),
-    ('991'),
-    ('1906R'),
-    ('9060')
-) as input(model_label)
+    ('Other', 'other', 'other', -100),
+    ('Nike', 'nike', 'nike', 50),
+    ('Air Jordan', 'jordan', 'jordan', 30),
+    ('Air Jordan', 'air jordan', 'air jordan', 40),
+    ('Adidas', 'adidas', 'adidas', 20),
+    ('New Balance', 'new balance', 'new balance', 20),
+    ('New Balance', 'nb', 'nb', 10)
+) as seed(brand_label, alias_label, alias_normalized, priority)
+join public.tag_brands brand
+  on brand.tenant_id is null and brand.canonical_label = seed.brand_label
 where not exists (
-  select 1 from public.catalog_models m
-  join public.catalog_brands b on b.id = m.brand_id
-  where m.canonical_label = input.model_label 
-    and b.canonical_label = 'New Balance'
-    and m.tenant_id is null
+  select 1 from public.tag_aliases alias
+  where alias.tenant_id is null
+    and alias.entity_type = 'brand'
+    and alias.alias_normalized = seed.alias_normalized
 );
 
--- ASICS Models (with capital GEL)
-insert into public.catalog_models (tenant_id, brand_id, canonical_label, is_active, is_verified)
-select
-  null,
-  (select id from public.catalog_brands where canonical_label = 'ASICS' and tenant_id is null limit 1),
-  model_label,
-  true,
-  true
-from (
-  values
-    ('GEL-Lyte III'),
-    ('GEL-1130'),
-    ('GT-2160'),
-    ('GEL-Kayano 14'),
-    ('GEL-DS Trainer'),
-    ('GEL-NYC'),
-    ('GEL-K1011')
-) as input(model_label)
-where not exists (
-  select 1 from public.catalog_models m
-  join public.catalog_brands b on b.id = m.brand_id
-  where m.canonical_label = input.model_label 
-    and b.canonical_label = 'ASICS'
-    and m.tenant_id is null
-);
-
--- Adidas Models (Yeezy line)
-insert into public.catalog_models (tenant_id, brand_id, canonical_label, is_active, is_verified)
-select
-  null,
-  (select id from public.catalog_brands where canonical_label = 'Adidas' and tenant_id is null limit 1),
-  model_label,
-  true,
-  true
-from (
-  values
-    ('Yeezy 350'),
-    ('Yeezy 380'),
-    ('Yeezy 500'),
-    ('Yeezy 700'),
-    ('Yeezy 700 V2'),
-    ('Yeezy 700 V3'),
-    ('Yeezy Foam Runner'),
-    ('Yeezy Desert Boot')
-) as input(model_label)
-where not exists (
-  select 1 from public.catalog_models m
-  join public.catalog_brands b on b.id = m.brand_id
-  where m.canonical_label = input.model_label 
-    and b.canonical_label = 'Adidas'
-    and m.tenant_id is null
-);
-
--- Designer Brand Models
-insert into public.catalog_models (tenant_id, brand_id, canonical_label, is_active, is_verified)
-select
-  null,
-  brand.id,
-  input.model_label,
-  true,
-  true
-from (
-  values
-    ('Gucci', 'Ace'),
-    ('Gucci', 'Rhyton'),
-    ('Gucci', 'Tennis 1977'),
-    ('Gucci', 'GG Supreme'),
-    ('Balenciaga', 'Triple S'),
-    ('Balenciaga', 'Runner'),
-    ('Balenciaga', 'Defender'),
-    ('Balenciaga', '3XL'),
-    ('Balenciaga', 'Track'),
-    ('Prada', 'Cloudbust Thunder'),
-    ('Prada', 'Americas Cup'),
-    ('Rick Owens', 'Geobasket'),
-    ('Rick Owens', 'Geth Runner'),
-    ('Maison Margiela', 'Replica'),
-    ('Louis Vuitton', 'Run Away'),
-    ('Louis Vuitton', 'Trainer'),
-    ('Louis Vuitton', 'Skate'),
-    ('Off-White', 'Vulcanized'),
-    ('Off-White', 'Out Of Office'),
-    ('Maison Mihara Yasuhiro', 'Wayne'),
-    ('Maison Mihara Yasuhiro', 'Parker'),
-    ('Maison Mihara Yasuhiro', 'Peterson'),
-    ('Maison Mihara Yasuhiro', 'Charles'),
-    ('Maison Mihara Yasuhiro', 'Hank'),
-    ('Maison Mihara Yasuhiro', 'Baker'),
-    ('Marni', 'Pablo'),
-    ('Alexander McQueen', 'Oversized'),
-    ('Dior', 'B22'),
-    ('Dior', 'B23'),
-    ('Amiri', 'Skel'),
-    ('Amiri', 'Classic'),
-    ('Amiri', 'Arigato'),
-    ('Burberry', 'Union Check'),
-    ('Versace', 'Chain Reaction'),
-    ('Dolce and Gabbana', 'Stretch Mesh Fast Sneaker'),
-    ('Lanvin', 'Curb')
-) as input(brand_label, model_label)
-join public.catalog_brands brand
-  on brand.canonical_label = input.brand_label and brand.tenant_id is null
-where not exists (
-  select 1 from public.catalog_models m
-  where m.canonical_label = input.model_label 
-    and m.brand_id = brand.id
-    and m.tenant_id is null
-);
-
--- Timberland Models
-insert into public.catalog_models (tenant_id, brand_id, canonical_label, is_active, is_verified)
-select
-  null,
-  (select id from public.catalog_brands where canonical_label = 'Timberland' and tenant_id is null limit 1),
-  model_label,
-  true,
-  true
-from (
-  values
-    ('Premium 6-Inch Waterproof Boot'),
-    ('Euro Hiker'),
-    ('Field Boot'),
-    ('Authentic 3-Eye Lug Boat Shoe')
-) as input(model_label)
-where not exists (
-  select 1 from public.catalog_models m
-  join public.catalog_brands b on b.id = m.brand_id
-  where m.canonical_label = input.model_label 
-    and b.canonical_label = 'Timberland'
-    and m.tenant_id is null
-);
-
--- Other Brand Models
-insert into public.catalog_models (tenant_id, brand_id, canonical_label, is_active, is_verified)
-select
-  null,
-  brand.id,
-  input.model_label,
-  true,
-  true
-from (
-  values
-    ('Bravest Studios', 'Claw Mules'),
-    ('Vans', 'Old Skool'),
-    ('Palm Angels', 'Ramones'),
-    ('A Bathing Ape', 'BAPE STA'),
-    ('A Bathing Ape', 'BAPE SK8')
-) as input(brand_label, model_label)
-join public.catalog_brands brand
-  on brand.canonical_label = input.brand_label and brand.tenant_id is null
-where not exists (
-  select 1 from public.catalog_models m
-  where m.canonical_label = input.model_label 
-    and m.brand_id = brand.id
-    and m.tenant_id is null
-);
-
--- ============================================================================
--- BRAND ALIASES (only insert new ones)
--- ============================================================================
-insert into public.catalog_aliases (
-  tenant_id, entity_type, brand_id, alias_label, alias_normalized, priority, is_active
+insert into public.tag_aliases (
+  tenant_id, entity_type, model_id, alias_label, alias_normalized, priority
 )
-select
-  null,
-  'brand',
-  brand.id,
-  input.alias_label,
-  regexp_replace(lower(input.alias_label), '[^a-z0-9]+', ' ', 'g'),
-  input.priority,
-  true
+select null, 'model', model.id, seed.alias_label, seed.alias_normalized, seed.priority
 from (
   values
-    ('New Balance', 'NB', 10),
-    ('Air Jordan', 'Jordan', 1),
-    ('Maison Mihara Yasuhiro', 'Maison Mihara', 5),
-    ('Timberland', 'Timberlands', 1),
-    ('Distant Studios', 'Distant', 1),
-    ('A Bathing Ape', 'BAPE', 10),
-    ('A Bathing Ape', 'Bathing Ape', 5),
-    ('A Bathing Ape', 'A Bathing Ape', 5),
-    ('A Bathing Ape', 'Bape', 5)
-) as input(brand_label, alias_label, priority)
-join public.catalog_brands brand
-  on brand.canonical_label = input.brand_label and brand.tenant_id is null
+    ('Nike', 'Dunk', 'dunk', 'dunk', 20),
+    ('Nike', 'Air Force 1', 'air force 1', 'air force 1', 20),
+    ('Nike', 'Air Force 1', 'af1', 'af1', 15),
+    ('Air Jordan', 'Jordan 1', 'jordan 1', 'jordan 1', 20),
+    ('Air Jordan', 'Jordan 4', 'jordan 4', 'jordan 4', 20),
+    ('Adidas', 'Yeezy', 'yeezy', 'yeezy', 20),
+    ('New Balance', '990', '990', '990', 20)
+) as seed(brand_label, model_label, alias_label, alias_normalized, priority)
+join public.tag_brands brand
+  on brand.tenant_id is null and brand.canonical_label = seed.brand_label
+join public.tag_models model
+  on model.brand_id = brand.id and model.tenant_id is null and model.canonical_label = seed.model_label
 where not exists (
-  select 1 from public.catalog_aliases a
-  where a.brand_id = brand.id
-    and a.alias_label = input.alias_label
-    and a.tenant_id is null
+  select 1 from public.tag_aliases alias
+  where alias.tenant_id is null
+    and alias.entity_type = 'model'
+    and alias.alias_normalized = seed.alias_normalized
 );
 
--- ============================================================================
--- MODEL ALIASES (only insert new ones)
--- ============================================================================
-
--- Nike Model Aliases
-insert into public.catalog_aliases (
-  tenant_id, entity_type, model_id, alias_label, alias_normalized, priority, is_active
-)
-select
-  null,
-  'model',
-  model.id,
-  input.alias_label,
-  regexp_replace(lower(input.alias_label), '[^a-z0-9]+', ' ', 'g'),
-  input.priority,
-  true
+insert into public.tag_sizes (tenant_id, size_type, canonical_label, sort_order)
+select null, seed.size_type, seed.label, seed.sort_order
 from (
   values
-    ('Air Force 1', 'AF1', 10),
-    ('Air Force 1', 'Air Force One', 5),
-    ('Dunk Low', 'Dunk', 1),
-    ('P-6000', 'P6000', 1),
-    ('Kobe', 'Nike Kobe', 1),
-    ('Air Foamposite', 'Foamposite', 1),
-    ('Air Force 1', 'Air Force', 5),
-    ('Air Force 1', 'Airforce', 5),
-    ('Kobe', 'Zoom Kobe', 5),
-    ('Kobe', 'Kobe VI', 8),
-    ('Kobe', 'Kobe 6', 8),
-    ('Kobe', 'Kobe VI Protro', 10),
-    ('Kobe', 'Kobe 6 Protro', 10),
-    ('Air More Uptempo', 'More Uptempo', 5),
-    ('Air More Uptempo', 'Air More Uptempo', 10),
-    ('Air More Uptempo', 'Uptempo', 2)
-) as input(model_label, alias_label, priority)
-join public.catalog_models model on model.canonical_label = input.model_label and model.tenant_id is null
-join public.catalog_brands brand on brand.id = model.brand_id and brand.canonical_label = 'Nike'
+    ('none', 'OS', 0),
+    ('custom', 'OS', 0),
+    ('clothing', 'XXS', 10), ('clothing', 'XS', 20),
+    ('clothing', 'SMALL', 30), ('clothing', 'MEDIUM', 40),
+    ('clothing', 'LARGE', 50), ('clothing', 'XL', 60),
+    ('clothing', '2XL', 70), ('clothing', '3XL', 80),
+    ('clothing', '28', 100), ('clothing', '29', 110),
+    ('clothing', '30', 120), ('clothing', '31', 130),
+    ('clothing', '32', 140), ('clothing', '33', 150),
+    ('clothing', '34', 160), ('clothing', '36', 170),
+    ('clothing', '38', 180), ('clothing', '40', 190),
+    ('shoe', '3.5Y / 5W', 10), ('shoe', '4Y / 5.5W', 20),
+    ('shoe', '4.5Y / 6W', 30), ('shoe', '5Y / 6.5W', 40),
+    ('shoe', '5.5Y / 7W', 50), ('shoe', '6Y / 7.5W', 60),
+    ('shoe', '6.5Y / 8W', 70), ('shoe', '7Y / 8.5W', 80),
+    ('shoe', '7.5M / 9W', 90), ('shoe', '8M / 9.5W', 100),
+    ('shoe', '8.5M / 10W', 110), ('shoe', '9M / 10.5W', 120),
+    ('shoe', '9.5M / 11W', 130), ('shoe', '10M / 11.5W', 140),
+    ('shoe', '10.5M / 12W', 150), ('shoe', '11M / 12.5W', 160),
+    ('shoe', '11.5M / 13W', 170), ('shoe', '12M / 13.5W', 180),
+    ('shoe', '12.5M / 14W', 190), ('shoe', '13M / 14.5W', 200),
+    ('shoe', '13.5M / 15W', 210), ('shoe', '14M / 15.5W', 220),
+    ('shoe', '15M / 16.5W', 230),
+    ('shoe', 'EU 35 (US 5.5W)', 300), ('shoe', 'EU 36 (US 6W)', 310),
+    ('shoe', 'EU 36.5 (US 6.5W)', 320), ('shoe', 'EU 37 (US 7W)', 330),
+    ('shoe', 'EU 37.5 (US 7.5W)', 340), ('shoe', 'EU 38 (US 8W)', 350),
+    ('shoe', 'EU 38.5 (US 8.5W)', 360), ('shoe', 'EU 39 (US 7M)', 370),
+    ('shoe', 'EU 39.5 (US 7M)', 380), ('shoe', 'EU 40 (US 7M)', 390),
+    ('shoe', 'EU 40 (US 8M)', 400), ('shoe', 'EU 41 (US 8.5M)', 410),
+    ('shoe', 'EU 42 (US 9M)', 420), ('shoe', 'EU 43 (US 10M)', 430),
+    ('shoe', 'EU 44 (US 11M)', 440), ('shoe', 'EU 45 (US 12M)', 450),
+    ('shoe', 'EU 46 (US 13M)', 460), ('shoe', 'EU 47 (US 14M)', 470),
+    ('shoe', 'EU 48 (US 15M)', 480), ('shoe', 'EU 49 (US 16M)', 490)
+) as seed(size_type, label, sort_order)
 where not exists (
-  select 1 from public.catalog_aliases a
-  where a.model_id = model.id
-    and a.alias_label = input.alias_label
-    and a.tenant_id is null
-);
-
--- New Balance Model Aliases
-insert into public.catalog_aliases (
-  tenant_id, entity_type, model_id, alias_label, alias_normalized, priority, is_active
-)
-select
-  null,
-  'model',
-  model.id,
-  '990 v6',
-  regexp_replace(lower('990 v6'), '[^a-z0-9]+', ' ', 'g'),
-  2,
-  true
-from public.catalog_models model
-join public.catalog_brands brand on brand.id = model.brand_id and brand.canonical_label = 'New Balance'
-where model.canonical_label = '990v6' and model.tenant_id is null
-  and not exists (
-    select 1 from public.catalog_aliases a
-    where a.model_id = model.id
-      and a.alias_label = '990 v6'
-      and a.tenant_id is null
-  );
-
--- ASICS Model Aliases
-insert into public.catalog_aliases (
-  tenant_id, entity_type, model_id, alias_label, alias_normalized, priority, is_active
-)
-select
-  null,
-  'model',
-  model.id,
-  input.alias_label,
-  regexp_replace(lower(input.alias_label), '[^a-z0-9]+', ' ', 'g'),
-  5,
-  true
-from (
-  values
-    ('GEL-Kayano 14', 'Kayano 14'),
-    ('GEL-Kayano 14', 'Gel Kayano 14')
-) as input(model_label, alias_label)
-join public.catalog_models model on model.canonical_label = input.model_label and model.tenant_id is null
-join public.catalog_brands brand on brand.id = model.brand_id and brand.canonical_label = 'ASICS'
-where not exists (
-  select 1 from public.catalog_aliases a
-  where a.model_id = model.id
-    and a.alias_label = input.alias_label
-    and a.tenant_id is null
-);
-
--- Air Jordan Aliases (numeric, "Jordan X", "Air Jordan X", "AJX")
-with jordan_numbers as (
-  select generate_series(1, 40) as num
-),
-roman_numerals as (
-  select * from (values
-    (1, 'I'), (2, 'II'), (3, 'III'), (4, 'IV'), (5, 'V'),
-    (6, 'VI'), (7, 'VII'), (8, 'VIII'), (9, 'IX'), (10, 'X'),
-    (11, 'XI'), (12, 'XII'), (13, 'XIII'), (14, 'XIV'), (15, 'XV'),
-    (16, 'XVI'), (17, 'XVII'), (18, 'XVIII'), (19, 'XIX'), (20, 'XX'),
-    (21, 'XXI'), (22, 'XXII'), (23, 'XXIII'), (24, 'XXIV'), (25, 'XXV'),
-    (26, 'XXVI'), (27, 'XXVII'), (28, 'XXVIII'), (29, 'XXIX'), (30, 'XXX'),
-    (31, 'XXXI'), (32, 'XXXII'), (33, 'XXXIII'), (34, 'XXXIV'), (35, 'XXXV'),
-    (36, 'XXXVI'), (37, 'XXXVII'), (38, 'XXXVIII'), (39, 'XXXIX'), (40, 'XL')
-  ) as t(num, roman)
-),
-jordan_models as (
-  select m.id as model_id, m.canonical_label::int as num
-  from public.catalog_models m
-  join public.catalog_brands b on b.id = m.brand_id and b.canonical_label = 'Air Jordan'
-  where m.tenant_id is null and m.canonical_label ~ '^[0-9]+$'
-)
-insert into public.catalog_aliases (
-  tenant_id, entity_type, model_id, alias_label, alias_normalized, priority, is_active
-)
-select
-  null,
-  'model',
-  jm.model_id,
-  alias_label,
-  regexp_replace(lower(alias_label), '[^a-z0-9]+', ' ', 'g'),
-  1,
-  true
-from jordan_models jm
-left join roman_numerals rn on rn.num = jm.num
-cross join lateral (
-  values
-    (concat('Jordan ', jm.num)),
-    (concat('AJ', jm.num)),
-    (concat('Air Jordan ', jm.num)),
-    (concat('Jordan ', rn.roman))
-) as aliases(alias_label)
-where not exists (
-  select 1 from public.catalog_aliases a
-  where a.model_id = jm.model_id
-    and a.alias_label = aliases.alias_label
-    and a.tenant_id is null
-);
-
--- Designer Model Aliases
-insert into public.catalog_aliases (
-  tenant_id, entity_type, model_id, alias_label, alias_normalized, priority, is_active
-)
-select
-  null,
-  'model',
-  model.id,
-  input.alias_label,
-  regexp_replace(lower(input.alias_label), '[^a-z0-9]+', ' ', 'g'),
-  1,
-  true
-from (
-  values
-    ('Out Of Office', 'OOO', 'Off-White')
-) as input(model_label, alias_label, brand_label)
-join public.catalog_brands brand on brand.canonical_label = input.brand_label and brand.tenant_id is null
-join public.catalog_models model on model.canonical_label = input.model_label and model.brand_id = brand.id and model.tenant_id is null
-where not exists (
-  select 1 from public.catalog_aliases a
-  where a.model_id = model.id
-    and a.alias_label = input.alias_label
-    and a.tenant_id is null
-);
-
--- A Bathing Ape Model Aliases (BAPE STA / BAPESTA variations)
-insert into public.catalog_aliases (
-  tenant_id, entity_type, model_id, alias_label, alias_normalized, priority, is_active
-)
-select
-  null,
-  'model',
-  model.id,
-  input.alias_label,
-  regexp_replace(lower(input.alias_label), '[^a-z0-9]+', ' ', 'g'),
-  input.priority,
-  true
-from (
-  values
-    ('BAPE STA', 'BAPESTA', 10),
-    ('BAPE STA', 'BAPE STA', 8),
-    ('BAPE STA', 'BAPE-STA', 8),
-    ('BAPE STA', 'BAPE STA™', 6)
-) as input(model_label, alias_label, priority)
-join public.catalog_brands brand
-  on brand.canonical_label = 'A Bathing Ape' and brand.tenant_id is null
-join public.catalog_models model
-  on model.brand_id = brand.id
- and model.canonical_label = input.model_label
- and model.tenant_id is null
-where not exists (
-  select 1 from public.catalog_aliases a
-  where a.model_id = model.id
-    and a.alias_label = input.alias_label
-    and a.tenant_id is null
-);
-
--- Gucci GG Supreme model aliases
-insert into public.catalog_aliases (
-  tenant_id, entity_type, model_id, alias_label, alias_normalized, priority, is_active
-)
-select
-  null,
-  'model',
-  model.id,
-  input.alias_label,
-  regexp_replace(lower(input.alias_label), '[^a-z0-9]+', ' ', 'g'),
-  input.priority,
-  true
-from (
-  values
-    ('GG Supreme', 'GG Supreme', 10),
-    ('GG Supreme', 'GG SUPREME', 10),
-    ('GG Supreme', 'GG Supreme Canvas', 6)
-) as input(model_label, alias_label, priority)
-join public.catalog_brands brand
-  on brand.canonical_label = 'Gucci' and brand.tenant_id is null
-join public.catalog_models model
-  on model.brand_id = brand.id
- and model.canonical_label = input.model_label
- and model.tenant_id is null
-where not exists (
-  select 1 from public.catalog_aliases a
-  where a.model_id = model.id
-    and a.alias_label = input.alias_label
-    and a.tenant_id is null
+  select 1 from public.tag_sizes size
+  where size.tenant_id is null
+    and size.size_type = seed.size_type
+    and lower(size.canonical_label) = lower(seed.label)
 );
 
 commit;

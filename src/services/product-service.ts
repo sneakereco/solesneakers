@@ -1,6 +1,5 @@
 // src/services/product-service.ts
 import type { TypedSupabaseClient } from "@/lib/supabase/server";
-import { log } from "@/lib/utils/log";
 import {
   ProductRepository,
   type ProductFilters,
@@ -13,15 +12,12 @@ import type {
   ProductRow,
   ProductWithDetails,
 } from "@/types/domain/product";
-import { CatalogRepository } from "@/repositories/catalog-repo";
+import { TagTaxonomyRepository } from "@/repositories/tag-taxonomy-repo";
 import { ProductSkuService } from "@/services/product-sku-service";
-import { ProductTitleParserService } from "@/services/product-title-parser-service";
-
-import { upsertTags, type TagInputItem } from "./tag-service";
 
 type VariantWriteInput = Pick<
   TablesInsert<"product_variants">,
-  "sku" | "size_label" | "sale_price_cents" | "stock" | "unit_cost_cents" | "sort_order"
+  "sku" | "size_id" | "sale_price_cents" | "stock" | "unit_cost_cents" | "sort_order"
 >;
 
 type VariantInput = Partial<Pick<VariantWriteInput, "sku">> &
@@ -36,8 +32,8 @@ type ImageInput = Pick<
 
 export interface ProductCreateInput {
   name: string;
-  brand_override_id?: string | null;
-  model_override_id?: string | null;
+  brand_id: string;
+  model_id?: string | null;
   category: Category;
   condition: Condition;
   size_type: ProductRow["size_type"];
@@ -46,8 +42,6 @@ export interface ProductCreateInput {
   go_live_at?: string;
   variants: VariantInput[];
   images: ImageInput[];
-  tags?: TagInputItem[];
-  excluded_auto_tag_keys?: string[];
 }
 
 export class ProductService {
@@ -102,25 +96,17 @@ export class ProductService {
 
     const normalizedVariants = this.normalizeVariantSortOrder(input.variants);
     this.assertNoDuplicateVariantSizes(normalizedVariants);
+    await this.assertTaxonomySelections(input, ctx.tenantId);
     const variantsWithSkus = await this.assignVariantSkus(
       ctx.tenantId,
       normalizedVariants,
     );
 
-    const parser = new ProductTitleParserService(this.supabase);
-    const parsed = await parser.parseTitle({
-      titleRaw: input.name,
-      category: input.category,
-      brandOverrideId: input.brand_override_id ?? null,
-      modelOverrideId: input.model_override_id ?? null,
-      tenantId: ctx.tenantId,
-    });
-
     const product = await this.repo.create({
       tenant_id: ctx.tenantId,
-      brand: parsed.brand.label,
-      model: parsed.model.label ?? null,
-      name: parsed.titleRaw,
+      brand_id: input.brand_id,
+      model_id: input.model_id ?? null,
+      name: input.name.trim(),
       category: input.category,
       condition: input.condition,
       size_type: input.size_type,
@@ -128,7 +114,6 @@ export class ProductService {
       shipping_price_cents: input.shipping_price_cents ?? null,
       go_live_at: this.normalizeGoLiveAt(input.go_live_at),
       is_active: true,
-      excluded_auto_tag_keys: input.excluded_auto_tag_keys ?? [],
       product_created_at: new Date().toISOString(),
       product_updated_at: new Date().toISOString(),
     });
@@ -147,17 +132,6 @@ export class ProductService {
         ...image,
       });
     }
-
-    const tags = await upsertTags(this.supabase, {
-      tenantId: ctx.tenantId,
-      tags: input.tags ?? [],
-    });
-
-    for (const tag of tags) {
-      await this.repo.linkProductTag(product.id, tag.id);
-    }
-
-    await this.createCatalogCandidates(parsed, ctx);
 
     return product;
   }
@@ -186,13 +160,10 @@ export class ProductService {
     this.assertNoDuplicateVariantSizes(normalizedVariants);
 
     const tenantId = existing.tenant_id ?? ctx.tenantId;
-    const parser = new ProductTitleParserService(this.supabase);
-    const parsed = await parser.parseTitle({
-      titleRaw: input.name,
-      category: input.category,
-      brandOverrideId: input.brand_override_id ?? null,
-      modelOverrideId: input.model_override_id ?? null,
-      tenantId,
+    await this.assertTaxonomySelections(input, tenantId, {
+      brandId: existing.brand_id,
+      modelId: existing.model_id,
+      sizeIds: new Set(existing.variants.map((variant) => variant.size_id)),
     });
 
     const goLiveAt =
@@ -201,16 +172,15 @@ export class ProductService {
         : existing.go_live_at;
 
     const product = await this.repo.update(productId, {
-      brand: parsed.brand.label,
-      model: parsed.model.label ?? null,
-      name: parsed.titleRaw,
+      brand_id: input.brand_id,
+      model_id: input.model_id ?? null,
+      name: input.name.trim(),
       category: input.category,
       condition: input.condition,
       size_type: input.size_type,
       description: input.description || null,
       shipping_price_cents: input.shipping_price_cents ?? null,
       go_live_at: goLiveAt,
-      excluded_auto_tag_keys: input.excluded_auto_tag_keys ?? [],
       product_updated_at: new Date().toISOString(),
     });
 
@@ -241,7 +211,7 @@ export class ProductService {
           id: variant.id,
           payload: {
             sku: existingVariant.sku,
-            size_label: variant.size_label,
+            size_id: variant.size_id,
             sale_price_cents: variant.sale_price_cents,
             stock: variant.stock,
             unit_cost_cents: variant.unit_cost_cents ?? 0,
@@ -269,7 +239,7 @@ export class ProductService {
       if (referencedVariantIds.size > 0) {
         const blockedLabels = variantsToDelete
           .filter((variant) => referencedVariantIds.has(variant.id))
-          .map((variant) => variant.size_label)
+          .map((variant) => variant.size?.label ?? variant.size_id)
           .join(", ");
 
         throw new Error(
@@ -282,22 +252,13 @@ export class ProductService {
       }
     }
 
-    const variantsRequiringTemporaryKey = incomingExistingVariants.filter(
-      ({ id, payload }) => {
-        const existingVariant = existingVariantsById.get(id);
-        return Boolean(
-          existingVariant && existingVariant.size_label !== payload.size_label,
-        );
-      },
-    );
-
-    for (const { id } of variantsRequiringTemporaryKey) {
-      await this.repo.updateVariant(id, {
-        size_label: `__tmp__${productId}_${id}`,
-      });
-    }
-
     for (const { id, payload } of incomingExistingVariants) {
+      const existingVariant = existingVariantsById.get(id);
+      if (existingVariant && existingVariant.size_id !== payload.size_id) {
+        throw new Error(
+          "Existing variant sizes cannot be changed; add a new variant instead.",
+        );
+      }
       await this.repo.updateVariant(id, payload);
     }
 
@@ -320,18 +281,6 @@ export class ProductService {
         ...image,
       });
     }
-
-    await this.repo.unlinkProductTags(productId);
-    const tags = await upsertTags(this.supabase, {
-      tenantId,
-      tags: input.tags ?? [],
-    });
-
-    for (const tag of tags) {
-      await this.repo.linkProductTag(productId, tag.id);
-    }
-
-    await this.createCatalogCandidates(parsed, { ...ctx, tenantId });
 
     return product;
   }
@@ -360,10 +309,10 @@ export class ProductService {
       description: original.description || undefined,
       shipping_price_cents: original.shipping_price_cents ?? null,
       go_live_at: original.go_live_at ?? undefined,
-      brand_override_id: undefined,
-      model_override_id: undefined,
+      brand_id: original.brand_id,
+      model_id: original.model_id,
       variants: original.variants.map((variant) => ({
-        size_label: variant.size_label,
+        size_id: variant.size_id,
         sale_price_cents: variant.sale_price_cents,
         unit_cost_cents: variant.unit_cost_cents ?? 0,
         stock: variant.stock,
@@ -374,61 +323,9 @@ export class ProductService {
         sort_order: img.sort_order,
         is_primary: img.is_primary,
       })),
-      tags: original.tags.map((tag) => ({
-        label: tag.label,
-        group_key: tag.group_key,
-      })),
-      excluded_auto_tag_keys: original.excluded_auto_tag_keys ?? [],
     };
 
     return this.createProduct(input, ctx);
-  }
-
-  async syncSizeTags(productId: string) {
-    const product = await this.repo.getById(productId, {
-      includeOutOfStock: true,
-      includeUnpublished: true,
-    });
-    if (!product) {
-      return;
-    }
-
-    const sizeTagGroup =
-      product.size_type === "shoe"
-        ? "size_shoe"
-        : product.size_type === "clothing"
-          ? "size_clothing"
-          : product.size_type === "custom"
-            ? "size_custom"
-            : null;
-
-    const sizeTags = sizeTagGroup
-      ? product.variants
-          .filter((variant) => variant.stock > 0)
-          .map((variant) => ({
-            label: variant.size_label,
-            group_key: sizeTagGroup,
-          }))
-      : [];
-    const preservedTags = product.tags.filter(
-      (tag) => !tag.group_key.startsWith("size_"),
-    );
-
-    await this.repo.unlinkProductTags(productId);
-    const tags = await upsertTags(this.supabase, {
-      tenantId: product.tenant_id ?? null,
-      tags: [
-        ...preservedTags.map((tag) => ({
-          label: tag.label,
-          group_key: tag.group_key,
-        })),
-        ...sizeTags,
-      ],
-    });
-
-    for (const tag of tags) {
-      await this.repo.linkProductTag(productId, tag.id);
-    }
   }
 
   async deleteProduct(productId: string): Promise<{ archived: boolean }> {
@@ -663,7 +560,7 @@ export class ProductService {
 
       return {
         sku,
-        size_label: variant.size_label,
+        size_id: variant.size_id,
         sale_price_cents: variant.sale_price_cents,
         unit_cost_cents: variant.unit_cost_cents ?? 0,
         stock: variant.stock,
@@ -683,13 +580,56 @@ export class ProductService {
     const seen = new Set<string>();
 
     for (const variant of variants) {
-      const normalizedSizeLabel = variant.size_label.trim().toLowerCase();
-
-      if (seen.has(normalizedSizeLabel)) {
-        throw new Error(`Duplicate size "${variant.size_label}" found in variants.`);
+      if (seen.has(variant.size_id)) {
+        throw new Error("Duplicate size found in variants.");
       }
+      seen.add(variant.size_id);
+    }
+  }
 
-      seen.add(normalizedSizeLabel);
+  private async assertTaxonomySelections(
+    input: ProductCreateInput,
+    tenantId: string,
+    existing?: { brandId: string; modelId: string | null; sizeIds: Set<string> },
+  ) {
+    const taxonomy = new TagTaxonomyRepository(this.supabase);
+    const [brand, model, ...sizes] = await Promise.all([
+      taxonomy.getBrandById(input.brand_id),
+      input.model_id ? taxonomy.getModelById(input.model_id) : Promise.resolve(null),
+      ...input.variants.map((variant) => taxonomy.getSizeById(variant.size_id)),
+    ]);
+
+    const isAccessible = (recordTenantId: string | null) =>
+      recordTenantId === null || recordTenantId === tenantId;
+
+    if (
+      !brand ||
+      (!brand.is_active && brand.id !== existing?.brandId) ||
+      !isAccessible(brand.tenant_id)
+    ) {
+      throw new Error("Select an active brand.");
+    }
+    if (
+      model &&
+      ((!model.is_active && model.id !== existing?.modelId) ||
+        model.brand_id !== brand.id ||
+        !isAccessible(model.tenant_id))
+    ) {
+      throw new Error("Select an active model for the chosen brand.");
+    }
+    if (input.model_id && !model) {
+      throw new Error("Selected model was not found.");
+    }
+
+    for (const size of sizes) {
+      if (
+        !size ||
+        (!size.is_active && !existing?.sizeIds.has(size.id)) ||
+        size.size_type !== input.size_type ||
+        !isAccessible(size.tenant_id)
+      ) {
+        throw new Error("Select an active size matching the product size type.");
+      }
     }
   }
 
@@ -702,64 +642,5 @@ export class ProductService {
       throw new Error("Invalid go-live date/time.");
     }
     return parsed.toISOString();
-  }
-
-  private async createCatalogCandidates(
-    parsed: {
-      candidates: {
-        brand?: { rawText: string; normalizedText: string };
-        model?: {
-          rawText: string;
-          normalizedText: string;
-          parentBrandId?: string | null;
-        };
-      };
-    },
-    ctx: { userId: string; tenantId: string },
-  ) {
-    const catalogRepo = new CatalogRepository(this.supabase);
-
-    if (parsed.candidates.brand?.rawText) {
-      try {
-        await catalogRepo.createCandidate({
-          tenant_id: ctx.tenantId,
-          entity_type: "brand",
-          raw_text: parsed.candidates.brand.rawText,
-          normalized_text: parsed.candidates.brand.normalizedText,
-          status: "new",
-          created_by: ctx.userId,
-        });
-      } catch (error) {
-        log({
-          level: "warn",
-          layer: "service",
-          message: "catalog_candidate_create_failed",
-          entity: "brand",
-          error: error instanceof Error ? error.message : String(error),
-        });
-      }
-    }
-
-    if (parsed.candidates.model?.rawText && parsed.candidates.model.parentBrandId) {
-      try {
-        await catalogRepo.createCandidate({
-          tenant_id: ctx.tenantId,
-          entity_type: "model",
-          raw_text: parsed.candidates.model.rawText,
-          normalized_text: parsed.candidates.model.normalizedText,
-          parent_brand_id: parsed.candidates.model.parentBrandId,
-          status: "new",
-          created_by: ctx.userId,
-        });
-      } catch (error) {
-        log({
-          level: "warn",
-          layer: "service",
-          message: "catalog_candidate_create_failed",
-          entity: "model",
-          error: error instanceof Error ? error.message : String(error),
-        });
-      }
-    }
   }
 }

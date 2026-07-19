@@ -1,29 +1,29 @@
 // src/services/product-title-parser-service.ts
 import type { TypedSupabaseClient } from "@/lib/supabase/server";
-import { CatalogRepository } from "@/repositories/catalog-repo";
+import { TagTaxonomyRepository } from "@/repositories/tag-taxonomy-repo";
 import {
   normalizeLabel,
-  parseTitleWithCatalog,
-  type CatalogBrandAlias,
-  type CatalogModelAlias,
+  parseTitleWithTaxonomy,
+  type TaxonomyBrandAlias,
+  type TaxonomyModelAlias,
   type TitleParseInput,
   type TitleParseResult,
 } from "@/services/product-title-parser";
 
 export class ProductTitleParserService {
-  private catalogRepo: CatalogRepository;
-  private catalogCache = new Map<
+  private taxonomyRepo: TagTaxonomyRepository;
+  private taxonomyCache = new Map<
     string,
     Promise<{
-      brandAliases: CatalogBrandAlias[];
-      modelAliasesByBrand: Record<string, CatalogModelAlias[]>;
-      modelAliasesAll: CatalogModelAlias[];
+      brandAliases: TaxonomyBrandAlias[];
+      modelAliasesByBrand: Record<string, TaxonomyModelAlias[]>;
+      modelAliasesAll: TaxonomyModelAlias[];
       preferredBrandIds: Set<string>;
     }>
   >();
 
   constructor(private readonly supabase: TypedSupabaseClient) {
-    this.catalogRepo = new CatalogRepository(supabase);
+    this.taxonomyRepo = new TagTaxonomyRepository(supabase);
   }
 
   async parseTitle(
@@ -32,16 +32,16 @@ export class ProductTitleParserService {
     const tenantId = input.tenantId ?? null;
     const cacheKey = tenantId ?? "__global__";
 
-    let catalogPromise = this.catalogCache.get(cacheKey);
-    if (!catalogPromise) {
-      catalogPromise = this.loadCatalog(tenantId);
-      this.catalogCache.set(cacheKey, catalogPromise);
+    let taxonomyPromise = this.taxonomyCache.get(cacheKey);
+    if (!taxonomyPromise) {
+      taxonomyPromise = this.loadTaxonomy(tenantId);
+      this.taxonomyCache.set(cacheKey, taxonomyPromise);
     }
 
     const { brandAliases, modelAliasesByBrand, modelAliasesAll, preferredBrandIds } =
-      await catalogPromise;
+      await taxonomyPromise;
 
-    return parseTitleWithCatalog(input, {
+    return parseTitleWithTaxonomy(input, {
       brandAliases,
       modelAliasesByBrand,
       modelAliasesAll,
@@ -49,15 +49,15 @@ export class ProductTitleParserService {
     });
   }
 
-  private async loadCatalog(tenantId: string | null) {
+  private async loadTaxonomy(tenantId: string | null) {
     const [brands, brandAliases, models, modelAliases] = await Promise.all([
-      this.catalogRepo.listBrandsWithGroups(tenantId),
-      this.catalogRepo.listBrandAliases(tenantId),
-      this.catalogRepo.listModels(tenantId),
-      this.catalogRepo.listModelAliasesAll(tenantId),
+      this.taxonomyRepo.listBrands(tenantId),
+      this.taxonomyRepo.listBrandAliases(tenantId),
+      this.taxonomyRepo.listModels(tenantId),
+      this.taxonomyRepo.listModelAliasesAll(tenantId),
     ]);
 
-    const brandAliasEntries: CatalogBrandAlias[] = [];
+    const brandAliasEntries: TaxonomyBrandAlias[] = [];
     const brandAliasKeys = new Set<string>();
 
     for (const brand of brands) {
@@ -68,7 +68,6 @@ export class ProductTitleParserService {
         brandAliasEntries.push({
           brandId: brand.id,
           brandLabel: brand.canonical_label,
-          groupKey: brand.group?.key ?? null,
           aliasLabel: brand.canonical_label,
           aliasNormalized: normalized,
           priority: 0,
@@ -88,7 +87,6 @@ export class ProductTitleParserService {
       brandAliasEntries.push({
         brandId: alias.brand.id,
         brandLabel: alias.brand.canonical_label,
-        groupKey: alias.brand.group?.key ?? null,
         aliasLabel: alias.alias_label,
         aliasNormalized: alias.alias_normalized,
         priority: alias.priority ?? 0,
@@ -116,7 +114,7 @@ export class ProductTitleParserService {
       }
     }
 
-    const modelAliasEntries: CatalogModelAlias[] = [];
+    const modelAliasEntries: TaxonomyModelAlias[] = [];
     const modelAliasKeys = new Set<string>();
 
     for (const model of models) {
@@ -154,7 +152,7 @@ export class ProductTitleParserService {
       });
     }
 
-    const modelAliasesByBrand: Record<string, CatalogModelAlias[]> = {};
+    const modelAliasesByBrand: Record<string, TaxonomyModelAlias[]> = {};
     for (const alias of modelAliasEntries) {
       if (!modelAliasesByBrand[alias.brandId]) {
         modelAliasesByBrand[alias.brandId] = [];

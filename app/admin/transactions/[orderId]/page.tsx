@@ -56,12 +56,10 @@ type OrderItem = {
     description?: string | null;
     created_at?: string | null;
     images?: ProductImage[];
-    tags?: { tag?: { label?: string | null; group_key?: string | null } | null }[];
   } | null;
   variant?: {
     id: string;
     sku?: string | null;
-    size_label?: string | null;
     sale_price_cents?: number | null;
     unit_cost_cents?: number | null;
   } | null;
@@ -874,9 +872,7 @@ export default function TransactionDetailPage() {
                       <div className="min-w-0 flex-1">
                         <p className="truncate text-sm text-white">{title}</p>
                         <p className="text-xs text-zinc-500">
-                          {(item.size_label ?? item.variant?.size_label)
-                            ? `Size ${item.size_label ?? item.variant?.size_label} · `
-                            : ""}
+                          {item.size_label ? `Size ${item.size_label} · ` : ""}
                           Qty {item.quantity}
                           {isRefunded ? " · Refunded" : ""}
                         </p>

@@ -22,20 +22,22 @@ import {
 import { restrictToParentElement, restrictToVerticalAxis } from "@dnd-kit/modifiers";
 import { CSS } from "@dnd-kit/utilities";
 
-import { SHOE_SIZES, CLOTHING_SIZES } from "@/config/constants/sizes";
 import type { Category, Condition, SizeType } from "@/types/domain/product";
 import type { ProductCreateInput } from "@/services/product-service";
 import { logError } from "@/lib/utils/log";
 import { Toast } from "@/components/ui/Toast";
 import { RdkSelect } from "@/components/ui/Select";
 
-import { TagInput, type TagChip } from "./TagInput";
-
 // OPTIMIZATION: Lazy load image compression library
 const loadImageCompression = () => import("browser-image-compression");
 
 interface ProductFormProps {
-  initialData?: Partial<ProductCreateInput> & { id?: string };
+  initialData?: Omit<Partial<ProductCreateInput>, "variants"> & {
+    id?: string;
+    variants?: Array<
+      ProductCreateInput["variants"][number] & { size?: { id: string; label: string } }
+    >;
+  };
   onSubmit: (data: ProductCreateInput) => Promise<void>;
   onCancel: () => void;
 
@@ -49,14 +51,16 @@ interface ProductFormProps {
   initialBrands?: Array<{
     id: string;
     label: string;
-    groupKey?: string | null;
   }>;
+  initialModels?: Array<{ id: string; label: string }>;
+  initialSizes?: Array<{ id: string; label: string; sizeType: string }>;
 }
 
 type VariantDraft = {
   draft_id: string;
   id?: string;
   sku: string;
+  size_id: string;
   size_label: string;
   salePrice: string;
   unitCost: string;
@@ -68,13 +72,11 @@ type ImageDraft = ProductCreateInput["images"][number];
 type CatalogOption = {
   id: string;
   label: string;
-  groupKey?: string | null;
 };
 
 type BrandCatalogEntry = {
   id: string;
   canonical_label: string;
-  group?: { key?: string | null } | null;
 };
 
 type ModelCatalogEntry = {
@@ -88,13 +90,10 @@ type TitleParseResult = {
   brand: {
     id: string | null;
     label: string;
-    groupKey?: string | null;
-    isVerified: boolean;
   };
   model: {
     id: string | null;
     label: string | null;
-    isVerified: boolean;
   };
   name: string;
   suggestions?: {
@@ -171,17 +170,6 @@ const toDateTimeLocalValue = (value?: string) => {
   return local.toISOString().slice(0, 16);
 };
 
-const AUTO_TAG_GROUP_KEYS = new Set([
-  "brand",
-  "model",
-  "category",
-  "condition",
-  "designer_brand",
-  "size_shoe",
-  "size_clothing",
-  "size_custom",
-]);
-
 const getSizeTypeForCategory = (category: Category): SizeType => {
   if (category === "sneakers") {
     return "shoe";
@@ -194,9 +182,6 @@ const getSizeTypeForCategory = (category: Category): SizeType => {
   }
   return "none";
 };
-
-const getTagKey = (tag: { label: string; group_key: string }) =>
-  `${tag.group_key}:${tag.label}`;
 
 const createVariantDraftId = () =>
   `variant-${Date.now().toString(36)}-${Math.random().toString(36).slice(2, 8)}`;
@@ -252,6 +237,8 @@ export function ProductForm({
   onCancel,
   initialShippingDefaults, // NEW
   initialBrands, // NEW
+  initialModels,
+  initialSizes = [],
 }: ProductFormProps) {
   const [isLoading, setIsLoading] = useState(false);
 
@@ -261,14 +248,23 @@ export function ProductForm({
   const [parseResult, setParseResult] = useState<TitleParseResult | null>(null);
   const [parseStatus, setParseStatus] = useState<"idle" | "loading" | "error">("idle");
 
-  const [brandOverrideId, setBrandOverrideId] = useState<string | null>(null);
-  const [brandOverrideInput, setBrandOverrideInput] = useState("");
-  const [modelOverrideId, setModelOverrideId] = useState<string | null>(null);
-  const [modelOverrideInput, setModelOverrideInput] = useState("");
+  const [brandOverrideId, setBrandOverrideId] = useState<string | null>(
+    initialData?.brand_id ?? null,
+  );
+  const [brandOverrideInput, setBrandOverrideInput] = useState(
+    initialBrands?.find((brand) => brand.id === initialData?.brand_id)?.label ?? "",
+  );
+  const [modelOverrideId, setModelOverrideId] = useState<string | null>(
+    initialData?.model_id ?? null,
+  );
+  const [modelOverrideInput, setModelOverrideInput] = useState(
+    initialModels?.find((model) => model.id === initialData?.model_id)?.label ?? "",
+  );
 
   // UPDATED: Use server data if provided
   const [brandOptions, setBrandOptions] = useState<CatalogOption[]>(initialBrands || []);
-  const [modelOptions, setModelOptions] = useState<CatalogOption[]>([]);
+  const [modelOptions, setModelOptions] = useState<CatalogOption[]>(initialModels ?? []);
+  const [sizeOptions] = useState(initialSizes);
 
   const [category, setCategory] = useState<Category>(initialData?.category || "sneakers");
   const [condition, setCondition] = useState<Condition>(initialData?.condition || "new");
@@ -334,20 +330,6 @@ export function ProductForm({
     "loading" | "ready" | "error"
   >(initialShippingDefaults ? "ready" : "loading");
 
-  const [customTags, setCustomTags] = useState<TagChip[]>(() => {
-    const tags = initialData?.tags ?? [];
-    return tags
-      .filter((tag) => !AUTO_TAG_GROUP_KEYS.has(tag.group_key))
-      .map((tag) => ({
-        label: tag.label,
-        group_key: tag.group_key,
-        source: "custom",
-      }));
-  });
-
-  const [excludedAutoTagKeys, setExcludedAutoTagKeys] = useState<string[]>(
-    () => initialData?.excluded_auto_tag_keys ?? [],
-  );
   const previousSizeType = useRef<SizeType | null>(null);
 
   const [variants, setVariants] = useState<VariantDraft[]>(() => {
@@ -359,11 +341,14 @@ export function ProductForm({
       draft_id: createVariantDraftId(),
       id: variant.id ?? undefined,
       sku: variant.sku?.trim() || createDraftSku(),
-      size_label: variant.size_label?.trim() ?? "",
+      size_id: variant.size_id,
+      size_label: variant.size?.label.trim() ?? "",
       salePrice: formatMoney(variant.sale_price_cents / 100),
       unitCost: formatMoney((variant.unit_cost_cents ?? 0) / 100),
       stock: String(variant.stock ?? 0),
     }));
+
+    const defaultSize = initialSizes.find((size) => size.sizeType === sizeType);
 
     return mapped.length > 0
       ? mapped
@@ -371,7 +356,8 @@ export function ProductForm({
           {
             draft_id: createVariantDraftId(),
             sku: createDraftSku(),
-            size_label: sizeType === "none" ? "N/A" : "",
+            size_id: defaultSize?.id ?? "",
+            size_label: defaultSize?.label ?? "",
             salePrice: "",
             unitCost: "",
             stock: "1",
@@ -410,10 +396,6 @@ export function ProductForm({
     setScheduledGoLiveAt(defaultTime);
   }, [scheduledGoLiveAt]);
 
-  const parsedBrandLabel = parseResult?.brand?.label?.trim() ?? "";
-  const parsedBrandGroup = parseResult?.brand?.groupKey ?? null;
-  const parsedModelLabel = parseResult?.model?.label?.trim() ?? "";
-
   const isUploadErrorResponse = (value: unknown): value is UploadErrorResponse => {
     if (!value || typeof value !== "object") {
       return false;
@@ -421,87 +403,6 @@ export function ProductForm({
     const record = value as Record<string, unknown>;
     return typeof record.error === "string" || typeof record.message === "string";
   };
-
-  const autoTags = useMemo<TagChip[]>(() => {
-    const tags: TagChip[] = [];
-    const seen = new Set<string>();
-
-    const addTag = (label: string, group_key: string) => {
-      const trimmed = label.trim();
-      if (!trimmed) {
-        return;
-      }
-      const key = `${group_key}:${trimmed}`;
-      if (seen.has(key)) {
-        return;
-      }
-      seen.add(key);
-      tags.push({ label: trimmed, group_key, source: "auto" });
-    };
-
-    if (parsedBrandLabel) {
-      addTag(parsedBrandLabel, "brand");
-      if (parsedBrandGroup === "designer") {
-        addTag(parsedBrandLabel, "designer_brand");
-      }
-    }
-
-    if (parsedModelLabel && category === "sneakers") {
-      addTag(parsedModelLabel, "model");
-    }
-
-    if (category) {
-      addTag(category, "category");
-    }
-    if (condition) {
-      addTag(condition, "condition");
-    }
-
-    if (sizeType !== "none") {
-      const groupKey =
-        sizeType === "shoe"
-          ? "size_shoe"
-          : sizeType === "clothing"
-            ? "size_clothing"
-            : "size_custom";
-
-      variants.forEach((variant) => {
-        const stockCount = Number.parseInt(variant.stock, 10);
-        if (!Number.isFinite(stockCount) || stockCount <= 0) {
-          return;
-        }
-        addTag(variant.size_label, groupKey);
-      });
-    }
-
-    return tags;
-  }, [
-    parsedBrandLabel,
-    parsedBrandGroup,
-    parsedModelLabel,
-    category,
-    condition,
-    sizeType,
-    variants,
-  ]);
-
-  const visibleAutoTags = useMemo(
-    () => autoTags.filter((tag) => !excludedAutoTagKeys.includes(getTagKey(tag))),
-    [autoTags, excludedAutoTagKeys],
-  );
-
-  const allTags = useMemo(() => {
-    const merged = [...visibleAutoTags, ...customTags];
-    const seen = new Set<string>();
-    return merged.filter((tag) => {
-      const key = getTagKey(tag);
-      if (seen.has(key)) {
-        return false;
-      }
-      seen.add(key);
-      return true;
-    });
-  }, [visibleAutoTags, customTags]);
 
   // OPTIMIZATION: Memoize shipping defaults loader
   const loadShippingDefaults = useCallback(async () => {
@@ -546,13 +447,12 @@ export function ProductForm({
   // OPTIMIZATION: Memoize brand catalog loader
   const loadBrands = useCallback(async () => {
     try {
-      const response = await fetch("/api/admin/catalog/brands");
+      const response = await fetch("/api/admin/tags/brands");
       const data = await response.json();
       if (response.ok) {
         const options = (data.brands || []).map((brand: BrandCatalogEntry) => ({
           id: brand.id,
           label: brand.canonical_label,
-          groupKey: brand.group?.key ?? null,
         }));
         setBrandOptions(options);
       }
@@ -571,6 +471,7 @@ export function ProductForm({
   }, [initialBrands, loadBrands]);
 
   const effectiveBrandId = brandOverrideId ?? parseResult?.brand?.id ?? null;
+  const effectiveModelId = modelOverrideId ?? parseResult?.model?.id ?? null;
 
   useEffect(() => {
     if (!effectiveBrandId) {
@@ -581,7 +482,7 @@ export function ProductForm({
     const loadModels = async () => {
       try {
         const response = await fetch(
-          `/api/admin/catalog/models?brandId=${effectiveBrandId}`,
+          `/api/admin/tags/models?brandId=${effectiveBrandId}`,
         );
         const data = await response.json();
         if (response.ok) {
@@ -589,7 +490,15 @@ export function ProductForm({
             id: model.id,
             label: model.canonical_label,
           }));
-          setModelOptions(options);
+          const selectedInitial = initialModels?.find(
+            (model) => model.id === effectiveModelId,
+          );
+          setModelOptions(
+            selectedInitial &&
+              !options.some((option: CatalogOption) => option.id === selectedInitial.id)
+              ? [...options, selectedInitial]
+              : options,
+          );
         }
       } catch (error) {
         logError(error, { layer: "frontend", event: "inventory_load_model_catalog" });
@@ -597,17 +506,24 @@ export function ProductForm({
     };
 
     loadModels();
-  }, [effectiveBrandId]);
+  }, [effectiveBrandId, effectiveModelId, initialModels]);
 
   useEffect(() => {
     if (!modelOverrideId) {
+      return;
+    }
+    if (modelOptions.length === 0) {
       return;
     }
     const stillValid = modelOptions.some((option) => option.id === modelOverrideId);
     if (!stillValid) {
       setModelOverrideId(null);
       setModelOverrideInput("");
+      return;
     }
+    setModelOverrideInput(
+      modelOptions.find((option) => option.id === modelOverrideId)?.label ?? "",
+    );
   }, [modelOptions, modelOverrideId]);
 
   useEffect(() => {
@@ -621,7 +537,7 @@ export function ProductForm({
     const parseTitle = async () => {
       setParseStatus("loading");
       try {
-        const response = await fetch("/api/admin/catalog/parse-title", {
+        const response = await fetch("/api/admin/tags/parse-title", {
           method: "POST",
           headers: { "Content-Type": "application/json" },
           body: JSON.stringify({
@@ -678,15 +594,17 @@ export function ProductForm({
     setVariants((current) =>
       current.map((variant) => {
         if (sizeType === "none") {
-          return { ...variant, size_label: "N/A" };
+          const oneSize = sizeOptions.find((size) => size.sizeType === "none");
+          return {
+            ...variant,
+            size_id: oneSize?.id ?? "",
+            size_label: oneSize?.label ?? "",
+          };
         }
-        if (sizeType === "custom") {
-          return variant.size_label === "N/A" ? { ...variant, size_label: "" } : variant;
-        }
-        return { ...variant, size_label: "" };
+        return { ...variant, size_id: "", size_label: "" };
       }),
     );
-  }, [sizeType]);
+  }, [sizeOptions, sizeType]);
 
   const addVariant = () => {
     setVariants((current) => [
@@ -694,7 +612,8 @@ export function ProductForm({
       {
         draft_id: createVariantDraftId(),
         sku: createDraftSku(),
-        size_label: sizeType === "none" ? "N/A" : "",
+        size_id: sizeOptions.find((size) => size.sizeType === sizeType)?.id ?? "",
+        size_label: sizeOptions.find((size) => size.sizeType === sizeType)?.label ?? "",
         salePrice: "",
         unitCost: "",
         stock: "1",
@@ -712,6 +631,21 @@ export function ProductForm({
     setVariants((current) =>
       current.map((variant, i) =>
         i === index ? { ...variant, [field]: value } : variant,
+      ),
+    );
+  };
+
+  const updateVariantSize = (index: number, sizeId: string) => {
+    const option = sizeOptions.find((size) => size.id === sizeId);
+    setVariants((current) =>
+      current.map((variant, i) =>
+        i === index
+          ? {
+              ...variant,
+              size_id: sizeId,
+              size_label: option?.label ?? "",
+            }
+          : variant,
       ),
     );
   };
@@ -737,20 +671,12 @@ export function ProductForm({
     });
   };
 
-  const buildSizeOptions = (
-    sizes: readonly string[],
-    selectedValue: string,
-  ): { value: string; label: string }[] => {
-    const trimmedValue = selectedValue.trim();
-    const base = sizes.map((size) => ({ value: size, label: size }));
-    const hasValue = trimmedValue.length > 0;
-    const inList = hasValue && sizes.includes(trimmedValue);
-    const withSelected =
-      !hasValue || inList
-        ? base
-        : [{ value: trimmedValue, label: trimmedValue }, ...base];
-    return [{ value: "", label: "Select..." }, ...withSelected];
-  };
+  const sizeSelectOptions = (type: SizeType) => [
+    { value: "", label: "Select..." },
+    ...sizeOptions
+      .filter((size) => size.sizeType === type)
+      .map((size) => ({ value: size.id, label: size.label })),
+  ];
 
   const addImageEntry = (url: string) => {
     const trimmed = url.trim();
@@ -1066,26 +992,6 @@ export function ProductForm({
     handleUploadFiles(event.dataTransfer.files);
   };
 
-  const handleAddTag = (label: string) => {
-    const trimmed = label.trim();
-    if (!trimmed) {
-      return;
-    }
-
-    const newTag: TagChip = {
-      label: trimmed,
-      group_key: "custom",
-      source: "custom",
-    };
-
-    const existingKeys = new Set(allTags.map(getTagKey));
-    if (existingKeys.has(getTagKey(newTag))) {
-      return;
-    }
-
-    setCustomTags([...customTags, newTag]);
-  };
-
   const applyBrandOverride = (option: CatalogOption | null) => {
     setBrandOverrideId(option?.id ?? null);
     setBrandOverrideInput(option?.label ?? "");
@@ -1147,16 +1053,6 @@ export function ProductForm({
     }
   };
 
-  const handleRemoveTag = (tag: TagChip) => {
-    if (tag.source === "auto") {
-      const key = getTagKey(tag);
-      setExcludedAutoTagKeys((prev) => (prev.includes(key) ? prev : [...prev, key]));
-      return;
-    }
-
-    setCustomTags(customTags.filter((item) => getTagKey(item) !== getTagKey(tag)));
-  };
-
   const parseMoneyToCents = (value: string) => {
     const trimmed = value.trim();
     if (!trimmed) {
@@ -1186,6 +1082,9 @@ export function ProductForm({
       if (!trimmedTitle) {
         throw new Error("Full title is required.");
       }
+      if (!effectiveBrandId) {
+        throw new Error("Select a canonical brand.");
+      }
 
       const trimmedShipping = shippingPrice.trim();
       const shippingCents = trimmedShipping ? parseMoneyToCents(trimmedShipping) : null;
@@ -1210,11 +1109,11 @@ export function ProductForm({
           throw new Error(`Variant ${index + 1} stock is invalid.`);
         }
 
-        const sizeLabel = sizeType === "none" ? "N/A" : variant.size_label.trim();
-        if (sizeType !== "none" && !sizeLabel) {
+        const sizeLabel = variant.size_label.trim();
+        if (!variant.size_id || !sizeLabel) {
           throw new Error(`Variant ${index + 1} size is required.`);
         }
-        const sizeKey = `${sizeType}:${sizeLabel.toLowerCase()}`;
+        const sizeKey = variant.size_id;
         if (seenSizeKeys.has(sizeKey)) {
           throw new Error(`Duplicate size "${sizeLabel}" found in variants.`);
         }
@@ -1223,7 +1122,7 @@ export function ProductForm({
         return {
           ...(variant.id ? { id: variant.id } : {}),
           sku: variant.sku,
-          size_label: sizeLabel,
+          size_id: variant.size_id,
           sale_price_cents: priceCents,
           unit_cost_cents: costCents,
           stock: stockCount,
@@ -1259,8 +1158,8 @@ export function ProductForm({
 
       const data: ProductCreateInput = {
         name: trimmedTitle,
-        brand_override_id: brandOverrideId ?? undefined,
-        model_override_id: modelOverrideId ?? undefined,
+        brand_id: effectiveBrandId,
+        model_id: effectiveModelId,
         category,
         condition,
         size_type: sizeType,
@@ -1269,8 +1168,6 @@ export function ProductForm({
         go_live_at: goLiveAt,
         variants: preparedVariants,
         images: preparedImages,
-        tags: allTags.map((tag) => ({ label: tag.label, group_key: tag.group_key })),
-        excluded_auto_tag_keys: excludedAutoTagKeys,
       };
 
       await onSubmit(data);
@@ -1542,54 +1439,15 @@ export function ProductForm({
                             Size <RequiredMark />
                           </label>
 
-                          {sizeType === "shoe" && (
-                            <RdkSelect
-                              value={variant.size_label}
-                              onChange={(v) => updateVariant(index, "size_label", v)}
-                              placeholder="Select..."
-                              searchable
-                              searchPlaceholder="Search sizes..."
-                              options={buildSizeOptions(SHOE_SIZES, variant.size_label)}
-                              buttonClassName="bg-zinc-900"
-                            />
-                          )}
-
-                          {sizeType === "clothing" && (
-                            <RdkSelect
-                              value={variant.size_label}
-                              onChange={(v) => updateVariant(index, "size_label", v)}
-                              placeholder="Select..."
-                              searchable
-                              searchPlaceholder="Search sizes..."
-                              options={buildSizeOptions(
-                                CLOTHING_SIZES,
-                                variant.size_label,
-                              )}
-                              buttonClassName="bg-zinc-900"
-                            />
-                          )}
-
-                          {sizeType === "custom" && (
-                            <input
-                              type="text"
-                              value={variant.size_label}
-                              onChange={(e) =>
-                                updateVariant(index, "size_label", e.target.value)
-                              }
-                              required
-                              placeholder="e.g., One Size"
-                              className="w-full bg-zinc-900 text-white px-2 md:px-3 py-2 rounded text-xs md:text-sm border border-zinc-800/70 focus:outline-none focus:ring-2 focus:ring-red-600"
-                            />
-                          )}
-
-                          {sizeType === "none" && (
-                            <input
-                              type="text"
-                              value="N/A"
-                              disabled
-                              className="w-full bg-zinc-900 text-gray-500 px-2 md:px-3 py-2 rounded text-xs md:text-sm border border-zinc-800/70"
-                            />
-                          )}
+                          <RdkSelect
+                            value={variant.size_id}
+                            onChange={(value) => updateVariantSize(index, value)}
+                            placeholder="Select..."
+                            searchable={sizeType !== "none"}
+                            searchPlaceholder="Search sizes..."
+                            options={sizeSelectOptions(sizeType)}
+                            buttonClassName="bg-zinc-900"
+                          />
                         </div>
 
                         <div className="w-full md:w-32">
@@ -1866,12 +1724,6 @@ export function ProductForm({
             </p>
           )}
         </div>
-      </div>
-
-      {/* Tags */}
-      <div className="bg-zinc-900 border border-zinc-800/70 rounded p-4 md:p-6">
-        <h2 className="text-lg md:text-xl font-semibold text-white mb-3 md:mb-4">Tags</h2>
-        <TagInput tags={allTags} onAddTag={handleAddTag} onRemoveTag={handleRemoveTag} />
       </div>
 
       <div className="bg-zinc-900 border border-zinc-800/70 rounded p-4 md:p-6">

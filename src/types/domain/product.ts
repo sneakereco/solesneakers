@@ -4,16 +4,15 @@ import type { Tables } from "@/types/db/database.types";
 export type ProductRow = Tables<"products">;
 export type ProductVariantRow = Tables<"product_variants">;
 export type ProductImageRow = Tables<"product_images">;
-export type TagRow = Tables<"tags">;
+export type TaxonomyReference = { id: string; label: string };
 
 // Column-derived aliases (these will be `string` unless your DB types are enums)
 export type Category = ProductRow["category"];
 export type Condition = ProductRow["condition"];
 export type SizeType = ProductRow["size_type"];
-export type TagGroupKey = TagRow["group_key"];
-
 export type ProductWithDetails = ProductRow & {
-  variants: ProductVariantRow[];
+  brand: TaxonomyReference;
+  model: TaxonomyReference | null;
+  variants: Array<ProductVariantRow & { size: TaxonomyReference }>;
   images: ProductImageRow[];
-  tags: TagRow[];
 };

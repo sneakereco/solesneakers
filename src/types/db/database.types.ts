@@ -92,262 +92,6 @@ export type Database = {
           },
         ];
       };
-      catalog_aliases: {
-        Row: {
-          alias_label: string;
-          alias_normalized: string;
-          brand_id: string | null;
-          created_at: string | null;
-          entity_type: string;
-          id: string;
-          is_active: boolean;
-          model_id: string | null;
-          priority: number;
-          tenant_id: string | null;
-          updated_at: string | null;
-        };
-        Insert: {
-          alias_label: string;
-          alias_normalized: string;
-          brand_id?: string | null;
-          created_at?: string | null;
-          entity_type: string;
-          id?: string;
-          is_active?: boolean;
-          model_id?: string | null;
-          priority?: number;
-          tenant_id?: string | null;
-          updated_at?: string | null;
-        };
-        Update: {
-          alias_label?: string;
-          alias_normalized?: string;
-          brand_id?: string | null;
-          created_at?: string | null;
-          entity_type?: string;
-          id?: string;
-          is_active?: boolean;
-          model_id?: string | null;
-          priority?: number;
-          tenant_id?: string | null;
-          updated_at?: string | null;
-        };
-        Relationships: [
-          {
-            foreignKeyName: "catalog_aliases_brand_id_fkey";
-            columns: ["brand_id"];
-            isOneToOne: false;
-            referencedRelation: "catalog_brands";
-            referencedColumns: ["id"];
-          },
-          {
-            foreignKeyName: "catalog_aliases_model_id_fkey";
-            columns: ["model_id"];
-            isOneToOne: false;
-            referencedRelation: "catalog_models";
-            referencedColumns: ["id"];
-          },
-          {
-            foreignKeyName: "catalog_aliases_tenant_id_fkey";
-            columns: ["tenant_id"];
-            isOneToOne: false;
-            referencedRelation: "tenants";
-            referencedColumns: ["id"];
-          },
-        ];
-      };
-      catalog_brand_groups: {
-        Row: {
-          created_at: string | null;
-          id: string;
-          is_active: boolean;
-          key: string;
-          label: string;
-          tenant_id: string | null;
-          updated_at: string | null;
-        };
-        Insert: {
-          created_at?: string | null;
-          id?: string;
-          is_active?: boolean;
-          key: string;
-          label: string;
-          tenant_id?: string | null;
-          updated_at?: string | null;
-        };
-        Update: {
-          created_at?: string | null;
-          id?: string;
-          is_active?: boolean;
-          key?: string;
-          label?: string;
-          tenant_id?: string | null;
-          updated_at?: string | null;
-        };
-        Relationships: [
-          {
-            foreignKeyName: "catalog_brand_groups_tenant_id_fkey";
-            columns: ["tenant_id"];
-            isOneToOne: false;
-            referencedRelation: "tenants";
-            referencedColumns: ["id"];
-          },
-        ];
-      };
-      catalog_brands: {
-        Row: {
-          canonical_label: string;
-          created_at: string | null;
-          group_id: string;
-          id: string;
-          is_active: boolean;
-          is_verified: boolean;
-          tenant_id: string | null;
-          updated_at: string | null;
-        };
-        Insert: {
-          canonical_label: string;
-          created_at?: string | null;
-          group_id: string;
-          id?: string;
-          is_active?: boolean;
-          is_verified?: boolean;
-          tenant_id?: string | null;
-          updated_at?: string | null;
-        };
-        Update: {
-          canonical_label?: string;
-          created_at?: string | null;
-          group_id?: string;
-          id?: string;
-          is_active?: boolean;
-          is_verified?: boolean;
-          tenant_id?: string | null;
-          updated_at?: string | null;
-        };
-        Relationships: [
-          {
-            foreignKeyName: "catalog_brands_group_id_fkey";
-            columns: ["group_id"];
-            isOneToOne: false;
-            referencedRelation: "catalog_brand_groups";
-            referencedColumns: ["id"];
-          },
-          {
-            foreignKeyName: "catalog_brands_tenant_id_fkey";
-            columns: ["tenant_id"];
-            isOneToOne: false;
-            referencedRelation: "tenants";
-            referencedColumns: ["id"];
-          },
-        ];
-      };
-      catalog_candidates: {
-        Row: {
-          created_at: string | null;
-          created_by: string | null;
-          entity_type: string;
-          id: string;
-          normalized_text: string;
-          parent_brand_id: string | null;
-          raw_text: string;
-          status: string;
-          tenant_id: string;
-        };
-        Insert: {
-          created_at?: string | null;
-          created_by?: string | null;
-          entity_type: string;
-          id?: string;
-          normalized_text: string;
-          parent_brand_id?: string | null;
-          raw_text: string;
-          status?: string;
-          tenant_id: string;
-        };
-        Update: {
-          created_at?: string | null;
-          created_by?: string | null;
-          entity_type?: string;
-          id?: string;
-          normalized_text?: string;
-          parent_brand_id?: string | null;
-          raw_text?: string;
-          status?: string;
-          tenant_id?: string;
-        };
-        Relationships: [
-          {
-            foreignKeyName: "catalog_candidates_created_by_fkey";
-            columns: ["created_by"];
-            isOneToOne: false;
-            referencedRelation: "profiles";
-            referencedColumns: ["id"];
-          },
-          {
-            foreignKeyName: "catalog_candidates_parent_brand_fkey";
-            columns: ["parent_brand_id"];
-            isOneToOne: false;
-            referencedRelation: "catalog_brands";
-            referencedColumns: ["id"];
-          },
-          {
-            foreignKeyName: "catalog_candidates_tenant_id_fkey";
-            columns: ["tenant_id"];
-            isOneToOne: false;
-            referencedRelation: "tenants";
-            referencedColumns: ["id"];
-          },
-        ];
-      };
-      catalog_models: {
-        Row: {
-          brand_id: string;
-          canonical_label: string;
-          created_at: string | null;
-          id: string;
-          is_active: boolean;
-          is_verified: boolean;
-          tenant_id: string | null;
-          updated_at: string | null;
-        };
-        Insert: {
-          brand_id: string;
-          canonical_label: string;
-          created_at?: string | null;
-          id?: string;
-          is_active?: boolean;
-          is_verified?: boolean;
-          tenant_id?: string | null;
-          updated_at?: string | null;
-        };
-        Update: {
-          brand_id?: string;
-          canonical_label?: string;
-          created_at?: string | null;
-          id?: string;
-          is_active?: boolean;
-          is_verified?: boolean;
-          tenant_id?: string | null;
-          updated_at?: string | null;
-        };
-        Relationships: [
-          {
-            foreignKeyName: "catalog_models_brand_id_fkey";
-            columns: ["brand_id"];
-            isOneToOne: false;
-            referencedRelation: "catalog_brands";
-            referencedColumns: ["id"];
-          },
-          {
-            foreignKeyName: "catalog_models_tenant_id_fkey";
-            columns: ["tenant_id"];
-            isOneToOne: false;
-            referencedRelation: "tenants";
-            referencedColumns: ["id"];
-          },
-        ];
-      };
       chargeback_evidence: {
         Row: {
           avs_result_code: string | null;
@@ -1338,43 +1082,13 @@ export type Database = {
           },
         ];
       };
-      product_tags: {
-        Row: {
-          product_id: string;
-          tag_id: string;
-        };
-        Insert: {
-          product_id: string;
-          tag_id: string;
-        };
-        Update: {
-          product_id?: string;
-          tag_id?: string;
-        };
-        Relationships: [
-          {
-            foreignKeyName: "product_tags_product_id_fkey";
-            columns: ["product_id"];
-            isOneToOne: false;
-            referencedRelation: "products";
-            referencedColumns: ["id"];
-          },
-          {
-            foreignKeyName: "product_tags_tag_id_fkey";
-            columns: ["tag_id"];
-            isOneToOne: false;
-            referencedRelation: "tags";
-            referencedColumns: ["id"];
-          },
-        ];
-      };
       product_variants: {
         Row: {
           created_at: string;
           id: string;
           product_id: string;
           sale_price_cents: number;
-          size_label: string;
+          size_id: string;
           sku: string;
           sort_order: number;
           stock: number;
@@ -1387,7 +1101,7 @@ export type Database = {
           id?: string;
           product_id: string;
           sale_price_cents: number;
-          size_label: string;
+          size_id: string;
           sku: string;
           sort_order?: number;
           stock?: number;
@@ -1400,7 +1114,7 @@ export type Database = {
           id?: string;
           product_id?: string;
           sale_price_cents?: number;
-          size_label?: string;
+          size_id?: string;
           sku?: string;
           sort_order?: number;
           stock?: number;
@@ -1417,6 +1131,13 @@ export type Database = {
             referencedColumns: ["id"];
           },
           {
+            foreignKeyName: "product_variants_size_id_fkey";
+            columns: ["size_id"];
+            isOneToOne: false;
+            referencedRelation: "tag_sizes";
+            referencedColumns: ["id"];
+          },
+          {
             foreignKeyName: "product_variants_tenant_id_fkey";
             columns: ["tenant_id"];
             isOneToOne: false;
@@ -1428,17 +1149,16 @@ export type Database = {
       products: {
         Row: {
           archived_at: string | null;
-          brand: string;
+          brand_id: string;
           category: string;
           condition: string;
           created_at: string;
           description: string | null;
-          excluded_auto_tag_keys: string[];
           go_live_at: string;
           id: string;
           is_active: boolean;
           is_out_of_stock: boolean;
-          model: string | null;
+          model_id: string | null;
           name: string;
           product_created_at: string;
           product_updated_at: string;
@@ -1449,17 +1169,16 @@ export type Database = {
         };
         Insert: {
           archived_at?: string | null;
-          brand: string;
+          brand_id: string;
           category: string;
           condition: string;
           created_at?: string;
           description?: string | null;
-          excluded_auto_tag_keys?: string[];
           go_live_at?: string;
           id?: string;
           is_active?: boolean;
           is_out_of_stock?: boolean;
-          model?: string | null;
+          model_id?: string | null;
           name: string;
           product_created_at?: string;
           product_updated_at?: string;
@@ -1470,17 +1189,16 @@ export type Database = {
         };
         Update: {
           archived_at?: string | null;
-          brand?: string;
+          brand_id?: string;
           category?: string;
           condition?: string;
           created_at?: string;
           description?: string | null;
-          excluded_auto_tag_keys?: string[];
           go_live_at?: string;
           id?: string;
           is_active?: boolean;
           is_out_of_stock?: boolean;
-          model?: string | null;
+          model_id?: string | null;
           name?: string;
           product_created_at?: string;
           product_updated_at?: string;
@@ -1490,6 +1208,20 @@ export type Database = {
           updated_at?: string;
         };
         Relationships: [
+          {
+            foreignKeyName: "products_brand_id_fkey";
+            columns: ["brand_id"];
+            isOneToOne: false;
+            referencedRelation: "tag_brands";
+            referencedColumns: ["id"];
+          },
+          {
+            foreignKeyName: "products_model_brand_fkey";
+            columns: ["model_id", "brand_id"];
+            isOneToOne: false;
+            referencedRelation: "tag_models";
+            referencedColumns: ["id", "brand_id"];
+          },
           {
             foreignKeyName: "products_tenant_id_fkey";
             columns: ["tenant_id"];
@@ -1828,28 +1560,245 @@ export type Database = {
           },
         ];
       };
-      tags: {
+      tag_aliases: {
         Row: {
-          group_key: string;
+          alias_label: string;
+          alias_normalized: string;
+          brand_id: string | null;
+          created_at: string;
+          entity_type: string;
           id: string;
-          label: string;
+          is_active: boolean;
+          model_id: string | null;
+          priority: number;
           tenant_id: string | null;
+          updated_at: string;
         };
         Insert: {
-          group_key: string;
+          alias_label: string;
+          alias_normalized: string;
+          brand_id?: string | null;
+          created_at?: string;
+          entity_type: string;
           id?: string;
-          label: string;
+          is_active?: boolean;
+          model_id?: string | null;
+          priority?: number;
           tenant_id?: string | null;
+          updated_at?: string;
         };
         Update: {
-          group_key?: string;
+          alias_label?: string;
+          alias_normalized?: string;
+          brand_id?: string | null;
+          created_at?: string;
+          entity_type?: string;
           id?: string;
-          label?: string;
+          is_active?: boolean;
+          model_id?: string | null;
+          priority?: number;
           tenant_id?: string | null;
+          updated_at?: string;
         };
         Relationships: [
           {
-            foreignKeyName: "tags_tenant_id_fkey";
+            foreignKeyName: "tag_aliases_brand_id_fkey";
+            columns: ["brand_id"];
+            isOneToOne: false;
+            referencedRelation: "tag_brands";
+            referencedColumns: ["id"];
+          },
+          {
+            foreignKeyName: "tag_aliases_model_id_fkey";
+            columns: ["model_id"];
+            isOneToOne: false;
+            referencedRelation: "tag_models";
+            referencedColumns: ["id"];
+          },
+          {
+            foreignKeyName: "tag_aliases_tenant_id_fkey";
+            columns: ["tenant_id"];
+            isOneToOne: false;
+            referencedRelation: "tenants";
+            referencedColumns: ["id"];
+          },
+        ];
+      };
+      tag_brands: {
+        Row: {
+          canonical_label: string;
+          created_at: string;
+          id: string;
+          is_active: boolean;
+          tenant_id: string | null;
+          updated_at: string;
+        };
+        Insert: {
+          canonical_label: string;
+          created_at?: string;
+          id?: string;
+          is_active?: boolean;
+          tenant_id?: string | null;
+          updated_at?: string;
+        };
+        Update: {
+          canonical_label?: string;
+          created_at?: string;
+          id?: string;
+          is_active?: boolean;
+          tenant_id?: string | null;
+          updated_at?: string;
+        };
+        Relationships: [
+          {
+            foreignKeyName: "tag_brands_tenant_id_fkey";
+            columns: ["tenant_id"];
+            isOneToOne: false;
+            referencedRelation: "tenants";
+            referencedColumns: ["id"];
+          },
+        ];
+      };
+      tag_candidates: {
+        Row: {
+          created_at: string;
+          created_by: string | null;
+          entity_type: string;
+          id: string;
+          normalized_text: string;
+          parent_brand_id: string | null;
+          raw_text: string;
+          status: string;
+          tenant_id: string;
+          updated_at: string;
+        };
+        Insert: {
+          created_at?: string;
+          created_by?: string | null;
+          entity_type: string;
+          id?: string;
+          normalized_text: string;
+          parent_brand_id?: string | null;
+          raw_text: string;
+          status?: string;
+          tenant_id: string;
+          updated_at?: string;
+        };
+        Update: {
+          created_at?: string;
+          created_by?: string | null;
+          entity_type?: string;
+          id?: string;
+          normalized_text?: string;
+          parent_brand_id?: string | null;
+          raw_text?: string;
+          status?: string;
+          tenant_id?: string;
+          updated_at?: string;
+        };
+        Relationships: [
+          {
+            foreignKeyName: "tag_candidates_created_by_fkey";
+            columns: ["created_by"];
+            isOneToOne: false;
+            referencedRelation: "profiles";
+            referencedColumns: ["id"];
+          },
+          {
+            foreignKeyName: "tag_candidates_parent_brand_id_fkey";
+            columns: ["parent_brand_id"];
+            isOneToOne: false;
+            referencedRelation: "tag_brands";
+            referencedColumns: ["id"];
+          },
+          {
+            foreignKeyName: "tag_candidates_tenant_id_fkey";
+            columns: ["tenant_id"];
+            isOneToOne: false;
+            referencedRelation: "tenants";
+            referencedColumns: ["id"];
+          },
+        ];
+      };
+      tag_models: {
+        Row: {
+          brand_id: string;
+          canonical_label: string;
+          created_at: string;
+          id: string;
+          is_active: boolean;
+          tenant_id: string | null;
+          updated_at: string;
+        };
+        Insert: {
+          brand_id: string;
+          canonical_label: string;
+          created_at?: string;
+          id?: string;
+          is_active?: boolean;
+          tenant_id?: string | null;
+          updated_at?: string;
+        };
+        Update: {
+          brand_id?: string;
+          canonical_label?: string;
+          created_at?: string;
+          id?: string;
+          is_active?: boolean;
+          tenant_id?: string | null;
+          updated_at?: string;
+        };
+        Relationships: [
+          {
+            foreignKeyName: "tag_models_brand_id_fkey";
+            columns: ["brand_id"];
+            isOneToOne: false;
+            referencedRelation: "tag_brands";
+            referencedColumns: ["id"];
+          },
+          {
+            foreignKeyName: "tag_models_tenant_id_fkey";
+            columns: ["tenant_id"];
+            isOneToOne: false;
+            referencedRelation: "tenants";
+            referencedColumns: ["id"];
+          },
+        ];
+      };
+      tag_sizes: {
+        Row: {
+          canonical_label: string;
+          created_at: string;
+          id: string;
+          is_active: boolean;
+          size_type: string;
+          sort_order: number;
+          tenant_id: string | null;
+          updated_at: string;
+        };
+        Insert: {
+          canonical_label: string;
+          created_at?: string;
+          id?: string;
+          is_active?: boolean;
+          size_type: string;
+          sort_order?: number;
+          tenant_id?: string | null;
+          updated_at?: string;
+        };
+        Update: {
+          canonical_label?: string;
+          created_at?: string;
+          id?: string;
+          is_active?: boolean;
+          size_type?: string;
+          sort_order?: number;
+          tenant_id?: string | null;
+          updated_at?: string;
+        };
+        Relationships: [
+          {
+            foreignKeyName: "tag_sizes_tenant_id_fkey";
             columns: ["tenant_id"];
             isOneToOne: false;
             referencedRelation: "tenants";
@@ -2154,6 +2103,10 @@ export type Database = {
       [_ in never]: never;
     };
     Functions: {
+      accept_tag_candidate: {
+        Args: { accepted_label: string; candidate_id: string };
+        Returns: Json;
+      };
       decrement_variant_stock: {
         Args: { p_quantity: number; p_variant_id: string };
         Returns: undefined;

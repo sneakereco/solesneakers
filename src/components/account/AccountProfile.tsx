@@ -21,7 +21,7 @@ type AccountOrderItem = {
     brand?: string | null;
     name?: string | null;
   } | null;
-  variant?: { size_label?: string | null } | null;
+  variant?: Record<string, never> | null;
 };
 
 type AccountOrder = {
@@ -700,9 +700,7 @@ export function AccountProfile({ userEmail }: { userEmail: string }) {
                       >
                         <span className="text-gray-300">
                           {item.product_name ?? item.product?.name ?? "Item"}
-                          {(item.size_label ?? item.variant?.size_label)
-                            ? ` (${item.size_label ?? item.variant?.size_label})`
-                            : ""}
+                          {item.size_label ? ` (${item.size_label})` : ""}
                         </span>
                         <span className="text-gray-400">x{item.quantity}</span>
                       </div>

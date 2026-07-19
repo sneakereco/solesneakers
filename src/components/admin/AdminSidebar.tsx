@@ -57,7 +57,7 @@ const navItems: Array<NavLink | NavGroup> = [
   },
   { type: "link", href: "/admin/nexus", label: "Tax & Nexus", icon: Receipt },
   { type: "link", href: "/admin/featured-items", label: "Featured Items", icon: Star },
-  { type: "link", href: "/admin/catalog", label: "Tags", icon: Package },
+  { type: "link", href: "/admin/tags", label: "Tags", icon: Package },
   {
     type: "group",
     key: "settings",

@@ -64,7 +64,7 @@ export function ProductCard({
           <h2 className="max-w-3xl text-sm font-normal leading-6 text-zinc-950 sm:text-[1.05rem]">
             {product.name}
           </h2>
-          <p className="mt-2 text-sm text-zinc-700 sm:text-base">{product.brand}</p>
+          <p className="mt-2 text-sm text-zinc-700 sm:text-base">{product.brand.label}</p>
           <p className="mt-5 text-sm text-zinc-700 sm:text-base">{priceDisplay}</p>
         </div>
       </Link>

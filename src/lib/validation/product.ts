@@ -10,7 +10,7 @@ const variantSchema = z
   .object({
     id: z.string().uuid().optional(),
     sku: z.string().trim().min(1).optional(),
-    size_label: z.string().trim().min(1),
+    size_id: z.string().uuid(),
     sale_price_cents: z.number().int().nonnegative(),
     stock: z.number().int().nonnegative(),
     unit_cost_cents: z.number().int().nonnegative().optional(),
@@ -30,13 +30,6 @@ const imageSchema = z
       }),
     sort_order: z.number().int().nonnegative(),
     is_primary: z.boolean(),
-  })
-  .strict();
-
-const tagSchema = z
-  .object({
-    label: z.string().trim().min(1),
-    group_key: z.string().trim().min(1),
   })
   .strict();
 
@@ -60,8 +53,8 @@ const includeOutOfStockSchema = z.preprocess((value) => {
 export const productCreateSchema = z
   .object({
     name: z.string().trim().min(1),
-    brand_override_id: z.string().uuid().nullable().optional(),
-    model_override_id: z.string().uuid().nullable().optional(),
+    brand_id: z.string().uuid(),
+    model_id: z.string().uuid().nullable().optional(),
     category: z.enum(CATEGORY_VALUES),
     condition: z.enum(CONDITION_VALUES),
     size_type: z.enum(SIZE_TYPE_VALUES),
@@ -70,8 +63,6 @@ export const productCreateSchema = z
     variants: z.array(variantSchema).min(1),
     images: z.array(imageSchema),
     go_live_at: z.string().datetime({ offset: true }).optional(),
-    tags: z.array(tagSchema).optional(),
-    excluded_auto_tag_keys: z.array(z.string()).optional(),
   })
   .strict();
 
