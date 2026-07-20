@@ -18,12 +18,6 @@ const testEnvDefaults: Record<string, string> = {
   SES_SMTP_HOST: "smtp.example.com",
   SES_SMTP_USER: "smtp-user",
   SES_SMTP_PASS: "smtp-pass",
-  SES_FROM_EMAIL: "support@example.com",
-  SES_FROM_NAME: "Example Support",
-  SUPPORT_INBOX_EMAIL: "support@example.com",
-  AWS_REGION: "us-east-1",
-  AWS_ACCESS_KEY_ID: "test-access-key",
-  AWS_SECRET_ACCESS_KEY: "test-secret-access-key",
   ORDER_ACCESS_TOKEN_SECRET: "1234567890abcdef",
   NODE_ENV: "test",
 };

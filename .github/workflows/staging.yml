@@ -52,18 +52,10 @@ jobs:
       GOOGLE_CLIENT_ID: ${{ secrets.GOOGLE_CLIENT_ID }}
       GOOGLE_CLIENT_SECRET: ${{ secrets.GOOGLE_CLIENT_SECRET }}
 
-      # AWS SES
+      # SMTP
       SES_SMTP_HOST: ${{ secrets.SES_SMTP_HOST }}
       SES_SMTP_USER: ${{ secrets.SES_SMTP_USER }}
       SES_SMTP_PASS: ${{ secrets.SES_SMTP_PASS }}
-      SES_FROM_EMAIL: ${{ secrets.SES_FROM_EMAIL }}
-      SES_FROM_NAME: ${{ secrets.SES_FROM_NAME }}
-      SUPPORT_INBOX_EMAIL: ${{ secrets.SUPPORT_INBOX_EMAIL }}
-
-      # AWS
-      AWS_REGION: ${{ secrets.AWS_REGION }}
-      AWS_ACCESS_KEY_ID: ${{ secrets.AWS_ACCESS_KEY_ID }}
-      AWS_SECRET_ACCESS_KEY: ${{ secrets.AWS_SECRET_ACCESS_KEY }}
 
       # HERE
       HERE_MAPS_API_KEY: ${{ secrets.HERE_MAPS_API_KEY }}

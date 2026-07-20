@@ -1,9 +1,8 @@
 // src/lib/email/mailer.ts
-import { SESClient, SendRawEmailCommand } from "@aws-sdk/client-ses";
-import { SESv2Client, SendEmailCommand } from "@aws-sdk/client-sesv2";
-import MailComposer from "nodemailer/lib/mail-composer";
+import nodemailer, { type Transporter } from "nodemailer";
 
 import { env } from "@/config/env";
+import { MAIL_FROM_EMAIL, MAIL_FROM_NAME } from "@/config/constants/mail";
 
 type EmailAttachment = {
   filename: string;
@@ -28,110 +27,55 @@ type RetryOptions = {
   timeoutMs?: number;
 };
 
-let sesv2: SESv2Client | null = null;
-let ses: SESClient | null = null;
+let transporter: Transporter | null = null;
 
-const getSesv2 = () => {
-  if (sesv2) {
-    return sesv2;
+const getTransporter = () => {
+  if (transporter) {
+    return transporter;
   }
-  sesv2 = new SESv2Client({
-    region: env.AWS_REGION,
-    credentials: {
-      accessKeyId: env.AWS_ACCESS_KEY_ID,
-      secretAccessKey: env.AWS_SECRET_ACCESS_KEY,
+  transporter = nodemailer.createTransport({
+    host: env.SES_SMTP_HOST,
+    port: 465,
+    secure: true,
+    auth: {
+      user: env.SES_SMTP_USER,
+      pass: env.SES_SMTP_PASS,
     },
   });
-  return sesv2;
+  return transporter;
 };
 
-const getSes = () => {
-  if (ses) {
-    return ses;
-  }
-  ses = new SESClient({
-    region: env.AWS_REGION,
-    credentials: {
-      accessKeyId: env.AWS_ACCESS_KEY_ID,
-      secretAccessKey: env.AWS_SECRET_ACCESS_KEY,
-    },
+const buildFrom = () => `"${MAIL_FROM_NAME}" <${MAIL_FROM_EMAIL}>`;
+
+const mapAttachments = (attachments?: EmailAttachment[]) =>
+  attachments?.map((attachment) => ({
+    filename: attachment.filename,
+    content: attachment.content,
+    contentType: attachment.contentType,
+    cid: attachment.cid,
+    contentDisposition: attachment.contentDisposition ?? "attachment",
+  }));
+
+const sendWithTransport = async (input: SendEmailInput) => {
+  const result = await getTransporter().sendMail({
+    from: buildFrom(),
+    to: input.to,
+    subject: input.subject,
+    html: input.html,
+    text: input.text,
+    ...(input.replyTo ? { replyTo: input.replyTo } : {}),
+    ...(input.attachments?.length
+      ? { attachments: mapAttachments(input.attachments) }
+      : {}),
   });
-  return ses;
+
+  return { messageId: result.messageId };
 };
-
-const buildFrom = () => `"${env.SES_FROM_NAME}" <${env.SES_FROM_EMAIL}>`;
-
-type SendEmailResult = { messageId?: string };
-
-// Prefer SESv2 for simple emails (no attachments). Use SES raw for attachments / CID.
-export async function sendEmail({
-  to,
-  subject,
-  html,
-  text,
-  attachments,
-  replyTo,
-}: SendEmailInput): Promise<SendEmailResult> {
-  const from = buildFrom();
-
-  if (attachments && attachments.length > 0) {
-    // RAW MIME path (supports attachments + inline CID)
-    const composer = new MailComposer({
-      from,
-      to,
-      subject,
-      html,
-      text,
-      ...(replyTo ? { replyTo } : {}),
-      attachments: attachments.map((a) => ({
-        filename: a.filename,
-        content: a.content,
-        contentType: a.contentType,
-        cid: a.cid,
-        contentDisposition: a.contentDisposition ?? "attachment",
-      })),
-    });
-
-    const raw = await composer.compile().build(); // Buffer
-    const client = getSes();
-
-    const result = await client.send(
-      new SendRawEmailCommand({
-        RawMessage: { Data: raw },
-      }),
-    );
-
-    return { messageId: result.MessageId };
-  }
-
-  // Simple path (fast + clean)
-  const client = getSesv2();
-
-  const result = await client.send(
-    new SendEmailCommand({
-      FromEmailAddress: from,
-      Destination: { ToAddresses: [to] },
-      ...(replyTo ? { ReplyToAddresses: [replyTo] } : {}),
-      Content: {
-        Simple: {
-          Subject: { Data: subject, Charset: "UTF-8" },
-          Body: {
-            Html: { Data: html, Charset: "UTF-8" },
-            ...(text ? { Text: { Data: text, Charset: "UTF-8" } } : {}),
-          },
-        },
-      },
-      // ConfigurationSetName: env.AWS_SES_CONFIGURATION_SET,
-    }),
-  );
-
-  return { messageId: result.MessageId };
-}
 
 const delay = (ms: number) => new Promise((resolve) => setTimeout(resolve, ms));
 
 const withTimeout = async <T>(promise: Promise<T>, timeoutMs: number) => {
-  let timeoutId: NodeJS.Timeout;
+  let timeoutId: NodeJS.Timeout | undefined;
   const timeout = new Promise<never>((_, reject) => {
     timeoutId = setTimeout(() => reject(new Error("email_send_timeout")), timeoutMs);
   });
@@ -139,9 +83,17 @@ const withTimeout = async <T>(promise: Promise<T>, timeoutMs: number) => {
   try {
     return await Promise.race([promise, timeout]);
   } finally {
-    clearTimeout(timeoutId!);
+    if (timeoutId) {
+      clearTimeout(timeoutId);
+    }
   }
 };
+
+type SendEmailResult = { messageId?: string };
+
+export async function sendEmail(input: SendEmailInput): Promise<SendEmailResult> {
+  return sendWithTransport(input);
+}
 
 export async function sendEmailWithRetry(
   input: SendEmailInput,
@@ -154,7 +106,7 @@ export async function sendEmailWithRetry(
   let lastError: unknown;
   for (let attempt = 1; attempt <= maxAttempts; attempt += 1) {
     try {
-      return await withTimeout(sendEmail(input), timeoutMs);
+      return await withTimeout(sendWithTransport(input), timeoutMs);
     } catch (error) {
       lastError = error;
       if (attempt < maxAttempts) {

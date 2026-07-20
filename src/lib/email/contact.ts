@@ -77,7 +77,7 @@ export const buildContactSubmissionEmail = (input: ContactEmailInput) => {
             <tr>
               <td style="padding:12px;">
                 <div style="${emailStyles.label}">From</div>
-                <div style="font-size:15px;color:#ffffff;font-weight:700;margin-top:4px;">
+                <div style="font-size:15px;color:${EMAIL_COLORS.text};font-weight:700;margin-top:4px;">
                   ${safeName}
                 </div>
                 <div style="font-size:13px;color:${EMAIL_COLORS.muted};margin-top:6px;">
@@ -86,7 +86,7 @@ export const buildContactSubmissionEmail = (input: ContactEmailInput) => {
               </td>
               <td style="padding:12px;text-align:right;">
                 <div style="${emailStyles.label}">Subject</div>
-                <div style="font-size:14px;color:#ffffff;margin-top:4px;">
+                <div style="font-size:14px;color:${EMAIL_COLORS.text};margin-top:4px;">
                   ${safeSubject}
                 </div>
               </td>

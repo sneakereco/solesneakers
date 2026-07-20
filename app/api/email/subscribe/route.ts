@@ -15,7 +15,7 @@ import {
   buildSubscriptionConfirmationEmail,
   buildSubscriptionConfirmedEmail,
 } from "@/lib/email/subscription";
-import { emailSubjects } from "@/config/constants/email";
+import { emailSubjects } from "@/config/constants/mail";
 import { env } from "@/config/env";
 
 export async function POST(req: NextRequest) {

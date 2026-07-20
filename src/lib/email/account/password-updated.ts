@@ -1,4 +1,4 @@
-import { BRAND_NAME } from "@/config/constants/brand";
+import { EMAIL_DISPLAY_NAME } from "@/config/constants/mail";
 import { emailFooterText } from "@/lib/email/footer";
 import { renderEmailLayout } from "@/lib/email/template";
 import { emailStyles } from "@/lib/email/theme";
@@ -14,7 +14,7 @@ export const buildPasswordUpdatedEmail = (accountUrl: string) => {
       <tr>
         <td style="padding:0 24px 20px;text-align:center;">
           <p style="${emailStyles.copy}">
-            We're confirming that your ${BRAND_NAME} account password was changed successfully.
+            We're confirming that your ${EMAIL_DISPLAY_NAME} account password was changed successfully.
           </p>
           <p style="margin:10px 0 0;${emailStyles.subcopy}">
             If you did not make this change, reset your password right away and contact support.
@@ -30,13 +30,13 @@ export const buildPasswordUpdatedEmail = (accountUrl: string) => {
 
   const html = renderEmailLayout({
     title: "Password Updated",
-    preheader: `Your ${BRAND_NAME} password was updated.`,
+    preheader: `Your ${EMAIL_DISPLAY_NAME} password was updated.`,
     contentHtml,
   });
 
   const text = `Your password was updated
 
-We're confirming that your ${BRAND_NAME} account password was changed successfully.
+We're confirming that your ${EMAIL_DISPLAY_NAME} account password was changed successfully.
 If you did not make this change, reset your password right away and contact support.
 Review your account: ${accountUrl}
 ${emailFooterText()}

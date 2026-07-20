@@ -8,7 +8,7 @@ import { OrderEventsRepository } from "@/repositories/order-events-repo";
 import { OrderAccessTokenService } from "@/services/order-access-token-service";
 import type { OrderStatusResponse } from "@/types/domain/checkout";
 import type { Tables } from "@/types/db/database.types";
-import { env } from "@/config/env";
+import { SUPPORT_EMAIL } from "@/config/constants/mail";
 import { PICKUP_INSTRUCTIONS } from "@/config/pickup";
 import { log } from "@/lib/utils/log";
 
@@ -313,7 +313,7 @@ export class OrdersService {
         createdAt: event.created_at,
       })),
       pickupInstructions,
-      supportEmail: env.SUPPORT_INBOX_EMAIL,
+      supportEmail: SUPPORT_EMAIL,
     };
   }
 

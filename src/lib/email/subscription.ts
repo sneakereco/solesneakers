@@ -1,4 +1,4 @@
-import { BRAND_NAME } from "@/config/constants/brand";
+import { EMAIL_DISPLAY_NAME } from "@/config/constants/mail";
 import { emailFooterText } from "@/lib/email/footer";
 import { renderEmailLayout } from "@/lib/email/template";
 import { emailStyles } from "@/lib/email/theme";
@@ -13,19 +13,19 @@ export const buildSubscriptionConfirmedEmail = () => {
       </tr>
       <tr>
         <td style="padding:0 24px 24px;text-align:center;">
-          <p style="${emailStyles.copy}">You're all set to receive updates from ${BRAND_NAME}.</p>
+          <p style="${emailStyles.copy}">You're all set to receive updates from ${EMAIL_DISPLAY_NAME}.</p>
         </td>
       </tr>
     `;
 
   const html = renderEmailLayout({
     title: "Subscription confirmed",
-    preheader: `You're subscribed to ${BRAND_NAME} updates.`,
+    preheader: `You're subscribed to ${EMAIL_DISPLAY_NAME} updates.`,
     contentHtml,
   });
 
   const text = `Subscription confirmed
-Thanks for signing up for ${BRAND_NAME} updates.
+Thanks for signing up for ${EMAIL_DISPLAY_NAME} updates.
 ${emailFooterText()}
 `;
 
@@ -42,7 +42,7 @@ export const buildSubscriptionConfirmationEmail = (confirmUrl: string) => {
         </tr>
         <tr>
           <td style="padding:0 24px 20px;text-align:center;">
-            <p style="${emailStyles.copy}">Confirm your email to receive updates from ${BRAND_NAME}.</p>
+            <p style="${emailStyles.copy}">Confirm your email to receive updates from ${EMAIL_DISPLAY_NAME}.</p>
           </td>
         </tr>
         <tr>
@@ -56,11 +56,11 @@ export const buildSubscriptionConfirmationEmail = (confirmUrl: string) => {
 
   const html = renderEmailLayout({
     title: "Confirm your subscription",
-    preheader: `Confirm your email to get ${BRAND_NAME} updates.`,
+    preheader: `Confirm your email to get ${EMAIL_DISPLAY_NAME} updates.`,
     contentHtml,
   });
 
-  const text = `Confirm your ${BRAND_NAME} subscription
+  const text = `Confirm your ${EMAIL_DISPLAY_NAME} subscription
 Confirm here: ${confirmUrl}
 This link expires in 24 hours.
 If you didn't request this email, you can safely ignore it.

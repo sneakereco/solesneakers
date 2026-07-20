@@ -32,11 +32,10 @@ export const renderEmailLayout = ({
             <table role="presentation" width="100%" cellspacing="0" cellpadding="0" style="max-width:${width}px;${emailStyles.container}">
               <tr>
                 <td style="${emailStyles.logoCell}">
-                  <img
-                    src="${EMAIL_BRAND.logoUrl}"
-                    alt="${EMAIL_BRAND.name}"
-                    style="${emailStyles.logo}"
-                  />
+                  <div style="${emailStyles.wordmarkWrap}">
+                    <p style="${emailStyles.wordmark}">${EMAIL_BRAND.name}</p>
+                    <p style="${emailStyles.kicker}">${EMAIL_BRAND.kicker}</p>
+                  </div>
                 </td>
               </tr>
               ${contentHtml}

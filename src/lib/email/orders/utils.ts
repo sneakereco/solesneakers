@@ -1,5 +1,5 @@
 import { env } from "@/config/env";
-import { BRAND_NAME } from "@/config/constants/brand";
+import { EMAIL_DISPLAY_NAME } from "@/config/constants/mail";
 import { emailFooterText } from "@/lib/email/footer";
 import { EMAIL_COLORS, emailStyles } from "@/lib/email/theme";
 import type { OrderTrackingEmailBase, ShippingAddress } from "@/types/domain/email";
@@ -30,7 +30,7 @@ export const buildOrderUrl = (orderUrl?: string | null) =>
 
 export const buildEmailFooterText = () => emailFooterText();
 
-export const brandLine = () => BRAND_NAME;
+export const brandLine = () => EMAIL_DISPLAY_NAME;
 
 export const buildTrackingPanelHtml = (input: OrderTrackingEmailBase) => {
   const carrierLabel = input.carrier ?? "Carrier";
@@ -42,7 +42,7 @@ export const buildTrackingPanelHtml = (input: OrderTrackingEmailBase) => {
       <tr>
         <td style="padding:12px;">
           <div style="${emailStyles.label}">Carrier</div>
-          <div style="font-size:14px;color:#ffffff;margin-top:4px;">
+          <div style="font-size:14px;color:${EMAIL_COLORS.text};margin-top:4px;">
             ${carrierLabel}
           </div>
         </td>
@@ -50,7 +50,7 @@ export const buildTrackingPanelHtml = (input: OrderTrackingEmailBase) => {
       <tr>
         <td style="padding:12px;border-top:1px solid ${EMAIL_COLORS.panelBorder};">
           <div style="${emailStyles.label}">Tracking</div>
-          <div style="font-size:14px;color:#ffffff;margin-top:4px;">
+          <div style="font-size:14px;color:${EMAIL_COLORS.text};margin-top:4px;">
             ${trackingUrl ? `<a href="${trackingUrl}" style="${emailStyles.accentLink}">${trackingLabel}</a>` : trackingLabel}
           </div>
         </td>

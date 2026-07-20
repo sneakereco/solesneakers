@@ -1,6 +1,5 @@
 // src/services/order-email-service.ts
-import { env } from "@/config/env";
-import { emailSubjects } from "@/config/constants/email";
+import { emailSubjects, MAIL_REPLY_TO_EMAIL } from "@/config/constants/mail";
 import { sendEmailWithRetry } from "@/lib/email/mailer";
 import {
   buildOrderConfirmationEmail,
@@ -112,7 +111,7 @@ export class OrderEmailService {
         subject,
         html: content.html,
         text: content.text,
-        replyTo: env.SUPPORT_INBOX_EMAIL,
+        replyTo: MAIL_REPLY_TO_EMAIL,
       },
       { maxAttempts: 3, baseDelayMs: 750, timeoutMs: 5000 },
     );

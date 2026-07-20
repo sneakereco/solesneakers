@@ -5,7 +5,7 @@ import { createSupabaseAdminClient } from "@/lib/supabase/service-role";
 import { EmailSubscriptionService } from "@/services/email-subscription-service";
 import { sendEmail } from "@/lib/email/mailer";
 import { buildSubscriptionConfirmedEmail } from "@/lib/email/subscription";
-import { emailSubjects } from "@/config/constants/email";
+import { emailSubjects } from "@/config/constants/mail";
 import { emailConfirmTokenSchema } from "@/lib/validation/email";
 import { getRequestIdFromHeaders } from "@/lib/http/request-id";
 import { logError } from "@/lib/utils/log";

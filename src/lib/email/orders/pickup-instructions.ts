@@ -1,3 +1,4 @@
+import { INSTAGRAM_HANDLE, INSTAGRAM_URL } from "@/config/constants/contact";
 import { EMAIL_COLORS, emailStyles } from "@/lib/email/theme";
 import { renderEmailLayout } from "@/lib/email/template";
 import { PICKUP_INSTRUCTIONS, PICKUP_LOCATION_SUMMARY } from "@/config/pickup";
@@ -12,8 +13,8 @@ export const buildPickupInstructionsEmail = (input: PickupInstructionsEmailInput
   const locationSummary = input.locationSummary ?? PICKUP_LOCATION_SUMMARY;
 
   // Inline IG link only (no button)
-  const instagramUrl = "https://www.instagram.com/realdealkickzsc/";
-  const instagramHandle = "@realdealkickzsc";
+  const instagramUrl = INSTAGRAM_URL;
+  const instagramHandle = INSTAGRAM_HANDLE;
   const instagramLinkHtml = `<a href="${instagramUrl}" style="color:${EMAIL_COLORS.text};text-decoration:underline;">${instagramHandle}</a>`;
 
   const rawInstructions = input.instructions ?? PICKUP_INSTRUCTIONS;

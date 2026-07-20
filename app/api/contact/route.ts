@@ -15,7 +15,7 @@ import { getRequestIdFromHeaders } from "@/lib/http/request-id";
 import { logError } from "@/lib/utils/log";
 import { env } from "@/config/env";
 import { security } from "@/config/security";
-import { BUG_REPORT_EMAIL, SUPPORT_EMAIL } from "@/config/constants/contact";
+import { BUG_REPORT_EMAIL, SUPPORT_EMAIL } from "@/config/constants/mail";
 
 export const runtime = "nodejs";
 export const dynamic = "force-dynamic";

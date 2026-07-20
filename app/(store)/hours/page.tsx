@@ -1,11 +1,8 @@
 import Link from "next/link";
 import { Clock3, MapPin } from "lucide-react";
 
-import {
-  INSTAGRAM_HANDLE,
-  INSTAGRAM_URL,
-  SUPPORT_EMAIL,
-} from "@/config/constants/contact";
+import { SUPPORT_EMAIL } from "@/config/constants/mail";
+import { INSTAGRAM_HANDLE, INSTAGRAM_URL } from "@/config/constants/contact";
 import { PICKUP_HOURS, PICKUP_SERVICE_AREAS } from "@/config/pickup";
 
 export default function HoursPage() {

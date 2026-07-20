@@ -32,7 +32,7 @@ export const buildOrderInTransitEmail = (input: OrderInTransitEmailInput) => {
           <tr>
             <td style="padding:12px;">
               <div style="${emailStyles.label}">Order</div>
-              <div style="font-size:16px;color:#ffffff;font-weight:700;margin-top:4px;">
+              <div style="font-size:16px;color:${EMAIL_COLORS.text};font-weight:700;margin-top:4px;">
                 #${orderShort}
               </div>
             </td>

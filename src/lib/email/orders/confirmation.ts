@@ -153,13 +153,13 @@ export const buildOrderConfirmationEmail = (input: OrderConfirmationEmailInput) 
             <tr>
               <td style="padding:12px;">
                 <div style="${emailStyles.label}">Order</div>
-                <div style="font-size:16px;color:#ffffff;font-weight:700;margin-top:4px;">
+                <div style="font-size:16px;color:${EMAIL_COLORS.text};font-weight:700;margin-top:4px;">
                   #${safeText(orderShort)}
                 </div>
               </td>
               <td style="padding:12px;text-align:right;">
                 <div style="${emailStyles.label}">Placed</div>
-                <div style="font-size:14px;color:#ffffff;margin-top:4px;">
+                <div style="font-size:14px;color:${EMAIL_COLORS.text};margin-top:4px;">
                   ${safeText(orderDate)}
                 </div>
               </td>
@@ -201,10 +201,10 @@ export const buildOrderConfirmationEmail = (input: OrderConfirmationEmailInput) 
               </td>
             </tr>
             <tr>
-              <td style="padding:0 0 12px;font-size:14px;color:#ffffff;font-weight:700;border-bottom:1px solid ${EMAIL_COLORS.panelBorder};">
+              <td style="padding:0 0 12px;font-size:14px;color:${EMAIL_COLORS.text};font-weight:700;border-bottom:1px solid ${EMAIL_COLORS.panelBorder};">
                 Total
               </td>
-              <td align="right" style="padding:0 0 12px;font-size:16px;color:#ffffff;font-weight:700;border-bottom:1px solid ${EMAIL_COLORS.panelBorder};">
+              <td align="right" style="padding:0 0 12px;font-size:16px;color:${EMAIL_COLORS.text};font-weight:700;border-bottom:1px solid ${EMAIL_COLORS.panelBorder};">
                 $${formatMoney(displayTotal)}
               </td>
             </tr>

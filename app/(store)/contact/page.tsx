@@ -1,5 +1,5 @@
 import { ContactForm } from "@/components/contact/ContactForm";
-import { SUPPORT_EMAIL } from "@/config/constants/contact";
+import { SUPPORT_EMAIL } from "@/config/constants/mail";
 
 export default function ContactPage() {
   return (

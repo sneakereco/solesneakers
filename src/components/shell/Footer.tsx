@@ -1,10 +1,7 @@
 import Link from "next/link";
 
-import {
-  INSTAGRAM_HANDLE,
-  INSTAGRAM_URL,
-  SUPPORT_EMAIL,
-} from "@/config/constants/contact";
+import { SUPPORT_EMAIL } from "@/config/constants/mail";
+import { INSTAGRAM_HANDLE, INSTAGRAM_URL } from "@/config/constants/contact";
 import { PICKUP_LOCATION_SUMMARY } from "@/config/pickup";
 
 const TERMS_LINKS = [

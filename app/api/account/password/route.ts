@@ -8,7 +8,7 @@ import { createSupabaseServerClient } from "@/lib/supabase/server";
 import { requireUserApi } from "@/lib/auth/session";
 import { sendEmail } from "@/lib/email/mailer";
 import { buildPasswordUpdatedEmail } from "@/lib/email/account/password-updated";
-import { emailSubjects } from "@/config/constants/email";
+import { emailSubjects } from "@/config/constants/mail";
 import { getRequestIdFromHeaders } from "@/lib/http/request-id";
 import { logError } from "@/lib/utils/log";
 import { isPasswordValid } from "@/lib/validation/password";

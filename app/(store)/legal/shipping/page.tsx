@@ -1,5 +1,5 @@
 import { PolicyPage } from "@/components/legal/PolicyPage";
-import { SUPPORT_EMAIL } from "@/config/constants/contact";
+import { SUPPORT_EMAIL } from "@/config/constants/mail";
 import { PICKUP_LOCATION_SUMMARY } from "@/config/pickup";
 
 export default function ShippingPage() {
