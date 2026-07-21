@@ -413,7 +413,7 @@ export function StoreMenuDrawer({ isOpen, onClose }: StoreMenuDrawerProps) {
 
           <div className="h-[calc(100dvh-5rem)] overflow-y-auto overscroll-contain px-7 pb-10 md:px-8">
             {activePanel === "brand" ? (
-              <div>
+              <div key="brand" className="store-menu-content">
                 <DrawerLink href="/brands" onNavigate={closeMenu} variant="row">
                   All Brands
                 </DrawerLink>
@@ -448,7 +448,7 @@ export function StoreMenuDrawer({ isOpen, onClose }: StoreMenuDrawerProps) {
                 </section>
               </div>
             ) : activePanel === "category" ? (
-              <div>
+              <div key="category" className="store-menu-content">
                 {CATEGORY_LINKS.map((category) => (
                   <DrawerLink
                     key={category.value}
@@ -461,7 +461,7 @@ export function StoreMenuDrawer({ isOpen, onClose }: StoreMenuDrawerProps) {
                 ))}
               </div>
             ) : activePanel === "size" ? (
-              <div>
+              <div key="size" className="store-menu-content">
                 <SizeGroup
                   label="Clothing"
                   category="clothing"
