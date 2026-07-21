@@ -19,6 +19,14 @@ import { useSession } from "@/contexts/SessionContext";
 
 import { StoreMenuDrawer } from "./StoreMenuDrawer";
 
+const announcementItems = [
+  "Orders placed before 3PM ship same day",
+  "Follow @soles.neakers on IG",
+  "New inventory daily",
+  "Local pickups near Winston-Salem, High Point, Kernersville, Greensboro NC",
+  "Always buying. DM me to get cashed out",
+];
+
 interface NavbarProps {
   isAuthenticated?: boolean;
   userEmail?: string;
@@ -59,8 +67,22 @@ export function Navbar({
     "inline-flex whitespace-nowrap text-xs font-semibold uppercase text-zinc-700 transition-all duration-150 hover:text-black hover:font-bold";
 
   return (
-    <nav className="h-20 w-full border-b border-zinc-200 bg-[var(--storefront-surface)] text-black sm:h-24">
-      <div className="relative h-full px-5 sm:px-8 lg:px-14">
+    <nav className="w-full bg-[var(--storefront-surface)] text-black">
+      <div className="storefront-marquee border-b border-black bg-black text-white">
+        <div className="storefront-marquee__track" aria-hidden="true">
+          {[0, 1].map((copyIndex) => (
+            <div key={copyIndex} className="storefront-marquee__group">
+              {announcementItems.map((item) => (
+                <span key={`${copyIndex}-${item}`} className="storefront-marquee__item">
+                  {item}
+                </span>
+              ))}
+            </div>
+          ))}
+        </div>
+      </div>
+
+      <div className="relative h-20 border-b border-zinc-200 px-5 sm:h-24 sm:px-8 lg:px-14">
         <div className="absolute left-5 top-1/2 -translate-y-1/2 sm:left-8 lg:left-14">
           <button
             type="button"
