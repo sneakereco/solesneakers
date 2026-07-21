@@ -5,12 +5,9 @@ import Image from "next/image";
 import Link from "next/link";
 import { usePathname } from "next/navigation";
 import {
-  ArrowUpRight,
   ChevronDown,
-  LogOut,
   Menu,
   Search,
-  Settings,
   ShoppingCart,
   User,
 } from "lucide-react";
@@ -147,22 +144,22 @@ export function Navbar({
                   <ChevronDown className="h-3.5 w-3.5 -rotate-180 transition-transform duration-200 group-hover:rotate-0" />
                 </button>
 
-                <div className="pointer-events-none absolute right-0 top-full z-50 pt-4 opacity-0 transition duration-200 group-hover:pointer-events-auto group-hover:opacity-100">
-                  <div className="min-w-full translate-y-2 border border-zinc-200 bg-[var(--storefront-surface)] text-black shadow-[0_20px_50px_rgba(0,0,0,0.14)] transition duration-200 group-hover:translate-y-0">
+                <div className="pointer-events-none absolute right-0 top-full z-50 pt-4 opacity-0 transition duration-150 group-hover:pointer-events-auto group-hover:opacity-100">
+                  <div className="min-w-full translate-y-1 border border-zinc-200 bg-[var(--storefront-surface)] text-black shadow-[0_20px_50px_rgba(0,0,0,0.14)] transition duration-150 group-hover:translate-y-0">
                     {showAdminDashboardLink && (
                       <Link
                         href="/admin"
-                        className="flex translate-y-1 items-center justify-between gap-3 px-4 py-3 text-sm text-zinc-900 opacity-0 transition duration-200 delay-75 group-hover:translate-y-0 group-hover:opacity-100 hover:bg-black hover:text-white"
+                        className="block border-t border-zinc-200 px-4 py-3 text-left text-xs font-semibold uppercase text-zinc-700 transition-colors duration-150 hover:text-black"
+                        style={{ letterSpacing: "0.02em" }}
                       >
-                        <span>To Admin Dashboard</span>
-                        <ArrowUpRight className="h-4 w-4" />
+                        To Admin Dashboard
                       </Link>
                     )}
                     <Link
                       href="/account"
-                      className="flex translate-y-1 items-center gap-3 px-4 py-3 text-sm text-zinc-900 opacity-0 transition duration-200 delay-100 group-hover:translate-y-0 group-hover:opacity-100 hover:bg-black hover:text-white"
+                      className="block px-4 py-3 text-left text-xs font-semibold uppercase text-zinc-700 transition-colors duration-150 hover:text-black"
+                      style={{ letterSpacing: "0.02em" }}
                     >
-                      <Settings className="h-4 w-4" />
                       Account Settings
                     </Link>
                     <button
@@ -170,9 +167,9 @@ export function Navbar({
                       onClick={() => {
                         void handleLogout();
                       }}
-                      className="flex w-full translate-y-1 items-center gap-3 border-t border-zinc-200 px-4 py-3 text-left text-sm text-zinc-900 opacity-0 transition duration-200 delay-150 group-hover:translate-y-0 group-hover:opacity-100 hover:bg-black hover:text-white"
+                      className="block w-full px-4 py-3 text-left text-xs font-semibold uppercase text-zinc-700 transition-colors duration-150 hover:text-black"
+                      style={{ letterSpacing: "0.02em" }}
                     >
-                      <LogOut className="h-4 w-4" />
                       Logout
                     </button>
                   </div>
