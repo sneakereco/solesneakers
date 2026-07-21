@@ -6,6 +6,7 @@ import { StorefrontFilterBar } from "@/components/store/StorefrontFilterBar";
 import { createSupabasePublicClient } from "@/lib/supabase/public";
 import { storeProductsQuerySchema } from "@/lib/validation/storefront";
 import type { ProductFilters } from "@/repositories/product-repo";
+import { TagTaxonomyRepository } from "@/repositories/tag-taxonomy-repo";
 import { StorefrontService } from "@/services/storefront-service";
 
 export const revalidate = 60;
@@ -106,10 +107,13 @@ export default async function StorePage({
   });
   const storeHref = storeQueryParams.size > 0 ? `/store?${storeQueryParams}` : "/store";
 
-  const service = new StorefrontService(createSupabasePublicClient());
-  const [initialProductsResult, filterData] = await Promise.all([
+  const supabase = createSupabasePublicClient();
+  const service = new StorefrontService(supabase);
+  const taxonomyRepo = new TagTaxonomyRepository(supabase);
+  const [initialProductsResult, filterData, taxonomyBrands] = await Promise.all([
     service.listProducts(filters),
     service.listFilters({ filters }),
+    taxonomyRepo.listBrands(),
   ]);
 
   let productsResult = initialProductsResult;
@@ -127,6 +131,10 @@ export default async function StorePage({
   const priceLabel = formatPriceLabel(priceMin, priceMax);
   const facetLabels = new Map(
     [
+      ...taxonomyBrands.map((brand) => ({
+        id: brand.id,
+        label: brand.canonical_label,
+      })),
       ...filterData.brands,
       ...filterData.models,
       ...filterData.availableShoeSizes,
