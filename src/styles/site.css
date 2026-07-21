@@ -171,6 +171,26 @@ body:has([data-auth-shell]) {
 .storefront-marquee {
   overflow: hidden;
   white-space: nowrap;
+  max-height: 2.25rem;
+  opacity: 1;
+  transform: translateY(0);
+  transition:
+    max-height 220ms ease,
+    opacity 180ms ease,
+    transform 220ms ease,
+    border-color 180ms ease;
+}
+
+.storefront-marquee--visible {
+  max-height: 2.25rem;
+  opacity: 1;
+  transform: translateY(0);
+}
+
+.storefront-marquee--hidden {
+  max-height: 0;
+  opacity: 0;
+  transform: translateY(-0.35rem);
 }
 
 .storefront-marquee__track {

@@ -32,12 +32,14 @@ interface NavbarProps {
   userEmail?: string;
   cartCount?: number;
   role?: ProfileRole | null;
+  showAnnouncement?: boolean;
 }
 
 export function Navbar({
   isAuthenticated = false,
   userEmail,
   cartCount = 0,
+  showAnnouncement = true,
 }: NavbarProps) {
   const pathname = usePathname();
   const { user, isAuthenticated: sessionIsAuthenticated, isLoading } = useSession();
@@ -68,7 +70,14 @@ export function Navbar({
 
   return (
     <nav className="w-full bg-[var(--storefront-surface)] text-black">
-      <div className="storefront-marquee border-b border-black bg-black text-white">
+      <div
+        data-announcement-shell
+        className={`storefront-marquee bg-black text-white ${
+          showAnnouncement
+            ? "storefront-marquee--visible border-b border-black"
+            : "storefront-marquee--hidden border-b border-transparent"
+        }`}
+      >
         <div className="storefront-marquee__track" aria-hidden="true">
           {[0, 1].map((copyIndex) => (
             <div key={copyIndex} className="storefront-marquee__group">
@@ -82,7 +91,10 @@ export function Navbar({
         </div>
       </div>
 
-      <div className="relative h-20 border-b border-zinc-200 px-5 sm:h-24 sm:px-8 lg:px-14">
+      <div
+        data-navbar-shell
+        className="relative h-20 border-b border-zinc-200 px-5 sm:h-24 sm:px-8 lg:px-14"
+      >
         <div className="absolute left-5 top-1/2 -translate-y-1/2 sm:left-8 lg:left-14">
           <button
             type="button"
@@ -101,7 +113,7 @@ export function Navbar({
         >
           <div className="flex items-center justify-center">
             <Image
-              src="/images/logo.jpg"
+              src="/images/logo.png"
               alt="Sole Sneakers"
               width={124}
               height={124}

@@ -48,7 +48,7 @@ export function ClientShell({
         />
         <main
           className="min-h-screen bg-[var(--storefront-surface)] pb-20 text-black md:pb-0"
-          style={{ paddingTop: "var(--rdk-header-offset, 5rem)" }}
+          style={{ paddingTop: "var(--rdk-header-height, 5rem)" }}
         >
           {children}
         </main>

@@ -1,6 +1,6 @@
 "use client";
 
-import { useEffect, useRef } from "react";
+import { useEffect, useRef, useState } from "react";
 
 import { useCart } from "@/components/cart/CartProvider";
 import type { ProfileRole } from "@/config/constants/roles";
@@ -13,8 +13,13 @@ interface ScrollHeaderProps {
   role?: ProfileRole | null;
 }
 
-const DIRECTION_THRESHOLD = 12;
+type HeaderStage = 0 | 1 | 2;
+
+const WHEEL_THRESHOLD = 28;
+const TOUCH_THRESHOLD = 36;
 const HEADER_TRANSITION = "transform 260ms cubic-bezier(0.22, 1, 0.36, 1)";
+const TOP_TOLERANCE = 1;
+const ANNOUNCEMENT_REVEAL_ZONE = 56;
 
 export function ScrollHeader({
   isAuthenticated = false,
@@ -23,6 +28,7 @@ export function ScrollHeader({
 }: ScrollHeaderProps) {
   const { itemCount } = useCart();
   const headerRef = useRef<HTMLElement | null>(null);
+  const [showAnnouncement, setShowAnnouncement] = useState(true);
 
   useEffect(() => {
     const header = headerRef.current;
@@ -32,101 +38,135 @@ export function ScrollHeader({
 
     const root = document.documentElement;
     const reducedMotion = window.matchMedia("(prefers-reduced-motion: reduce)");
-    let headerHeight = header.offsetHeight;
-    let lastScrollY = window.scrollY;
-    let direction: "up" | "down" | null = null;
-    let directionTravel = 0;
-    let hasClearedHeader = lastScrollY >= headerHeight;
-    let floatingVisible = false;
-    let animationFrame = 0;
+    const stageRef = {
+      current: window.scrollY <= TOP_TOLERANCE ? (2 as HeaderStage) : (1 as HeaderStage),
+    };
+    let maxHeaderHeight = header.offsetHeight;
+    let lastTouchY: number | null = null;
 
-    const applyPosition = (hiddenPixels: number, animate: boolean) => {
-      const clampedHiddenPixels = Math.min(headerHeight, Math.max(0, hiddenPixels));
-      const visibleHeight = Math.max(0, headerHeight - clampedHiddenPixels);
+    const getNavbarHeight = () => {
+      const navbar = header.querySelector<HTMLElement>("[data-navbar-shell]");
+      return navbar?.offsetHeight ?? header.offsetHeight;
+    };
 
+    const getAnnouncementHeight = () => {
+      const announcement = header.querySelector<HTMLElement>("[data-announcement-shell]");
+      return announcement?.scrollHeight ?? 0;
+    };
+
+    const getHeaderHeightForStage = (stage: HeaderStage) => {
+      return getNavbarHeight() + (stage === 2 ? getAnnouncementHeight() : 0);
+    };
+
+    const syncReservedHeight = () => {
+      maxHeaderHeight = Math.max(maxHeaderHeight, getHeaderHeightForStage(2));
+      root.style.setProperty("--rdk-header-height", `${maxHeaderHeight}px`);
+    };
+
+    const applyStage = (stage: HeaderStage, animate: boolean) => {
+      stageRef.current = stage;
+      const announcementVisible = stage === 2;
+      const navbarHeight = getNavbarHeight();
+      const headerHeight = getHeaderHeightForStage(stage);
+      const hiddenPixels = stage === 0 ? navbarHeight : 0;
+      const visibleHeight = Math.max(0, headerHeight - hiddenPixels);
+
+      setShowAnnouncement(announcementVisible);
+      syncReservedHeight();
       header.style.transition =
         animate && !reducedMotion.matches ? HEADER_TRANSITION : "none";
-      header.style.transform = `translate3d(0, -${clampedHiddenPixels}px, 0)`;
+      header.style.transform = `translate3d(0, -${hiddenPixels}px, 0)`;
       root.style.setProperty("--rdk-header-offset", `${visibleHeight}px`);
       root.style.setProperty("--rdk-visible-header-height", `${visibleHeight}px`);
     };
 
-    const update = () => {
-      animationFrame = 0;
+    const advanceStage = (direction: "up" | "down") => {
       const currentScrollY = Math.max(0, window.scrollY);
-      const delta = currentScrollY - lastScrollY;
-      const nextDirection = delta > 0 ? "down" : delta < 0 ? "up" : direction;
+      const stage = stageRef.current;
 
-      if (nextDirection && nextDirection !== direction) {
-        direction = nextDirection;
-        directionTravel = 0;
-      }
-      directionTravel += Math.abs(delta);
-
-      if (!hasClearedHeader && currentScrollY < headerHeight) {
-        // Before the header has naturally left the viewport, move it exactly
-        // with the page instead of invoking floating-header behavior.
-        applyPosition(currentScrollY, false);
-      } else {
-        if (!hasClearedHeader) {
-          hasClearedHeader = true;
-          floatingVisible = false;
+      if (direction === "down") {
+        if (stage === 2) {
+          applyStage(1, true);
+          return;
         }
 
-        if (currentScrollY > headerHeight) {
-          if (directionTravel >= DIRECTION_THRESHOLD && direction === "up") {
-            floatingVisible = true;
-            directionTravel = 0;
-          } else if (directionTravel >= DIRECTION_THRESHOLD && direction === "down") {
-            floatingVisible = false;
-            directionTravel = 0;
-          }
-
-          applyPosition(floatingVisible ? 0 : headerHeight, true);
-        } else if (floatingVisible) {
-          // A revealed floating header remains stable while returning to the top.
-          applyPosition(0, true);
-        } else {
-          // If it stayed hidden, let it re-enter with its original document slot.
-          applyPosition(currentScrollY, false);
+        if (stage === 1 && currentScrollY > getNavbarHeight()) {
+          applyStage(0, true);
         }
+        return;
       }
 
-      if (currentScrollY <= 1) {
-        hasClearedHeader = false;
-        floatingVisible = false;
-        direction = null;
-        directionTravel = 0;
-        applyPosition(0, false);
+      if (stage === 0) {
+        applyStage(1, true);
+        return;
       }
 
-      lastScrollY = currentScrollY;
+      if (stage === 1 && currentScrollY <= ANNOUNCEMENT_REVEAL_ZONE) {
+        applyStage(2, true);
+      }
     };
 
-    const scheduleUpdate = () => {
-      if (!animationFrame) {
-        animationFrame = window.requestAnimationFrame(update);
+    const handleWheel = (event: WheelEvent) => {
+      if (Math.abs(event.deltaY) < WHEEL_THRESHOLD) {
+        return;
+      }
+
+      advanceStage(event.deltaY > 0 ? "down" : "up");
+    };
+
+    const handleTouchStart = (event: TouchEvent) => {
+      lastTouchY = event.touches[0]?.clientY ?? null;
+    };
+
+    const handleTouchEnd = (event: TouchEvent) => {
+      const endY = event.changedTouches[0]?.clientY;
+      if (lastTouchY == null || typeof endY !== "number") {
+        lastTouchY = null;
+        return;
+      }
+
+      const deltaY = lastTouchY - endY;
+      lastTouchY = null;
+
+      if (Math.abs(deltaY) < TOUCH_THRESHOLD) {
+        return;
+      }
+
+      advanceStage(deltaY > 0 ? "down" : "up");
+    };
+
+    const handleScroll = () => {
+      if (window.scrollY <= TOP_TOLERANCE && stageRef.current !== 2) {
+        applyStage(2, false);
       }
     };
 
     const handleResize = () => {
-      headerHeight = header.offsetHeight;
-      scheduleUpdate();
+      syncReservedHeight();
+      applyStage(stageRef.current, false);
     };
 
-    applyPosition(
-      hasClearedHeader ? headerHeight : Math.min(lastScrollY, headerHeight),
-      false,
-    );
-    window.addEventListener("scroll", scheduleUpdate, { passive: true });
+    const resizeObserver = new ResizeObserver(() => {
+      syncReservedHeight();
+      applyStage(stageRef.current, false);
+    });
+
+    resizeObserver.observe(header);
+    applyStage(stageRef.current, false);
+    window.addEventListener("wheel", handleWheel, { passive: true });
+    window.addEventListener("touchstart", handleTouchStart, { passive: true });
+    window.addEventListener("touchend", handleTouchEnd, { passive: true });
+    window.addEventListener("scroll", handleScroll, { passive: true });
     window.addEventListener("resize", handleResize);
 
     return () => {
-      window.removeEventListener("scroll", scheduleUpdate);
+      window.removeEventListener("wheel", handleWheel);
+      window.removeEventListener("touchstart", handleTouchStart);
+      window.removeEventListener("touchend", handleTouchEnd);
+      window.removeEventListener("scroll", handleScroll);
       window.removeEventListener("resize", handleResize);
-      if (animationFrame) {
-        window.cancelAnimationFrame(animationFrame);
-      }
+      resizeObserver.disconnect();
+      root.style.removeProperty("--rdk-header-height");
       root.style.removeProperty("--rdk-header-offset");
       root.style.removeProperty("--rdk-visible-header-height");
     };
@@ -143,6 +183,7 @@ export function ScrollHeader({
         userEmail={userEmail}
         role={role}
         cartCount={itemCount}
+        showAnnouncement={showAnnouncement}
       />
     </header>
   );
