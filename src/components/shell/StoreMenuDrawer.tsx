@@ -22,6 +22,11 @@ type SizeOption = {
 
 type BrandOption = { id: string; label: string };
 
+const DRAWER_TRANSITION_MS = 460;
+const PANEL_TRANSITION_MS = 380;
+const COLLAPSIBLE_TRANSITION_MS = 360;
+const MENU_EASING = "cubic-bezier(0.76, 0, 0.24, 1)";
+
 const CATEGORY_LINKS = [
   { label: "Sneakers", value: "sneakers" },
   { label: "Clothing", value: "clothing" },
@@ -61,6 +66,37 @@ function DrawerLink({
   );
 }
 
+function CollapsibleContent({
+  children,
+  isOpen,
+}: {
+  children: React.ReactNode;
+  isOpen: boolean;
+}) {
+  return (
+    <div
+      className="grid transition-[grid-template-rows,opacity]"
+      style={{
+        gridTemplateRows: isOpen ? "1fr" : "0fr",
+        opacity: isOpen ? 1 : 0,
+        transitionDuration: `${COLLAPSIBLE_TRANSITION_MS}ms`,
+        transitionTimingFunction: MENU_EASING,
+      }}
+    >
+      <div
+        className="min-h-0 overflow-hidden transition-transform"
+        style={{
+          transform: isOpen ? "translateY(0)" : "translateY(-0.75rem)",
+          transitionDuration: `${COLLAPSIBLE_TRANSITION_MS}ms`,
+          transitionTimingFunction: MENU_EASING,
+        }}
+      >
+        {children}
+      </div>
+    </div>
+  );
+}
+
 function SizeGroup({
   category,
   isOpen,
@@ -88,8 +124,8 @@ function SizeGroup({
         {isOpen ? <Minus className="h-4 w-4" /> : <Plus className="h-4 w-4" />}
       </button>
 
-      {isOpen && (
-        <div className="mb-5 ml-2 border-l border-zinc-200 pl-6">
+      <CollapsibleContent isOpen={isOpen}>
+        <div className="mb-5 ml-2 border-l border-zinc-200 pl-6 pt-1">
           {options.map((option) => (
             <DrawerLink
               key={`${label}-${option.id}`}
@@ -100,7 +136,7 @@ function SizeGroup({
             </DrawerLink>
           ))}
         </div>
-      )}
+      </CollapsibleContent>
     </section>
   );
 }
@@ -125,7 +161,10 @@ function PanelHeader({ title, onBack }: { title: string; onBack: () => void }) {
 
 export function StoreMenuDrawer({ isOpen, onClose }: StoreMenuDrawerProps) {
   const [isMounted, setIsMounted] = useState(false);
+  const [shouldRender, setShouldRender] = useState(isOpen);
+  const [isVisible, setIsVisible] = useState(false);
   const [activePanel, setActivePanel] = useState<MenuPanel | null>(null);
+  const [isPanelVisible, setIsPanelVisible] = useState(false);
   const [expandedSizes, setExpandedSizes] = useState<Record<string, boolean>>({});
   const [expandedBrandSections, setExpandedBrandSections] = useState<
     Record<string, boolean>
@@ -133,15 +172,42 @@ export function StoreMenuDrawer({ isOpen, onClose }: StoreMenuDrawerProps) {
   const [brands, setBrands] = useState<BrandOption[]>([]);
   const [sizes, setSizes] = useState<SizeOption[]>([]);
   const closeButtonRef = useRef<HTMLButtonElement>(null);
+  const panelTimeoutRef = useRef<number | null>(null);
   const closeFromEffect = useEffectEvent(onClose);
 
   useEffect(() => {
     setIsMounted(true);
+    return () => {
+      if (panelTimeoutRef.current !== null) {
+        window.clearTimeout(panelTimeoutRef.current);
+      }
+    };
   }, []);
 
   useEffect(() => {
-    if (!isOpen) {
+    if (isOpen) {
+      setShouldRender(true);
+      let secondFrame = 0;
+      const firstFrame = window.requestAnimationFrame(() => {
+        secondFrame = window.requestAnimationFrame(() => setIsVisible(true));
+      });
+      return () => {
+        window.cancelAnimationFrame(firstFrame);
+        window.cancelAnimationFrame(secondFrame);
+      };
+    }
+
+    setIsVisible(false);
+    const timeout = window.setTimeout(() => {
+      setShouldRender(false);
       setActivePanel(null);
+      setIsPanelVisible(false);
+    }, DRAWER_TRANSITION_MS);
+    return () => window.clearTimeout(timeout);
+  }, [isOpen]);
+
+  useEffect(() => {
+    if (!shouldRender) {
       return;
     }
 
@@ -160,7 +226,7 @@ export function StoreMenuDrawer({ isOpen, onClose }: StoreMenuDrawerProps) {
       document.body.style.overflow = previousOverflow;
       window.removeEventListener("keydown", handleKeyDown);
     };
-  }, [isOpen]);
+  }, [shouldRender]);
 
   useEffect(() => {
     if (!isOpen || (brands.length > 0 && sizes.length > 0)) {
@@ -182,13 +248,39 @@ export function StoreMenuDrawer({ isOpen, onClose }: StoreMenuDrawerProps) {
     return () => controller.abort();
   }, [brands.length, isOpen, sizes.length]);
 
-  if (!isMounted || !isOpen) {
+  if (!isMounted || !shouldRender) {
     return null;
   }
 
   const closeMenu = () => {
-    setActivePanel(null);
     onClose();
+  };
+
+  const openPanel = (panel: MenuPanel) => {
+    if (panelTimeoutRef.current !== null) {
+      window.clearTimeout(panelTimeoutRef.current);
+      panelTimeoutRef.current = null;
+    }
+
+    // Once the second column is open, swap its content without replaying its entrance.
+    if (activePanel && isPanelVisible) {
+      setActivePanel(panel);
+      return;
+    }
+
+    setActivePanel(panel);
+    window.requestAnimationFrame(() => setIsPanelVisible(true));
+  };
+
+  const closePanel = () => {
+    setIsPanelVisible(false);
+    if (panelTimeoutRef.current !== null) {
+      window.clearTimeout(panelTimeoutRef.current);
+    }
+    panelTimeoutRef.current = window.setTimeout(() => {
+      setActivePanel(null);
+      panelTimeoutRef.current = null;
+    }, PANEL_TRANSITION_MS);
   };
 
   const toggleSize = (key: string) => {
@@ -236,7 +328,13 @@ export function StoreMenuDrawer({ isOpen, onClose }: StoreMenuDrawerProps) {
 
   const drawer = (
     <div
-      className="fixed inset-0 z-[9999] bg-black/40"
+      className="fixed inset-0 z-[9999] transition-opacity"
+      style={{
+        backgroundColor: "rgba(0,0,0,0.46)",
+        opacity: isVisible ? 1 : 0,
+        transitionDuration: `${DRAWER_TRANSITION_MS}ms`,
+        transitionTimingFunction: MENU_EASING,
+      }}
       onMouseDown={(event) => {
         if (event.target === event.currentTarget) {
           closeMenu();
@@ -244,14 +342,19 @@ export function StoreMenuDrawer({ isOpen, onClose }: StoreMenuDrawerProps) {
       }}
     >
       <aside
-        className={`store-menu-drawer relative flex h-[100dvh] w-full overflow-hidden bg-white text-black shadow-2xl transition-[max-width] duration-300 ${
-          activePanel ? "max-w-[392px] md:max-w-[784px]" : "max-w-[392px]"
-        }`}
+        className="relative flex h-[100dvh] w-full overflow-hidden bg-white text-black shadow-2xl transition-[max-width,transform]"
+        style={{
+          maxWidth: isPanelVisible ? "784px" : "392px",
+          transform: isVisible ? "translate3d(0,0,0)" : "translate3d(-100%,0,0)",
+          transitionDuration: `${DRAWER_TRANSITION_MS}ms`,
+          transitionTimingFunction: MENU_EASING,
+          willChange: "transform, max-width",
+        }}
         role="dialog"
         aria-modal="true"
         aria-label="Store menu"
       >
-        <div className="h-full w-full shrink-0 bg-white md:w-[392px]">
+        <div className="h-full w-full shrink-0 bg-white md:w-[392px] md:border-r md:border-zinc-200">
           <div className="flex h-20 items-center px-6 md:px-8">
             <button
               ref={closeButtonRef}
@@ -275,9 +378,9 @@ export function StoreMenuDrawer({ isOpen, onClose }: StoreMenuDrawerProps) {
               <button
                 key={panel}
                 type="button"
-                onClick={() => setActivePanel(panel)}
+                onClick={() => openPanel(panel)}
                 className="flex min-h-[61px] w-full items-center justify-between border-b border-zinc-200 text-left text-[13px] font-normal uppercase tracking-[0.02em] text-zinc-800 transition-colors hover:text-black"
-                aria-expanded={activePanel === panel}
+                aria-expanded={activePanel === panel && isPanelVisible}
               >
                 <span>{label}</span>
                 <ChevronRight className="h-4 w-4" strokeWidth={1.5} />
@@ -294,118 +397,123 @@ export function StoreMenuDrawer({ isOpen, onClose }: StoreMenuDrawerProps) {
           </nav>
         </div>
 
-        {activePanel && (
-          <section className="store-menu-panel absolute inset-0 z-10 h-full w-full bg-white md:static md:w-[392px] md:shrink-0">
-            <PanelHeader title={panelTitle} onBack={() => setActivePanel(null)} />
+        <section
+          className="absolute inset-0 z-10 h-full w-full bg-white md:static md:w-[392px] md:shrink-0"
+          style={{
+            opacity: isPanelVisible ? 1 : 0,
+            transform: isPanelVisible ? "translate3d(0,0,0)" : "translate3d(2rem,0,0)",
+            pointerEvents: isPanelVisible ? "auto" : "none",
+            transitionProperty: "opacity, transform",
+            transitionDuration: `${PANEL_TRANSITION_MS}ms`,
+            transitionTimingFunction: MENU_EASING,
+            willChange: "opacity, transform",
+          }}
+        >
+          {activePanel && <PanelHeader title={panelTitle} onBack={closePanel} />}
 
-            <div className="h-[calc(100dvh-5rem)] overflow-y-auto overscroll-contain px-7 pb-10 md:px-8">
-              {activePanel === "brand" && (
-                <div>
-                  <DrawerLink href="/brands" onNavigate={closeMenu} variant="row">
-                    All Brands
-                  </DrawerLink>
-                  <section className="border-b border-zinc-200">
-                    <button
-                      type="button"
-                      onClick={() => toggleBrandSection("topBrands")}
-                      className="flex min-h-[61px] w-full items-center justify-between text-left text-[13px] font-normal uppercase tracking-[0.02em] text-zinc-800"
-                      aria-expanded={!!expandedBrandSections.topBrands}
-                    >
-                      <span>Top Brands</span>
-                      {expandedBrandSections.topBrands ? (
-                        <Minus className="h-4 w-4" />
-                      ) : (
-                        <Plus className="h-4 w-4" />
-                      )}
-                    </button>
-
-                    {expandedBrandSections.topBrands && (
-                      <div className="mb-5 ml-2 border-l border-zinc-200 pl-6">
-                        {topBrandLinks.map((brand) => (
-                          <DrawerLink
-                            key={brand.label}
-                            href={brand.href}
-                            onNavigate={closeMenu}
-                          >
-                            {brand.label}
-                          </DrawerLink>
-                        ))}
-                      </div>
+          <div className="h-[calc(100dvh-5rem)] overflow-y-auto overscroll-contain px-7 pb-10 md:px-8">
+            {activePanel === "brand" ? (
+              <div>
+                <DrawerLink href="/brands" onNavigate={closeMenu} variant="row">
+                  All Brands
+                </DrawerLink>
+                <section className="border-b border-zinc-200">
+                  <button
+                    type="button"
+                    onClick={() => toggleBrandSection("topBrands")}
+                    className="flex min-h-[61px] w-full items-center justify-between text-left text-[13px] font-normal uppercase tracking-[0.02em] text-zinc-800"
+                    aria-expanded={!!expandedBrandSections.topBrands}
+                  >
+                    <span>Top Brands</span>
+                    {expandedBrandSections.topBrands ? (
+                      <Minus className="h-4 w-4" />
+                    ) : (
+                      <Plus className="h-4 w-4" />
                     )}
-                  </section>
-                </div>
-              )}
+                  </button>
 
-              {activePanel === "category" && (
-                <div>
-                  {CATEGORY_LINKS.map((category) => (
-                    <DrawerLink
-                      key={category.value}
-                      href={buildStoreHref({ category: category.value })}
-                      onNavigate={closeMenu}
-                      variant="row"
-                    >
-                      {category.label}
-                    </DrawerLink>
-                  ))}
-                </div>
-              )}
-
-              {activePanel === "size" && (
-                <div>
-                  <SizeGroup
-                    label="Clothing"
-                    category="clothing"
-                    options={clothingOptions}
-                    isOpen={!!expandedSizes.clothing}
-                    onToggle={() => toggleSize("clothing")}
+                  <CollapsibleContent isOpen={!!expandedBrandSections.topBrands}>
+                    <div className="mb-5 ml-2 border-l border-zinc-200 pl-6 pt-1">
+                      {topBrandLinks.map((brand) => (
+                        <DrawerLink
+                          key={brand.label}
+                          href={brand.href}
+                          onNavigate={closeMenu}
+                        >
+                          {brand.label}
+                        </DrawerLink>
+                      ))}
+                    </div>
+                  </CollapsibleContent>
+                </section>
+              </div>
+            ) : activePanel === "category" ? (
+              <div>
+                {CATEGORY_LINKS.map((category) => (
+                  <DrawerLink
+                    key={category.value}
+                    href={buildStoreHref({ category: category.value })}
                     onNavigate={closeMenu}
-                  />
-                  <SizeGroup
-                    label="Jeans"
-                    category="clothing"
-                    options={jeanOptions}
-                    isOpen={!!expandedSizes.jeans}
-                    onToggle={() => toggleSize("jeans")}
-                    onNavigate={closeMenu}
-                  />
-                  <SizeGroup
-                    label="Men's"
-                    category="sneakers"
-                    options={mensOptions}
-                    isOpen={!!expandedSizes.mens}
-                    onToggle={() => toggleSize("mens")}
-                    onNavigate={closeMenu}
-                  />
-                  <SizeGroup
-                    label="Women's"
-                    category="sneakers"
-                    options={womensOptions}
-                    isOpen={!!expandedSizes.womens}
-                    onToggle={() => toggleSize("womens")}
-                    onNavigate={closeMenu}
-                  />
-                  <SizeGroup
-                    label="Youth"
-                    category="sneakers"
-                    options={youthOptions}
-                    isOpen={!!expandedSizes.youth}
-                    onToggle={() => toggleSize("youth")}
-                    onNavigate={closeMenu}
-                  />
-                  <SizeGroup
-                    label="European"
-                    category="sneakers"
-                    options={euOptions}
-                    isOpen={!!expandedSizes.eu}
-                    onToggle={() => toggleSize("eu")}
-                    onNavigate={closeMenu}
-                  />
-                </div>
-              )}
-            </div>
-          </section>
-        )}
+                    variant="row"
+                  >
+                    {category.label}
+                  </DrawerLink>
+                ))}
+              </div>
+            ) : activePanel === "size" ? (
+              <div>
+                <SizeGroup
+                  label="Clothing"
+                  category="clothing"
+                  options={clothingOptions}
+                  isOpen={!!expandedSizes.clothing}
+                  onToggle={() => toggleSize("clothing")}
+                  onNavigate={closeMenu}
+                />
+                <SizeGroup
+                  label="Jeans"
+                  category="clothing"
+                  options={jeanOptions}
+                  isOpen={!!expandedSizes.jeans}
+                  onToggle={() => toggleSize("jeans")}
+                  onNavigate={closeMenu}
+                />
+                <SizeGroup
+                  label="Men's"
+                  category="sneakers"
+                  options={mensOptions}
+                  isOpen={!!expandedSizes.mens}
+                  onToggle={() => toggleSize("mens")}
+                  onNavigate={closeMenu}
+                />
+                <SizeGroup
+                  label="Women's"
+                  category="sneakers"
+                  options={womensOptions}
+                  isOpen={!!expandedSizes.womens}
+                  onToggle={() => toggleSize("womens")}
+                  onNavigate={closeMenu}
+                />
+                <SizeGroup
+                  label="Youth"
+                  category="sneakers"
+                  options={youthOptions}
+                  isOpen={!!expandedSizes.youth}
+                  onToggle={() => toggleSize("youth")}
+                  onNavigate={closeMenu}
+                />
+                <SizeGroup
+                  label="European"
+                  category="sneakers"
+                  options={euOptions}
+                  isOpen={!!expandedSizes.eu}
+                  onToggle={() => toggleSize("eu")}
+                  onNavigate={closeMenu}
+                />
+              </div>
+            ) : null}
+          </div>
+        </section>
       </aside>
     </div>
   );
