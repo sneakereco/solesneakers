@@ -41,7 +41,12 @@ export function Navbar({
   showAnnouncement = true,
 }: NavbarProps) {
   const pathname = usePathname();
-  const { user, isAuthenticated: sessionIsAuthenticated, isLoading } = useSession();
+  const {
+    user,
+    role: sessionRole,
+    isAuthenticated: sessionIsAuthenticated,
+    isLoading,
+  } = useSession();
   const [isMenuOpen, setIsMenuOpen] = useState(false);
 
   const loginUrl = useMemo(() => {
@@ -62,7 +67,7 @@ export function Navbar({
 
   const effectiveIsAuthenticated = sessionIsAuthenticated || isAuthenticated;
   const effectiveUserEmail = user?.email ?? userEmail;
-  const effectiveRole = user?.role ?? role;
+  const effectiveRole = sessionRole ?? role;
   const showAdminDashboardLink =
     typeof effectiveRole === "string" && isAdminRole(effectiveRole);
   const showAuthButtons = !isLoading && !effectiveIsAuthenticated;

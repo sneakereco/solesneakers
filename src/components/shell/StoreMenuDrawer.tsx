@@ -5,6 +5,8 @@ import { createPortal } from "react-dom";
 import Link from "next/link";
 import { ChevronLeft, ChevronRight, Minus, Plus, X } from "lucide-react";
 
+import { TOP_BRAND_SHORTCUTS } from "@/config/constants/storefront";
+
 type MenuPanel = "brand" | "size" | "category";
 
 type StoreMenuDrawerProps = {
@@ -125,6 +127,9 @@ export function StoreMenuDrawer({ isOpen, onClose }: StoreMenuDrawerProps) {
   const [isMounted, setIsMounted] = useState(false);
   const [activePanel, setActivePanel] = useState<MenuPanel | null>(null);
   const [expandedSizes, setExpandedSizes] = useState<Record<string, boolean>>({});
+  const [expandedBrandSections, setExpandedBrandSections] = useState<
+    Record<string, boolean>
+  >({});
   const [brands, setBrands] = useState<BrandOption[]>([]);
   const [sizes, setSizes] = useState<SizeOption[]>([]);
   const closeButtonRef = useRef<HTMLButtonElement>(null);
@@ -189,6 +194,9 @@ export function StoreMenuDrawer({ isOpen, onClose }: StoreMenuDrawerProps) {
   const toggleSize = (key: string) => {
     setExpandedSizes((current) => ({ ...current, [key]: !current[key] }));
   };
+  const toggleBrandSection = (key: string) => {
+    setExpandedBrandSections((current) => ({ ...current, [key]: !current[key] }));
+  };
 
   const panelTitle =
     activePanel === "brand"
@@ -209,6 +217,22 @@ export function StoreMenuDrawer({ isOpen, onClose }: StoreMenuDrawerProps) {
   );
   const youthOptions = shoeOptions.filter((size) => /^\d+(?:\.\d+)?Y\b/.test(size.label));
   const euOptions = shoeOptions.filter((size) => size.label.startsWith("EU "));
+  const brandMap = new Map(
+    brands.map((brand) => [brand.label.trim().toLowerCase(), brand] as const),
+  );
+  const topBrandLinks = TOP_BRAND_SHORTCUTS.map((shortcut) => {
+    const matchedBrand = shortcut.brandLabel
+      ? brandMap.get(shortcut.brandLabel.trim().toLowerCase())
+      : null;
+    return {
+      label: shortcut.label,
+      href: matchedBrand
+        ? buildStoreHref({ brandIds: matchedBrand.id })
+        : shortcut.query
+          ? buildStoreHref({ q: shortcut.query })
+          : "/brands",
+    };
+  });
 
   const drawer = (
     <div
@@ -280,16 +304,35 @@ export function StoreMenuDrawer({ isOpen, onClose }: StoreMenuDrawerProps) {
                   <DrawerLink href="/brands" onNavigate={closeMenu} variant="row">
                     All Brands
                   </DrawerLink>
-                  {brands.map((brand) => (
-                    <DrawerLink
-                      key={brand.id}
-                      href={buildStoreHref({ brandIds: brand.id })}
-                      onNavigate={closeMenu}
-                      variant="row"
+                  <section className="border-b border-zinc-200">
+                    <button
+                      type="button"
+                      onClick={() => toggleBrandSection("topBrands")}
+                      className="flex min-h-[61px] w-full items-center justify-between text-left text-[13px] font-normal uppercase tracking-[0.02em] text-zinc-800"
+                      aria-expanded={!!expandedBrandSections.topBrands}
                     >
-                      {brand.label}
-                    </DrawerLink>
-                  ))}
+                      <span>Top Brands</span>
+                      {expandedBrandSections.topBrands ? (
+                        <Minus className="h-4 w-4" />
+                      ) : (
+                        <Plus className="h-4 w-4" />
+                      )}
+                    </button>
+
+                    {expandedBrandSections.topBrands && (
+                      <div className="mb-5 ml-2 border-l border-zinc-200 pl-6">
+                        {topBrandLinks.map((brand) => (
+                          <DrawerLink
+                            key={brand.label}
+                            href={brand.href}
+                            onNavigate={closeMenu}
+                          >
+                            {brand.label}
+                          </DrawerLink>
+                        ))}
+                      </div>
+                    )}
+                  </section>
                 </div>
               )}
 

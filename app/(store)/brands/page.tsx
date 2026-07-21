@@ -2,25 +2,39 @@ import Link from "next/link";
 import { unstable_cache } from "next/cache";
 
 import { createSupabasePublicClient } from "@/lib/supabase/public";
-import { StorefrontService } from "@/services/storefront-service";
+import { TagTaxonomyRepository } from "@/repositories/tag-taxonomy-repo";
 
 const BRANDS_REVALIDATE_SECONDS = 300;
 export const revalidate = 300;
 
-const listBrandLabelsCached = unstable_cache(
+type BrandOption = {
+  id: string;
+  label: string;
+};
+
+const listBrandsCached = unstable_cache(
   async () => {
     const supabase = createSupabasePublicClient();
-    const service = new StorefrontService(supabase);
-    const { brands } = await service.listFilters();
+    const repository = new TagTaxonomyRepository(supabase);
+    const brands = await repository.listBrands();
 
-    return Array.from(new Set(brands.map((brand) => brand.label).filter(Boolean)));
+    const seen = new Set<string>();
+    return brands.reduce<BrandOption[]>((entries, brand) => {
+      if (!brand.id || !brand.canonical_label || seen.has(brand.id)) {
+        return entries;
+      }
+      seen.add(brand.id);
+      entries.push({ id: brand.id, label: brand.canonical_label });
+      return entries;
+    }, []);
   },
   ["storefront", "brands"],
   { revalidate: BRANDS_REVALIDATE_SECONDS, tags: ["products:list"] },
 );
 
-function buildStoreHref(brand: string) {
-  const params = new URLSearchParams({ brand });
+function buildBrandHref(brandId: string) {
+  const params = new URLSearchParams();
+  params.append("brandIds", brandId);
   return `/store?${params.toString()}`;
 }
 
@@ -30,15 +44,15 @@ function normalizeLetter(label: string) {
 }
 
 export default async function BrandsPage() {
-  const labels = (await listBrandLabelsCached()).sort((a, b) =>
-    a.localeCompare(b, undefined, { sensitivity: "base" }),
+  const brands = (await listBrandsCached()).sort((a, b) =>
+    a.label.localeCompare(b.label, undefined, { sensitivity: "base" }),
   );
 
-  const groupedBrands = labels.reduce<Map<string, string[]>>((groups, label) => {
-    const letter = normalizeLetter(label);
-    const brands = groups.get(letter) ?? [];
-    brands.push(label);
-    groups.set(letter, brands);
+  const groupedBrands = brands.reduce<Map<string, BrandOption[]>>((groups, brand) => {
+    const letter = normalizeLetter(brand.label);
+    const entries = groups.get(letter) ?? [];
+    entries.push(brand);
+    groups.set(letter, entries);
     return groups;
   }, new Map());
 
@@ -53,26 +67,26 @@ export default async function BrandsPage() {
   });
 
   return (
-    <main className="min-h-screen border-t border-black/10 bg-[#f4f4f4] text-black">
-      <div className="mx-auto w-full max-w-[74rem] px-8 py-12 sm:px-12 sm:py-14 lg:px-16 lg:py-16">
+    <main className="min-h-screen bg-[#f4f4f4] text-black">
+      <div className="mx-auto w-full px-8 pb-20 pt-8 sm:px-12 sm:pt-9 lg:px-16">
         <h1 className="sr-only">Brands</h1>
 
         {brandGroups.length > 0 ? (
-          <div className="grid grid-cols-1 gap-x-20 gap-y-16 sm:grid-cols-2 lg:grid-cols-3 lg:gap-y-20">
-            {brandGroups.map(([letter, brands]) => (
+          <div className="mx-auto grid max-w-[64rem] grid-cols-1 gap-x-16 gap-y-16 sm:grid-cols-2 lg:grid-cols-3 lg:gap-y-[3.75rem]">
+            {brandGroups.map(([letter, brandsForLetter]) => (
               <section key={letter} className="text-center">
-                <h2 className="mb-5 text-[1.35rem] font-semibold leading-none tracking-[0.02em]">
+                <h2 className="mb-6 text-[1.3rem] font-semibold leading-none tracking-[0.02em]">
                   {letter}
                 </h2>
 
-                <ul className="space-y-3 text-[1.05rem] leading-7 sm:text-[1.1rem]">
-                  {brands.map((brand) => (
-                    <li key={brand}>
+                <ul className="space-y-2 text-[1.05rem] leading-8 sm:text-[1.1rem]">
+                  {brandsForLetter.map((brand) => (
+                    <li key={brand.id}>
                       <Link
-                        href={buildStoreHref(brand)}
-                        className="underline-offset-4 transition-opacity duration-200 hover:opacity-55 focus-visible:underline focus-visible:outline-none"
+                        href={buildBrandHref(brand.id)}
+                        className="underline-offset-4 hover:underline focus-visible:underline focus-visible:outline-none"
                       >
-                        {brand}
+                        {brand.label}
                       </Link>
                     </li>
                   ))}
