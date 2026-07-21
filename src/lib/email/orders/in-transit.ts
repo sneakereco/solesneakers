@@ -20,9 +20,9 @@ export const buildOrderInTransitEmail = (input: OrderInTransitEmailInput) => {
     <tr>
       <td style="padding:0 24px 10px;text-align:center;">
         <div style="${emailStyles.eyebrow}">On the way</div>
-        <h1 style="${emailStyles.heading}">Your order is in transit.</h1>
+        <h1 style="${emailStyles.heading}">Order #${orderShort}</h1>
         <p style="margin:10px 0 0;${emailStyles.copy}">
-          Your package is moving through the carrier network.
+          Your package is in transit.
         </p>
       </td>
     </tr>
@@ -48,11 +48,6 @@ export const buildOrderInTransitEmail = (input: OrderInTransitEmailInput) => {
     <tr>
       <td style="padding:20px 24px;text-align:left;">
         <a href="${buttonUrl}" style="${emailStyles.button}">${buttonLabel}</a>
-      </td>
-    </tr>
-    <tr>
-      <td style="padding:0 24px 24px;font-size:11px;line-height:1.6;color:${EMAIL_COLORS.subtle};">
-        If you have any questions, reply to this email and our team will help you out.
       </td>
     </tr>
   `;

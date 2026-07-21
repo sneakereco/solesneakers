@@ -59,7 +59,7 @@ export function Navbar({
     "inline-flex whitespace-nowrap text-xs font-semibold uppercase text-zinc-700 transition-all duration-150 hover:text-black hover:font-bold";
 
   return (
-    <nav className="h-28 w-full border-b border-zinc-200 bg-[var(--storefront-surface)] text-black sm:h-32">
+    <nav className="h-20 w-full border-b border-zinc-200 bg-[var(--storefront-surface)] text-black sm:h-24">
       <div className="relative h-full px-5 sm:px-8 lg:px-14">
         <div className="absolute left-5 top-1/2 -translate-y-1/2 sm:left-8 lg:left-14">
           <button
@@ -68,7 +68,7 @@ export function Navbar({
             className="inline-flex items-center gap-3 text-zinc-800 transition-colors hover:text-black"
             aria-label="Open menu"
           >
-            <Menu className="h-9 w-9 sm:h-10 sm:w-10" strokeWidth={1.7} />
+            <Menu className="h-8 w-8 sm:h-9 sm:w-9" strokeWidth={1.7} />
           </button>
         </div>
 
@@ -84,7 +84,7 @@ export function Navbar({
               width={124}
               height={124}
               sizes="124px"
-              className="h-[98px] w-[98px] object-contain sm:h-[124px] sm:w-[124px]"
+              className="h-[96px] w-[96px] object-contain sm:h-[118px] sm:w-[118px]"
               priority
               unoptimized
             />

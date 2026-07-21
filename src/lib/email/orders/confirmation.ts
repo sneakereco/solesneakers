@@ -141,9 +141,9 @@ export const buildOrderConfirmationEmail = (input: OrderConfirmationEmailInput) 
       <tr>
         <td style="padding:0 24px 10px;text-align:center;">
           <div style="${emailStyles.eyebrow}">Order confirmed</div>
-          <h1 style="${emailStyles.heading}">Thanks for shopping with us.</h1>
+          <h1 style="${emailStyles.heading}">Order #${safeText(orderShort)}</h1>
           <p style="margin:10px 0 0;${emailStyles.copy}">
-            Your order is locked in and we are preparing it now.
+            Confirmed and being prepared now.
           </p>
         </td>
       </tr>
@@ -215,11 +215,6 @@ export const buildOrderConfirmationEmail = (input: OrderConfirmationEmailInput) 
       <tr>
         <td style="padding:20px 24px;text-align:left;">
           <a href="${orderUrlSafe}" style="${emailStyles.button}">View your order</a>
-        </td>
-      </tr>
-      <tr>
-        <td style="padding:0 24px 24px;font-size:11px;line-height:1.6;color:${EMAIL_COLORS.subtle};">
-          If you have any questions, reply to this email and our team will help you out.
         </td>
       </tr>
     `;

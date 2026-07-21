@@ -31,36 +31,34 @@ export default function HomePage() {
     <div className="bg-black">
       <section
         className="relative overflow-hidden bg-black text-white"
-        style={{ height: "70vh" }}
+        style={{ height: "min(66vh, 720px)" }}
       >
         <Image
-          src="/images/hero-reference-3209.png"
+          src="/images/hero.jpg"
           alt="Sole Sneakers inventory stacked in a trunk"
           fill
           priority
           sizes="100vw"
-          className="object-cover object-[54%_24%]"
+          className="object-cover object-[50%_34%]"
         />
-        <div className="absolute inset-0 bg-[linear-gradient(90deg,rgba(0,0,0,0.78)_0%,rgba(0,0,0,0.52)_26%,rgba(0,0,0,0.18)_52%,rgba(0,0,0,0.38)_100%)]" />
-        <div className="absolute inset-0 bg-[radial-gradient(circle_at_center,rgba(255,255,255,0.06),transparent_28%),linear-gradient(180deg,rgba(0,0,0,0.12)_0%,rgba(0,0,0,0.36)_100%)]" />
+        <div className="absolute inset-0 bg-[linear-gradient(180deg,rgba(0,0,0,0.08)_0%,rgba(0,0,0,0.18)_34%,rgba(0,0,0,0.42)_100%)]" />
+        <div className="absolute inset-0 bg-[radial-gradient(circle_at_50%_42%,rgba(0,0,0,0.42),transparent_30%),linear-gradient(90deg,rgba(0,0,0,0.48)_18%,rgba(0,0,0,0.14)_46%,rgba(0,0,0,0.16)_100%)]" />
 
-        <div
-          className="relative z-10 mx-auto flex h-full max-w-7xl items-center justify-center px-4 py-20 text-center sm:px-6 lg:px-8"
-          style={{ minHeight: "125vh" }}
-        >
-          <div className="max-w-5xl">
-            <h1 className="mx-auto max-w-5xl text-center text-[3.85rem] font-bold italic uppercase leading-[0.92] tracking-[-0.05em] text-white sm:text-[5.2rem] lg:text-[6.25rem]">
+        <div className="relative z-10 flex h-full w-full items-end justify-center px-5 pb-20 pt-16 text-center sm:px-6 sm:pb-24 lg:px-8 lg:pb-28">
+          <div className="max-w-[44rem] text-center">
+            <h1 className="max-w-4xl text-[2.5rem] font-bold italic uppercase leading-[0.9] tracking-[-0.05em] text-white sm:text-[3.5rem] lg:text-[4.55rem] xl:text-[5rem]">
               Curated heat.
               <br />
-              In hand now.
-              <br />
-              Ready to ship.
+              Available now.
             </h1>
+            <p className="mx-auto mt-5 max-w-xl text-sm text-white/80 sm:text-base">
+              Ready-to-ship pairs sourced with care and authenticity.
+            </p>
 
-            <div className="mt-12 flex justify-center">
+            <div className="mt-8 flex justify-center">
               <Link
                 href="/store"
-                className="inline-flex min-w-[220px] items-center justify-center rounded-full bg-[#1e1e1e] px-14 py-5 text-[1.3rem] font-medium text-white shadow-[0_24px_50px_rgba(0,0,0,0.38)] transition-colors hover:bg-[#161616] sm:min-w-[240px] sm:text-[1.4rem]"
+                className="inline-flex min-w-[190px] items-center justify-center rounded-full bg-white px-9 py-4 text-sm font-semibold uppercase tracking-[0.24em] text-black shadow-[0_20px_40px_rgba(0,0,0,0.28)] transition-all duration-200 hover:-translate-y-0.5 hover:bg-zinc-200 sm:min-w-[210px]"
               >
                 Shop Now
               </Link>

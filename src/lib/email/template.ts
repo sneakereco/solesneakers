@@ -34,7 +34,6 @@ export const renderEmailLayout = ({
                 <td style="${emailStyles.logoCell}">
                   <div style="${emailStyles.wordmarkWrap}">
                     <p style="${emailStyles.wordmark}">${EMAIL_BRAND.name}</p>
-                    <p style="${emailStyles.kicker}">${EMAIL_BRAND.kicker}</p>
                   </div>
                 </td>
               </tr>

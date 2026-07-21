@@ -46,7 +46,10 @@ export function ClientShell({
           userEmail={userEmail ?? undefined}
           role={role}
         />
-        <main className="min-h-screen bg-[var(--storefront-surface)] pt-28 pb-20 text-black sm:pt-32 md:pb-0">
+        <main
+          className="min-h-screen bg-[var(--storefront-surface)] pb-20 text-black md:pb-0"
+          style={{ paddingTop: "var(--rdk-header-offset, 5rem)" }}
+        >
           {children}
         </main>
       </div>

@@ -19,9 +19,9 @@ export const buildOrderDeliveredEmail = (input: OrderDeliveredEmailInput) => {
     <tr>
       <td style="padding:0 24px 10px;text-align:center;">
         <div style="${emailStyles.eyebrow}">Delivered</div>
-        <h1 style="${emailStyles.heading}">Your order has arrived.</h1>
+        <h1 style="${emailStyles.heading}">Order #${orderShort}</h1>
         <p style="margin:10px 0 0;${emailStyles.copy}">
-          If anything looks off, reply to this email and we'll help.
+          Marked as delivered.
         </p>
       </td>
     </tr>
@@ -47,11 +47,6 @@ export const buildOrderDeliveredEmail = (input: OrderDeliveredEmailInput) => {
     <tr>
       <td style="padding:20px 24px;text-align:left;">
         <a href="${buttonUrl}" style="${emailStyles.button}">View tracking</a>
-      </td>
-    </tr>
-    <tr>
-      <td style="padding:0 24px 24px;font-size:11px;line-height:1.6;color:${EMAIL_COLORS.subtle};">
-        If you have any questions, reply to this email and our team will help you out.
       </td>
     </tr>
   `;

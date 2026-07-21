@@ -17,9 +17,9 @@ export const buildOrderRefundedEmail = (input: OrderRefundedEmailInput) => {
     <tr>
       <td style="padding:0 24px 10px;text-align:center;">
         <div style="${emailStyles.eyebrow}">Refund processed</div>
-        <h1 style="${emailStyles.heading}">Your refund has been issued.</h1>
+        <h1 style="${emailStyles.heading}">Order #${orderShort}</h1>
         <p style="margin:10px 0 0;${emailStyles.copy}">
-          The refund should appear in your account within 5-10 business days.
+          Refund issued. Bank posting times may vary.
         </p>
       </td>
     </tr>
@@ -46,11 +46,6 @@ export const buildOrderRefundedEmail = (input: OrderRefundedEmailInput) => {
     <tr>
       <td style="padding:20px 24px;text-align:left;">
         <a href="${orderUrl}" style="${emailStyles.button}">View your order</a>
-      </td>
-    </tr>
-    <tr>
-      <td style="padding:0 24px 24px;font-size:11px;line-height:1.6;color:${EMAIL_COLORS.subtle};">
-        If you have any questions about this refund, reply to this email and our team will help you out.
       </td>
     </tr>
   `;
