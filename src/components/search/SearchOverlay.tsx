@@ -1,6 +1,13 @@
 "use client";
 
-import { startTransition, useEffect, useMemo, useRef, useState } from "react";
+import {
+  startTransition,
+  useCallback,
+  useEffect,
+  useMemo,
+  useRef,
+  useState,
+} from "react";
 import Image from "next/image";
 import Link from "next/link";
 import { useRouter } from "next/navigation";
@@ -41,6 +48,8 @@ const priceFormatter = new Intl.NumberFormat("en-US", {
   minimumFractionDigits: 0,
   maximumFractionDigits: 2,
 });
+
+const SEARCH_EXIT_DURATION_MS = 180;
 
 function getProductImage(product: SearchResult) {
   const images = product.images ?? [];
@@ -110,11 +119,13 @@ function buildSuggestions(results: SearchResult[], query: string) {
 export function SearchOverlay({ isOpen, onClose }: SearchOverlayProps) {
   const router = useRouter();
   const inputRef = useRef<HTMLInputElement>(null);
+  const closeTimerRef = useRef<number | null>(null);
   const [query, setQuery] = useState("");
   const [results, setResults] = useState<SearchResult[]>([]);
   const [total, setTotal] = useState(0);
   const [isLoading, setIsLoading] = useState(false);
   const [searchError, setSearchError] = useState<string | null>(null);
+  const [isClosing, setIsClosing] = useState(false);
 
   const normalizedQuery = query.trim();
   const suggestions = useMemo(
@@ -122,14 +133,35 @@ export function SearchOverlay({ isOpen, onClose }: SearchOverlayProps) {
     [normalizedQuery, results],
   );
 
-  const closeSearch = () => {
-    setQuery("");
-    setResults([]);
-    setTotal(0);
-    setIsLoading(false);
-    setSearchError(null);
-    onClose();
-  };
+  const closeSearch = useCallback(() => {
+    if (closeTimerRef.current !== null) {
+      return;
+    }
+
+    setIsClosing(true);
+    const reducedMotion = window.matchMedia("(prefers-reduced-motion: reduce)").matches;
+    closeTimerRef.current = window.setTimeout(
+      () => {
+        setQuery("");
+        setResults([]);
+        setTotal(0);
+        setIsLoading(false);
+        setSearchError(null);
+        setIsClosing(false);
+        closeTimerRef.current = null;
+        onClose();
+      },
+      reducedMotion ? 0 : SEARCH_EXIT_DURATION_MS,
+    );
+  }, [onClose]);
+
+  useEffect(() => {
+    return () => {
+      if (closeTimerRef.current !== null) {
+        window.clearTimeout(closeTimerRef.current);
+      }
+    };
+  }, []);
 
   useEffect(() => {
     if (!isOpen) {
@@ -142,12 +174,7 @@ export function SearchOverlay({ isOpen, onClose }: SearchOverlayProps) {
 
     const handleKeyDown = (event: KeyboardEvent) => {
       if (event.key === "Escape") {
-        setQuery("");
-        setResults([]);
-        setTotal(0);
-        setIsLoading(false);
-        setSearchError(null);
-        onClose();
+        closeSearch();
       }
     };
 
@@ -158,7 +185,7 @@ export function SearchOverlay({ isOpen, onClose }: SearchOverlayProps) {
       window.removeEventListener("keydown", handleKeyDown);
       document.body.style.overflow = previousOverflow;
     };
-  }, [isOpen, onClose]);
+  }, [isOpen, closeSearch]);
 
   useEffect(() => {
     if (!isOpen || !normalizedQuery) {
@@ -238,15 +265,21 @@ export function SearchOverlay({ isOpen, onClose }: SearchOverlayProps) {
     >
       <button
         type="button"
-        className="search-overlay-backdrop absolute inset-0 bg-black/40"
+        className={`search-overlay-backdrop absolute inset-0 bg-black/40 ${
+          isClosing ? "search-overlay-backdrop--closing" : ""
+        }`}
         onClick={closeSearch}
         aria-label="Close search"
       />
 
-      <div className="search-drop-panel relative">
+      <div
+        className={`search-drop-panel relative ${
+          isClosing ? "search-drop-panel--closing" : ""
+        }`}
+      >
         <form
           onSubmit={handleSubmit}
-          className="flex h-20 items-center border-b border-zinc-300 bg-[#f7f7f5] px-5 text-black sm:h-24 sm:px-10 lg:px-[3.75rem]"
+          className="flex h-20 items-center border-y border-zinc-300 bg-[#f7f7f5] px-5 text-black sm:h-24 sm:px-10 lg:px-[3.75rem]"
           role="search"
         >
           <Search className="h-5 w-5 shrink-0 sm:h-6 sm:w-6" strokeWidth={1.6} />

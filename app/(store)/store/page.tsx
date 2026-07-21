@@ -155,7 +155,7 @@ export default async function StorePage({
   const browseLabel = query
     ? `Search: "${query}"`
     : activeFilterLabels.length === 0
-      ? "New Arrivals"
+      ? "Shop All"
       : activeFilterLabels.length === 1
         ? activeFilterLabels[0]
         : "Filtered Collection";
