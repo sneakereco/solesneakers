@@ -5,6 +5,7 @@ import Image from "next/image";
 import Link from "next/link";
 import { usePathname } from "next/navigation";
 import {
+  ArrowUpRight,
   ChevronDown,
   LogOut,
   Menu,
@@ -14,7 +15,7 @@ import {
   User,
 } from "lucide-react";
 
-import type { ProfileRole } from "@/config/constants/roles";
+import { isAdminRole, type ProfileRole } from "@/config/constants/roles";
 import { useSession } from "@/contexts/SessionContext";
 
 import { StoreMenuDrawer } from "./StoreMenuDrawer";
@@ -39,6 +40,7 @@ export function Navbar({
   isAuthenticated = false,
   userEmail,
   cartCount = 0,
+  role = null,
   showAnnouncement = true,
 }: NavbarProps) {
   const pathname = usePathname();
@@ -63,6 +65,9 @@ export function Navbar({
 
   const effectiveIsAuthenticated = sessionIsAuthenticated || isAuthenticated;
   const effectiveUserEmail = user?.email ?? userEmail;
+  const effectiveRole = user?.role ?? role;
+  const showAdminDashboardLink =
+    typeof effectiveRole === "string" && isAdminRole(effectiveRole);
   const showAuthButtons = !isLoading && !effectiveIsAuthenticated;
 
   const actionClassName =
@@ -128,28 +133,34 @@ export function Navbar({
         <div className="absolute right-6 top-1/2 hidden -translate-y-1/2 md:flex sm:right-8 lg:right-14">
           <div className="flex items-center" style={{ gap: "1.75rem" }}>
             {effectiveIsAuthenticated ? (
-              <div className="group relative">
+              <div className="group relative inline-flex">
                 <button
                   type="button"
-                  className="inline-flex items-center gap-1 whitespace-nowrap text-xs font-semibold uppercase text-zinc-700 transition-all duration-150 hover:text-black hover:font-bold"
+                  className="inline-flex max-w-[15rem] items-center gap-1 text-xs font-semibold uppercase text-zinc-700 transition-colors duration-150 hover:text-black"
                   style={{ letterSpacing: "0.02em" }}
                   aria-label="Account"
                   data-testid="navbar-user-menu"
                 >
-                  <span>Login</span>
-                  <ChevronDown className="h-3.5 w-3.5" />
+                  <span className="truncate">
+                    {effectiveUserEmail ?? "Account"}
+                  </span>
+                  <ChevronDown className="h-3.5 w-3.5 -rotate-180 transition-transform duration-200 group-hover:rotate-0" />
                 </button>
 
-                <div className="pointer-events-none absolute right-0 top-full z-50 pt-3 opacity-0 transition duration-150 group-hover:pointer-events-auto group-hover:opacity-100">
-                  <div className="w-64 border border-zinc-200 bg-white p-2 text-black shadow-2xl">
-                    {effectiveUserEmail && (
-                      <div className="border-b border-zinc-200 px-3 py-3 text-xs text-zinc-500">
-                        {effectiveUserEmail}
-                      </div>
+                <div className="pointer-events-none absolute right-0 top-full z-50 pt-4 opacity-0 transition duration-200 group-hover:pointer-events-auto group-hover:opacity-100">
+                  <div className="min-w-full translate-y-2 border border-zinc-200 bg-[var(--storefront-surface)] text-black shadow-[0_20px_50px_rgba(0,0,0,0.14)] transition duration-200 group-hover:translate-y-0">
+                    {showAdminDashboardLink && (
+                      <Link
+                        href="/admin"
+                        className="flex translate-y-1 items-center justify-between gap-3 px-4 py-3 text-sm text-zinc-900 opacity-0 transition duration-200 delay-75 group-hover:translate-y-0 group-hover:opacity-100 hover:bg-black hover:text-white"
+                      >
+                        <span>To Admin Dashboard</span>
+                        <ArrowUpRight className="h-4 w-4" />
+                      </Link>
                     )}
                     <Link
                       href="/account"
-                      className="mt-1 flex items-center gap-2 px-3 py-3 text-sm transition-colors hover:bg-zinc-100"
+                      className="flex translate-y-1 items-center gap-3 px-4 py-3 text-sm text-zinc-900 opacity-0 transition duration-200 delay-100 group-hover:translate-y-0 group-hover:opacity-100 hover:bg-black hover:text-white"
                     >
                       <Settings className="h-4 w-4" />
                       Account Settings
@@ -159,7 +170,7 @@ export function Navbar({
                       onClick={() => {
                         void handleLogout();
                       }}
-                      className="flex w-full items-center gap-2 px-3 py-3 text-left text-sm transition-colors hover:bg-zinc-100"
+                      className="flex w-full translate-y-1 items-center gap-3 border-t border-zinc-200 px-4 py-3 text-left text-sm text-zinc-900 opacity-0 transition duration-200 delay-150 group-hover:translate-y-0 group-hover:opacity-100 hover:bg-black hover:text-white"
                     >
                       <LogOut className="h-4 w-4" />
                       Logout

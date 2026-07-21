@@ -3,7 +3,6 @@
 import { useEffect } from "react";
 import { usePathname } from "next/navigation";
 
-import { AdminSidebar } from "@/components/admin/AdminSidebar";
 import { Footer } from "@/components/shell/Footer";
 import { MobileBottomNav } from "@/components/shell/MobileBottomNav";
 import { StorefrontHeader } from "@/components/shell/StorefrontHeader";
@@ -31,16 +30,9 @@ export function ClientShell({
     };
   }, [pathname]);
 
-  const showAdminSidebar = isAdmin && Boolean(role);
-
   return (
     <>
-      {showAdminSidebar && (
-        <AdminSidebar userEmail={userEmail} role={role as ProfileRole} />
-      )}
-      <div
-        className={`${showAdminSidebar ? "md:ml-64" : ""} min-h-screen bg-[var(--storefront-surface)] text-black`.trim()}
-      >
+      <div className="min-h-screen bg-[var(--storefront-surface)] text-black">
         <StorefrontHeader
           isAuthenticated={isAuthenticated}
           userEmail={userEmail ?? undefined}
