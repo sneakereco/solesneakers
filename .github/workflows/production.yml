@@ -48,10 +48,6 @@ jobs:
       ADMIN_SESSION_SECRET: ${{ secrets.ADMIN_SESSION_SECRET }}
       ORDER_ACCESS_TOKEN_SECRET: ${{ secrets.ORDER_ACCESS_TOKEN_SECRET }}
 
-      # Google OAuth
-      GOOGLE_CLIENT_ID: ${{ secrets.GOOGLE_CLIENT_ID }}
-      GOOGLE_CLIENT_SECRET: ${{ secrets.GOOGLE_CLIENT_SECRET }}
-
       # SMTP
       SES_SMTP_HOST: ${{ secrets.SES_SMTP_HOST }}
       SES_SMTP_USER: ${{ secrets.SES_SMTP_USER }}
