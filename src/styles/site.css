@@ -264,6 +264,10 @@ body:has([data-auth-shell]) {
   animation: storefront-marquee-scroll 52s linear infinite;
 }
 
+.store-lock-marquee .storefront-marquee__track {
+  animation-duration: 104s;
+}
+
 .storefront-marquee__group {
   display: flex;
   align-items: center;

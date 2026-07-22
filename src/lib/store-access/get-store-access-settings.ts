@@ -17,5 +17,6 @@ export async function getStoreAccessSettings() {
   return {
     tenantId,
     settings,
+    isSiteLocked: service.isSiteLocked(settings),
   };
 }

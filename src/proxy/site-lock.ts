@@ -60,7 +60,7 @@ export async function checkSiteLock(
   request: NextRequest,
   requestId: string,
 ): Promise<NextResponse | null> {
-  const { pathname, search } = request.nextUrl;
+  const { pathname } = request.nextUrl;
   let lockSettings: Awaited<ReturnType<typeof getLockSettings>>;
 
   try {
@@ -137,14 +137,20 @@ export async function checkSiteLock(
 
   const accept = request.headers.get("accept") || "";
   const isHtmlNav = accept.includes("text/html");
+  const isRscNav =
+    request.headers.get("rsc") === "1" || accept.includes("text/x-component");
 
-  if (!isHtmlNav) {
+  if (!isHtmlNav && !isRscNav) {
     return null;
   }
 
+  const destinationUrl = request.nextUrl.clone();
+  destinationUrl.searchParams.delete("_rsc");
+  const destinationSearch = destinationUrl.searchParams.toString();
+  const destination = `${pathname}${destinationSearch ? `?${destinationSearch}` : ""}`;
   const lockedUrl = request.nextUrl.clone();
   lockedUrl.pathname = "/locked";
-  lockedUrl.search = `?next=${encodeURIComponent(pathname + (search || ""))}`;
+  lockedUrl.search = `?next=${encodeURIComponent(destination)}`;
 
   const res = NextResponse.redirect(lockedUrl);
   res.headers.set("Cache-Control", "no-store");

@@ -40,7 +40,7 @@ export const buildTrackingPanelHtml = (input: OrderTrackingEmailBase) => {
   return `
     <table role="presentation" width="100%" cellspacing="0" cellpadding="0" style="${emailStyles.panel}">
       <tr>
-        <td style="padding:12px;">
+        <td style="padding:18px 20px;">
           <div style="${emailStyles.label}">Carrier</div>
           <div style="font-size:14px;color:${EMAIL_COLORS.text};margin-top:4px;">
             ${carrierLabel}
@@ -48,7 +48,7 @@ export const buildTrackingPanelHtml = (input: OrderTrackingEmailBase) => {
         </td>
       </tr>
       <tr>
-        <td style="padding:12px;border-top:1px solid ${EMAIL_COLORS.panelBorder};">
+        <td style="padding:18px 20px;border-top:1px solid ${EMAIL_COLORS.panelBorder};">
           <div style="${emailStyles.label}">Tracking</div>
           <div style="font-size:14px;color:${EMAIL_COLORS.text};margin-top:4px;">
             ${trackingUrl ? `<a href="${trackingUrl}" style="${emailStyles.accentLink}">${trackingLabel}</a>` : trackingLabel}
@@ -72,3 +72,55 @@ export const buildTrackingPanelText = (input: OrderTrackingEmailBase) => {
   }
   return lines.join("\n");
 };
+
+type OrderStatusContentInput = {
+  order: OrderTrackingEmailBase;
+  orderShort: string;
+  eyebrow: string;
+  heading: string;
+  message: string;
+  buttonUrl: string;
+  buttonLabel: string;
+};
+
+export const buildOrderStatusContentHtml = ({
+  order,
+  orderShort,
+  eyebrow,
+  heading,
+  message,
+  buttonUrl,
+  buttonLabel,
+}: OrderStatusContentInput) => `
+  <tr>
+    <td class="email-hero" style="${emailStyles.heroCell}">
+      <div style="${emailStyles.eyebrow}">${eyebrow}</div>
+      <h1 class="email-heading" style="${emailStyles.heading}">${heading}</h1>
+      <p style="margin:16px auto 0;max-width:440px;${emailStyles.copy}">${message}</p>
+    </td>
+  </tr>
+  <tr>
+    <td class="email-pad" style="padding:0 40px 16px;">
+      <table role="presentation" width="100%" cellspacing="0" cellpadding="0" style="${emailStyles.panel}">
+        <tr>
+          <td style="padding:18px 20px;">
+            <div style="${emailStyles.label}">Order</div>
+            <div style="font-size:16px;color:${EMAIL_COLORS.text};font-weight:700;margin-top:4px;">
+              #${orderShort}
+            </div>
+          </td>
+        </tr>
+      </table>
+    </td>
+  </tr>
+  <tr>
+    <td class="email-pad" style="padding:0 40px 16px;">
+      ${buildTrackingPanelHtml(order)}
+    </td>
+  </tr>
+  <tr>
+    <td class="email-pad" style="padding:10px 40px 42px;text-align:center;">
+      <a class="email-button" href="${buttonUrl}" style="${emailStyles.button}">${buttonLabel}</a>
+    </td>
+  </tr>
+`;

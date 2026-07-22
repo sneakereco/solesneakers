@@ -125,6 +125,31 @@ describe("checkSiteLock", () => {
     );
   });
 
+  it("redirects Next.js client navigation to /locked when the site is locked", async () => {
+    mockGetSettings.mockResolvedValue({
+      siteLockEnabled: true,
+      siteUnlockAt: "2099-01-01T00:00:00.000Z",
+      checkoutLockEnabled: false,
+      checkoutLockMessage: "",
+    });
+    mockIsSiteLocked.mockReturnValue(true);
+
+    const request = new NextRequest("http://localhost/store?brandIds=brand-1&_rsc=abc", {
+      headers: {
+        accept: "text/x-component",
+        rsc: "1",
+      },
+    });
+
+    const response = await checkSiteLock(request, "req-rsc");
+    const location = response?.headers.get("location") ?? "";
+
+    expect(response?.status).toBe(307);
+    expect(location).toContain("/locked");
+    expect(location).toContain(encodeURIComponent("/store?brandIds=brand-1"));
+    expect(location).not.toContain(encodeURIComponent("_rsc=abc"));
+  });
+
   it("allows signed-in admins through when the site is locked", async () => {
     mockGetSettings.mockResolvedValue({
       siteLockEnabled: true,

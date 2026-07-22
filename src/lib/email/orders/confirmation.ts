@@ -79,19 +79,19 @@ export const buildOrderConfirmationEmail = (input: OrderConfirmationEmailInput) 
       const thumb = imageUrl
         ? `<img
             src="${imageUrl}"
-            width="64"
-            height="64"
+            width="76"
+            height="76"
             alt="${title}"
-            style="display:block;width:64px;height:64px;object-fit:cover;border-radius:12px;border:1px solid ${EMAIL_COLORS.panelBorder};"
+            style="display:block;width:76px;height:76px;object-fit:contain;border:1px solid ${EMAIL_COLORS.panelBorder};background:${EMAIL_COLORS.storefront};"
           />`
-        : `<div style="width:64px;height:64px;border-radius:12px;border:1px solid ${EMAIL_COLORS.panelBorder};background:${EMAIL_COLORS.panelBorder};"></div>`;
+        : `<div style="width:76px;height:76px;border:1px solid ${EMAIL_COLORS.panelBorder};background:${EMAIL_COLORS.storefront};"></div>`;
 
       return `
         <tr>
           <td style="padding:12px 0;border-bottom:1px solid ${EMAIL_COLORS.panelBorder};">
             <table role="presentation" width="100%" cellspacing="0" cellpadding="0">
               <tr>
-                <td width="76" valign="top" style="padding-right:12px;">
+                <td width="90" valign="top" style="padding-right:14px;">
                   ${thumb}
                 </td>
                 <td valign="top" style="padding:0;">
@@ -139,25 +139,25 @@ export const buildOrderConfirmationEmail = (input: OrderConfirmationEmailInput) 
 
   const contentHtml = `
       <tr>
-        <td style="padding:0 24px 10px;text-align:center;">
+        <td class="email-hero" style="${emailStyles.heroCell}">
           <div style="${emailStyles.eyebrow}">Order confirmed</div>
-          <h1 style="${emailStyles.heading}">Order #${safeText(orderShort)}</h1>
-          <p style="margin:10px 0 0;${emailStyles.copy}">
-            Confirmed and being prepared now.
+          <h1 class="email-heading" style="${emailStyles.heading}">The heat is yours</h1>
+          <p style="margin:16px auto 0;max-width:440px;${emailStyles.copy}">
+            Order #${safeText(orderShort)} is confirmed and being prepared now.
           </p>
         </td>
       </tr>
       <tr>
-        <td style="padding:0 24px 16px;">
+        <td class="email-pad" style="padding:0 40px 22px;">
           <table role="presentation" width="100%" cellspacing="0" cellpadding="0" style="${emailStyles.panel}">
             <tr>
-              <td style="padding:12px;">
+              <td style="padding:18px 20px;">
                 <div style="${emailStyles.label}">Order</div>
                 <div style="font-size:16px;color:${EMAIL_COLORS.text};font-weight:700;margin-top:4px;">
                   #${safeText(orderShort)}
                 </div>
               </td>
-              <td style="padding:12px;text-align:right;">
+              <td style="padding:18px 20px;text-align:right;">
                 <div style="${emailStyles.label}">Placed</div>
                 <div style="font-size:14px;color:${EMAIL_COLORS.text};margin-top:4px;">
                   ${safeText(orderDate)}
@@ -168,7 +168,7 @@ export const buildOrderConfirmationEmail = (input: OrderConfirmationEmailInput) 
         </td>
       </tr>
       <tr>
-        <td style="padding:0 24px;">
+        <td class="email-pad" style="padding:0 40px;">
           <table role="presentation" width="100%" cellspacing="0" cellpadding="0">
             <tr>
               <td colspan="2" style="padding:4px 0 12px;">
@@ -213,8 +213,8 @@ export const buildOrderConfirmationEmail = (input: OrderConfirmationEmailInput) 
         </td>
       </tr>
       <tr>
-        <td style="padding:20px 24px;text-align:left;">
-          <a href="${orderUrlSafe}" style="${emailStyles.button}">View your order</a>
+        <td class="email-pad" style="padding:28px 40px 42px;text-align:center;">
+          <a class="email-button" href="${orderUrlSafe}" style="${emailStyles.button}">View your order</a>
         </td>
       </tr>
     `;

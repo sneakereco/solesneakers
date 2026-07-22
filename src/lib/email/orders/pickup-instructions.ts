@@ -31,19 +31,19 @@ export const buildPickupInstructionsEmail = (input: PickupInstructionsEmailInput
 
   const contentHtml = `
     <tr>
-      <td style="padding:0 24px 10px;text-align:center;">
+      <td class="email-hero" style="${emailStyles.heroCell}">
         <div style="${emailStyles.eyebrow}">Local pickup</div>
-        <h1 style="${emailStyles.heading}">Order ${orderNumber}</h1>
-        <p style="margin:10px 0 0;${emailStyles.copy}">
-          Ready to coordinate pickup in ${locationSummary}.
+        <h1 class="email-heading" style="${emailStyles.heading}">Let's get your order to you</h1>
+        <p style="margin:16px auto 0;max-width:450px;${emailStyles.copy}">
+          Order ${orderNumber} is ready to coordinate for local pickup in ${locationSummary}.
         </p>
       </td>
     </tr>
     <tr>
-      <td style="padding:0 24px 16px;">
+      <td class="email-pad" style="padding:0 40px 16px;">
         <table role="presentation" width="100%" cellspacing="0" cellpadding="0" style="${emailStyles.panel}">
           <tr>
-            <td style="padding:16px;">
+            <td style="padding:20px;">
               <div style="${emailStyles.labelAccent}">Next step</div>
               <ul style="margin:10px 0 0;padding-left:18px;font-size:13px;line-height:1.7;color:${EMAIL_COLORS.text};">
                 <li style="margin:0 0 8px;">
@@ -62,8 +62,8 @@ export const buildPickupInstructionsEmail = (input: PickupInstructionsEmailInput
       </td>
     </tr>
     <tr>
-      <td style="padding:20px 24px;text-align:left;">
-        <a href="${orderUrl}" style="${emailStyles.button}">View order</a>
+      <td class="email-pad" style="padding:10px 40px 42px;text-align:center;">
+        <a class="email-button" href="${orderUrl}" style="${emailStyles.button}">View order</a>
       </td>
     </tr>
   `;

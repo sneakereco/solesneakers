@@ -42,7 +42,7 @@ export const buildContactSubmissionEmail = (input: ContactEmailInput) => {
     input.attachments.length > 0
       ? `
         <tr>
-          <td style="padding:0 24px 24px;">
+          <td class="email-pad" style="padding:0 40px 40px;">
             <div style="${emailStyles.labelAccent}">Attachments</div>
             <div style="margin-top:14px;">
               ${input.attachments
@@ -66,16 +66,16 @@ export const buildContactSubmissionEmail = (input: ContactEmailInput) => {
 
   const contentHtml = `
       <tr>
-        <td style="padding:0 24px 10px;text-align:center;">
+        <td class="email-hero" style="${emailStyles.heroCell}">
           <div style="${emailStyles.eyebrow}">${heading}</div>
-          <h1 style="${emailStyles.heading}">${headline}</h1>
+          <h1 class="email-heading" style="${emailStyles.heading}">${headline}</h1>
         </td>
       </tr>
       <tr>
-        <td style="padding:0 24px 16px;">
+        <td class="email-pad" style="padding:0 40px 18px;">
           <table role="presentation" width="100%" cellspacing="0" cellpadding="0" style="${emailStyles.panel}">
             <tr>
-              <td style="padding:12px;">
+              <td style="padding:18px 20px;">
                 <div style="${emailStyles.label}">From</div>
                 <div style="font-size:15px;color:${EMAIL_COLORS.text};font-weight:700;margin-top:4px;">
                   ${safeName}
@@ -84,7 +84,7 @@ export const buildContactSubmissionEmail = (input: ContactEmailInput) => {
                   ${safeEmail}
                 </div>
               </td>
-              <td style="padding:12px;text-align:right;">
+              <td style="padding:18px 20px;text-align:right;">
                 <div style="${emailStyles.label}">Subject</div>
                 <div style="font-size:14px;color:${EMAIL_COLORS.text};margin-top:4px;">
                   ${safeSubject}
@@ -95,7 +95,7 @@ export const buildContactSubmissionEmail = (input: ContactEmailInput) => {
         </td>
       </tr>
       <tr>
-        <td style="padding:0 24px 24px;">
+        <td class="email-pad" style="padding:0 40px 40px;">
           <div style="${emailStyles.labelAccent}">Message</div>
           <div style="margin-top:10px;${emailStyles.panel}padding:14px;font-size:13px;line-height:1.7;color:${EMAIL_COLORS.muted};">
             ${safeMessage.replace(/\n/g, "<br />")}

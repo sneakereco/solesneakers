@@ -15,25 +15,25 @@ export const buildOrderRefundedEmail = (input: OrderRefundedEmailInput) => {
 
   const contentHtml = `
     <tr>
-      <td style="padding:0 24px 10px;text-align:center;">
+      <td class="email-hero" style="${emailStyles.heroCell}">
         <div style="${emailStyles.eyebrow}">Refund processed</div>
-        <h1 style="${emailStyles.heading}">Order #${orderShort}</h1>
-        <p style="margin:10px 0 0;${emailStyles.copy}">
-          Refund issued. Bank posting times may vary.
+        <h1 class="email-heading" style="${emailStyles.heading}">Your refund is on the way</h1>
+        <p style="margin:16px auto 0;max-width:440px;${emailStyles.copy}">
+          We've issued the refund for order #${orderShort}. Bank posting times may vary.
         </p>
       </td>
     </tr>
     <tr>
-      <td style="padding:0 24px 16px;">
+      <td class="email-pad" style="padding:0 40px 16px;">
         <table role="presentation" width="100%" cellspacing="0" cellpadding="0" style="${emailStyles.panel}">
           <tr>
-            <td style="padding:12px;">
+            <td style="padding:18px 20px;">
               <div style="${emailStyles.label}">Order</div>
               <div style="font-size:16px;color:${EMAIL_COLORS.text};font-weight:700;margin-top:4px;">
                 #${orderShort}
               </div>
             </td>
-            <td style="padding:12px;text-align:right;">
+            <td style="padding:18px 20px;text-align:right;">
               <div style="${emailStyles.label}">Refund Amount</div>
               <div style="font-size:16px;color:${EMAIL_COLORS.text};font-weight:700;margin-top:4px;">
                 $${formatMoney(input.refundAmount / 100)}
@@ -44,8 +44,8 @@ export const buildOrderRefundedEmail = (input: OrderRefundedEmailInput) => {
       </td>
     </tr>
     <tr>
-      <td style="padding:20px 24px;text-align:left;">
-        <a href="${orderUrl}" style="${emailStyles.button}">View your order</a>
+      <td class="email-pad" style="padding:10px 40px 42px;text-align:center;">
+        <a class="email-button" href="${orderUrl}" style="${emailStyles.button}">View your order</a>
       </td>
     </tr>
   `;
