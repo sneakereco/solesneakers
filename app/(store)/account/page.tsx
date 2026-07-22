@@ -12,23 +12,26 @@ export default async function AccountPage() {
     session = await requireUser();
   } catch {
     return (
-      <div className="max-w-4xl mx-auto px-4 py-20 text-center">
-        <h1 className="text-3xl font-bold text-white mb-4">
+      <div className="min-h-[36rem] bg-[var(--storefront-surface)] px-5 py-24 text-center text-black sm:px-8">
+        <p className="text-[0.68rem] uppercase tracking-[0.28em] text-zinc-500">
+          Customer account
+        </p>
+        <h1 className="mt-4 text-3xl font-normal tracking-[-0.03em] sm:text-5xl">
           Sign in to view your account
         </h1>
-        <p className="text-gray-400 mb-8">
-          Access your profile, shipping info, and order history
+        <p className="mx-auto mt-5 max-w-lg text-sm leading-6 text-zinc-500 sm:text-base">
+          Access your saved addresses, order history, and account security settings.
         </p>
-        <div className="flex gap-4 justify-center">
+        <div className="mt-9 flex flex-col items-center justify-center gap-3 sm:flex-row">
           <Link
             href="/auth/login"
-            className="bg-red-600 hover:bg-red-700 text-white font-bold px-8 py-3 rounded transition"
+            className="inline-flex min-h-12 min-w-44 items-center justify-center bg-[#1f1f1d] px-7 text-xs font-semibold uppercase tracking-[0.14em] text-white transition-colors hover:bg-black"
           >
-            Log In
+            Sign In
           </Link>
           <Link
             href="/auth/register"
-            className="bg-zinc-700 hover:bg-zinc-600 text-white font-bold px-8 py-3 rounded transition"
+            className="inline-flex min-h-12 min-w-44 items-center justify-center border border-zinc-400 px-7 text-xs font-semibold uppercase tracking-[0.14em] text-zinc-800 transition-colors hover:border-black hover:text-black"
           >
             Create Account
           </Link>
