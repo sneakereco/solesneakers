@@ -4,13 +4,7 @@ import { useMemo, useState } from "react";
 import Image from "next/image";
 import Link from "next/link";
 import { usePathname } from "next/navigation";
-import {
-  ChevronDown,
-  Menu,
-  Search,
-  ShoppingCart,
-  User,
-} from "lucide-react";
+import { ChevronDown, Menu, Search, ShoppingCart, User } from "lucide-react";
 
 import { isAdminRole, type ProfileRole } from "@/config/constants/roles";
 import { useSession } from "@/contexts/SessionContext";
@@ -143,14 +137,12 @@ export function Navbar({
                   aria-label="Account"
                   data-testid="navbar-user-menu"
                 >
-                  <span className="truncate">
-                    {effectiveUserEmail ?? "Account"}
-                  </span>
+                  <span className="truncate">{effectiveUserEmail ?? "Account"}</span>
                   <ChevronDown className="h-3.5 w-3.5 -rotate-180 transition-transform duration-200 group-hover:rotate-0" />
                 </button>
 
                 <div className="pointer-events-none absolute right-0 top-full z-50 pt-4 opacity-0 transition duration-150 group-hover:pointer-events-auto group-hover:opacity-100">
-                  <div className="min-w-full translate-y-1 border border-zinc-200 bg-[var(--storefront-surface)] text-black shadow-[0_20px_50px_rgba(0,0,0,0.14)] transition duration-150 group-hover:translate-y-0">
+                  <div className="min-w-full border border-zinc-200 bg-[var(--storefront-surface)] text-black shadow-[0_20px_50px_rgba(0,0,0,0.14)]">
                     {showAdminDashboardLink && (
                       <Link
                         href="/admin"

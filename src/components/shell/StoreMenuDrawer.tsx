@@ -86,7 +86,7 @@ function CollapsibleContent({
       <div
         className="min-h-0 overflow-hidden transition-transform"
         style={{
-          transform: isOpen ? "translateY(0)" : "translateY(-0.75rem)",
+          transform: isOpen ? "none" : "translateY(-0.75rem)",
           transitionDuration: `${COLLAPSIBLE_TRANSITION_MS}ms`,
           transitionTimingFunction: MENU_EASING,
         }}
@@ -345,10 +345,9 @@ export function StoreMenuDrawer({ isOpen, onClose }: StoreMenuDrawerProps) {
         className="relative flex h-[100dvh] w-full overflow-hidden bg-white text-black shadow-2xl transition-[max-width,transform]"
         style={{
           maxWidth: isPanelVisible ? "784px" : "392px",
-          transform: isVisible ? "translate3d(0,0,0)" : "translate3d(-100%,0,0)",
+          transform: isVisible ? "none" : "translate3d(-100%,0,0)",
           transitionDuration: `${DRAWER_TRANSITION_MS}ms`,
           transitionTimingFunction: MENU_EASING,
-          willChange: "transform, max-width",
         }}
         role="dialog"
         aria-modal="true"
@@ -401,12 +400,11 @@ export function StoreMenuDrawer({ isOpen, onClose }: StoreMenuDrawerProps) {
           className="absolute inset-0 z-10 h-full w-full bg-white md:static md:w-[392px] md:shrink-0"
           style={{
             opacity: isPanelVisible ? 1 : 0,
-            transform: isPanelVisible ? "translate3d(0,0,0)" : "translate3d(2rem,0,0)",
+            transform: isPanelVisible ? "none" : "translate3d(2rem,0,0)",
             pointerEvents: isPanelVisible ? "auto" : "none",
             transitionProperty: "opacity, transform",
             transitionDuration: `${PANEL_TRANSITION_MS}ms`,
             transitionTimingFunction: MENU_EASING,
-            willChange: "opacity, transform",
           }}
         >
           {activePanel && <PanelHeader title={panelTitle} onBack={closePanel} />}

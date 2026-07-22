@@ -9,7 +9,6 @@ const testEnvDefaults: Record<string, string> = {
   SUPABASE_DB_URL: "postgresql://user:pass@localhost:5432/testdb",
   SHIPPO_API_TOKEN: "test-shippo-token",
   SHIPPO_WEBHOOK_TOKEN: "test-shippo-webhook-token",
-  HERE_MAPS_API_KEY: "test-here-maps-key",
   UPSTASH_REDIS_REST_URL: "https://example.upstash.io",
   UPSTASH_REDIS_REST_TOKEN: "test-upstash-token",
   ADMIN_SESSION_SECRET: "test-admin-session-secret",

@@ -57,9 +57,6 @@ jobs:
       SES_SMTP_USER: ${{ secrets.SES_SMTP_USER }}
       SES_SMTP_PASS: ${{ secrets.SES_SMTP_PASS }}
 
-      # HERE
-      HERE_MAPS_API_KEY: ${{ secrets.HERE_MAPS_API_KEY }}
-
       # Public Config (can use variables instead of secrets)
       NEXT_PUBLIC_SITE_URL: ${{ vars.NEXT_PUBLIC_SITE_URL }}
 
