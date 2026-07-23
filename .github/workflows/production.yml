@@ -90,13 +90,13 @@ jobs:
       - name: Typecheck
         run: npm run typecheck
 
+      # The build prerenders storefront data from the production database.
+      - name: Push Migrations to Production
+        run: supabase db push --db-url "$SUPABASE_DB_URL"
+
       # Build (validates env vars and Next.js config)
       - name: Build
         run: npm run build
-
-      # Apply Migrations to Production Database
-      - name: Push Migrations to Production
-        run: supabase db push --db-url "$SUPABASE_DB_URL"
 
       # Deploy to Vercel
       - name: Install Vercel CLI

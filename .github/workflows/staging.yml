@@ -90,11 +90,7 @@ jobs:
       - name: Typecheck
         run: npm run typecheck
 
-      # Build (validates env vars and Next.js config)
-      - name: Build
-        run: npm run build
-
-      # Apply Migrations to Staging Database
+      # The build prerenders storefront data from the staging database.
       - name: Push Migrations to Staging
         run: supabase db push --db-url "$SUPABASE_DB_URL"
 
@@ -104,6 +100,10 @@ jobs:
           echo "Seeding database..."
           psql "$SUPABASE_DB_URL" -f supabase/seed.sql
           echo "Database seeded successfully"
+
+      # Build (validates env vars and Next.js config)
+      - name: Build
+        run: npm run build
 
       # Deploy to Vercel
       - name: Install Vercel CLI
