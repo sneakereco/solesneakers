@@ -5,7 +5,7 @@ const schema = z.object({
   NEXT_PUBLIC_SUPABASE_PUBLISHABLE_KEY: z.string(),
   SUPABASE_SECRET_KEY: z.string(),
   SUPABASE_DB_URL: z.string(),
-  
+
   SHIPPO_API_TOKEN: z.string(),
   SHIPPO_WEBHOOK_TOKEN: z.string(),
 

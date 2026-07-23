@@ -3,7 +3,7 @@ name: Staging CI
 on:
   push:
     branches:
-      - staging
+      - stg
 
 jobs:
   validate-and-deploy:
@@ -54,7 +54,7 @@ jobs:
       SES_SMTP_PASS: ${{ secrets.SES_SMTP_PASS }}
 
       # Public Config (can use variables instead of secrets)
-      NEXT_PUBLIC_SITE_URL: ${{ vars.NEXT_PUBLIC_SITE_URL || 'https://rdk-staging.vercel.app' }}
+      NEXT_PUBLIC_SITE_URL: ${{ secrets.NEXT_PUBLIC_SITE_URL' }}
 
       # Local DB for validation
       LOCAL_SUPABASE_DB_URL: "postgresql://postgres:postgres@localhost:5432/postgres"
@@ -133,4 +133,4 @@ jobs:
       - name: Health Check
         run: |
           sleep 10  # Give deployment a moment to become available
-          curl -f "https://rdk-staging.vercel.app/api/healthz" || echo "Health check endpoint not found (optional)"
+          curl -f "https://soles-stg.vercel.app/api/healthz" || echo "Health check endpoint not found (optional)"

@@ -10,7 +10,6 @@ import type { ProfileRole } from "@/config/constants/roles";
 
 export function ClientShell({
   children,
-  isAdmin = false,
   isAuthenticated = false,
   userEmail = null,
   role = null,

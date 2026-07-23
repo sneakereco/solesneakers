@@ -120,7 +120,7 @@ export function ScrollHeader({
 
     const handleTouchEnd = (event: TouchEvent) => {
       const endY = event.changedTouches[0]?.clientY;
-      if (lastTouchY == null || typeof endY !== "number") {
+      if (lastTouchY === null || typeof endY !== "number") {
         lastTouchY = null;
         return;
       }
