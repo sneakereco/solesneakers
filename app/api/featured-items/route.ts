@@ -5,9 +5,8 @@ import { createSupabaseServerClient } from "@/lib/supabase/server";
 import { FeaturedItemsService } from "@/services/featured-items-service";
 import { logError } from "@/lib/utils/log";
 
-// OPTIMIZATION: Featured items change infrequently, cache for 5 minutes
-export const revalidate = 300; // 5 minutes
-export const dynamic = "force-static";
+// Avoid coupling builds to the remote database. CDN headers below still cache responses.
+export const dynamic = "force-dynamic";
 
 export async function GET() {
   try {
