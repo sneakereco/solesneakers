@@ -19,7 +19,7 @@ const schema = z.object({
   ADMIN_SESSION_SECRET: z.string(),
   ORDER_ACCESS_TOKEN_SECRET: z.string().min(16),
 
-  NEXT_PUBLIC_SITE_URL: z.string().url(),
+  NEXT_PUBLIC_SITE_URL: z.string(),
 
   NODE_ENV: z
     .enum(["development", "test", "production"])
