@@ -4,7 +4,7 @@ const shortOrderId = (orderId: string) => orderId.slice(0, 8);
 
 // Preserve the currently verified sender identity while moving it out of env.
 // When the Solesneakers sender address is verified, update these two values together.
-export const MAIL_FROM_EMAIL = "info@solesneakers.com";
+export const MAIL_FROM_EMAIL = "info@shopsolesneakers.com";
 export const MAIL_FROM_NAME = "Solesneakers";
 
 export const SUPPORT_EMAIL = "Jmanrule15@gmail.com";
