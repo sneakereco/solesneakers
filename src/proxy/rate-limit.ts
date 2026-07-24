@@ -271,6 +271,11 @@ export async function applyRateLimit(
 
     return response;
   } catch (err) {
+    const cause =
+      err instanceof Error && err.cause && typeof err.cause === "object"
+        ? (err.cause as { code?: unknown; message?: unknown })
+        : null;
+
     // Fail open on Upstash errors
     log({
       level: "error",
@@ -282,6 +287,8 @@ export async function applyRateLimit(
       event: "rate_limit_outage",
       ip: maskIpForLog(clientIp),
       error: err instanceof Error ? err.message : String(err),
+      error_code: typeof cause?.code === "string" ? cause.code : null,
+      error_cause: typeof cause?.message === "string" ? cause.message : null,
     });
     return null;
   }
