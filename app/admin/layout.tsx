@@ -8,15 +8,17 @@ export default async function AdminLayout({ children }: { children: React.ReactN
   const userEmail = session.user.email ?? session.profile?.email ?? null;
 
   return (
-    <div className="min-h-screen bg-black">
-      {/* Mobile: Hidden sidebar by default, toggle with hamburger */}
+    <div data-admin-shell className="min-h-screen bg-[#f4f4f0] text-zinc-950">
       <AdminSidebar userEmail={userEmail} role={session.role} />
 
-      <div className="flex-1 flex flex-col md:ml-64">
-        <AdminTopbar />
-
-        {/* CHANGED: Reduce mobile padding */}
-        <main className="flex-1 p-4 md:p-6">{children}</main>
+      <div className="flex min-h-screen flex-col md:ml-[17.5rem]">
+        <AdminTopbar userEmail={userEmail} />
+        <main
+          data-admin-content
+          className="flex-1 px-4 pb-12 pt-5 sm:px-6 md:px-8 md:pb-16 md:pt-8 xl:px-10"
+        >
+          <div className="mx-auto w-full max-w-[96rem]">{children}</div>
+        </main>
       </div>
     </div>
   );

@@ -184,7 +184,7 @@ export function AdminOrderItemDetailsModal({
       (entry): entry is AdminOrderItemImage => Boolean(entry?.url),
     );
     if (!raw.length) {
-      return [{ url: "/images/rdk-logo.png", is_primary: true, sort_order: 0 }];
+      return [{ url: "/images/logo.png", is_primary: true, sort_order: 0 }];
     }
     return [...raw].sort((a, b) => {
       const aPrimary = a.is_primary ? 0 : 1;
@@ -205,7 +205,7 @@ export function AdminOrderItemDetailsModal({
   const formattedUnitProfit = formatMoney(Math.abs(financials.unitProfit));
   const profitColor = financials.unitProfit >= 0 ? "green" : "red";
   const profitPrefix = financials.unitProfit >= 0 ? "+" : "-";
-  const selectedImage = images[selectedImageIndex]?.url || "/images/rdk-logo.png";
+  const selectedImage = images[selectedImageIndex]?.url || "/images/logo.png";
 
   return (
     <ModalPortal open={open} onClose={onClose} zIndexClassName="z-[10000]">

@@ -5,43 +5,43 @@ import Link from "next/link";
 import { usePathname } from "next/navigation";
 import {
   ChevronDown,
-  ChevronRight,
-  Globe,
+  ExternalLink,
   LayoutDashboard,
   Menu,
   Package,
   Receipt,
   Settings,
-  Star,
+  Sparkles,
+  Tags,
   Truck,
-  User,
+  UserRound,
+  Users,
   X,
   type LucideIcon,
 } from "lucide-react";
 
-import { Tooltip } from "@/components/ui/Tooltip";
 import type { ProfileRole } from "@/config/constants/roles";
 
 type NavLink = { type: "link"; href: string; label: string; icon: LucideIcon };
-type GroupKey = "activity" | "settings";
+type GroupKey = "commerce" | "settings";
 type NavGroup = {
   type: "group";
   key: GroupKey;
   label: string;
   icon: LucideIcon;
   activePrefixes: string[];
-  children: Array<{ href: string; label: string }>;
+  children: Array<{ href: string; label: string; icon: LucideIcon }>;
 };
 
 const navItems: Array<NavLink | NavGroup> = [
-  { type: "link", href: "/", label: "Website", icon: Globe },
-  { type: "link", href: "/admin/dashboard", label: "Dashboard", icon: LayoutDashboard },
+  { type: "link", href: "/admin/dashboard", label: "Overview", icon: LayoutDashboard },
   { type: "link", href: "/admin/inventory", label: "Inventory", icon: Package },
+  { type: "link", href: "/admin/featured-items", label: "Featured", icon: Sparkles },
   {
     type: "group",
-    key: "activity",
-    label: "Activity",
-    icon: Truck,
+    key: "commerce",
+    label: "Commerce",
+    icon: Receipt,
     activePrefixes: [
       "/admin/transactions",
       "/admin/customers",
@@ -49,15 +49,14 @@ const navItems: Array<NavLink | NavGroup> = [
       "/admin/pickups",
     ],
     children: [
-      { href: "/admin/transactions", label: "Transactions" },
-      { href: "/admin/customers", label: "Customers" },
-      { href: "/admin/shipping", label: "Shipping" },
-      { href: "/admin/pickups", label: "Pickups" },
+      { href: "/admin/transactions", label: "Transactions", icon: Receipt },
+      { href: "/admin/customers", label: "Customers", icon: Users },
+      { href: "/admin/shipping", label: "Shipping", icon: Truck },
+      { href: "/admin/pickups", label: "Pickups", icon: Package },
     ],
   },
-  { type: "link", href: "/admin/nexus", label: "Tax & Nexus", icon: Receipt },
-  { type: "link", href: "/admin/featured-items", label: "Featured Items", icon: Star },
-  { type: "link", href: "/admin/tags", label: "Tags", icon: Package },
+  { type: "link", href: "/admin/nexus", label: "Tax & nexus", icon: Receipt },
+  { type: "link", href: "/admin/tags", label: "Product tags", icon: Tags },
   {
     type: "group",
     key: "settings",
@@ -65,16 +64,19 @@ const navItems: Array<NavLink | NavGroup> = [
     icon: Settings,
     activePrefixes: ["/admin/settings"],
     children: [
-      { href: "/admin/settings/store-access", label: "Store Access" },
-      { href: "/admin/settings/shipping", label: "Shipping" },
-      { href: "/admin/settings/taxes", label: "Taxes" },
+      { href: "/admin/settings/store-access", label: "Store access", icon: Settings },
+      { href: "/admin/settings/shipping", label: "Shipping", icon: Truck },
+      { href: "/admin/settings/taxes", label: "Taxes", icon: Receipt },
     ],
   },
 ];
 
+const roleLabel = (role: ProfileRole) =>
+  role.replaceAll("_", " ").replace(/\b\w/g, (letter) => letter.toUpperCase());
+
 export function AdminSidebar({
-  userEmail: _userEmail,
-  role: _role,
+  userEmail,
+  role,
 }: {
   userEmail?: string | null;
   role: ProfileRole;
@@ -82,14 +84,14 @@ export function AdminSidebar({
   const pathname = usePathname();
   const [isOpen, setIsOpen] = useState(false);
   const [openGroups, setOpenGroups] = useState<Record<GroupKey, boolean>>({
-    activity: false,
+    commerce: false,
     settings: false,
   });
 
   useEffect(() => {
     setOpenGroups((current) => ({
-      activity:
-        current.activity ||
+      commerce:
+        current.commerce ||
         [
           "/admin/transactions",
           "/admin/customers",
@@ -98,6 +100,7 @@ export function AdminSidebar({
         ].some((prefix) => pathname.startsWith(prefix)),
       settings: current.settings || pathname.startsWith("/admin/settings"),
     }));
+    setIsOpen(false);
   }, [pathname]);
 
   useEffect(() => {
@@ -111,40 +114,41 @@ export function AdminSidebar({
     };
   }, [isOpen]);
 
-  const sidebarContent = (
-    <div className="flex h-full min-h-0 flex-col">
-      <div className="admin-sidebar-scroll min-h-0 flex-1 space-y-4 overflow-y-auto pr-1">
-        <div>
-          <div className="mb-2 text-[11px] uppercase tracking-wider text-zinc-500">
-            Workspace
-          </div>
-          <div className="flex items-center gap-2 rounded-sm bg-zinc-950 px-3 py-2 text-[13px] text-white">
-            <LayoutDashboard className="h-4 w-4" />
-            <span className="font-medium">Admin</span>
-          </div>
-          <div className="mt-4 border-t border-zinc-800/70" />
-        </div>
+  const isActive = (href: string) => pathname === href || pathname.startsWith(`${href}/`);
+  const itemClass = (active: boolean) =>
+    `group flex w-full items-center gap-3 rounded-lg px-3 py-2.5 text-[0.78rem] font-medium transition-all ${
+      active
+        ? "bg-white text-black shadow-sm"
+        : "text-zinc-400 hover:bg-white/10 hover:text-white"
+    }`;
 
+  const navigation = (
+    <div className="flex h-full min-h-0 flex-col">
+      <div className="border-b border-white/10 px-5 py-6">
+        <Link href="/" className="group block" aria-label="Sole Sneakers storefront">
+          <span className="block text-[0.58rem] font-semibold uppercase tracking-[0.38em] text-zinc-500">
+            Management
+          </span>
+          <span className="mt-2 block text-xl font-bold italic uppercase tracking-[-0.045em] text-white">
+            Sole Sneakers
+          </span>
+        </Link>
+      </div>
+
+      <div className="admin-sidebar-scroll min-h-0 flex-1 overflow-y-auto px-4 py-5">
+        <p className="mb-2 px-3 text-[0.58rem] font-semibold uppercase tracking-[0.24em] text-zinc-600">
+          Operations
+        </p>
         <nav className="space-y-1">
           {navItems.map((item) => {
-            const baseClass =
-              "flex items-center gap-3 rounded-sm border px-4 py-3 transition-colors";
             if (item.type === "link") {
-              const active =
-                item.href === "/" ? pathname === "/" : pathname.startsWith(item.href);
+              const active = isActive(item.href);
               return (
-                <Link
-                  key={item.href}
-                  href={item.href}
-                  onClick={() => setIsOpen(false)}
-                  className={`${baseClass} ${
-                    active
-                      ? "border-zinc-800/70 bg-zinc-950 text-white"
-                      : "border-transparent text-gray-400 hover:border-zinc-800/70 hover:bg-zinc-950"
-                  }`}
-                >
-                  {createElement(item.icon, { className: "h-5 w-5" })}
-                  <span className="text-[13px] sm:text-[15px]">{item.label}</span>
+                <Link key={item.href} href={item.href} className={itemClass(active)}>
+                  {createElement(item.icon, {
+                    className: `h-4 w-4 ${active ? "text-black" : "text-zinc-500 group-hover:text-white"}`,
+                  })}
+                  <span>{item.label}</span>
                 </Link>
               );
             }
@@ -154,7 +158,7 @@ export function AdminSidebar({
             );
             const expanded = openGroups[item.key];
             return (
-              <div key={item.key} className="space-y-1">
+              <div key={item.key}>
                 <button
                   type="button"
                   onClick={() =>
@@ -163,42 +167,33 @@ export function AdminSidebar({
                       [item.key]: !current[item.key],
                     }))
                   }
-                  className={`${baseClass} w-full justify-between ${
-                    active
-                      ? "border-zinc-800/70 bg-zinc-950 text-white"
-                      : "border-transparent text-gray-400 hover:border-zinc-800/70 hover:bg-zinc-950"
-                  }`}
+                  className={itemClass(active)}
                   aria-expanded={expanded}
                 >
-                  <span className="flex items-center gap-3">
-                    {createElement(item.icon, { className: "h-5 w-5" })}
-                    <span className="text-[13px] sm:text-[15px]">{item.label}</span>
-                  </span>
-                  {expanded ? (
-                    <ChevronDown className="h-4 w-4" />
-                  ) : (
-                    <ChevronRight className="h-4 w-4" />
-                  )}
+                  {createElement(item.icon, {
+                    className: `h-4 w-4 ${active ? "text-black" : "text-zinc-500 group-hover:text-white"}`,
+                  })}
+                  <span className="flex-1 text-left">{item.label}</span>
+                  <ChevronDown
+                    className={`h-3.5 w-3.5 transition-transform ${expanded ? "rotate-180" : ""}`}
+                  />
                 </button>
                 {expanded && (
-                  <div className="ml-4 space-y-1 border-l border-zinc-800/70 pl-3">
-                    {item.children.map((child) => {
-                      const childActive = pathname.startsWith(child.href);
-                      return (
-                        <Link
-                          key={child.href}
-                          href={child.href}
-                          onClick={() => setIsOpen(false)}
-                          className={`block rounded-sm border px-3 py-2 text-[12px] transition-colors sm:text-[14px] ${
-                            childActive
-                              ? "border-red-900/30 bg-red-900/20 text-white"
-                              : "border-transparent text-gray-400 hover:border-zinc-800/70 hover:bg-zinc-950 hover:text-white"
-                          }`}
-                        >
-                          {child.label}
-                        </Link>
-                      );
-                    })}
+                  <div className="ml-5 mt-1 space-y-1 border-l border-white/10 pl-3">
+                    {item.children.map((child) => (
+                      <Link
+                        key={child.href}
+                        href={child.href}
+                        className={`flex items-center gap-2.5 rounded-md px-3 py-2 text-[0.72rem] transition ${
+                          isActive(child.href)
+                            ? "bg-white/10 text-white"
+                            : "text-zinc-500 hover:text-white"
+                        }`}
+                      >
+                        {createElement(child.icon, { className: "h-3.5 w-3.5" })}
+                        {child.label}
+                      </Link>
+                    ))}
                   </div>
                 )}
               </div>
@@ -207,17 +202,45 @@ export function AdminSidebar({
         </nav>
       </div>
 
-      <div className="-mx-6 flex-none border-t border-zinc-800/70 bg-zinc-950 px-6 py-3">
-        <Tooltip label="Profile" side="top">
-          <Link
-            href="/admin/profile"
-            onClick={() => setIsOpen(false)}
-            aria-label="Profile"
-            className="flex h-12 w-full items-center justify-center rounded-sm transition-colors hover:bg-zinc-900"
+      <div className="border-t border-white/10 p-4">
+        <Link
+          href="/admin/profile"
+          className={`flex items-center gap-3 rounded-lg p-3 transition ${
+            isActive("/admin/profile") ? "bg-white text-black" : "hover:bg-white/10"
+          }`}
+        >
+          <span
+            className={`flex h-9 w-9 shrink-0 items-center justify-center rounded-full ${
+              isActive("/admin/profile")
+                ? "bg-black text-white"
+                : "bg-white/10 text-zinc-300"
+            }`}
           >
-            <User className="h-5 w-5 text-zinc-400" />
-          </Link>
-        </Tooltip>
+            <UserRound className="h-4 w-4" />
+          </span>
+          <span className="min-w-0 flex-1">
+            <span
+              className={`block truncate text-xs font-medium ${
+                isActive("/admin/profile") ? "text-black" : "text-zinc-200"
+              }`}
+            >
+              {userEmail ?? "Admin account"}
+            </span>
+            <span
+              className={`mt-0.5 block text-[0.6rem] uppercase tracking-wider ${
+                isActive("/admin/profile") ? "text-zinc-500" : "text-zinc-600"
+              }`}
+            >
+              {roleLabel(role)}
+            </span>
+          </span>
+        </Link>
+        <Link
+          href="/"
+          className="mt-2 flex items-center gap-2 px-3 py-2 text-[0.66rem] font-medium uppercase tracking-[0.14em] text-zinc-500 transition hover:text-white"
+        >
+          View storefront <ExternalLink className="h-3 w-3" />
+        </Link>
       </div>
     </div>
   );
@@ -227,29 +250,30 @@ export function AdminSidebar({
       <button
         type="button"
         onClick={() => setIsOpen(true)}
-        className="fixed right-5 top-5 z-40 rounded-sm bg-red-600 p-3 text-white md:hidden"
+        className="fixed right-4 top-4 z-50 flex h-10 w-10 items-center justify-center rounded-full bg-black text-white shadow-xl md:hidden"
         aria-label="Open admin menu"
       >
-        <Menu className="h-5 w-5" />
+        <Menu className="h-4.5 w-4.5" />
       </button>
 
       {isOpen && (
-        <div className="fixed inset-0 z-50 bg-black md:hidden">
-          <div className="flex h-full flex-col px-6 pb-0 pt-6">
-            <div className="mb-8 flex items-center justify-between">
-              <h2 className="text-2xl font-bold text-white">Admin Menu</h2>
-              <button type="button" onClick={() => setIsOpen(false)} aria-label="Close">
-                <X className="h-6 w-6 text-gray-400" />
-              </button>
-            </div>
-            <div className="min-h-0 flex-1">{sidebarContent}</div>
-          </div>
+        <div className="fixed inset-0 z-[60] bg-black/50 backdrop-blur-sm md:hidden">
+          <aside className="h-full w-[min(88vw,19rem)] bg-[#0a0a0a] shadow-2xl">
+            <button
+              type="button"
+              onClick={() => setIsOpen(false)}
+              className="absolute right-4 top-4 flex h-10 w-10 items-center justify-center rounded-full bg-white text-black"
+              aria-label="Close admin menu"
+            >
+              <X className="h-4 w-4" />
+            </button>
+            {navigation}
+          </aside>
         </div>
       )}
 
-      <aside className="fixed left-0 top-0 z-40 hidden h-screen w-64 border-r border-zinc-800/70 bg-zinc-900 p-6 md:block">
-        <h2 className="mb-8 text-2xl font-bold text-white">Admin</h2>
-        <div className="h-[calc(100%-4rem)]">{sidebarContent}</div>
+      <aside className="fixed inset-y-0 left-0 z-40 hidden w-[17.5rem] border-r border-white/10 bg-[#0a0a0a] md:block">
+        {navigation}
       </aside>
     </>
   );

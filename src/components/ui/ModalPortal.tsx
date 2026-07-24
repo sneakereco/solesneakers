@@ -39,8 +39,12 @@ export function ModalPortal({
     return null;
   }
 
+  const isAdminModal = Boolean(document.querySelector("[data-admin-shell]"));
+
   return createPortal(
     <div
+      data-admin-content={isAdminModal ? "" : undefined}
+      data-admin-modal={isAdminModal ? "" : undefined}
       className={`fixed inset-0 isolate overscroll-contain ${zIndexClassName}`}
       style={zIndex ? { zIndex } : undefined}
     >

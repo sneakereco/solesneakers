@@ -210,7 +210,7 @@ const getCustomerName = (order: ShippingOrder) => {
 const getPrimaryImage = (item: OrderItem) => {
   const images = item.product?.images ?? [];
   const primary = images.find((img) => img.is_primary) ?? images[0];
-  return primary?.url ?? "/images/rdk-logo.png";
+  return primary?.url ?? "/images/logo.png";
 };
 
 export default function ShippingPage() {

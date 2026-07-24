@@ -848,7 +848,7 @@ export default function TransactionDetailPage() {
                   const imageUrl =
                     item.product?.images?.find((image) => image.is_primary)?.url ??
                     item.product?.images?.[0]?.url ??
-                    "/images/rdk-logo.png";
+                    "/images/logo.png";
                   const isRefunded = Boolean(item.refunded_at);
                   const showItemProfit = showOrderProfit && !isRefunded;
                   const financials = getOrderItemFinancials(item as AdminOrderItem);

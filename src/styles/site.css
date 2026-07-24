@@ -16,6 +16,286 @@ body {
   font-family: Arial, Helvetica, sans-serif;
 }
 
+/*
+ * Sole Sneakers admin system
+ *
+ * The original console was assembled from page-local dark utilities. These
+ * scoped rules give the full admin surface one storefront-aligned visual
+ * language while leaving the customer experience untouched.
+ */
+body:has([data-admin-shell]) {
+  --admin-canvas: #f4f4f0;
+  --admin-panel: #ffffff;
+  --admin-panel-muted: #edede8;
+  --admin-ink: #09090b;
+  --admin-muted: #71717a;
+  --admin-line: rgba(9, 9, 11, 0.12);
+  --admin-line-strong: rgba(9, 9, 11, 0.22);
+  background: #f4f4f0;
+  color: #09090b;
+  color-scheme: light;
+}
+
+[data-admin-shell] {
+  background:
+    radial-gradient(circle at 84% 0%, rgba(255, 255, 255, 0.9), transparent 28rem),
+    var(--admin-canvas);
+  color: var(--admin-ink);
+}
+
+[data-admin-content] {
+  color: var(--admin-ink);
+}
+
+[data-admin-content] > div > :where(div, main) {
+  animation: admin-page-in 260ms cubic-bezier(0.22, 1, 0.36, 1) both;
+}
+
+[data-admin-content] :is(h1, h2, h3, h4, h5, h6) {
+  color: var(--admin-ink);
+  letter-spacing: -0.025em;
+}
+
+[data-admin-content] h1 {
+  font-size: clamp(2rem, 4vw, 3.35rem);
+  font-weight: 700;
+  line-height: 0.98;
+  letter-spacing: -0.055em;
+}
+
+[data-admin-content] h2 {
+  font-weight: 600;
+}
+
+[data-admin-content] :is(.text-white, .text-zinc-100, .text-zinc-200, .text-gray-200) {
+  color: var(--admin-ink) !important;
+}
+
+[data-admin-content]
+  :is(
+    .text-zinc-300,
+    .text-zinc-400,
+    .text-zinc-500,
+    .text-zinc-600,
+    .text-gray-300,
+    .text-gray-400,
+    .text-gray-500,
+    .text-gray-600
+  ) {
+  color: var(--admin-muted) !important;
+}
+
+[data-admin-content] :is(.text-white\/90, .text-white\/80, .text-white\/70) {
+  color: #27272a !important;
+}
+
+[data-admin-content]
+  :is(
+    .text-white\/60,
+    .text-white\/55,
+    .text-white\/50,
+    .text-white\/45,
+    .text-white\/40
+  ) {
+  color: var(--admin-muted) !important;
+}
+
+[data-admin-content]
+  :is(
+    .bg-zinc-900,
+    .bg-zinc-950,
+    .bg-zinc-800,
+    .bg-zinc-800\/50,
+    .bg-zinc-900\/50,
+    .bg-white\/\[0\.03\]
+  ) {
+  background-color: var(--admin-panel) !important;
+}
+
+[data-admin-content] :is(.bg-zinc-700, .bg-zinc-200, .bg-gray-800) {
+  background-color: var(--admin-panel-muted) !important;
+}
+
+[data-admin-content]
+  :is(
+    .border-zinc-900,
+    .border-zinc-800,
+    .border-zinc-800\/70,
+    .border-zinc-800\/60,
+    .border-zinc-800\/50,
+    .border-zinc-700,
+    .border-zinc-700\/80,
+    .border-white\/10,
+    .border-white\/15,
+    .border-white\/20
+  ) {
+  border-color: var(--admin-line) !important;
+}
+
+[data-admin-content] :is(.border-zinc-600, .border-zinc-500, .border-white\/40) {
+  border-color: var(--admin-line-strong) !important;
+}
+
+[data-admin-content] :is(.bg-red-600, .bg-red-500, .bg-red-700) {
+  background-color: #09090b !important;
+  color: #fff !important;
+}
+
+[data-admin-content] :is(.bg-black, .bg-red-600, .bg-red-500, .bg-red-700).text-white,
+[data-admin-content] [data-admin-inverse] .text-white {
+  color: #fff !important;
+}
+
+[data-admin-content] [data-admin-inverse] :is(.text-zinc-300, .text-zinc-400) {
+  color: #a1a1aa !important;
+}
+
+[data-admin-content] :is(.hover\:bg-red-700, .hover\:bg-red-600):hover {
+  background-color: #27272a !important;
+}
+
+[data-admin-content] :is(.bg-red-950, .bg-red-950\/20, .bg-red-900\/20) {
+  background-color: #fff1f2 !important;
+}
+
+[data-admin-content] :is(.border-red-900\/60, .border-red-900\/40, .border-red-800) {
+  border-color: #fecdd3 !important;
+}
+
+[data-admin-content]
+  :is(section, article, form, div)[class*="border"][class*="bg-zinc-"] {
+  border-color: var(--admin-line) !important;
+  background-color: var(--admin-panel) !important;
+  box-shadow: 0 1px 0 rgba(9, 9, 11, 0.03);
+}
+
+[data-admin-content] :is(section, article, div)[class*="rounded"][class*="bg-zinc-"] {
+  border-radius: 0.75rem;
+}
+
+[data-admin-content] :is(input, textarea, select) {
+  border-color: var(--admin-line-strong) !important;
+  border-radius: 0.35rem;
+  background: #fff !important;
+  color: var(--admin-ink) !important;
+  color-scheme: light;
+  transition:
+    border-color 150ms ease,
+    box-shadow 150ms ease,
+    background-color 150ms ease;
+}
+
+[data-admin-content] :is(input, textarea, select)::placeholder {
+  color: #a1a1aa !important;
+}
+
+[data-admin-content] :is(input, textarea, select):focus {
+  border-color: #09090b !important;
+  outline: none;
+  box-shadow: 0 0 0 3px rgba(9, 9, 11, 0.08);
+}
+
+[data-admin-content] input[type="checkbox"],
+[data-admin-content] input[type="radio"] {
+  accent-color: #09090b;
+}
+
+[data-admin-content] button,
+[data-admin-content] a {
+  transition:
+    color 150ms ease,
+    background-color 150ms ease,
+    border-color 150ms ease,
+    opacity 150ms ease,
+    transform 150ms ease;
+}
+
+[data-admin-content] :is(button, a)[class*="bg-red-"]:not([disabled]):hover,
+[data-admin-content] :is(button, a).bg-black:not([disabled]):hover {
+  transform: translateY(-1px);
+}
+
+[data-admin-content] table {
+  border-collapse: separate;
+  border-spacing: 0;
+}
+
+[data-admin-content] thead {
+  color: var(--admin-muted);
+}
+
+[data-admin-content] th {
+  font-size: 0.65rem;
+  font-weight: 600;
+  letter-spacing: 0.12em;
+  text-transform: uppercase;
+}
+
+[data-admin-content] tbody tr {
+  border-color: var(--admin-line) !important;
+}
+
+[data-admin-content] tbody tr[class*="hover"]:hover {
+  background-color: #f8f8f6 !important;
+}
+
+[data-admin-content] [class*="divide-zinc-"] > :not([hidden]) ~ :not([hidden]) {
+  border-color: var(--admin-line) !important;
+}
+
+[data-admin-content] [class*="shadow"] {
+  --tw-shadow-color: rgba(9, 9, 11, 0.08);
+}
+
+[data-admin-content] main[class*="bg-\[\#080808\]"] {
+  min-height: 0;
+  margin: -2rem -2.5rem -4rem;
+  padding: 2rem 2.5rem 4rem;
+  background: transparent !important;
+  color: var(--admin-ink) !important;
+}
+
+[data-admin-content] main[class*="bg-\[\#080808\]"] .bg-black {
+  background-color: #09090b !important;
+}
+
+[data-admin-content] main[class*="bg-\[\#080808\]"] .bg-white {
+  color: #fff !important;
+  background-color: #09090b !important;
+}
+
+[data-admin-content] .admin-sidebar-scroll {
+  scrollbar-width: thin;
+}
+
+@keyframes admin-page-in {
+  from {
+    opacity: 0;
+    transform: translateY(0.35rem);
+  }
+  to {
+    opacity: 1;
+    transform: translateY(0);
+  }
+}
+
+@media (max-width: 767px) {
+  [data-admin-content] h1 {
+    font-size: 2.25rem;
+  }
+
+  [data-admin-content] main[class*="bg-\[\#080808\]"] {
+    margin: -1.25rem -1rem -3rem;
+    padding: 1.5rem 1rem 3rem;
+  }
+}
+
+@media (prefers-reduced-motion: reduce) {
+  [data-admin-content] > div > :where(div, main) {
+    animation: none;
+  }
+}
+
 body:has([data-auth-shell]) {
   background: var(--storefront-surface) !important;
   color: #000000 !important;

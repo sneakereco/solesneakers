@@ -68,7 +68,7 @@ export function InventoryProductDetailsModal({
         .sort((a, b) => (a.sort_order ?? 0) - (b.sort_order ?? 0)) ?? [];
 
     if (available.length === 0) {
-      return [{ url: "/images/rdk-logo.png", is_primary: true, sort_order: 0 }];
+      return [{ url: "/images/logo.png", is_primary: true, sort_order: 0 }];
     }
     return available;
   }, [product]);
@@ -77,7 +77,7 @@ export function InventoryProductDetailsModal({
     return null;
   }
 
-  const activeImage = images[selectedImageIndex]?.url ?? "/images/rdk-logo.png";
+  const activeImage = images[selectedImageIndex]?.url ?? "/images/logo.png";
   const title = product.name || "Item";
   const salePrice = formatMoney(variant.sale_price_cents / 100);
   const unitCost = formatMoney(variant.unit_cost_cents / 100);
