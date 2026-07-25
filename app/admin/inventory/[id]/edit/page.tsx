@@ -1,8 +1,8 @@
 // app/admin/inventory/[id]/edit/page.tsx
 
-import { ArrowLeft } from "lucide-react";
-import Link from "next/link";
 import { notFound } from "next/navigation";
+
+import { AdminPage, AdminPageHeader } from "@/components/admin/AdminPage";
 
 import { getEditFormInitialData } from "./actions";
 import { EditProductClient } from "./client";
@@ -25,19 +25,14 @@ export default async function EditProductPage(props: EditProductPageProps) {
   }
 
   return (
-    <div className="space-y-4 md:space-y-6">
-      <div className="flex items-center gap-3 md:gap-4">
-        <Link
-          href="/admin/inventory"
-          className="text-gray-400 hover:text-white transition"
-        >
-          <ArrowLeft className="w-5 h-5 md:w-6 md:h-6" />
-        </Link>
-        <div>
-          <h1 className="text-xl md:text-3xl font-bold text-white">Edit Product</h1>
-          <p className="text-sm md:text-base text-gray-400">Update product details</p>
-        </div>
-      </div>
+    <AdminPage width="content">
+      <AdminPageHeader
+        eyebrow="Catalog"
+        title="Edit product"
+        description="Update product details, variants, media, and availability."
+        backHref="/admin/inventory"
+        backLabel="Inventory"
+      />
 
       <EditProductClient
         productId={id}
@@ -48,6 +43,6 @@ export default async function EditProductPage(props: EditProductPageProps) {
         initialModels={initialData.models}
         initialSizes={initialData.sizes}
       />
-    </div>
+    </AdminPage>
   );
 }

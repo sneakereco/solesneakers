@@ -3,6 +3,7 @@
 
 import { useEffect, useMemo, useState } from "react";
 
+import { AdminPage, AdminPageHeader } from "@/components/admin/AdminPage";
 import { logError } from "@/lib/utils/log";
 import { ModalPortal } from "@/components/ui/ModalPortal";
 
@@ -468,15 +469,12 @@ export default function ShippingSettingsPage() {
     : "";
 
   return (
-    <div className="space-y-8">
-      <div>
-        <h1 className="text-2xl sm:text-3xl font-bold text-white mb-2">
-          Shipping Settings
-        </h1>
-        <p className="text-sm sm:text-base text-gray-400">
-          Shipping defaults, origin address, and carrier options
-        </p>
-      </div>
+    <AdminPage width="content">
+      <AdminPageHeader
+        eyebrow="Settings"
+        title="Shipping settings"
+        description="Configure shipping defaults, origin addresses, and carrier options."
+      />
 
       <div className="grid grid-cols-1 lg:grid-cols-2 gap-4">
         <div className="bg-zinc-900 border border-zinc-800/70 rounded p-5 space-y-3">
@@ -930,6 +928,6 @@ export default function ShippingSettingsPage() {
           </div>
         </ModalPortal>
       )}
-    </div>
+    </AdminPage>
   );
 }

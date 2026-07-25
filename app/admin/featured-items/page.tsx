@@ -1,10 +1,17 @@
 // app/admin/featured-items/page.tsx
+import { AdminPage, AdminPageHeader } from "@/components/admin/AdminPage";
+
 import { FeaturedItemsManager } from "./client";
 
 export default function FeaturedItemsPage() {
   return (
-    <div className="px-6 py-6">
+    <AdminPage width="content">
+      <AdminPageHeader
+        eyebrow="Merchandising"
+        title="Featured items"
+        description="Choose and arrange the products highlighted on the storefront."
+      />
       <FeaturedItemsManager />
-    </div>
+    </AdminPage>
   );
 }

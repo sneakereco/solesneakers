@@ -22,6 +22,7 @@ import {
   AdminOrderItemDetailsModal,
   getOrderItemFinancials,
 } from "@/components/admin/orders/OrderItemDetailsModal";
+import { AdminPage, AdminPageHeader } from "@/components/admin/AdminPage";
 import type { AdminOrderItem } from "@/components/admin/orders/OrderItemDetailsModal";
 import { Toast } from "@/components/ui/Toast";
 import {
@@ -792,40 +793,28 @@ export default function TransactionDetailPage() {
   };
 
   return (
-    <div className="space-y-6 max-w-8xl">
-      <button
-        type="button"
-        onClick={() => router.push("/admin/transactions")}
-        className="flex items-center gap-2 text-sm text-gray-400 transition-colors hover:text-white"
-      >
-        <ArrowLeft className="h-4 w-4" />
-        Transactions
-      </button>
-
-      <div className="flex flex-wrap items-start justify-between gap-4">
-        <div>
-          <div className="flex flex-wrap items-center gap-3">
-            <h1 className="font-mono text-2xl font-bold text-white">
-              #{order.id.slice(0, 8)}
-            </h1>
-            <span
-              className={`inline-flex items-center px-2 py-0.5 text-xs font-medium ${statusMeta.cls}`}
-            >
-              {statusMeta.label}
-            </span>
-          </div>
-          {order.failure_reason && (
-            <p className="mt-1 text-sm text-red-400">{order.failure_reason}</p>
-          )}
-        </div>
-        <div className="flex flex-col items-end gap-2">
-          {refundedCents > 0 && (
-            <div className="text-right text-sm text-red-400">
+    <AdminPage>
+      <AdminPageHeader
+        eyebrow="Transaction detail"
+        title={`#${order.id.slice(0, 8)}`}
+        description={order.failure_reason || "Order, payment, and fulfillment activity."}
+        backHref="/admin/transactions"
+        backLabel="Transactions"
+        meta={
+          <span
+            className={`inline-flex items-center px-2 py-0.5 text-xs font-medium ${statusMeta.cls}`}
+          >
+            {statusMeta.label}
+          </span>
+        }
+        actions={
+          refundedCents > 0 ? (
+            <div className="text-right text-sm font-medium text-red-500">
               -{fmtMoney(refundedAmount)} refunded
             </div>
-          )}
-        </div>
-      </div>
+          ) : undefined
+        }
+      />
 
       <div className="grid gap-6 xl:grid-cols-[minmax(0,1.65fr)_minmax(280px,0.9fr)]">
         <div className="space-y-6">
@@ -1608,6 +1597,6 @@ export default function TransactionDetailPage() {
           onClose={() => setToast(null)}
         />
       )}
-    </div>
+    </AdminPage>
   );
 }

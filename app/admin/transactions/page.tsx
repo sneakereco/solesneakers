@@ -5,6 +5,7 @@ import { useEffect, useMemo, useState } from "react";
 import { useRouter } from "next/navigation";
 import { Search } from "lucide-react";
 
+import { AdminPage, AdminPageHeader } from "@/components/admin/AdminPage";
 import { getOrderNetProfitDollars, shouldShowOrderProfit } from "@/lib/orders/metrics";
 import { logError } from "@/lib/utils/log";
 
@@ -335,18 +336,21 @@ export default function TransactionsPage() {
   };
 
   return (
-    <div className="space-y-6">
-      <div>
-        <h1 className="text-3xl font-bold text-white mb-2">Transactions</h1>
-        <p className="text-gray-400">All payment activity</p>
-      </div>
+    <AdminPage>
+      <AdminPageHeader
+        eyebrow="Commerce"
+        title="Transactions"
+        description="Review payment activity, refunds, fulfillment, and order profitability."
+      />
 
       {/* Tabs */}
-      <div className="border-b border-zinc-800/70 flex flex-wrap gap-6">
+      <div data-admin-tabs className="flex flex-wrap gap-6 border-b border-zinc-800/70">
         {TRANSACTION_TABS.map((tab) => (
           <button
+            type="button"
             key={tab.key}
             onClick={() => setActiveTab(tab.key)}
+            aria-pressed={activeTab === tab.key}
             className={`py-3 text-sm font-medium transition-colors flex items-center gap-2 ${
               activeTab === tab.key
                 ? "text-white border-b-2 border-red-600"
@@ -362,7 +366,10 @@ export default function TransactionsPage() {
       </div>
 
       {/* Search */}
-      <div className="flex items-center gap-2 bg-zinc-900 border border-zinc-800/70 px-3 py-2 max-w-md">
+      <div
+        data-admin-toolbar
+        className="flex max-w-md items-center gap-2 border border-zinc-800/70 bg-zinc-900 px-3 py-2"
+      >
         <Search className="w-4 h-4 text-gray-500" />
         <input
           type="text"
@@ -374,7 +381,10 @@ export default function TransactionsPage() {
       </div>
 
       {/* Table */}
-      <div className="bg-zinc-900 border border-zinc-800/70 rounded overflow-hidden">
+      <div
+        data-admin-table-shell
+        className="overflow-hidden rounded border border-zinc-800/70 bg-zinc-900"
+      >
         {isLoading ? (
           <div className="text-center py-12 text-gray-400">Loading...</div>
         ) : filteredOrders.length === 0 ? (
@@ -494,6 +504,6 @@ export default function TransactionsPage() {
       {!isLoading && totalPages > 1 && (
         <div className="flex justify-start">{renderPagination()}</div>
       )}
-    </div>
+    </AdminPage>
   );
 }

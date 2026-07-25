@@ -4,6 +4,7 @@
 import { Fragment, useEffect, useMemo, useState } from "react";
 import { ChevronDown, ExternalLink, AlertCircle } from "lucide-react";
 
+import { AdminPage, AdminPageHeader } from "@/components/admin/AdminPage";
 import {
   AdminOrderItemDetailsModal,
   getOrderItemFinancials,
@@ -1017,11 +1018,12 @@ export default function ShippingPage() {
   }, [labelOrder, shippingDefaults]);
 
   return (
-    <div className="space-y-8">
-      <div>
-        <h1 className="text-3xl font-bold text-white mb-2">Shipping</h1>
-        <p className="text-gray-400">Review, label, and ship your orders.</p>
-      </div>
+    <AdminPage>
+      <AdminPageHeader
+        eyebrow="Fulfillment"
+        title="Shipping"
+        description="Review orders, create labels, and monitor outbound fulfillment."
+      />
 
       {activeTab === "ready" && (
         <div className="rounded-sm border border-blue-400/20 bg-blue-400/10 p-3 sm:p-4">
@@ -1037,11 +1039,16 @@ export default function ShippingPage() {
         </div>
       )}
 
-      <div className="border-b border-zinc-800/70 flex flex-nowrap gap-2 sm:gap-6">
+      <div
+        data-admin-tabs
+        className="flex flex-nowrap gap-2 overflow-x-auto border-b border-zinc-800/70 sm:gap-6"
+      >
         {TABS.map((tab) => (
           <button
+            type="button"
             key={tab.key}
             onClick={() => setActiveTab(tab.key)}
+            aria-pressed={activeTab === tab.key}
             className={`py-2.5 text-[10px] sm:text-sm font-medium transition-colors flex items-center gap-1 sm:gap-2 whitespace-nowrap ${
               activeTab === tab.key
                 ? "text-white border-b-2 border-red-600"
@@ -1056,7 +1063,10 @@ export default function ShippingPage() {
         ))}
       </div>
 
-      <div className="flex flex-wrap items-center justify-between gap-3 text-sm">
+      <div
+        data-admin-toolbar
+        className="flex flex-wrap items-center justify-between gap-3 text-sm"
+      >
         <div className="text-gray-400">
           <span className="text-gray-500">Origin:</span>{" "}
           {originLine ? originLine : "Not set"}
@@ -1077,7 +1087,10 @@ export default function ShippingPage() {
           No orders in this queue.
         </div>
       ) : (
-        <div className="rounded-sm border border-zinc-800/70 bg-zinc-900 overflow-x-hidden md:overflow-x-auto overflow-y-visible">
+        <div
+          data-admin-table-shell
+          className="overflow-x-hidden overflow-y-visible rounded-sm border border-zinc-800/70 bg-zinc-900 md:overflow-x-auto"
+        >
           <table className="w-full text-[12px] sm:text-sm">
             <thead>
               <tr className="bg-zinc-800">
@@ -1168,6 +1181,6 @@ export default function ShippingPage() {
           void handleSaveOrigin();
         }}
       />
-    </div>
+    </AdminPage>
   );
 }

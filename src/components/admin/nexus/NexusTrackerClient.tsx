@@ -12,6 +12,7 @@ import {
   Home,
 } from "lucide-react";
 
+import { AdminPage, AdminPageHeader } from "@/components/admin/AdminPage";
 import { RdkSelect } from "@/components/ui/Select";
 import type { NexusData, StateSummary } from "@/types/domain/nexus";
 
@@ -363,57 +364,57 @@ export default function NexusTrackerClient() {
   const taxEnabled = data.taxEnabled;
 
   return (
-    <div className="space-y-6">
-      <div className="flex flex-col md:flex-row md:items-start md:justify-between gap-4">
-        <div>
-          <h1 className="text-3xl font-bold text-white mb-2">Sales Tax Nexus Tracker</h1>
-          <p className="text-gray-400">
-            Monitor your sales tax obligations across all US states
-          </p>
-        </div>
-
-        <div className="flex flex-wrap items-center gap-3">
-          <button
-            onClick={handleDownloadTaxDocs}
-            disabled={!taxEnabled}
-            className={[
-              "flex items-center gap-2 px-4 py-2 rounded-sm text-white",
-              taxEnabled
-                ? "bg-red-600 hover:bg-red-500"
-                : "bg-zinc-800 text-zinc-500 cursor-not-allowed",
-            ].join(" ")}
-          >
-            <Download className="w-4 h-4" />
-            View Tax Reports
-          </button>
-
-          {/* Home state badge next to the home office button */}
-          <div className="flex items-center gap-2">
+    <AdminPage>
+      <AdminPageHeader
+        eyebrow="Compliance"
+        title="Sales tax nexus"
+        description="Monitor sales tax obligations and registration status across all US states."
+        actions={
+          <>
             <button
-              onClick={() => setShowHomeSetup(true)}
-              className={`flex items-center gap-2 h-10 px-4 rounded-lg text-white ${
-                isHomeOfficeConfigured
-                  ? "bg-zinc-800 hover:bg-zinc-700"
-                  : "bg-red-600 hover:bg-red-700"
-              }`}
+              type="button"
+              onClick={handleDownloadTaxDocs}
+              disabled={!taxEnabled}
+              className={[
+                "flex items-center gap-2 px-4 py-2 rounded-sm text-white",
+                taxEnabled
+                  ? "bg-red-600 hover:bg-red-500"
+                  : "bg-zinc-800 text-zinc-500 cursor-not-allowed",
+              ].join(" ")}
             >
-              <Home className="w-4 h-4" />
-              {isHomeOfficeConfigured ? "Change Home Office" : "Setup Home Office"}
+              <Download className="w-4 h-4" />
+              View Tax Reports
             </button>
 
-            {/* Home state pill to the RIGHT of the button */}
-            <div
-              className="flex items-center gap-2 h-10 px-3 rounded-lg border border-zinc-800 bg-zinc-900 text-white shadow-sm"
-              title="Registered home state"
-            >
-              <span className="text-[10px] uppercase tracking-wide text-gray-400">
-                Home
-              </span>
-              <span className="text-sm font-bold text-white">{homeStateLabel}</span>
+            {/* Home state badge next to the home office button */}
+            <div className="flex items-center gap-2">
+              <button
+                type="button"
+                onClick={() => setShowHomeSetup(true)}
+                className={`flex items-center gap-2 h-10 px-4 rounded-lg text-white ${
+                  isHomeOfficeConfigured
+                    ? "bg-zinc-800 hover:bg-zinc-700"
+                    : "bg-red-600 hover:bg-red-700"
+                }`}
+              >
+                <Home className="w-4 h-4" />
+                {isHomeOfficeConfigured ? "Change Home Office" : "Setup Home Office"}
+              </button>
+
+              {/* Home state pill to the RIGHT of the button */}
+              <div
+                className="flex items-center gap-2 h-10 px-3 rounded-lg border border-zinc-800 bg-zinc-900 text-white shadow-sm"
+                title="Registered home state"
+              >
+                <span className="text-[10px] uppercase tracking-wide text-gray-400">
+                  Home
+                </span>
+                <span className="text-sm font-bold text-white">{homeStateLabel}</span>
+              </div>
             </div>
-          </div>
-        </div>
-      </div>
+          </>
+        }
+      />
 
       {!taxEnabled && (
         <div className="bg-yellow-900/20 border border-yellow-500/30 rounded-sm p-4 flex items-start gap-3">
@@ -696,6 +697,6 @@ export default function NexusTrackerClient() {
           </div>
         )}
       </div>
-    </div>
+    </AdminPage>
   );
 }

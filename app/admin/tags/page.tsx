@@ -2,6 +2,8 @@
 
 import { useEffect, useState } from "react";
 
+import { AdminPage, AdminPageHeader } from "@/components/admin/AdminPage";
+
 import type { ActiveTab, Alias, Brand, Candidate, Model, TagSize } from "./types";
 
 const tabs: Array<{ id: ActiveTab; label: string }> = [
@@ -145,194 +147,187 @@ export default function TagsPage() {
       (activeTab === "aliases" && Boolean(entityId)));
 
   return (
-    <main className="min-h-screen bg-[#080808] px-5 py-8 text-white sm:px-8">
-      <div className="mx-auto max-w-6xl">
-        <div className="mb-8 flex flex-wrap items-end justify-between gap-4">
-          <div>
-            <p className="mb-2 text-xs uppercase tracking-[0.24em] text-white/45">
-              Inventory vocabulary
-            </p>
-            <h1 className="font-serif text-4xl">Tags</h1>
-          </div>
-          <p className="max-w-lg text-sm leading-6 text-white/55">
-            Brands, models, aliases, candidates, and sizes are canonical records. Products
-            reference these records directly.
-          </p>
-        </div>
+    <AdminPage width="content">
+      <AdminPageHeader
+        eyebrow="Catalog"
+        title="Product tags"
+        description="Manage canonical brands, models, aliases, candidates, and sizes used throughout the catalog."
+      />
 
-        <div className="mb-6 flex gap-1 overflow-x-auto border-b border-white/10">
-          {tabs.map((tab) => (
-            <button
-              key={tab.id}
-              onClick={() => setActiveTab(tab.id)}
-              className={`px-4 py-3 text-xs uppercase tracking-wider ${
-                activeTab === tab.id
-                  ? "border-b border-white text-white"
-                  : "text-white/45 hover:text-white"
-              }`}
-            >
-              {tab.label}
-            </button>
-          ))}
-        </div>
+      <div
+        data-admin-tabs
+        className="flex gap-1 overflow-x-auto border-b border-white/10"
+      >
+        {tabs.map((tab) => (
+          <button
+            type="button"
+            key={tab.id}
+            onClick={() => setActiveTab(tab.id)}
+            aria-pressed={activeTab === tab.id}
+            className={`px-4 py-3 text-xs uppercase tracking-wider ${
+              activeTab === tab.id
+                ? "border-b border-white text-white"
+                : "text-white/45 hover:text-white"
+            }`}
+          >
+            {tab.label}
+          </button>
+        ))}
+      </div>
 
-        {activeTab !== "candidates" && (
-          <div className="mb-8 grid gap-3 border border-white/10 bg-white/[0.03] p-4 sm:grid-cols-[1fr_auto_auto]">
-            <input
+      {activeTab !== "candidates" && (
+        <div className="mb-8 grid gap-3 border border-white/10 bg-white/[0.03] p-4 sm:grid-cols-[1fr_auto_auto]">
+          <input
+            className={inputClass}
+            value={label}
+            onChange={(event) => setLabel(event.target.value)}
+            placeholder={`New ${activeTab.slice(0, -1)} label`}
+          />
+          {activeTab === "models" && (
+            <select
               className={inputClass}
-              value={label}
-              onChange={(event) => setLabel(event.target.value)}
-              placeholder={`New ${activeTab.slice(0, -1)} label`}
-            />
-            {activeTab === "models" && (
+              value={brandId}
+              onChange={(event) => setBrandId(event.target.value)}
+            >
+              <option value="">Select brand</option>
+              {brands
+                .filter((brand) => brand.is_active)
+                .map((brand) => (
+                  <option key={brand.id} value={brand.id}>
+                    {brand.canonical_label}
+                  </option>
+                ))}
+            </select>
+          )}
+          {activeTab === "aliases" && (
+            <div className="flex gap-2">
               <select
                 className={inputClass}
-                value={brandId}
-                onChange={(event) => setBrandId(event.target.value)}
+                value={entityType}
+                onChange={(event) => {
+                  setEntityType(event.target.value as "brand" | "model");
+                  setEntityId("");
+                }}
               >
-                <option value="">Select brand</option>
-                {brands
-                  .filter((brand) => brand.is_active)
-                  .map((brand) => (
-                    <option key={brand.id} value={brand.id}>
-                      {brand.canonical_label}
+                <option value="brand">Brand</option>
+                <option value="model">Model</option>
+              </select>
+              <select
+                className={inputClass}
+                value={entityId}
+                onChange={(event) => setEntityId(event.target.value)}
+              >
+                <option value="">Select target</option>
+                {targetOptions
+                  .filter((item) => item.is_active)
+                  .map((item) => (
+                    <option key={item.id} value={item.id}>
+                      {item.canonical_label}
                     </option>
                   ))}
               </select>
-            )}
-            {activeTab === "aliases" && (
-              <div className="flex gap-2">
-                <select
-                  className={inputClass}
-                  value={entityType}
-                  onChange={(event) => {
-                    setEntityType(event.target.value as "brand" | "model");
-                    setEntityId("");
-                  }}
-                >
-                  <option value="brand">Brand</option>
-                  <option value="model">Model</option>
-                </select>
-                <select
-                  className={inputClass}
-                  value={entityId}
-                  onChange={(event) => setEntityId(event.target.value)}
-                >
-                  <option value="">Select target</option>
-                  {targetOptions
-                    .filter((item) => item.is_active)
-                    .map((item) => (
-                      <option key={item.id} value={item.id}>
-                        {item.canonical_label}
-                      </option>
-                    ))}
-                </select>
-              </div>
-            )}
-            {activeTab === "sizes" && (
-              <select
-                className={inputClass}
-                value={sizeType}
-                onChange={(event) =>
-                  setSizeType(event.target.value as TagSize["size_type"])
-                }
-              >
-                <option value="shoe">Shoe</option>
-                <option value="clothing">Clothing</option>
-                <option value="custom">Custom</option>
-                <option value="none">None</option>
-              </select>
-            )}
-            <button
-              className={buttonClass}
-              disabled={!canAdd}
-              onClick={() => void addCurrent()}
+            </div>
+          )}
+          {activeTab === "sizes" && (
+            <select
+              className={inputClass}
+              value={sizeType}
+              onChange={(event) =>
+                setSizeType(event.target.value as TagSize["size_type"])
+              }
             >
-              Add
-            </button>
-          </div>
-        )}
+              <option value="shoe">Shoe</option>
+              <option value="clothing">Clothing</option>
+              <option value="custom">Custom</option>
+              <option value="none">None</option>
+            </select>
+          )}
+          <button
+            className={buttonClass}
+            disabled={!canAdd}
+            onClick={() => void addCurrent()}
+          >
+            Add
+          </button>
+        </div>
+      )}
 
-        {message && <p className="mb-4 text-sm text-red-300">{message}</p>}
-        {loading ? (
-          <p className="py-12 text-sm text-white/45">Loading...</p>
-        ) : (
-          <div className="divide-y divide-white/10 border-y border-white/10">
-            {activeTab === "brands" &&
-              brands.map((item) => (
-                <Row
-                  key={item.id}
-                  title={item.canonical_label}
-                  meta="Brand"
-                  active={item.is_active}
-                  onToggle={() => void toggle("brands", item)}
-                />
-              ))}
-            {activeTab === "models" &&
-              models.map((item) => (
-                <Row
-                  key={item.id}
-                  title={item.canonical_label}
-                  meta={
-                    brands.find((brand) => brand.id === item.brand_id)?.canonical_label ??
-                    "Unknown brand"
-                  }
-                  active={item.is_active}
-                  onToggle={() => void toggle("models", item)}
-                />
-              ))}
-            {activeTab === "aliases" &&
-              aliases.map((item) => (
-                <Row
-                  key={item.id}
-                  title={item.alias_label}
-                  meta={`${item.entity_type} alias`}
-                  active={item.is_active}
-                  onToggle={() => void toggle("aliases", item)}
-                />
-              ))}
-            {activeTab === "sizes" &&
-              sizes.map((item) => (
-                <Row
-                  key={item.id}
-                  title={item.canonical_label}
-                  meta={`${item.size_type} / order ${item.sort_order}`}
-                  active={item.is_active}
-                  onToggle={() => void toggle("sizes", item)}
-                />
-              ))}
-            {activeTab === "candidates" &&
-              candidates.map((item) => (
-                <div
-                  key={item.id}
-                  className="flex items-center justify-between gap-4 py-4"
-                >
-                  <div>
-                    <p className="text-sm">{item.raw_text}</p>
-                    <p className="mt-1 text-xs uppercase tracking-wider text-white/40">
-                      {item.entity_type} candidate
-                    </p>
-                  </div>
-                  <div className="flex gap-2">
-                    <button
-                      className="border border-white/20 px-3 py-2 text-xs"
-                      onClick={() => void rejectCandidate(item)}
-                    >
-                      Reject
-                    </button>
-                    <button
-                      className="bg-white px-3 py-2 text-xs text-black"
-                      onClick={() => void acceptCandidate(item)}
-                    >
-                      Accept
-                    </button>
-                  </div>
+      {message && <p className="mb-4 text-sm text-red-300">{message}</p>}
+      {loading ? (
+        <p className="py-12 text-sm text-white/45">Loading...</p>
+      ) : (
+        <div className="divide-y divide-white/10 border-y border-white/10">
+          {activeTab === "brands" &&
+            brands.map((item) => (
+              <Row
+                key={item.id}
+                title={item.canonical_label}
+                meta="Brand"
+                active={item.is_active}
+                onToggle={() => void toggle("brands", item)}
+              />
+            ))}
+          {activeTab === "models" &&
+            models.map((item) => (
+              <Row
+                key={item.id}
+                title={item.canonical_label}
+                meta={
+                  brands.find((brand) => brand.id === item.brand_id)?.canonical_label ??
+                  "Unknown brand"
+                }
+                active={item.is_active}
+                onToggle={() => void toggle("models", item)}
+              />
+            ))}
+          {activeTab === "aliases" &&
+            aliases.map((item) => (
+              <Row
+                key={item.id}
+                title={item.alias_label}
+                meta={`${item.entity_type} alias`}
+                active={item.is_active}
+                onToggle={() => void toggle("aliases", item)}
+              />
+            ))}
+          {activeTab === "sizes" &&
+            sizes.map((item) => (
+              <Row
+                key={item.id}
+                title={item.canonical_label}
+                meta={`${item.size_type} / order ${item.sort_order}`}
+                active={item.is_active}
+                onToggle={() => void toggle("sizes", item)}
+              />
+            ))}
+          {activeTab === "candidates" &&
+            candidates.map((item) => (
+              <div key={item.id} className="flex items-center justify-between gap-4 py-4">
+                <div>
+                  <p className="text-sm">{item.raw_text}</p>
+                  <p className="mt-1 text-xs uppercase tracking-wider text-white/40">
+                    {item.entity_type} candidate
+                  </p>
                 </div>
-              ))}
-          </div>
-        )}
-      </div>
-    </main>
+                <div className="flex gap-2">
+                  <button
+                    className="border border-white/20 px-3 py-2 text-xs"
+                    onClick={() => void rejectCandidate(item)}
+                  >
+                    Reject
+                  </button>
+                  <button
+                    className="bg-white px-3 py-2 text-xs text-black"
+                    onClick={() => void acceptCandidate(item)}
+                  >
+                    Accept
+                  </button>
+                </div>
+              </div>
+            ))}
+        </div>
+      )}
+    </AdminPage>
   );
 }
 

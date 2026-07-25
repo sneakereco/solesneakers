@@ -2,7 +2,9 @@
 
 import { useEffect, useMemo, useState } from "react";
 import { useParams, useRouter } from "next/navigation";
-import { ArrowLeft, ChevronDown, ChevronRight, CreditCard } from "lucide-react";
+import { ChevronDown, ChevronRight, CreditCard } from "lucide-react";
+
+import { AdminPage, AdminPageHeader } from "@/components/admin/AdminPage";
 
 type CustomerDetail = {
   routeId: string;
@@ -63,7 +65,7 @@ const fmtMoney = new Intl.NumberFormat("en-US", {
 
 function fmtDate(iso: string | null | undefined, includeTime = true) {
   if (!iso) {
-    return "â€”";
+    return "—";
   }
 
   return new Date(iso).toLocaleString("en-US", {
@@ -153,7 +155,7 @@ export default function CustomerDetailPage() {
   }, [data]);
 
   if (isLoading) {
-    return <div className="text-sm text-zinc-500">Loading customerâ€¦</div>;
+    return <div className="text-sm text-zinc-500">Loading customer…</div>;
   }
 
   if (error || !data) {
@@ -161,35 +163,25 @@ export default function CustomerDetailPage() {
   }
 
   return (
-    <div className="space-y-6 max-w-8xl">
-      <button
-        type="button"
-        onClick={() => router.push("/admin/customers")}
-        className="flex items-center gap-2 text-sm text-gray-400 transition-colors hover:text-white"
-      >
-        <ArrowLeft className="h-4 w-4" />
-        Customers
-      </button>
-
-      <div className="flex flex-wrap items-start justify-between gap-4">
-        <div>
-          <div className="flex flex-wrap items-center gap-3">
-            <h1 className="text-2xl font-bold text-white">{data.customer.name}</h1>
-            <span
-              className={`inline-flex items-center border px-2 py-0.5 text-xs font-medium ${
-                data.customer.kind === "guest"
-                  ? "border-amber-800 bg-amber-950/40 text-amber-300"
-                  : "border-emerald-800 bg-emerald-950/40 text-emerald-300"
-              }`}
-            >
-              {data.customer.kind === "guest" ? "Guest customer" : "Account customer"}
-            </span>
-          </div>
-          <p className="mt-1 font-mono text-sm text-zinc-500">
-            {data.customer.displayId}
-          </p>
-        </div>
-      </div>
+    <AdminPage>
+      <AdminPageHeader
+        eyebrow="Customer profile"
+        title={data.customer.name}
+        description={data.customer.displayId}
+        backHref="/admin/customers"
+        backLabel="Customers"
+        meta={
+          <span
+            className={`inline-flex items-center border px-2 py-0.5 text-xs font-medium ${
+              data.customer.kind === "guest"
+                ? "border-amber-800 bg-amber-950/40 text-amber-300"
+                : "border-emerald-800 bg-emerald-950/40 text-emerald-300"
+            }`}
+          >
+            {data.customer.kind === "guest" ? "Guest customer" : "Account customer"}
+          </span>
+        }
+      />
 
       <div className="grid gap-6 xl:grid-cols-[minmax(0,1.65fr)_minmax(280px,0.9fr)]">
         <div className="space-y-6">
@@ -266,7 +258,7 @@ export default function CustomerDetailPage() {
                           <div>
                             <p className="text-sm text-white">{method.label}</p>
                             <p className="text-xs text-zinc-500">
-                              Expires {method.expires ?? "â€”"} â€¢ Last used{" "}
+                              Expires {method.expires ?? "—"} • Last used{" "}
                               {fmtDate(method.lastUsedAt)}
                             </p>
                           </div>
@@ -282,24 +274,22 @@ export default function CustomerDetailPage() {
                         <div className="border-t border-zinc-800/70 px-4 py-4">
                           <div className="space-y-0">
                             <DetailRow label="Customer name">
-                              {method.customerName ?? "â€”"}
+                              {method.customerName ?? "—"}
                             </DetailRow>
-                            <DetailRow label="Last 4">{method.last4 ?? "â€”"}</DetailRow>
-                            <DetailRow label="Expires">
-                              {method.expires ?? "â€”"}
-                            </DetailRow>
+                            <DetailRow label="Last 4">{method.last4 ?? "—"}</DetailRow>
+                            <DetailRow label="Expires">{method.expires ?? "—"}</DetailRow>
                             <DetailRow label="Payment method ID">{method.id}</DetailRow>
                             <DetailRow label="Billing address">
-                              {method.billingAddress ?? "â€”"}
+                              {method.billingAddress ?? "—"}
                             </DetailRow>
-                            <DetailRow label="Phone">{method.phone ?? "â€”"}</DetailRow>
-                            <DetailRow label="Email">{method.email ?? "â€”"}</DetailRow>
+                            <DetailRow label="Phone">{method.phone ?? "—"}</DetailRow>
+                            <DetailRow label="Email">{method.email ?? "—"}</DetailRow>
                             <DetailRow label="Origin">{method.origin}</DetailRow>
                             <DetailRow label="CVC check">
-                              {method.cvcCheck ?? "â€”"}
+                              {method.cvcCheck ?? "—"}
                             </DetailRow>
                             <DetailRow label="Street / ZIP check">
-                              {method.streetZipCheck ?? "â€”"}
+                              {method.streetZipCheck ?? "—"}
                             </DetailRow>
                           </div>
                         </div>
@@ -378,8 +368,8 @@ export default function CustomerDetailPage() {
                 {data.customer.kind === "guest" ? "Guest customer" : "Account customer"}
               </DetailRow>
               <DetailRow label="Name">{data.customer.name}</DetailRow>
-              <DetailRow label="Email">{data.customer.email ?? "â€”"}</DetailRow>
-              <DetailRow label="Phone">{data.customer.phone ?? "â€”"}</DetailRow>
+              <DetailRow label="Email">{data.customer.email ?? "—"}</DetailRow>
+              <DetailRow label="Phone">{data.customer.phone ?? "—"}</DetailRow>
               <DetailRow label="Customer since">
                 {fmtDate(data.customer.customerSince)}
               </DetailRow>
@@ -387,15 +377,15 @@ export default function CustomerDetailPage() {
                 {fmtDate(data.customer.lastUpdated)}
               </DetailRow>
               <DetailRow label="Billing details">
-                {data.customer.billingDetails ?? "â€”"}
+                {data.customer.billingDetails ?? "—"}
               </DetailRow>
               <DetailRow label="Primary payment method">
-                {data.customer.primaryPaymentMethod ?? "â€”"}
+                {data.customer.primaryPaymentMethod ?? "—"}
               </DetailRow>
             </div>
           </SectionCard>
         </div>
       </div>
-    </div>
+    </AdminPage>
   );
 }

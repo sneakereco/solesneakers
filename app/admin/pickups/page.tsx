@@ -4,6 +4,7 @@
 import { Fragment, useEffect, useMemo, useState } from "react";
 import { ChevronDown, Search } from "lucide-react";
 
+import { AdminPage, AdminPageHeader } from "@/components/admin/AdminPage";
 import {
   AdminOrderItemDetailsModal,
   getOrderItemFinancials,
@@ -387,13 +388,14 @@ export default function PickupsPage() {
   };
 
   return (
-    <div className="space-y-6">
-      <div>
-        <h1 className="text-3xl font-bold text-white mb-2">Pickups</h1>
-        <p className="text-gray-400">Track and complete local pickup orders.</p>
-      </div>
+    <AdminPage>
+      <AdminPageHeader
+        eyebrow="Fulfillment"
+        title="Pickups"
+        description="Track, prepare, and complete local pickup orders."
+      />
 
-      <div className="grid grid-cols-3 md:grid-cols-3 gap-2 sm:gap-6">
+      <div data-admin-metrics className="grid grid-cols-3 gap-2 sm:gap-6">
         <div className="bg-zinc-900 border border-zinc-800/70 rounded p-3 sm:p-6">
           <span className="text-gray-400 text-[11px] sm:text-sm">Total Sales</span>
           <div className="text-lg sm:text-3xl font-bold text-white mt-1 sm:mt-2">
@@ -421,11 +423,13 @@ export default function PickupsPage() {
         </div>
       </div>
 
-      <div className="border-b border-zinc-800/70 flex flex-wrap gap-6">
+      <div data-admin-tabs className="flex flex-wrap gap-6 border-b border-zinc-800/70">
         {PICKUP_TABS.map((tab) => (
           <button
+            type="button"
             key={tab.key}
             onClick={() => setActiveTab(tab.key)}
+            aria-pressed={activeTab === tab.key}
             className={`py-3 text-sm font-medium transition-colors flex items-center gap-2 ${
               activeTab === tab.key
                 ? "text-white border-b-2 border-red-600"
@@ -440,7 +444,10 @@ export default function PickupsPage() {
         ))}
       </div>
 
-      <div className="flex items-center gap-2 bg-zinc-900 border border-zinc-800/70 px-3 py-2 max-w-md">
+      <div
+        data-admin-toolbar
+        className="flex max-w-md items-center gap-2 border border-zinc-800/70 bg-zinc-900 px-3 py-2"
+      >
         <Search className="w-4 h-4 text-gray-500" />
         <input
           type="text"
@@ -451,7 +458,10 @@ export default function PickupsPage() {
         />
       </div>
 
-      <div className="bg-zinc-900 border border-zinc-800/70 rounded overflow-hidden">
+      <div
+        data-admin-table-shell
+        className="overflow-hidden rounded border border-zinc-800/70 bg-zinc-900"
+      >
         {isLoading ? (
           <div className="text-center py-12 text-gray-400">Loading...</div>
         ) : filteredOrders.length === 0 ? (
@@ -873,6 +883,6 @@ export default function PickupsPage() {
         tone={toast?.tone ?? "info"}
         onClose={() => setToast(null)}
       />
-    </div>
+    </AdminPage>
   );
 }

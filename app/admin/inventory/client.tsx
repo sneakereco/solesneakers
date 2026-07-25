@@ -6,6 +6,7 @@ import Link from "next/link";
 import { useRouter } from "next/navigation";
 import { Archive, Download, Plus, RotateCcw, Search, Trash2 } from "lucide-react";
 
+import { AdminPage, AdminPageHeader } from "@/components/admin/AdminPage";
 import type { Category, Condition, ProductWithDetails } from "@/types/domain/product";
 
 type StockStatus = "in_stock" | "archived";
@@ -122,36 +123,35 @@ export function InventoryClient({
   };
 
   return (
-    <div className="space-y-6">
-      <div className="flex flex-col justify-between gap-4 sm:flex-row sm:items-end">
-        <div>
-          <h1 className="text-3xl font-bold text-white">Inventory</h1>
-          <p className="mt-1 text-sm text-zinc-400">Manage website products and stock.</p>
-        </div>
-        <div className="flex gap-2">
-          <button
-            type="button"
-            onClick={exportInventory}
-            className="inline-flex items-center gap-2 border border-zinc-700 px-4 py-2 text-sm text-zinc-200 hover:bg-zinc-900"
-          >
-            <Download className="h-4 w-4" /> Export
-          </button>
-          <Link
-            href="/admin/inventory/create"
-            className="inline-flex items-center gap-2 bg-red-600 px-4 py-2 text-sm font-semibold text-white hover:bg-red-700"
-          >
-            <Plus className="h-4 w-4" /> Add product
-          </Link>
-        </div>
-      </div>
+    <AdminPage>
+      <AdminPageHeader
+        eyebrow="Catalog"
+        title="Inventory"
+        description="Manage website products, variants, and available stock."
+        actions={
+          <>
+            <button
+              type="button"
+              onClick={exportInventory}
+              className="admin-button-secondary"
+            >
+              <Download className="h-4 w-4" /> Export
+            </button>
+            <Link href="/admin/inventory/create" className="admin-button-primary">
+              <Plus className="h-4 w-4" /> Add product
+            </Link>
+          </>
+        }
+      />
 
-      <div className="grid gap-3 sm:grid-cols-3">
+      <div data-admin-metrics className="grid gap-3 sm:grid-cols-3">
         <Metric label="Products" value={initialTotal} />
         <Metric label="SKUs" value={initialSkuTotal} />
         <Metric label="Inventory units" value={initialInventoryUnitTotal} />
       </div>
 
       <form
+        data-admin-toolbar
         onSubmit={(event) => {
           event.preventDefault();
           navigate();
@@ -339,7 +339,7 @@ export function InventoryClient({
           </button>
         </div>
       </div>
-    </div>
+    </AdminPage>
   );
 }
 

@@ -262,7 +262,10 @@ export function FeaturedItemsManager() {
   return (
     <div className="space-y-6">
       {/* Add Products Section */}
-      <div className="bg-zinc-900 border border-zinc-800/70 rounded p-6">
+      <section
+        data-admin-section-card
+        className="rounded border border-zinc-800/70 bg-zinc-900 p-6"
+      >
         <h2 className="text-xl font-semibold text-white mb-4 flex items-center gap-2">
           <Plus className="w-5 h-5" />
           Add Products
@@ -332,10 +335,13 @@ export function FeaturedItemsManager() {
               No products found matching "{searchQuery}"
             </div>
           )}
-      </div>
+      </section>
 
       {/* Featured Items List */}
-      <div className="bg-zinc-900 border border-zinc-800/70 rounded p-6">
+      <section
+        data-admin-section-card
+        className="rounded border border-zinc-800/70 bg-zinc-900 p-6"
+      >
         <div className="flex items-center justify-between mb-4">
           <h2 className="text-xl font-semibold text-white flex items-center gap-2">
             <Star className="w-5 h-5 text-yellow-500" />
@@ -434,7 +440,7 @@ export function FeaturedItemsManager() {
             </div>
           </>
         )}
-      </div>
+      </section>
 
       <Toast
         open={Boolean(toast)}

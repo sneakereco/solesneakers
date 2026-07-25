@@ -2,18 +2,18 @@
 "use client";
 
 import { TaxSettingsPanel } from "@/components/admin/settings/TaxSettingsPanel";
+import { AdminPage, AdminPageHeader } from "@/components/admin/AdminPage";
 
 export default function TaxSettingsPage() {
   return (
-    <div className="space-y-8">
-      <div>
-        <h1 className="text-2xl sm:text-3xl font-bold text-white mb-2">Tax Settings</h1>
-        <p className="text-sm sm:text-base text-gray-400">
-          Manage tax collection and tax codes for your catalog.
-        </p>
-      </div>
+    <AdminPage width="content">
+      <AdminPageHeader
+        eyebrow="Settings"
+        title="Tax settings"
+        description="Manage tax collection and tax codes for your catalog."
+      />
 
       <TaxSettingsPanel />
-    </div>
+    </AdminPage>
   );
 }

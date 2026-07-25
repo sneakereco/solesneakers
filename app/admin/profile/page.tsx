@@ -3,6 +3,7 @@
 import { useEffect, useState } from "react";
 
 import { RdkSelect } from "@/components/ui/Select";
+import { AdminPage, AdminPageHeader } from "@/components/admin/AdminPage";
 import {
   canInviteAdmins,
   isDevRole,
@@ -55,11 +56,12 @@ export default function AdminProfilePage() {
   };
 
   return (
-    <div className="space-y-6">
-      <div>
-        <h1 className="mb-2 text-3xl font-bold text-white">Admin Profile</h1>
-        <p className="text-gray-400">{profile?.email ?? "Loading account..."}</p>
-      </div>
+    <AdminPage width="narrow">
+      <AdminPageHeader
+        eyebrow="Account"
+        title="Admin profile"
+        description={profile?.email ?? "Loading account..."}
+      />
 
       {message && (
         <div className="border border-zinc-800 bg-zinc-900 px-4 py-3 text-sm text-zinc-300">
@@ -113,6 +115,6 @@ export default function AdminProfilePage() {
           )}
         </section>
       )}
-    </div>
+    </AdminPage>
   );
 }

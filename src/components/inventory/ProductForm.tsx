@@ -1182,6 +1182,7 @@ export function ProductForm({
 
   return (
     <form
+      data-admin-form
       onSubmit={(event) => {
         void handleSubmit(event);
       }}
@@ -1788,7 +1789,10 @@ export function ProductForm({
       </div>
 
       {/* Actions - Mobile friendly */}
-      <div className="flex flex-col sm:flex-row gap-3 md:gap-4 sticky bottom-0 sm:static bg-black sm:bg-transparent p-4 sm:p-0 -mx-4 sm:mx-0 border-t sm:border-0 border-zinc-800">
+      <div
+        data-admin-form-actions
+        className="sticky bottom-0 -mx-4 flex flex-col gap-3 border-t border-zinc-800 bg-black p-4 sm:static sm:mx-0 sm:flex-row sm:border-0 sm:bg-transparent sm:p-0 md:gap-4"
+      >
         <button
           type="submit"
           disabled={isLoading}

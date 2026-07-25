@@ -4,6 +4,8 @@ import { useEffect, useMemo, useState } from "react";
 import { useRouter } from "next/navigation";
 import { Search } from "lucide-react";
 
+import { AdminPage, AdminPageHeader } from "@/components/admin/AdminPage";
+
 type CustomerRow = {
   routeId: string;
   displayId: string;
@@ -83,15 +85,17 @@ export default function CustomersPage() {
   }, [customers, searchQuery]);
 
   return (
-    <div className="space-y-6">
-      <div>
-        <h1 className="mb-2 text-3xl font-bold text-white">Customers</h1>
-        <p className="text-gray-400">
-          Profiles built from account, order, and payment history
-        </p>
-      </div>
+    <AdminPage>
+      <AdminPageHeader
+        eyebrow="Commerce"
+        title="Customers"
+        description="Profiles built from account, order, and payment history."
+      />
 
-      <div className="flex items-center gap-2 border border-zinc-800/70 bg-zinc-900 px-3 py-2 max-w-md">
+      <div
+        data-admin-toolbar
+        className="flex max-w-md items-center gap-2 border border-zinc-800/70 bg-zinc-900 px-3 py-2"
+      >
         <Search className="h-4 w-4 text-gray-500" />
         <input
           type="text"
@@ -102,7 +106,10 @@ export default function CustomersPage() {
         />
       </div>
 
-      <div className="overflow-hidden rounded border border-zinc-800/70 bg-zinc-900">
+      <div
+        data-admin-table-shell
+        className="overflow-hidden rounded border border-zinc-800/70 bg-zinc-900"
+      >
         {isLoading ? (
           <div className="py-12 text-center text-gray-400">Loading...</div>
         ) : filteredCustomers.length === 0 ? (
@@ -191,6 +198,6 @@ export default function CustomersPage() {
           </div>
         )}
       </div>
-    </div>
+    </AdminPage>
   );
 }
