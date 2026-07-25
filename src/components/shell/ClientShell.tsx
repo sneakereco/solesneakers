@@ -4,7 +4,6 @@ import { useEffect } from "react";
 import { usePathname } from "next/navigation";
 
 import { Footer } from "@/components/shell/Footer";
-import { MobileBottomNav } from "@/components/shell/MobileBottomNav";
 import { StorefrontHeader } from "@/components/shell/StorefrontHeader";
 import type { ProfileRole } from "@/config/constants/roles";
 
@@ -38,14 +37,13 @@ export function ClientShell({
           role={role}
         />
         <main
-          className="min-h-screen bg-[var(--storefront-surface)] pb-20 text-black md:pb-0"
+          className="min-h-screen bg-[var(--storefront-surface)] text-black"
           style={{ paddingTop: "var(--rdk-header-height, 5rem)" }}
         >
           {children}
         </main>
       </div>
       <Footer />
-      <MobileBottomNav />
     </>
   );
 }

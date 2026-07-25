@@ -11,7 +11,10 @@ type MenuPanel = "brand" | "size" | "category";
 
 type StoreMenuDrawerProps = {
   isOpen: boolean;
+  isAuthenticated?: boolean;
+  loginHref?: string;
   onClose: () => void;
+  showAdminDashboardLink?: boolean;
 };
 
 type SizeOption = {
@@ -159,7 +162,13 @@ function PanelHeader({ title, onBack }: { title: string; onBack: () => void }) {
   );
 }
 
-export function StoreMenuDrawer({ isOpen, onClose }: StoreMenuDrawerProps) {
+export function StoreMenuDrawer({
+  isOpen,
+  isAuthenticated = false,
+  loginHref = "/auth/login",
+  onClose,
+  showAdminDashboardLink = false,
+}: StoreMenuDrawerProps) {
   const [isMounted, setIsMounted] = useState(false);
   const [shouldRender, setShouldRender] = useState(isOpen);
   const [isVisible, setIsVisible] = useState(false);
@@ -353,7 +362,7 @@ export function StoreMenuDrawer({ isOpen, onClose }: StoreMenuDrawerProps) {
         aria-modal="true"
         aria-label="Store menu"
       >
-        <div className="h-full w-full shrink-0 bg-white md:w-[392px] md:border-r md:border-zinc-200">
+        <div className="h-full w-full shrink-0 overflow-y-auto overscroll-contain bg-white md:w-[392px] md:border-r md:border-zinc-200">
           <div className="flex h-20 items-center px-6 md:px-8">
             <button
               ref={closeButtonRef}
@@ -366,7 +375,10 @@ export function StoreMenuDrawer({ isOpen, onClose }: StoreMenuDrawerProps) {
             </button>
           </div>
 
-          <nav className="px-7 md:px-8" aria-label="Store navigation">
+          <nav
+            className="px-7 pb-[max(2rem,env(safe-area-inset-bottom))] md:px-8"
+            aria-label="Store navigation"
+          >
             {(
               [
                 ["brand", "Shop by Brand"],
@@ -393,6 +405,30 @@ export function StoreMenuDrawer({ isOpen, onClose }: StoreMenuDrawerProps) {
             >
               Shop All
             </Link>
+
+            <div className="mt-8 border-t border-zinc-300 pt-2">
+              <p className="py-3 text-[10px] font-semibold uppercase tracking-[0.18em] text-zinc-400">
+                More
+              </p>
+              <DrawerLink href="/" onNavigate={closeMenu} variant="row">
+                Home
+              </DrawerLink>
+              <DrawerLink href="/contact" onNavigate={closeMenu} variant="row">
+                Contact
+              </DrawerLink>
+              <DrawerLink
+                href={isAuthenticated ? "/account" : loginHref}
+                onNavigate={closeMenu}
+                variant="row"
+              >
+                {isAuthenticated ? "Account" : "Sign in"}
+              </DrawerLink>
+              {showAdminDashboardLink && (
+                <DrawerLink href="/admin" onNavigate={closeMenu} variant="row">
+                  Admin dashboard
+                </DrawerLink>
+              )}
+            </div>
           </nav>
         </div>
 

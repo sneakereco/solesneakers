@@ -4,7 +4,7 @@ import { useMemo, useState } from "react";
 import Image from "next/image";
 import Link from "next/link";
 import { usePathname } from "next/navigation";
-import { ChevronDown, Menu, Search, ShoppingCart, User } from "lucide-react";
+import { ChevronDown, Menu, Search, ShoppingCart } from "lucide-react";
 
 import { isAdminRole, type ProfileRole } from "@/config/constants/roles";
 import { useSession } from "@/contexts/SessionContext";
@@ -100,10 +100,10 @@ export function Navbar({
           <button
             type="button"
             onClick={() => setIsMenuOpen(true)}
-            className="inline-flex items-center gap-3 text-zinc-800 transition-colors hover:text-black"
+            className="inline-flex h-11 w-11 items-center justify-start text-zinc-800 transition-colors hover:text-black"
             aria-label="Open menu"
           >
-            <Menu className="h-8 w-8 sm:h-9 sm:w-9" strokeWidth={1.7} />
+            <Menu className="h-7 w-7 sm:h-8 sm:w-8" strokeWidth={1.7} />
           </button>
         </div>
 
@@ -119,7 +119,7 @@ export function Navbar({
               width={124}
               height={124}
               sizes="124px"
-              className="h-[96px] w-[96px] object-contain sm:h-[118px] sm:w-[118px]"
+              className="h-[76px] w-[76px] object-contain sm:h-[110px] sm:w-[110px]"
               priority
               unoptimized
             />
@@ -208,43 +208,39 @@ export function Navbar({
           </div>
         </div>
 
-        <div className="absolute right-5 top-1/2 flex -translate-y-1/2 items-center gap-4 sm:right-8 md:hidden">
+        <div className="absolute right-3 top-1/2 flex -translate-y-1/2 items-center sm:right-6 md:hidden">
           <button
             type="button"
             onClick={handleSearchClick}
-            className="text-zinc-800 transition-colors hover:text-black"
+            className="inline-flex h-11 w-11 items-center justify-center text-zinc-800 transition-colors hover:text-black"
             aria-label="Search"
           >
-            <Search className="h-5 w-5" />
+            <Search className="h-[1.15rem] w-[1.15rem]" />
           </button>
 
           <button
             type="button"
             onClick={handleCartClick}
-            className="relative text-zinc-800 transition-colors hover:text-black"
+            className="relative inline-flex h-11 w-11 items-center justify-center text-zinc-800 transition-colors hover:text-black"
             aria-label="Cart"
           >
-            <ShoppingCart className="h-5 w-5" />
+            <ShoppingCart className="h-[1.15rem] w-[1.15rem]" />
             {cartCount > 0 && (
-              <span className="absolute -right-2 -top-2 text-[10px] font-semibold text-black">
+              <span className="absolute right-0.5 top-0.5 flex min-h-4 min-w-4 items-center justify-center bg-black px-1 text-[9px] font-semibold leading-none text-white">
                 {cartCount}
               </span>
             )}
           </button>
-
-          {effectiveIsAuthenticated && (
-            <Link
-              href="/account"
-              className="text-zinc-800 transition-colors hover:text-black"
-              aria-label="Account"
-            >
-              <User className="h-5 w-5" />
-            </Link>
-          )}
         </div>
       </div>
 
-      <StoreMenuDrawer isOpen={isMenuOpen} onClose={() => setIsMenuOpen(false)} />
+      <StoreMenuDrawer
+        isOpen={isMenuOpen}
+        onClose={() => setIsMenuOpen(false)}
+        isAuthenticated={effectiveIsAuthenticated}
+        loginHref={loginUrl}
+        showAdminDashboardLink={showAdminDashboardLink}
+      />
     </nav>
   );
 }

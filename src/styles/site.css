@@ -1172,11 +1172,6 @@ body[data-route="admin"] main {
   transform: translateX(20px);
 }
 
-/* Mobile safe area */
-.safe-area-bottom {
-  padding-bottom: env(safe-area-inset-bottom);
-}
-
 /* Focus styles for accessibility */
 *:focus-visible {
   outline: 2px solid #dc2626;

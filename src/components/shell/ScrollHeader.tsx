@@ -38,6 +38,7 @@ export function ScrollHeader({
 
     const root = document.documentElement;
     const reducedMotion = window.matchMedia("(prefers-reduced-motion: reduce)");
+    const mobileViewport = window.matchMedia("(max-width: 767px)");
     const stageRef = {
       current: window.scrollY <= TOP_TOLERANCE ? (2 as HeaderStage) : (1 as HeaderStage),
     };
@@ -90,7 +91,11 @@ export function ScrollHeader({
           return;
         }
 
-        if (stage === 1 && currentScrollY > getNavbarHeight()) {
+        if (
+          stage === 1 &&
+          !mobileViewport.matches &&
+          currentScrollY > getNavbarHeight()
+        ) {
           applyStage(0, true);
         }
         return;
@@ -143,7 +148,10 @@ export function ScrollHeader({
 
     const handleResize = () => {
       syncReservedHeight();
-      applyStage(stageRef.current, false);
+      applyStage(
+        mobileViewport.matches && stageRef.current === 0 ? 1 : stageRef.current,
+        false,
+      );
     };
 
     const resizeObserver = new ResizeObserver(() => {
