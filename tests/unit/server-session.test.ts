@@ -36,7 +36,7 @@ describe("getServerSession", () => {
   it("returns null without logging when next raises a dynamic server error", async () => {
     mockCreateSupabaseServerClient.mockRejectedValue(
       new DynamicServerError(
-        "Route /admin/customers couldn't be rendered statically because it used `cookies`.",
+        "Route /admin/dashboard couldn't be rendered statically because it used `cookies`.",
       ),
     );
 

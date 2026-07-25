@@ -1,7 +1,7 @@
 // app/api/admin/featured-items/reorder/route.ts
 import { NextResponse } from "next/server";
 
-import { createSupabaseServerClient } from "@/lib/supabase/server";
+import { createSupabaseAdminClient } from "@/lib/supabase/service-role";
 import { requireAdminApi, AuthError } from "@/lib/auth/session";
 import { FeaturedItemsService } from "@/services/featured-items-service";
 import { logError } from "@/lib/utils/log";
@@ -9,7 +9,7 @@ import { logError } from "@/lib/utils/log";
 export async function POST(request: Request) {
   try {
     const session = await requireAdminApi();
-    const supabase = await createSupabaseServerClient();
+    const supabase = createSupabaseAdminClient();
 
     const body = await request.json();
     const { updates } = body;

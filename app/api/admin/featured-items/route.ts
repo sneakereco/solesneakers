@@ -1,7 +1,7 @@
 // app/api/admin/featured-items/route.ts
 import { NextResponse } from "next/server";
 
-import { createSupabaseServerClient } from "@/lib/supabase/server";
+import { createSupabaseAdminClient } from "@/lib/supabase/service-role";
 import { requireAdminApi, AuthError } from "@/lib/auth/session";
 import { FeaturedItemsService } from "@/services/featured-items-service";
 import { logError } from "@/lib/utils/log";
@@ -9,7 +9,7 @@ import { logError } from "@/lib/utils/log";
 export async function GET() {
   try {
     await requireAdminApi();
-    const supabase = await createSupabaseServerClient();
+    const supabase = createSupabaseAdminClient();
 
     const service = new FeaturedItemsService(supabase);
     const items = await service.getFeaturedItems();
@@ -34,7 +34,7 @@ export async function GET() {
 export async function POST(request: Request) {
   try {
     const session = await requireAdminApi();
-    const supabase = await createSupabaseServerClient();
+    const supabase = createSupabaseAdminClient();
 
     const body = await request.json();
     const { productId } = body;
@@ -70,7 +70,7 @@ export async function POST(request: Request) {
 export async function DELETE(request: Request) {
   try {
     const session = await requireAdminApi();
-    const supabase = await createSupabaseServerClient();
+    const supabase = createSupabaseAdminClient();
 
     const { searchParams } = new URL(request.url);
     const productId = searchParams.get("productId");

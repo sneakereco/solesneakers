@@ -18,7 +18,7 @@ export default function AuthShell({ children, isSiteLocked = false }: AuthShellP
           <Link href="/locked" aria-label="Return to the locked storefront">
             <Image
               src="/images/logo.png"
-              alt="Sole Sneakers"
+              alt="Solesneakers"
               width={140}
               height={100}
               sizes="140px"

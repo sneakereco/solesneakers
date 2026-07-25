@@ -8,10 +8,7 @@ import { NextResponse } from "next/server";
 import { createSupabaseServerClient } from "@/lib/supabase/server";
 import { createSupabaseAdminClient } from "@/lib/supabase/service-role";
 import { requireAdminApi } from "@/lib/auth/session";
-import {
-  buildCustomerDisplayId,
-  buildCustomerRouteId,
-} from "@/lib/admin/customer-identifiers";
+import { buildCustomerDisplayId } from "@/lib/admin/customer-identifiers";
 import { getRequestIdFromHeaders } from "@/lib/http/request-id";
 import { logError } from "@/lib/utils/log";
 
@@ -130,7 +127,6 @@ export async function GET(
         checkoutLogs: checkoutLogs ?? [],
         customer: customerIdentity
           ? {
-              routeId: buildCustomerRouteId(customerIdentity),
               displayId: buildCustomerDisplayId(customerIdentity),
               kind: customerIdentity.kind,
               name: customerName,

@@ -17,7 +17,7 @@ body {
 }
 
 /*
- * Sole Sneakers admin system
+ * Solesneakers admin system
  *
  * The original console was assembled from page-local dark utilities. These
  * scoped rules give the full admin surface one storefront-aligned visual
@@ -353,6 +353,44 @@ body:has([data-admin-shell]) {
   color: #fff !important;
 }
 
+[data-admin-content] :is(.bg-black, .bg-red-600, .bg-red-500, .bg-red-700) .text-white {
+  color: #fff !important;
+}
+
+[data-admin-content] .hover\:text-white:hover,
+[data-admin-content] .focus\:text-white:focus,
+[data-admin-content] .focus-visible\:text-white:focus-visible,
+[data-admin-content] .group:hover .group-hover\:text-white {
+  color: #18181b !important;
+}
+
+[data-admin-content] [data-admin-inverse] .hover\:text-white:hover,
+[data-admin-content] [data-admin-inverse] .group:hover .group-hover\:text-white,
+[data-admin-content]
+  :is(.bg-black, .bg-red-600, .bg-red-500, .bg-red-700).hover\:text-white:hover {
+  color: #fff !important;
+}
+
+[data-admin-content]
+  :is(
+    .hover\:bg-zinc-950,
+    .hover\:bg-zinc-900,
+    .hover\:bg-zinc-800,
+    .hover\:bg-zinc-700,
+    .hover\:bg-gray-800
+  ):hover,
+[data-admin-content]
+  .group:hover
+  :is(
+    .group-hover\:bg-zinc-950,
+    .group-hover\:bg-zinc-900,
+    .group-hover\:bg-zinc-800,
+    .group-hover\:bg-zinc-700
+  ) {
+  background-color: #f4f4f0 !important;
+  color: #18181b !important;
+}
+
 [data-admin-content] [data-admin-inverse] :is(.text-zinc-300, .text-zinc-400) {
   color: #a1a1aa !important;
 }
@@ -400,6 +438,33 @@ body:has([data-admin-shell]) {
   border-color: #09090b !important;
   outline: none;
   box-shadow: 0 0 0 3px rgba(9, 9, 11, 0.08);
+}
+
+[data-admin-content]
+  :is(input:not([type="checkbox"]):not([type="radio"]):not([type="range"]), textarea) {
+  color: #18181b !important;
+  background-color: #fff !important;
+  -webkit-text-fill-color: #18181b;
+}
+
+[data-admin-content]
+  :is(
+    input:not([type="checkbox"]):not([type="radio"]):not([type="range"]),
+    textarea
+  )::placeholder {
+  color: #a1a1aa !important;
+  opacity: 1;
+  -webkit-text-fill-color: #a1a1aa;
+}
+
+[data-admin-content] input:-webkit-autofill,
+[data-admin-content] input:-webkit-autofill:hover,
+[data-admin-content] input:-webkit-autofill:focus {
+  color: #18181b !important;
+  background-color: #fff !important;
+  -webkit-text-fill-color: #18181b !important;
+  box-shadow: 0 0 0 1000px #fff inset !important;
+  caret-color: #18181b;
 }
 
 [data-admin-content] input[type="checkbox"],
@@ -475,6 +540,92 @@ body:has([data-admin-shell]) {
   scrollbar-width: thin;
 }
 
+[data-admin-content] [data-admin-search] {
+  border-color: #d4d4d8 !important;
+  background: #fff !important;
+  color: #18181b !important;
+}
+
+[data-admin-content] [data-admin-search] input {
+  border: 0 !important;
+  background: transparent !important;
+  color: #18181b !important;
+  -webkit-text-fill-color: #18181b !important;
+  box-shadow: none !important;
+}
+
+[data-admin-content] [data-admin-search] input::placeholder {
+  color: #a1a1aa !important;
+  -webkit-text-fill-color: #a1a1aa !important;
+}
+
+/*
+ * Dropdown contrast
+ *
+ * Native option popups are painted by the operating system and do not
+ * consistently inherit the trigger's Tailwind colors. Custom selects also
+ * need to win over the admin surface normalization above.
+ */
+[data-admin-content] select {
+  color: #18181b !important;
+  background-color: #fff !important;
+  color-scheme: light;
+}
+
+[data-admin-content] select :is(option, optgroup),
+body:has([data-admin-shell]) datalist option {
+  color: #18181b !important;
+  background-color: #fff !important;
+}
+
+[data-admin-content] select option:checked {
+  color: #fff !important;
+  background-color: #18181b !important;
+}
+
+[data-admin-content] select:disabled {
+  color: #a1a1aa !important;
+  background-color: #f4f4f5 !important;
+}
+
+body:has([data-admin-shell]) [data-ui-select-trigger] {
+  border-color: #d4d4d8 !important;
+  background: #fff !important;
+  color: #18181b !important;
+}
+
+body:has([data-admin-shell]) [data-ui-select-value] {
+  color: #18181b !important;
+}
+
+body:has([data-admin-shell]) [data-ui-select-menu] {
+  border-color: #e4e4e7 !important;
+  background: #fff !important;
+  color: #18181b !important;
+}
+
+body:has([data-admin-shell]) [data-ui-select-search] {
+  border-color: #d4d4d8 !important;
+  background: #fff !important;
+  color: #18181b !important;
+}
+
+body:has([data-admin-shell]) [data-ui-select-option] {
+  background: #fff !important;
+  color: #27272a !important;
+}
+
+body:has([data-admin-shell])
+  [data-ui-select-option]:is([aria-selected="true"], [data-active="true"]) {
+  background: #18181b !important;
+  color: #fff !important;
+}
+
+body:has([data-admin-shell]) [data-ui-select-option]:disabled {
+  background: #fff !important;
+  color: #a1a1aa !important;
+}
+
 @keyframes admin-page-in {
   from {
     opacity: 0;
@@ -522,7 +673,7 @@ body:has([data-auth-shell]) {
   color: #27272a !important;
 }
 
-[data-storefront-header] img[alt="Sole Sneakers"] {
+[data-storefront-header] img[alt="Solesneakers"] {
   mix-blend-mode: multiply;
 }
 

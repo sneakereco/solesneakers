@@ -1317,7 +1317,7 @@ export function ProductForm({
               value={brandOverrideInput}
               onChange={(e) => handleBrandOverrideChange(e.target.value)}
               placeholder="Search brands..."
-              className="w-full bg-zinc-800 text-white px-3 md:px-4 py-2 rounded border border-zinc-800/70 focus:outline-none focus:ring-2 focus:ring-zinc-700/40 text-sm md:text-base"
+              className="w-full rounded border border-zinc-300 bg-white px-3 py-2 text-zinc-900 focus:border-black focus:outline-none focus:ring-2 focus:ring-black/10 md:px-4 text-sm md:text-base"
             />
             <datalist id="brand-options">
               {brandOptions.map((brand) => (
@@ -1347,7 +1347,7 @@ export function ProductForm({
                   effectiveBrandId ? "Search models..." : "Select a brand first"
                 }
                 disabled={!effectiveBrandId}
-                className="w-full bg-zinc-800 text-white px-3 md:px-4 py-2 rounded border border-zinc-800/70 disabled:text-gray-500 focus:outline-none focus:ring-2 focus:ring-zinc-700/40 text-sm md:text-base"
+                className="w-full rounded border border-zinc-300 bg-white px-3 py-2 text-zinc-900 disabled:bg-zinc-100 disabled:text-zinc-400 focus:border-black focus:outline-none focus:ring-2 focus:ring-black/10 md:px-4 text-sm md:text-base"
               />
               <datalist id="model-options">
                 {modelOptions.map((model) => (

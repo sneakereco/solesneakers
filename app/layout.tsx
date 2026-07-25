@@ -10,7 +10,7 @@ import { getServerSession } from "@/lib/auth/session";
 import "@/styles/site.css";
 
 export const metadata: Metadata = {
-  title: "Sole Sneakers - Premium Sneakers & Streetwear",
+  title: "Solesneakers - Premium Sneakers & Streetwear",
   description: "Authentic sneakers and streetwear. Quality guaranteed.",
 };
 

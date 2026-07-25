@@ -115,7 +115,7 @@ export function Navbar({
           <div className="flex items-center justify-center">
             <Image
               src="/images/logo.png"
-              alt="Sole Sneakers"
+              alt="Solesneakers"
               width={124}
               height={124}
               sizes="124px"

@@ -35,7 +35,7 @@ export default function HomePage() {
       >
         <Image
           src="/images/hero.jpg"
-          alt="Sole Sneakers inventory stacked in a trunk"
+          alt="Solesneakers inventory stacked in a trunk"
           fill
           priority
           sizes="100vw"

@@ -9,8 +9,8 @@ export default function ShippingPage() {
         <div className="text-zinc-400 space-y-6">
           <p className="text-sm">Last updated: July 18, 2026</p>
           <p>
-            This Shipping Policy applies to orders placed through the Sole Sneakers
-            website (the &quot;Site&quot;).
+            This Shipping Policy applies to orders placed through the Solesneakers website
+            (the &quot;Site&quot;).
           </p>
 
           <section>

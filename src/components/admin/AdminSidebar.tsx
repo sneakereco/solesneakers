@@ -15,7 +15,6 @@ import {
   Tags,
   Truck,
   UserRound,
-  Users,
   X,
   type LucideIcon,
 } from "lucide-react";
@@ -42,20 +41,13 @@ const navItems: Array<NavLink | NavGroup> = [
     key: "commerce",
     label: "Commerce",
     icon: Receipt,
-    activePrefixes: [
-      "/admin/transactions",
-      "/admin/customers",
-      "/admin/shipping",
-      "/admin/pickups",
-    ],
+    activePrefixes: ["/admin/transactions", "/admin/shipping", "/admin/pickups"],
     children: [
       { href: "/admin/transactions", label: "Transactions", icon: Receipt },
-      { href: "/admin/customers", label: "Customers", icon: Users },
       { href: "/admin/shipping", label: "Shipping", icon: Truck },
       { href: "/admin/pickups", label: "Pickups", icon: Package },
     ],
   },
-  { type: "link", href: "/admin/nexus", label: "Tax & nexus", icon: Receipt },
   { type: "link", href: "/admin/tags", label: "Product tags", icon: Tags },
   {
     type: "group",
@@ -66,7 +58,6 @@ const navItems: Array<NavLink | NavGroup> = [
     children: [
       { href: "/admin/settings/store-access", label: "Store access", icon: Settings },
       { href: "/admin/settings/shipping", label: "Shipping", icon: Truck },
-      { href: "/admin/settings/taxes", label: "Taxes", icon: Receipt },
     ],
   },
 ];
@@ -92,12 +83,9 @@ export function AdminSidebar({
     setOpenGroups((current) => ({
       commerce:
         current.commerce ||
-        [
-          "/admin/transactions",
-          "/admin/customers",
-          "/admin/shipping",
-          "/admin/pickups",
-        ].some((prefix) => pathname.startsWith(prefix)),
+        ["/admin/transactions", "/admin/shipping", "/admin/pickups"].some((prefix) =>
+          pathname.startsWith(prefix),
+        ),
       settings: current.settings || pathname.startsWith("/admin/settings"),
     }));
     setIsOpen(false);
@@ -125,12 +113,12 @@ export function AdminSidebar({
   const navigation = (
     <div className="flex h-full min-h-0 flex-col">
       <div className="border-b border-white/10 px-5 py-6">
-        <Link href="/" className="group block" aria-label="Sole Sneakers storefront">
+        <Link href="/" className="group block" aria-label="Solesneakers storefront">
           <span className="block text-[0.58rem] font-semibold uppercase tracking-[0.38em] text-zinc-500">
             Management
           </span>
           <span className="mt-2 block text-xl font-bold italic uppercase tracking-[-0.045em] text-white">
-            Sole Sneakers
+            Solesneakers
           </span>
         </Link>
       </div>

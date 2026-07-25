@@ -10,7 +10,6 @@ import {
   ShoppingCart,
   Sparkles,
   Truck,
-  Users,
 } from "lucide-react";
 
 import { logError } from "@/lib/utils/log";
@@ -65,7 +64,7 @@ export default function DashboardPage() {
         <div className="relative flex flex-col justify-between gap-8 lg:flex-row lg:items-end">
           <div>
             <p className="text-[0.62rem] font-semibold uppercase tracking-[0.32em] text-zinc-400">
-              Sole Sneakers operations
+              Solesneakers operations
             </p>
             <h1 className="mt-4 max-w-2xl text-white">Everything on deck.</h1>
             <p className="mt-4 max-w-lg text-sm leading-6 text-zinc-400">
@@ -163,7 +162,6 @@ export default function DashboardPage() {
             {[
               { href: "/admin/inventory", label: "Manage inventory", icon: Package },
               { href: "/admin/shipping", label: "Ship orders", icon: Truck },
-              { href: "/admin/customers", label: "View customers", icon: Users },
               { href: "/admin/featured-items", label: "Curate featured", icon: Sparkles },
             ].map(({ href, label, icon: Icon }) => (
               <Link

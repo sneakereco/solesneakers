@@ -1,7 +1,7 @@
 // app/api/featured-items/route.ts
 import { NextResponse } from "next/server";
 
-import { createSupabaseServerClient } from "@/lib/supabase/server";
+import { createSupabaseAdminClient } from "@/lib/supabase/service-role";
 import { FeaturedItemsService } from "@/services/featured-items-service";
 import { logError } from "@/lib/utils/log";
 
@@ -10,7 +10,9 @@ export const dynamic = "force-dynamic";
 
 export async function GET() {
   try {
-    const supabase = await createSupabaseServerClient();
+    // This endpoint exposes only the curated public projection below. Using the
+    // server client keeps storefront reads independent of visitor table grants.
+    const supabase = createSupabaseAdminClient();
     const service = new FeaturedItemsService(supabase);
 
     const items = await service.getFeaturedItems();

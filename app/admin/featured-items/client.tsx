@@ -2,10 +2,11 @@
 "use client";
 
 import { useState, useEffect } from "react";
-import { Star, GripVertical, X, Plus, Search } from "lucide-react";
+import { Star, GripVertical, X, Plus } from "lucide-react";
 import Image from "next/image";
 import Link from "next/link";
 
+import { AdminSearchField } from "@/components/admin/AdminSearchField";
 import { logError } from "@/lib/utils/log";
 import { Toast } from "@/components/ui/Toast";
 
@@ -272,17 +273,17 @@ export function FeaturedItemsManager() {
         </h2>
 
         <div className="relative">
-          <div className="flex items-center gap-2 bg-zinc-800 border border-zinc-800/70 rounded px-4 py-2">
-            <Search className="w-5 h-5 text-gray-400" />
-            <input
-              type="text"
-              value={searchQuery}
-              onChange={(e) => setSearchQuery(e.target.value)}
-              placeholder="Search products by name, brand, or SKU..."
-              className="flex-1 bg-transparent text-white focus:outline-none"
-            />
-            {isSearching && <div className="text-xs text-gray-400">Searching...</div>}
-          </div>
+          <AdminSearchField
+            value={searchQuery}
+            onChange={setSearchQuery}
+            placeholder="Search products by name, brand, or SKU..."
+            label="Search products"
+          />
+          {isSearching && (
+            <div className="pointer-events-none absolute right-11 top-1/2 -translate-y-1/2 text-xs text-zinc-500">
+              Searching...
+            </div>
+          )}
 
           {filteredSearchResults.length > 0 && (
             <div className="absolute z-10 w-full mt-2 bg-zinc-800 border border-zinc-700 rounded shadow-lg max-h-96 overflow-y-auto">

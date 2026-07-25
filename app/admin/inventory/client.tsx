@@ -4,9 +4,10 @@ import { useState } from "react";
 import Image from "next/image";
 import Link from "next/link";
 import { useRouter } from "next/navigation";
-import { Archive, Download, Plus, RotateCcw, Search, Trash2 } from "lucide-react";
+import { Archive, Download, Plus, RotateCcw, Trash2 } from "lucide-react";
 
 import { AdminPage, AdminPageHeader } from "@/components/admin/AdminPage";
+import { AdminSearchField } from "@/components/admin/AdminSearchField";
 import type { Category, Condition, ProductWithDetails } from "@/types/domain/product";
 
 type StockStatus = "in_stock" | "archived";
@@ -158,16 +159,12 @@ export function InventoryClient({
         }}
         className="grid gap-3 border border-zinc-800 bg-zinc-900 p-4 md:grid-cols-[minmax(220px,1fr)_180px_160px_160px_auto]"
       >
-        <label className="relative">
-          <span className="sr-only">Search inventory</span>
-          <Search className="absolute left-3 top-1/2 h-4 w-4 -translate-y-1/2 text-zinc-500" />
-          <input
-            value={query}
-            onChange={(event) => setQuery(event.target.value)}
-            placeholder="Search name or SKU"
-            className="h-10 w-full border border-zinc-700 bg-black pl-10 pr-3 text-sm text-white outline-none focus:border-zinc-500"
-          />
-        </label>
+        <AdminSearchField
+          value={query}
+          onChange={setQuery}
+          placeholder="Search name or SKU"
+          label="Search inventory"
+        />
         <FilterSelect
           value={category}
           onChange={(value) => setCategory(value as Category | "all")}
@@ -369,10 +366,10 @@ function FilterSelect({
       <select
         value={value}
         onChange={(event) => onChange(event.target.value)}
-        className="h-10 w-full border border-zinc-700 bg-black px-3 text-sm text-white outline-none focus:border-zinc-500"
+        className="h-10 w-full rounded-md border border-zinc-300 bg-white px-3 text-sm text-zinc-900 outline-none focus:border-black"
       >
         {options.map((option) => (
-          <option key={option} value={option}>
+          <option key={option} value={option} className="bg-white text-zinc-900">
             {option === "all" ? `All ${label.toLowerCase()}s` : titleCase(option)}
           </option>
         ))}

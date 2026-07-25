@@ -3,9 +3,9 @@
 
 import { useEffect, useMemo, useState } from "react";
 import { useRouter } from "next/navigation";
-import { Search } from "lucide-react";
 
 import { AdminPage, AdminPageHeader } from "@/components/admin/AdminPage";
+import { AdminSearchField } from "@/components/admin/AdminSearchField";
 import { getOrderNetProfitDollars, shouldShowOrderProfit } from "@/lib/orders/metrics";
 import { logError } from "@/lib/utils/log";
 
@@ -366,19 +366,13 @@ export default function TransactionsPage() {
       </div>
 
       {/* Search */}
-      <div
-        data-admin-toolbar
-        className="flex max-w-md items-center gap-2 border border-zinc-800/70 bg-zinc-900 px-3 py-2"
-      >
-        <Search className="w-4 h-4 text-gray-500" />
-        <input
-          type="text"
-          value={searchQuery}
-          onChange={(e) => setSearchQuery(e.target.value)}
-          placeholder="Search by date, customer, fulfillment, or order ID"
-          className="w-full bg-transparent text-sm text-white placeholder:text-gray-500 outline-none"
-        />
-      </div>
+      <AdminSearchField
+        value={searchQuery}
+        onChange={setSearchQuery}
+        placeholder="Search by date, customer, fulfillment, or order ID"
+        label="Search transactions"
+        className="max-w-md"
+      />
 
       {/* Table */}
       <div

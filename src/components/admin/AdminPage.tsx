@@ -37,7 +37,7 @@ export function AdminPage({ children, className = "", width = "full" }: AdminPag
 export function AdminPageHeader({
   title,
   description,
-  eyebrow = "Sole Sneakers operations",
+  eyebrow = "Solesneakers operations",
   actions,
   backHref,
   backLabel = "Back",

@@ -172,7 +172,6 @@ type TransactionPayload = {
   trackingEvents: TrackingEvent[];
   checkoutLogs: CheckoutLog[];
   customer?: {
-    routeId: string;
     displayId: string;
     kind: "account" | "guest";
     name: string;
@@ -1374,15 +1373,9 @@ export default function TransactionDetailPage() {
             <div className="space-y-0">
               {customerSummary && (
                 <DetailRow label="Customer ID">
-                  <button
-                    type="button"
-                    onClick={() =>
-                      router.push(`/admin/customers/${customerSummary.routeId}`)
-                    }
-                    className="font-mono text-xs text-red-400 transition hover:text-red-300"
-                  >
+                  <span className="font-mono text-xs text-zinc-500">
                     {customerSummary.displayId}
-                  </button>
+                  </span>
                 </DetailRow>
               )}
               <DetailRow label="Name">{customerName}</DetailRow>

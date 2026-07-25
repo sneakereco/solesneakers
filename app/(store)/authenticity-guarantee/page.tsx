@@ -5,7 +5,7 @@ export default function AuthenticityGuaranteePage() {
   return (
     <PolicyPage title="Authenticity Guarantee">
       <p>
-        Every product sold by Sole Sneakers is represented as authentic. We stand behind
+        Every product sold by Solesneakers is represented as authentic. We stand behind
         the products listed on our site and review each item before it is made available
         for sale.
       </p>

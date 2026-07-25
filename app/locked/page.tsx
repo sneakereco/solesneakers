@@ -12,8 +12,8 @@ import { UnlockTimer } from "./unlock-timer";
 export const dynamic = "force-dynamic";
 
 export const metadata: Metadata = {
-  title: "Store Temporarily Closed | Sole Sneakers",
-  description: "The Sole Sneakers storefront is temporarily closed.",
+  title: "Store Temporarily Closed | Solesneakers",
+  description: "The Solesneakers storefront is temporarily closed.",
 };
 
 const lockAnnouncements = [
@@ -64,7 +64,7 @@ export default async function LockedPage(props: {
       <header className="relative flex h-20 shrink-0 items-center justify-center border-b border-zinc-200 bg-[var(--storefront-surface)] sm:h-24">
         <Image
           src="/images/logo.png"
-          alt="Sole Sneakers"
+          alt="Solesneakers"
           width={140}
           height={100}
           sizes="140px"

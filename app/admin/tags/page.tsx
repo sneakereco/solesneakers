@@ -15,7 +15,7 @@ const tabs: Array<{ id: ActiveTab; label: string }> = [
 ];
 
 const inputClass =
-  "h-10 border border-white/15 bg-black px-3 text-sm text-white outline-none focus:border-white/40";
+  "h-10 rounded-md border border-zinc-300 bg-white px-3 text-sm text-zinc-900 outline-none focus:border-black";
 const buttonClass =
   "h-10 bg-white px-4 text-xs font-semibold uppercase tracking-wider text-black disabled:opacity-40";
 

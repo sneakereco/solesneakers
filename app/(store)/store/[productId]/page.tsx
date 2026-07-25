@@ -60,7 +60,7 @@ export async function generateMetadata({
 
   // Construct title
   const title = product.name;
-  const fullTitle = `${title} | Sole Sneakers`;
+  const fullTitle = `${title} | Solesneakers`;
 
   // Construct description
   const conditionText = product.condition === "new" ? "Brand New" : "Pre-Owned";
@@ -83,7 +83,7 @@ export async function generateMetadata({
         },
       ],
       type: "website",
-      siteName: "Sole Sneakers",
+      siteName: "Solesneakers",
     },
     twitter: {
       card: "summary_large_image",

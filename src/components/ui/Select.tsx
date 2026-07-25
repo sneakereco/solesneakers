@@ -154,54 +154,63 @@ export function RdkSelect({
   }, [open, searchable]);
 
   return (
-    <div ref={wrapRef} className={`relative ${className}`}>
+    <div ref={wrapRef} data-ui-select className={`relative ${className}`}>
       <button
         ref={buttonRef}
+        data-ui-select-trigger
         type="button"
         disabled={disabled}
         aria-haspopup="listbox"
         aria-expanded={open}
         onClick={() => setOpen((v) => !v)}
         className={[
-          "w-full flex items-center justify-between gap-2",
-          "bg-zinc-900 border border-zinc-800/70",
-          "px-3 py-2 text-sm text-white",
-          "rounded", // sharp-ish edges
-          "focus:outline-none focus:ring-2 focus:ring-red-600",
-          "disabled:cursor-not-allowed disabled:text-gray-500",
+          "flex w-full items-center justify-between gap-2",
+          "border border-zinc-300 bg-white",
+          "px-3 py-2 text-sm text-zinc-900",
+          "rounded-md",
+          "focus:border-black focus:outline-none focus:ring-2 focus:ring-black/10",
+          "disabled:cursor-not-allowed disabled:bg-zinc-100 disabled:text-zinc-400",
           buttonClassName,
         ].join(" ")}
       >
-        <span className={`min-w-0 truncate ${selected ? "text-white" : "text-gray-400"}`}>
+        <span
+          data-ui-select-value
+          className={`min-w-0 truncate ${selected ? "text-zinc-900" : "text-zinc-500"}`}
+        >
           {selected?.label ?? placeholder}
         </span>
-        <ChevronDown className="w-4 h-4 text-gray-500 shrink-0" />
+        <ChevronDown
+          className={`h-4 w-4 shrink-0 text-zinc-500 transition-transform ${
+            open ? "rotate-180" : ""
+          }`}
+        />
       </button>
 
       {open && !disabled && (
         <div
+          data-ui-select-menu
           role="listbox"
           className={[
             "absolute z-50 mt-2 w-full",
-            "bg-zinc-950 border border-zinc-800/70 shadow-xl",
-            "rounded overflow-hidden",
+            "max-h-72 overflow-y-auto rounded-lg border border-zinc-200 bg-white p-1 shadow-xl",
             menuClassName,
           ].join(" ")}
         >
           {searchable && (
-            <div className="p-2 border-b border-zinc-800/70 bg-black">
+            <div className="sticky top-0 z-10 border-b border-zinc-200 bg-white p-2">
               <input
                 ref={searchRef}
+                data-ui-select-search
                 type="text"
                 value={searchQuery}
                 onChange={(event) => setSearchQuery(event.target.value)}
                 placeholder={searchPlaceholder}
-                className="w-full bg-zinc-900 text-white text-sm px-3 py-2 rounded border border-zinc-800/70 focus:outline-none focus:ring-2 focus:ring-red-600"
+                className="w-full rounded-md border border-zinc-300 bg-white px-3 py-2 text-sm text-zinc-900 placeholder:text-zinc-400 focus:border-black focus:outline-none focus:ring-2 focus:ring-black/10"
               />
             </div>
           )}
           {filteredOptions.length === 0 && (
-            <div className="px-3 py-2 text-sm text-gray-500">No matches</div>
+            <div className="px-3 py-2 text-sm text-zinc-500">No matches</div>
           )}
           {filteredOptions.map((opt, idx) => {
             const isSelected = opt.value === value;
@@ -210,9 +219,11 @@ export function RdkSelect({
             return (
               <button
                 key={opt.value}
+                data-ui-select-option
                 type="button"
                 role="option"
                 aria-selected={isSelected}
+                data-active={isActive ? "true" : "false"}
                 disabled={opt.disabled}
                 onMouseEnter={() => setActiveIndex(idx)}
                 onClick={() => {
@@ -224,12 +235,14 @@ export function RdkSelect({
                   buttonRef.current?.focus();
                 }}
                 className={[
-                  "w-full text-left px-3 py-2 text-sm",
-                  "transition",
-                  opt.disabled ? "text-gray-600 cursor-not-allowed" : "cursor-pointer",
+                  "w-full rounded-md px-3 py-2 text-left text-sm",
+                  "transition-colors",
+                  opt.disabled
+                    ? "cursor-not-allowed text-zinc-400"
+                    : "cursor-pointer text-zinc-800",
                   isSelected || isActive
-                    ? "bg-red-600 text-white"
-                    : "text-gray-200 hover:bg-zinc-800",
+                    ? "bg-zinc-900 text-white"
+                    : "bg-white hover:bg-zinc-100 hover:text-zinc-950",
                 ].join(" ")}
               >
                 {opt.label}
