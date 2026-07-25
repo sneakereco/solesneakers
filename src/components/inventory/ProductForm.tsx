@@ -1099,8 +1099,9 @@ export function ProductForm({
           throw new Error(`Variant ${index + 1} price is invalid.`);
         }
 
-        const costCents = parseMoneyToCents(variant.unitCost);
-        if (costCents === null) {
+        const trimmedUnitCost = variant.unitCost.trim();
+        const costCents = trimmedUnitCost ? parseMoneyToCents(trimmedUnitCost) : null;
+        if (trimmedUnitCost && costCents === null) {
           throw new Error(`Variant ${index + 1} cost is invalid.`);
         }
 
@@ -1124,7 +1125,7 @@ export function ProductForm({
           sku: variant.sku,
           size_id: variant.size_id,
           sale_price_cents: priceCents,
-          unit_cost_cents: costCents,
+          ...(costCents === null ? {} : { unit_cost_cents: costCents }),
           stock: stockCount,
           sort_order: index,
         };
@@ -1469,7 +1470,8 @@ export function ProductForm({
 
                         <div className="w-full md:w-32">
                           <label className="block text-gray-400 text-xs mb-1">
-                            Unit Cost ($) <RequiredMark />
+                            Unit Cost ($){" "}
+                            <span className="text-zinc-500">(Optional)</span>
                           </label>
                           <input
                             type="text"
@@ -1478,7 +1480,7 @@ export function ProductForm({
                             onChange={(e) =>
                               updateVariant(index, "unitCost", e.target.value)
                             }
-                            required
+                            placeholder="Optional"
                             className="w-full bg-zinc-900 text-white px-2 md:px-3 py-2 rounded text-xs md:text-sm border border-zinc-800/70 focus:outline-none focus:ring-2 focus:ring-red-600"
                           />
                         </div>
