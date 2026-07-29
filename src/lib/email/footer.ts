@@ -8,15 +8,15 @@ const siteUrl = env.NEXT_PUBLIC_SITE_URL;
 
 export const emailFooterHtml = () => `
   <tr>
-    <td class="email-pad" style="padding:30px 40px 32px;background:${EMAIL_COLORS.text};font-family:${EMAIL_FONT_STACK};color:${EMAIL_COLORS.inverse};">
+    <td class="email-pad" style="padding:38px 40px 36px;background:${EMAIL_COLORS.text};font-family:${EMAIL_FONT_STACK};color:${EMAIL_COLORS.inverse};">
       <table role="presentation" width="100%" cellspacing="0" cellpadding="0">
         <tr>
-          <td style="padding:0 0 20px;font-size:10px;line-height:1.4;font-weight:700;letter-spacing:0.22em;text-transform:uppercase;color:${EMAIL_COLORS.inverse};">
+          <td style="padding:0 0 20px;font-family:'Arial Black','Helvetica Neue',Arial,sans-serif;font-size:20px;line-height:1;font-style:italic;font-weight:900;letter-spacing:-0.04em;text-transform:uppercase;color:${EMAIL_COLORS.inverse};">
             ${EMAIL_BRAND.name}
           </td>
         </tr>
         <tr>
-          <td style="padding:0 0 22px;font-size:12px;line-height:1.9;color:${EMAIL_COLORS.inverseMuted};">
+          <td style="padding:0 0 24px;font-size:10px;line-height:2;letter-spacing:0.12em;text-transform:uppercase;color:${EMAIL_COLORS.inverseMuted};">
             <a href="${siteUrl}/store" style="color:${EMAIL_COLORS.inverse};text-decoration:none;">Shop</a>
             &nbsp;&nbsp;&bull;&nbsp;&nbsp;
             <a href="${siteUrl}/account" style="color:${EMAIL_COLORS.inverse};text-decoration:none;">Account</a>
@@ -27,7 +27,7 @@ export const emailFooterHtml = () => `
           </td>
         </tr>
         <tr>
-          <td style="padding:18px 0 0;border-top:1px solid #27272a;font-size:11px;line-height:1.8;color:${EMAIL_COLORS.inverseMuted};">
+          <td style="padding:22px 0 0;border-top:1px solid #3f3f46;font-size:11px;line-height:1.8;color:${EMAIL_COLORS.inverseMuted};">
             Need help? <a href="mailto:${SUPPORT_EMAIL}" style="color:${EMAIL_COLORS.inverse};text-decoration:underline;">${SUPPORT_EMAIL}</a>
             &nbsp;&nbsp;&bull;&nbsp;&nbsp;
             <a href="${INSTAGRAM_URL}" style="color:${EMAIL_COLORS.inverse};text-decoration:underline;">${INSTAGRAM_HANDLE}</a>

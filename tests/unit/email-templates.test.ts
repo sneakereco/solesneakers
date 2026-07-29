@@ -1,3 +1,6 @@
+import fs from "node:fs";
+import path from "node:path";
+
 import { buildPasswordUpdatedEmail } from "@/lib/email/account/password-updated";
 import {
   buildOrderConfirmationEmail,
@@ -19,6 +22,10 @@ const expectBrandedShell = (html: string) => {
   expect(html).toContain("https://example.com/store");
   expect(html).toContain("https://example.com/shipping");
   expect(html).toContain("SOLESNEAKERS. All rights reserved.");
+  expect(html).toContain("New inventory daily");
+  expect(html).toContain("'Arial Black'");
+  expect(html).toContain("border-radius:0");
+  expect(html).not.toContain("border-radius:999px");
 };
 
 describe("customer email templates", () => {
@@ -102,5 +109,24 @@ describe("customer email templates", () => {
     expect(email.html).toContain("https://example.com/jordan.png");
     expect(email.html).toContain("object-fit:contain");
     expect(email.html).toContain('class="email-button"');
+  });
+});
+
+describe("Supabase auth email templates", () => {
+  const templates = ["confirmation.html", "magic_link.html", "recovery.html"];
+
+  it.each(templates)("renders %s in the editorial storefront shell", (filename) => {
+    const html = fs.readFileSync(
+      path.join(process.cwd(), "supabase", "templates", filename),
+      "utf8",
+    );
+
+    expect(html).toContain('class="email-shell"');
+    expect(html).toContain('class="email-logo"');
+    expect(html).toContain("{{ .SiteURL }}/images/email-logo.png");
+    expect(html).toContain("{{ .Token }}");
+    expect(html).toContain("Curated heat");
+    expect(html).toContain("Arial Black");
+    expect(html).not.toContain("#f7f6f2");
   });
 });
