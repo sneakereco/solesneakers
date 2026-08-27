@@ -6,6 +6,7 @@ import { Redis } from "@upstash/redis";
 import { log } from "@/lib/utils/log";
 import { env } from "@/config/env";
 import { security } from "@/config/security";
+import { getTrustedClientIp } from "@/lib/http/client-ip";
 
 /**
  * Parse duration string like "1m" or "5 s" into an Upstash Duration
@@ -74,23 +75,6 @@ function getLimiter(bucket: string, maxRequests: number, window: string): Rateli
   return instance;
 }
 
-function getClientIp(request: NextRequest): string {
-  const forwardedFor = request.headers.get("x-forwarded-for");
-  if (forwardedFor) {
-    const firstIp = forwardedFor.split(",")[0]?.trim();
-    if (firstIp) {
-      return firstIp;
-    }
-  }
-
-  const realIp = request.headers.get("x-real-ip");
-  if (realIp) {
-    return realIp;
-  }
-
-  return "unknown";
-}
-
 function maskIpForLog(ip: string): string {
   if (ip === "unknown") {
     return ip;
@@ -129,7 +113,10 @@ type Policy = { bucket: string; maxRequests: number; window: string };
  *  - writes: 30 per 1m
  *  - reads: 300 per 1m
  */
-function getPolicyForRequest(pathname: string, method: string): Policy | null {
+export function getRateLimitPolicyForRequest(
+  pathname: string,
+  method: string,
+): Policy | null {
   // Store page routes (browsing, not API)
   if (pathname.startsWith("/store")) {
     return { bucket: "store_browse", maxRequests: 200, window: "1 m" };
@@ -150,9 +137,10 @@ function getPolicyForRequest(pathname: string, method: string): Policy | null {
     return { bucket: "auth_forgot", maxRequests: 3, window: "15 m" };
   }
 
-  // Checkout
-  if (pathname.startsWith("/api/checkout")) {
-    return { bucket: "checkout", maxRequests: 60, window: "1 m" };
+  // Vercel owns the short-window IP and JA4 limit for payment-link creation.
+  // Identity-aware daily quotas are applied inside the checkout route.
+  if (pathname === "/api/checkout/payment-link" && method.toUpperCase() === "POST") {
+    return null;
   }
 
   // General API read vs write
@@ -202,13 +190,13 @@ export async function applyRateLimit(
     return null;
   }
 
-  const policy = getPolicyForRequest(pathname, request.method);
+  const policy = getRateLimitPolicyForRequest(pathname, request.method);
   if (!policy) {
     return null;
   }
 
-  const clientIp = getClientIp(request);
-  if (!clientIp || clientIp === "unknown") {
+  const clientIp = getTrustedClientIp(request);
+  if (!clientIp) {
     // Fail open (your current behavior)
     log({
       level: "warn",
