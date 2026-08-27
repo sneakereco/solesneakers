@@ -1,4 +1,6 @@
 {
+  "name": "solesneakers",
+  "private": true,
   "scripts": {
     "env:check": "tsx ./src/config/env.ts",
     "ci-env:check": "tsx ./src/config/ci-env.ts",
@@ -38,6 +40,7 @@
     "@vercel/analytics": "^1.6.1",
     "@vercel/speed-insights": "^1.3.1",
     "@vnedyalk0v/react19-simple-maps": "^1.2.1",
+    "botid": "^1.5.11",
     "browser-image-compression": "^2.0.2",
     "dayjs": "^1.11.19",
     "exceljs": "^4.4.0",

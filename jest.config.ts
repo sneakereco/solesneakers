@@ -40,10 +40,10 @@ const config: Config = {
   },
   testPathIgnorePatterns: ["<rootDir>/node_modules/", "<rootDir>/.next/"],
   testMatch: [
-    "<rootDir>/tests/unit/**/*.test.ts",
-    "<rootDir>/tests/unit/**/*.test.tsx",
-    "<rootDir>/src/**/*.test.ts",
-    "<rootDir>/src/**/*.test.tsx",
+    "**/tests/unit/**/*.test.ts",
+    "**/tests/unit/**/*.test.tsx",
+    "**/src/**/*.test.ts",
+    "**/src/**/*.test.tsx",
   ],
 };
 
