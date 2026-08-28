@@ -15,6 +15,9 @@ describe("Square checkout reservation schema", () => {
       "create function public.reserve_square_checkout_inventory",
     );
     expect(migration).toContain("set stock = product_variant.stock - requested.quantity");
+    expect(migration).toContain("p_shipping_address jsonb");
+    expect(migration).toContain("insert into public.order_shipping");
+    expect(migration).toContain("p_tax_calculation_id text");
   });
 
   it("requires link deletion evidence before reserved stock can be released", () => {

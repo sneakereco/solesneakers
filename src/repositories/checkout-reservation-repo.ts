@@ -2,6 +2,7 @@ import { z } from "zod";
 
 import type { TypedSupabaseClient } from "@/lib/supabase/server";
 import type { HostedPaymentLink } from "@/lib/square/payment-links";
+import type { ExpiredCheckout } from "@/lib/checkout/expire-checkout-reservations";
 import type { Json } from "@/types/db/database.types";
 
 export type CheckoutReservationItem = {
@@ -32,6 +33,18 @@ export type ReserveCheckoutInput = {
   shippingCents: number;
   taxCents: number;
   totalCents: number;
+  taxCalculationId: string;
+  customerState: string;
+  shippingAddress: {
+    name: string;
+    phone?: string | null;
+    line1: string;
+    line2?: string | null;
+    city: string;
+    state: string;
+    postalCode: string;
+    country: "US";
+  } | null;
   protectionEvidence: Json;
   items: CheckoutReservationItem[];
 };
@@ -45,6 +58,23 @@ export type CheckoutReservationResult = {
   squarePaymentLinkUrl: string | null;
 };
 
+export type ExistingCheckout = {
+  orderId: string;
+  cartHash: string;
+  status: string;
+  expiresAt: string;
+  subtotalCents: number;
+  shippingCents: number;
+  taxCents: number;
+  totalCents: number;
+  fulfillment: "ship" | "pickup";
+  guestEmail: string | null;
+  squarePaymentLinkId: string | null;
+  squareOrderId: string | null;
+  squarePaymentLinkUrl: string | null;
+  squarePaymentLinkDeletedAt: string | null;
+};
+
 const reservationResultSchema = z.object({
   order_id: z.string().min(1),
   reused: z.boolean(),
@@ -54,8 +84,105 @@ const reservationResultSchema = z.object({
   square_payment_link_url: z.string().url().nullable().optional(),
 });
 
+const existingCheckoutSchema = z.object({
+  id: z.string().min(1),
+  cart_hash: z.string().min(1),
+  status: z.string().min(1),
+  expires_at: z.string().min(1),
+  subtotal: z.number().nonnegative(),
+  shipping: z.number().nonnegative(),
+  tax_amount: z.number().nonnegative().nullable(),
+  total: z.number().positive(),
+  fulfillment: z.enum(["ship", "pickup"]),
+  guest_email: z.string().email().nullable(),
+  square_payment_link_id: z.string().min(1).nullable(),
+  square_order_id: z.string().min(1).nullable(),
+  square_payment_link_url: z.string().url().nullable(),
+  square_payment_link_deleted_at: z.string().nullable(),
+});
+
+const expiredCheckoutSchema = z.object({
+  id: z.string().min(1),
+  square_payment_link_id: z.string().min(1).nullable(),
+  square_payment_link_deleted_at: z.string().nullable(),
+});
+
+function dollarsToCents(value: number): number {
+  const cents = Math.round(value * 100);
+  if (!Number.isSafeInteger(cents) || cents < 0) {
+    throw new Error("checkout_existing_order_invalid");
+  }
+  return cents;
+}
+
 export class CheckoutReservationRepository {
   constructor(private readonly supabase: TypedSupabaseClient) {}
+
+  async listExpired(nowIso: string, limit: number): Promise<ExpiredCheckout[]> {
+    const { data, error } = await this.supabase
+      .from("orders")
+      .select("id, square_payment_link_id, square_payment_link_deleted_at")
+      .eq("status", "pending")
+      .lte("expires_at", nowIso)
+      .order("expires_at", { ascending: true })
+      .limit(Math.min(Math.max(limit, 1), 100));
+
+    if (error) {
+      throw error;
+    }
+
+    return z
+      .array(expiredCheckoutSchema)
+      .parse(data ?? [])
+      .map((row) => ({
+        orderId: row.id,
+        squarePaymentLinkId: row.square_payment_link_id,
+        squarePaymentLinkDeletedAt: row.square_payment_link_deleted_at,
+      }));
+  }
+
+  async findByIdempotencyKey(
+    tenantId: string,
+    idempotencyKey: string,
+  ): Promise<ExistingCheckout | null> {
+    const { data, error } = await this.supabase
+      .from("orders")
+      .select(
+        "id, cart_hash, status, expires_at, subtotal, shipping, tax_amount, total, fulfillment, guest_email, square_payment_link_id, square_order_id, square_payment_link_url, square_payment_link_deleted_at",
+      )
+      .eq("tenant_id", tenantId)
+      .eq("idempotency_key", idempotencyKey)
+      .maybeSingle();
+
+    if (error) {
+      throw error;
+    }
+    if (!data) {
+      return null;
+    }
+
+    const parsed = existingCheckoutSchema.safeParse(data);
+    if (!parsed.success) {
+      throw new Error("checkout_existing_order_invalid");
+    }
+
+    return {
+      orderId: parsed.data.id,
+      cartHash: parsed.data.cart_hash,
+      status: parsed.data.status,
+      expiresAt: parsed.data.expires_at,
+      subtotalCents: dollarsToCents(parsed.data.subtotal),
+      shippingCents: dollarsToCents(parsed.data.shipping),
+      taxCents: dollarsToCents(parsed.data.tax_amount ?? 0),
+      totalCents: dollarsToCents(parsed.data.total),
+      fulfillment: parsed.data.fulfillment,
+      guestEmail: parsed.data.guest_email,
+      squarePaymentLinkId: parsed.data.square_payment_link_id,
+      squareOrderId: parsed.data.square_order_id,
+      squarePaymentLinkUrl: parsed.data.square_payment_link_url,
+      squarePaymentLinkDeletedAt: parsed.data.square_payment_link_deleted_at,
+    };
+  }
 
   async reserve(input: ReserveCheckoutInput): Promise<CheckoutReservationResult> {
     const items: Json = input.items.map((item) => ({
@@ -87,6 +214,20 @@ export class CheckoutReservationRepository {
       p_shipping_cents: input.shippingCents,
       p_tax_cents: input.taxCents,
       p_total_cents: input.totalCents,
+      p_tax_calculation_id: input.taxCalculationId,
+      p_customer_state: input.customerState,
+      p_shipping_address: input.shippingAddress
+        ? {
+            name: input.shippingAddress.name,
+            phone: input.shippingAddress.phone ?? null,
+            line1: input.shippingAddress.line1,
+            line2: input.shippingAddress.line2 ?? null,
+            city: input.shippingAddress.city,
+            state: input.shippingAddress.state,
+            postal_code: input.shippingAddress.postalCode,
+            country: input.shippingAddress.country,
+          }
+        : null,
       p_items: items,
       p_protection_evidence: input.protectionEvidence,
     });

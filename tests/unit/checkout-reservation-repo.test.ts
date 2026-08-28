@@ -1,6 +1,81 @@
 import { CheckoutReservationRepository } from "@/repositories/checkout-reservation-repo";
 
 describe("CheckoutReservationRepository", () => {
+  it("lists only pending expired checkouts for the reaper", async () => {
+    const limit = jest.fn().mockResolvedValue({
+      data: [
+        {
+          id: "order-1",
+          square_payment_link_id: "link-1",
+          square_payment_link_deleted_at: null,
+        },
+      ],
+      error: null,
+    });
+    const order = jest.fn(() => ({ limit }));
+    const lte = jest.fn(() => ({ order }));
+    const eq = jest.fn(() => ({ lte }));
+    const select = jest.fn(() => ({ eq }));
+    const repository = new CheckoutReservationRepository({
+      from: jest.fn(() => ({ select })),
+    } as never);
+
+    const result = await repository.listExpired("2026-08-28T03:00:00.000Z", 25);
+
+    expect(result).toEqual([
+      {
+        orderId: "order-1",
+        squarePaymentLinkId: "link-1",
+        squarePaymentLinkDeletedAt: null,
+      },
+    ]);
+    expect(eq).toHaveBeenCalledWith("status", "pending");
+    expect(lte).toHaveBeenCalledWith("expires_at", "2026-08-28T03:00:00.000Z");
+    expect(limit).toHaveBeenCalledWith(25);
+  });
+
+  it("loads an existing checkout by tenant and idempotency key", async () => {
+    const maybeSingle = jest.fn().mockResolvedValue({
+      data: {
+        id: "order-1",
+        cart_hash: "cart-hash",
+        status: "pending",
+        expires_at: "2026-08-28T03:00:00.000Z",
+        subtotal: 150,
+        shipping: 12,
+        tax_amount: 9,
+        total: 171,
+        fulfillment: "ship",
+        guest_email: "buyer@example.com",
+        square_payment_link_id: "link-1",
+        square_order_id: "square-order-1",
+        square_payment_link_url: "https://square.link/u/example",
+        square_payment_link_deleted_at: null,
+      },
+      error: null,
+    });
+    const eqIdempotency = jest.fn(() => ({ maybeSingle }));
+    const eqTenant = jest.fn(() => ({ eq: eqIdempotency }));
+    const select = jest.fn(() => ({ eq: eqTenant }));
+    const supabase = { from: jest.fn(() => ({ select })) };
+    const repository = new CheckoutReservationRepository(supabase as never);
+
+    const result = await repository.findByIdempotencyKey("tenant-1", "key-1");
+
+    expect(result).toEqual(
+      expect.objectContaining({
+        orderId: "order-1",
+        cartHash: "cart-hash",
+        subtotalCents: 15000,
+        shippingCents: 1200,
+        taxCents: 900,
+        totalCents: 17100,
+      }),
+    );
+    expect(eqTenant).toHaveBeenCalledWith("tenant_id", "tenant-1");
+    expect(eqIdempotency).toHaveBeenCalledWith("idempotency_key", "key-1");
+  });
+
   it("passes integer money and purchase snapshots to the atomic reservation RPC", async () => {
     const rpc = jest.fn().mockResolvedValue({
       data: {
@@ -25,6 +100,18 @@ describe("CheckoutReservationRepository", () => {
         shippingCents: 1500,
         taxCents: 980,
         totalCents: 14980,
+        taxCalculationId: "tax-calc-1",
+        customerState: "SC",
+        shippingAddress: {
+          name: "Buyer",
+          phone: null,
+          line1: "1 Main Street",
+          line2: null,
+          city: "Charleston",
+          state: "SC",
+          postalCode: "29401",
+          country: "US",
+        },
         protectionEvidence: { bot: "passed", maskedIp: "203.0.113.x" },
         items: [
           {
@@ -60,6 +147,12 @@ describe("CheckoutReservationRepository", () => {
         p_shipping_cents: 1500,
         p_tax_cents: 980,
         p_total_cents: 14980,
+        p_tax_calculation_id: "tax-calc-1",
+        p_customer_state: "SC",
+        p_shipping_address: expect.objectContaining({
+          postal_code: "29401",
+          country: "US",
+        }),
         p_items: [
           expect.objectContaining({
             product_id: "product-1",
@@ -88,6 +181,9 @@ describe("CheckoutReservationRepository", () => {
         shippingCents: 0,
         taxCents: 0,
         totalCents: 1000,
+        taxCalculationId: "tax-calc-2",
+        customerState: "SC",
+        shippingAddress: null,
         protectionEvidence: {},
         items: [],
       }),

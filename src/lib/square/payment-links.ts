@@ -31,7 +31,7 @@ function assertCents(value: number, field: string): void {
   }
 }
 
-function isSquareHostedUrl(value: string): boolean {
+export function isSquareHostedUrl(value: string): boolean {
   try {
     const url = new URL(value);
     if (url.protocol !== "https:") {

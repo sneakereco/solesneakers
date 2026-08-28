@@ -68,6 +68,9 @@ drop function if exists public.reserve_square_checkout_inventory(
   integer,
   integer,
   integer,
+  text,
+  text,
+  jsonb,
   jsonb,
   jsonb
 );
@@ -85,6 +88,9 @@ create function public.reserve_square_checkout_inventory(
   p_shipping_cents integer,
   p_tax_cents integer,
   p_total_cents integer,
+  p_tax_calculation_id text,
+  p_customer_state text,
+  p_shipping_address jsonb,
   p_items jsonb,
   p_protection_evidence jsonb
 )
@@ -106,6 +112,25 @@ begin
 
   if p_fulfillment not in ('ship', 'pickup') then
     raise exception 'invalid_checkout_fulfillment';
+  end if;
+
+  if p_customer_state !~ '^[A-Z]{2}$'
+    or nullif(trim(p_tax_calculation_id), '') is null
+  then
+    raise exception 'invalid_checkout_tax_evidence';
+  end if;
+
+  if p_fulfillment = 'ship' and (
+    p_shipping_address is null
+    or jsonb_typeof(p_shipping_address) is distinct from 'object'
+    or upper(coalesce(p_shipping_address ->> 'country', '')) <> 'US'
+    or upper(coalesce(p_shipping_address ->> 'state', '')) <> p_customer_state
+  ) then
+    raise exception 'invalid_checkout_shipping_address';
+  end if;
+
+  if p_fulfillment = 'pickup' and p_shipping_address is not null then
+    raise exception 'pickup_checkout_has_shipping_address';
   end if;
 
   if p_expires_at <= now() or p_expires_at > now() + interval '30 minutes' then
@@ -224,6 +249,8 @@ begin
     subtotal,
     shipping,
     tax_amount,
+    tax_calculation_id,
+    customer_state,
     total,
     status,
     fulfillment,
@@ -239,6 +266,8 @@ begin
     p_subtotal_cents::numeric / 100,
     p_shipping_cents::numeric / 100,
     p_tax_cents::numeric / 100,
+    p_tax_calculation_id,
+    p_customer_state,
     p_total_cents::numeric / 100,
     'pending',
     p_fulfillment,
@@ -248,6 +277,30 @@ begin
     coalesce(p_protection_evidence, '{}'::jsonb)
   )
   returning id into v_order_id;
+
+  if p_fulfillment = 'ship' then
+    insert into public.order_shipping (
+      order_id,
+      name,
+      phone,
+      line1,
+      line2,
+      city,
+      state,
+      postal_code,
+      country
+    ) values (
+      v_order_id,
+      nullif(trim(p_shipping_address ->> 'name'), ''),
+      nullif(trim(p_shipping_address ->> 'phone'), ''),
+      nullif(trim(p_shipping_address ->> 'line1'), ''),
+      nullif(trim(p_shipping_address ->> 'line2'), ''),
+      nullif(trim(p_shipping_address ->> 'city'), ''),
+      upper(nullif(trim(p_shipping_address ->> 'state'), '')),
+      nullif(trim(p_shipping_address ->> 'postal_code'), ''),
+      'US'
+    );
+  end if;
 
   insert into public.order_items (
     order_id,
@@ -665,6 +718,9 @@ revoke execute on function public.reserve_square_checkout_inventory(
   integer,
   integer,
   integer,
+  text,
+  text,
+  jsonb,
   jsonb,
   jsonb
 ) from public, anon, authenticated;
@@ -705,6 +761,9 @@ grant execute on function public.reserve_square_checkout_inventory(
   integer,
   integer,
   integer,
+  text,
+  text,
+  jsonb,
   jsonb,
   jsonb
 ) to service_role;
