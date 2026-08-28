@@ -126,6 +126,10 @@ export function getRateLimitPolicyForRequest(
     return null;
   }
 
+  if (pathname === "/api/webhooks/square" || pathname === "/api/webhooks/shippo") {
+    return null;
+  }
+
   // Auth endpoints (exact match or prefix)
   if (pathname.startsWith("/api/auth/login")) {
     return { bucket: "auth_login", maxRequests: 10, window: "5 m" };

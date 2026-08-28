@@ -1,6 +1,5 @@
 // src/config/security.ts
 
-const allowLocalSupabaseInProd = true;
 const prodConnectSrc = [
   "'self'",
   "https://*.supabase.co",
@@ -8,15 +7,6 @@ const prodConnectSrc = [
   "https://api.goshippo.com",
   "https://vitals.vercel-insights.com",
   "https://*.vercel-scripts.com",
-  // ✅ only when explicitly enabled (for local prod-mode testing)
-  ...(allowLocalSupabaseInProd
-    ? [
-        "https://localhost:*",
-        "wss://localhost:*",
-        "https://127.0.0.1:*",
-        "wss://127.0.0.1:*",
-      ]
-    : []),
 ].join(" ");
 
 export const security = {
@@ -36,6 +26,13 @@ export const security = {
     requestIdHeader: "x-request-id",
     botCheckPrefixes: ["/admin", "/api", "/auth", "/products", "/store"],
     rateLimitPrefixes: ["/api", "/store"],
+    siteLockBypassExactPaths: [
+      "/api/webhooks/shippo",
+      "/api/webhooks/square",
+      "/api/cron/expire-checkouts",
+      "/api/healthz",
+      "/api/readyz",
+    ],
     adminGuard: {
       protectedPrefixes: ["/admin", "/api/admin"],
       exemptPrefixes: ["/api/auth/2fa"],
@@ -53,6 +50,7 @@ export const security = {
       blockStatus: 403,
       minUserAgentLength: 8,
       maxLoggedUserAgentLength: 200,
+      bypassExactPaths: ["/api/webhooks/shippo", "/api/webhooks/square"],
 
       allowedUserAgents: ["Googlebot", "Applebot", "Bingbot"],
 
@@ -156,6 +154,7 @@ export const security = {
           "font-src 'self' data:",
           "frame-src 'self' blob: https://www.openstreetmap.org https://*.openstreetmap.org",
           "form-action 'self'",
+          "upgrade-insecure-requests",
         ],
       },
     },

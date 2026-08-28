@@ -50,9 +50,6 @@ const nextConfig = {
   // OPTIMIZATION 2: Reduce bundle size with package import optimization
   experimental: {
     optimizePackageImports: ["lucide-react"], // Tree-shake icons
-    serverActions: {
-      bodySizeLimit: "50mb",
-    },
   },
 
   // OPTIMIZATION 4: Compiler optimizations

@@ -12,4 +12,12 @@ describe("checkout proxy rate-limit ownership", () => {
       window: "1 m",
     });
   });
+
+  it("does not put signed webhook delivery behind a browser IP bucket", () => {
+    expect(getRateLimitPolicyForRequest("/api/webhooks/square", "POST")).toBeNull();
+    expect(getRateLimitPolicyForRequest("/api/webhooks/shippo", "POST")).toBeNull();
+    expect(
+      getRateLimitPolicyForRequest("/api/webhooks/square/evil", "POST"),
+    ).not.toBeNull();
+  });
 });

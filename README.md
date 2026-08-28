@@ -30,3 +30,9 @@ npm run build
 ```
 
 Environment variables are validated in `src/config/env.ts`. Database changes are forward-only Supabase migrations in `supabase/migrations`.
+
+## Operations
+
+- [Vercel/Cloudflare edge boundary](docs/operations/vercel-cloudflare-edge.md)
+- [Checkout security monitoring](docs/operations/checkout-security-monitoring.md)
+- [Square checkout launch gates](docs/operations/square-checkout-launch-gates.md)

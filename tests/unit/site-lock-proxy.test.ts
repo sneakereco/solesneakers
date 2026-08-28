@@ -87,6 +87,21 @@ describe("checkSiteLock", () => {
     mockVerifyAdminSessionToken.mockResolvedValue(null);
   });
 
+  it("never puts exact signed webhooks or the authenticated cron behind the site lock", async () => {
+    for (const pathname of [
+      "/api/webhooks/square",
+      "/api/webhooks/shippo",
+      "/api/cron/expire-checkouts",
+      "/api/healthz",
+      "/api/readyz",
+    ]) {
+      const request = new NextRequest(`http://localhost${pathname}`);
+      await expect(checkSiteLock(request, `req-${pathname}`)).resolves.toBeNull();
+    }
+
+    expect(mockGetFirstTenantId).not.toHaveBeenCalled();
+  });
+
   it("does not lock when persisted settings disable site lock", async () => {
     mockGetSettings.mockResolvedValue({
       siteLockEnabled: false,

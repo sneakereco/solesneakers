@@ -8,6 +8,10 @@ export function checkBot(request: NextRequest, requestId: string): NextResponse 
   const { pathname } = request.nextUrl;
   const { bot } = security.proxy;
 
+  if ((bot.bypassExactPaths as readonly string[]).includes(pathname)) {
+    return null;
+  }
+
   const userAgentRaw = request.headers.get("user-agent") ?? "";
   const userAgentTrimmed = userAgentRaw.trim();
   const userAgentLower = userAgentTrimmed.toLowerCase();

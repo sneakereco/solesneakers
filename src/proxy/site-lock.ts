@@ -61,6 +61,10 @@ export async function checkSiteLock(
   requestId: string,
 ): Promise<NextResponse | null> {
   const { pathname } = request.nextUrl;
+  if ((security.proxy.siteLockBypassExactPaths as readonly string[]).includes(pathname)) {
+    return null;
+  }
+
   let lockSettings: Awaited<ReturnType<typeof getLockSettings>>;
 
   try {
