@@ -4,13 +4,6 @@ import { NextResponse, type NextRequest } from "next/server";
 import { log } from "@/lib/utils/log";
 import { security, isCsrfUnsafeMethod } from "@/config/security";
 
-const matchesBypassPrefix = (pathname: string, prefixes: readonly string[]): boolean =>
-  prefixes.some((prefix) => {
-    const normalized =
-      prefix.endsWith("/") && prefix !== "/" ? prefix.slice(0, -1) : prefix;
-    return pathname === normalized || pathname.startsWith(`${normalized}/`);
-  });
-
 export function checkCsrf(request: NextRequest, requestId: string): NextResponse | null {
   const { pathname } = request.nextUrl;
   const { csrf } = security.proxy;
@@ -19,7 +12,7 @@ export function checkCsrf(request: NextRequest, requestId: string): NextResponse
     return null;
   }
 
-  if (matchesBypassPrefix(pathname, csrf.bypassPrefixes)) {
+  if ((csrf.bypassExactPaths as readonly string[]).includes(pathname)) {
     return null;
   }
 

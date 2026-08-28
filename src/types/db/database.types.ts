@@ -438,6 +438,70 @@ export type Database = {
           },
         ];
       };
+      inventory_reservations: {
+        Row: {
+          consumed_at: string | null;
+          created_at: string;
+          expires_at: string;
+          id: string;
+          order_id: string;
+          quantity: number;
+          released_at: string | null;
+          status: string;
+          tenant_id: string;
+          updated_at: string;
+          variant_id: string;
+        };
+        Insert: {
+          consumed_at?: string | null;
+          created_at?: string;
+          expires_at: string;
+          id?: string;
+          order_id: string;
+          quantity: number;
+          released_at?: string | null;
+          status?: string;
+          tenant_id: string;
+          updated_at?: string;
+          variant_id: string;
+        };
+        Update: {
+          consumed_at?: string | null;
+          created_at?: string;
+          expires_at?: string;
+          id?: string;
+          order_id?: string;
+          quantity?: number;
+          released_at?: string | null;
+          status?: string;
+          tenant_id?: string;
+          updated_at?: string;
+          variant_id?: string;
+        };
+        Relationships: [
+          {
+            foreignKeyName: "inventory_reservations_order_id_fkey";
+            columns: ["order_id"];
+            isOneToOne: false;
+            referencedRelation: "orders";
+            referencedColumns: ["id"];
+          },
+          {
+            foreignKeyName: "inventory_reservations_tenant_id_fkey";
+            columns: ["tenant_id"];
+            isOneToOne: false;
+            referencedRelation: "tenants";
+            referencedColumns: ["id"];
+          },
+          {
+            foreignKeyName: "inventory_reservations_variant_id_fkey";
+            columns: ["variant_id"];
+            isOneToOne: false;
+            referencedRelation: "product_variants";
+            referencedColumns: ["id"];
+          },
+        ];
+      };
       nexus_registrations: {
         Row: {
           created_at: string;
@@ -748,6 +812,7 @@ export type Database = {
         Row: {
           actual_shipping_cost_cents: number | null;
           cart_hash: string | null;
+          checkout_protection_evidence: Json;
           created_at: string | null;
           currency: string | null;
           customer_state: string | null;
@@ -772,6 +837,10 @@ export type Database = {
           shipped_at: string | null;
           shipping: number;
           shipping_carrier: string | null;
+          square_order_id: string | null;
+          square_payment_link_deleted_at: string | null;
+          square_payment_link_id: string | null;
+          square_payment_link_url: string | null;
           status: string | null;
           subtotal: number;
           tax_amount: number | null;
@@ -786,6 +855,7 @@ export type Database = {
         Insert: {
           actual_shipping_cost_cents?: number | null;
           cart_hash?: string | null;
+          checkout_protection_evidence?: Json;
           created_at?: string | null;
           currency?: string | null;
           customer_state?: string | null;
@@ -810,6 +880,10 @@ export type Database = {
           shipped_at?: string | null;
           shipping: number;
           shipping_carrier?: string | null;
+          square_order_id?: string | null;
+          square_payment_link_deleted_at?: string | null;
+          square_payment_link_id?: string | null;
+          square_payment_link_url?: string | null;
           status?: string | null;
           subtotal: number;
           tax_amount?: number | null;
@@ -824,6 +898,7 @@ export type Database = {
         Update: {
           actual_shipping_cost_cents?: number | null;
           cart_hash?: string | null;
+          checkout_protection_evidence?: Json;
           created_at?: string | null;
           currency?: string | null;
           customer_state?: string | null;
@@ -848,6 +923,10 @@ export type Database = {
           shipped_at?: string | null;
           shipping?: number;
           shipping_carrier?: string | null;
+          square_order_id?: string | null;
+          square_payment_link_deleted_at?: string | null;
+          square_payment_link_id?: string | null;
+          square_payment_link_url?: string | null;
           status?: string | null;
           subtotal?: number;
           tax_amount?: number | null;
@@ -1510,6 +1589,45 @@ export type Database = {
           },
         ];
       };
+      square_webhook_events: {
+        Row: {
+          event_data: Json;
+          event_type: string;
+          location_id: string | null;
+          merchant_id: string | null;
+          payload_sha256: string;
+          processed_at: string | null;
+          processing_error: string | null;
+          received_at: string;
+          square_created_at: string | null;
+          square_event_id: string;
+        };
+        Insert: {
+          event_data?: Json;
+          event_type: string;
+          location_id?: string | null;
+          merchant_id?: string | null;
+          payload_sha256: string;
+          processed_at?: string | null;
+          processing_error?: string | null;
+          received_at?: string;
+          square_created_at?: string | null;
+          square_event_id: string;
+        };
+        Update: {
+          event_data?: Json;
+          event_type?: string;
+          location_id?: string | null;
+          merchant_id?: string | null;
+          payload_sha256?: string;
+          processed_at?: string | null;
+          processing_error?: string | null;
+          received_at?: string;
+          square_created_at?: string | null;
+          square_event_id?: string;
+        };
+        Relationships: [];
+      };
       state_sales_tracking: {
         Row: {
           created_at: string;
@@ -2107,6 +2225,19 @@ export type Database = {
         Args: { accepted_label: string; candidate_id: string };
         Returns: Json;
       };
+      attach_square_payment_link: {
+        Args: {
+          p_order_id: string;
+          p_square_order_id: string;
+          p_square_payment_link_id: string;
+          p_square_payment_link_url: string;
+        };
+        Returns: boolean;
+      };
+      consume_square_checkout_reservation: {
+        Args: { p_order_id: string; p_square_payment_id: string };
+        Returns: boolean;
+      };
       decrement_variant_stock: {
         Args: { p_quantity: number; p_variant_id: string };
         Returns: undefined;
@@ -2126,6 +2257,51 @@ export type Database = {
           p_payment_transaction_id: string;
         };
         Returns: boolean;
+      };
+      mark_square_payment_link_deleted: {
+        Args: { p_order_id: string; p_square_payment_link_id: string };
+        Returns: boolean;
+      };
+      process_square_payment_event: {
+        Args: {
+          p_amount_cents: number;
+          p_currency: string;
+          p_event_data: Json;
+          p_event_type: string;
+          p_location_id: string | null;
+          p_merchant_id: string | null;
+          p_payment_status: string;
+          p_payload_sha256: string;
+          p_risk_level: string | null;
+          p_square_created_at: string | null;
+          p_square_event_id: string;
+          p_square_order_id: string;
+          p_square_payment_id: string;
+        };
+        Returns: Json;
+      };
+      release_square_checkout_reservation: {
+        Args: { p_order_id: string; p_reason: string };
+        Returns: boolean;
+      };
+      reserve_square_checkout_inventory: {
+        Args: {
+          p_cart_hash: string;
+          p_currency: string;
+          p_expires_at: string;
+          p_fulfillment: string;
+          p_guest_email: string | null;
+          p_idempotency_key: string;
+          p_items: Json;
+          p_protection_evidence: Json;
+          p_shipping_cents: number;
+          p_subtotal_cents: number;
+          p_tax_cents: number;
+          p_tenant_id: string;
+          p_total_cents: number;
+          p_user_id: string | null;
+        };
+        Returns: Json;
       };
     };
     Enums: {

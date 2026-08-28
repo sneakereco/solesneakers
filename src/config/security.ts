@@ -83,7 +83,11 @@ export const security = {
       unsafeMethods: ["POST", "PUT", "PATCH", "DELETE"] as const,
       maxOriginLength: 512,
 
-      bypassPrefixes: ["/api/webhooks/shippo", "/api/auth/2fa/challenge/verify"],
+      bypassExactPaths: [
+        "/api/webhooks/shippo",
+        "/api/webhooks/square",
+        "/api/auth/2fa/challenge/verify",
+      ],
     },
 
     rateLimit: {
