@@ -44,7 +44,7 @@ export type CreatePaymentLinkDependencies = {
     idempotencyKey: string,
     cartHash: string,
   ): Promise<ExistingCheckout | null>;
-  ensureCommerceReady(): Promise<void>;
+  ensureCommerceReady(tenantId: string): Promise<void>;
   checkAttempt(identity: CheckoutAttemptIdentity): Promise<CheckoutAttemptDecision>;
   resolveCart(
     tenantId: string,
@@ -108,7 +108,13 @@ async function createAndAttachSquareLink(
   } catch (error) {
     try {
       await deps.deleteSquareLink(link.id);
-      await deps.markSquareLinkDeleted(input.localOrderId, link.id);
+      try {
+        await deps.markSquareLinkDeleted(input.localOrderId, link.id);
+      } catch {
+        // The attach may have failed before the Square ID was stored locally.
+        // Release below is still safe: the database refuses release if a live
+        // attached link exists without deletion evidence.
+      }
       await deps.releaseReservation(input.localOrderId, "square_link_attach_failed");
     } catch {
       // Preserve the reservation if Square-link retirement cannot be proved.
@@ -231,7 +237,8 @@ export async function createPaymentLinkHandler(
           ).toString(),
           subtotalCents: existing.subtotalCents,
           shippingCents: existing.shippingCents,
-          taxCents: existing.taxCents,
+          shippingAddress: parsed.data.shippingAddress ?? null,
+          items: existing.items,
         },
         deps,
       );
@@ -246,7 +253,7 @@ export async function createPaymentLinkHandler(
       );
     }
 
-    await deps.ensureCommerceReady();
+    await deps.ensureCommerceReady(tenantId);
 
     const normalizedEmailHash = deps.hashEmail(buyerEmail);
     const attempt = await deps.checkAttempt({
@@ -268,6 +275,7 @@ export async function createPaymentLinkHandler(
 
     const cart = await deps.resolveCart(tenantId, parsed.data.items);
     const pricing = await deps.quote({
+      tenantId,
       fulfillment: parsed.data.fulfillment,
       shippingAddress: parsed.data.shippingAddress ?? null,
       subtotalCents: cart.subtotalCents,
@@ -320,7 +328,8 @@ export async function createPaymentLinkHandler(
         ).toString(),
         subtotalCents: cart.subtotalCents,
         shippingCents: pricing.shippingCents,
-        taxCents: pricing.taxCents,
+        shippingAddress: parsed.data.shippingAddress ?? null,
+        items: cart.items,
       },
       deps,
     );

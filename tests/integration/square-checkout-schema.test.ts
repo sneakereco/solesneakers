@@ -6,6 +6,10 @@ describe("Square checkout reservation schema", () => {
     resolve("supabase/migrations/20260826120000_square_checkout_foundation.sql"),
     "utf8",
   );
+  const settingsMigration = readFileSync(
+    resolve("supabase/migrations/20260828190000_tenant_checkout_settings.sql"),
+    "utf8",
+  );
 
   it("stores provider identifiers and atomic inventory reservations", () => {
     expect(migration).toContain("square_payment_link_id");
@@ -46,5 +50,17 @@ describe("Square checkout reservation schema", () => {
     expect(migration).toContain("create function public.process_square_payment_event");
     expect(migration).toContain("on conflict (square_event_id) do nothing");
     expect(migration).toContain("square_payment_amount_mismatch");
+  });
+
+  it("persists a required flat rate and atomically attaches Square totals", () => {
+    expect(settingsMigration).toContain(
+      "create table if not exists public.tenant_checkout_settings",
+    );
+    expect(settingsMigration).toContain("flat_shipping_cents integer not null");
+    expect(settingsMigration).toContain("p_tax_calculation_id text");
+    expect(settingsMigration).toContain("tax_amount = p_tax_cents::numeric / 100");
+    expect(settingsMigration).toContain(
+      "round(subtotal * 100)::integer + p_shipping_cents + p_tax_cents = p_total_cents",
+    );
   });
 });

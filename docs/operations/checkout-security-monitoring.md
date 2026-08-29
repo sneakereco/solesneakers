@@ -8,7 +8,7 @@
 | Critical | More than 20 payment-link attempts share one IP or JA4 in 10 minutes       | Enable kill switch if Square objects are being created; preserve evidence                 |
 | Critical | More than 5 invalid Square signatures occur in 10 minutes                  | Confirm configured notification URL/key; investigate spoofing without exposing signatures |
 | Critical | Payment-link creation grows 3x without a corresponding paid-order increase | Enable kill switch and inspect card-testing signals                                       |
-| Warning  | Checkout protection returns `503` for 5 consecutive minutes                | Check BotID, Upstash, Supabase, Square, tax provider, and required configuration          |
+| Warning  | Checkout protection returns `503` for 5 consecutive minutes                | Check BotID, Upstash, Supabase, Square tax/order responses, and required configuration    |
 | Critical | Any expiration job failure                                                 | Confirm the Square link remains inactive before manually releasing stock                  |
 | Critical | Any paid order enters `review`                                             | Block fulfillment and investigate amount, risk, or late-payment reason                    |
 

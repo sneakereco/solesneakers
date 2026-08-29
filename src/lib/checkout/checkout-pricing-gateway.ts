@@ -1,7 +1,12 @@
 import type { PaymentLinkRequest } from "@/lib/checkout/payment-link-request";
 import type { ResolvedCheckoutItem } from "@/lib/checkout/checkout-cart-resolver";
+import type {
+  CheckoutSettings,
+  CheckoutSettingsRepository,
+} from "@/repositories/checkout-settings-repo";
 
 export type CheckoutPricingQuoteInput = {
+  tenantId: string;
   fulfillment: PaymentLinkRequest["fulfillment"];
   shippingAddress: PaymentLinkRequest["shippingAddress"] | null;
   subtotalCents: number;
@@ -16,7 +21,7 @@ export type CheckoutPricingQuote = {
 };
 
 export type CheckoutPricingGateway = {
-  assertReady(): Promise<void>;
+  assertReady(tenantId: string): Promise<void>;
   quote(input: CheckoutPricingQuoteInput): Promise<CheckoutPricingQuote>;
 };
 
@@ -26,9 +31,36 @@ export class CheckoutPricingUnavailableError extends Error {
   }
 }
 
-export function createCheckoutPricingGateway(): CheckoutPricingGateway {
+type CheckoutSettingsReader = Pick<CheckoutSettingsRepository, "getByTenant">;
+
+async function requireSettings(
+  repository: CheckoutSettingsReader,
+  tenantId: string,
+): Promise<CheckoutSettings> {
+  const settings = await repository.getByTenant(tenantId);
+  if (!settings) {
+    throw new CheckoutPricingUnavailableError();
+  }
+  return settings;
+}
+
+export function createCheckoutPricingGateway(
+  repository: CheckoutSettingsReader,
+): CheckoutPricingGateway {
   return {
-    assertReady: () => Promise.reject(new CheckoutPricingUnavailableError()),
-    quote: () => Promise.reject(new CheckoutPricingUnavailableError()),
+    assertReady: async (tenantId) => {
+      await requireSettings(repository, tenantId);
+    },
+    quote: async (input) => {
+      const settings = await requireSettings(repository, input.tenantId);
+      const customerState = input.shippingAddress?.state ?? "SC";
+
+      return {
+        shippingCents: input.fulfillment === "ship" ? settings.flatShippingCents : 0,
+        taxCents: 0,
+        taxCalculationId: "square:pending",
+        customerState,
+      };
+    },
   };
 }

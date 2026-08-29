@@ -61,8 +61,8 @@ function dependencies(): jest.Mocked<CreatePaymentLinkDependencies> {
     }),
     quote: jest.fn().mockResolvedValue({
       shippingCents: 0,
-      taxCents: 900,
-      taxCalculationId: "tax-1",
+      taxCents: 0,
+      taxCalculationId: "square:pending",
       customerState: "SC",
     }),
     reserve: jest.fn().mockResolvedValue({
@@ -77,6 +77,10 @@ function dependencies(): jest.Mocked<CreatePaymentLinkDependencies> {
       id: "link-1",
       orderId: "square-order-1",
       url: "https://square.link/u/example",
+      taxCents: 900,
+      shippingCents: 0,
+      totalCents: 15900,
+      taxCalculationId: "square:square-order-1:v1",
     }),
     attachSquareLink: jest.fn().mockResolvedValue(undefined),
     deleteSquareLink: jest.fn().mockResolvedValue(undefined),
@@ -130,6 +134,7 @@ describe("createPaymentLinkHandler", () => {
         squareOrderId: "square-order-1",
         squarePaymentLinkUrl: "https://square.link/u/example",
         squarePaymentLinkDeletedAt: null,
+        items: [],
       }),
     );
 
@@ -166,6 +171,10 @@ describe("createPaymentLinkHandler", () => {
       id: "link-1",
       orderId: "square-order-1",
       url: "https://square.link/u/example",
+      taxCents: 900,
+      shippingCents: 0,
+      totalCents: 15900,
+      taxCalculationId: "square:square-order-1:v1",
     });
   });
 
@@ -179,5 +188,22 @@ describe("createPaymentLinkHandler", () => {
     expect(deps.checkAttempt).not.toHaveBeenCalled();
     expect(deps.reserve).not.toHaveBeenCalled();
     expect(deps.createSquareLink).not.toHaveBeenCalled();
+  });
+
+  it("releases inventory after deleting an unshared link when attach never persisted", async () => {
+    const deps = dependencies();
+    deps.attachSquareLink.mockRejectedValue(new Error("database unavailable"));
+    deps.markSquareLinkDeleted.mockRejectedValue(
+      new Error("link id was never attached locally"),
+    );
+
+    const response = await createPaymentLinkHandler(request(), deps);
+
+    expect(response.status).toBe(503);
+    expect(deps.deleteSquareLink).toHaveBeenCalledWith("link-1");
+    expect(deps.releaseReservation).toHaveBeenCalledWith(
+      "order-1",
+      "square_link_attach_failed",
+    );
   });
 });

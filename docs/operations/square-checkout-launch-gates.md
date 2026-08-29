@@ -1,14 +1,16 @@
 # Square Checkout Launch Gates
 
-Checkout remains publicly reachable but displays the unavailable state until every required gate below has an owner and dated evidence. The payment-link API also fails closed while the pricing gateway is unconfigured.
+Checkout remains publicly reachable but displays the unavailable state until every required gate below has an owner and dated evidence. The payment-link API also fails closed until the tenant flat shipping rate has been explicitly saved.
 
-## Business decisions still required
+## Locked pricing decisions
 
-- Select the tax calculation/provider approach and obtain written approval from the business's tax professional for nexus, product taxability, shipping taxability, pickup sourcing, filing jurisdictions, exemption handling, and refund treatment.
-- Select the shipping price rule. Do not infer a flat rate from legacy product/category values without business approval.
-- Confirm the pickup location and its tax jurisdiction.
+- Square is authoritative for checkout tax. The application sends itemized, server-priced order lines with `autoApplyTaxes` enabled and persists only the tax and total returned by Square.
+- Shipping uses one tenant-level flat rate stored in `tenant_checkout_settings.flat_shipping_cents`. It is charged once for shipping and never for pickup. There is no implicit default; `$0.00` must be saved explicitly when free shipping is intended.
+- Confirm the production Square location, its pickup jurisdiction, and its Catalog taxes before checkout is enabled.
+- For the ad hoc order lines used by this integration, every intended Square Catalog tax must be enabled and configured to apply to custom amounts. Otherwise Square can validly return zero tax.
+- Obtain written approval from the business's tax professional for nexus/enrollments, product and shipping taxability, pickup sourcing, filing jurisdictions, exemption handling, and refund treatment.
 
-The code intentionally contains no homemade tax-rate table or production zero-tax fallback.
+The code intentionally contains no homemade tax-rate table or production tax estimate. Square's returned order is the pricing evidence. Square documents destination-aware automatic rates for Square Online/Online Ordering, while the Orders API documents Catalog-configured automatic taxes; therefore, sandbox and production evidence for every supported fulfillment/jurisdiction is a launch gate rather than an assumption.
 
 ## Square production controls
 
@@ -18,6 +20,7 @@ The code intentionally contains no homemade tax-rate table or production zero-ta
 - During the initial 60 days, require 3DS for every eligible online card payment and configure the approved high-risk, velocity, AVS, CVV, prepaid-card, and international-card actions.
 - Keep Afterpay/Clearpay and tipping disabled. The implementation also disables customer-entered amounts, coupons, and loyalty redemption.
 - Complete sandbox evidence for successful, declined, duplicate, altered-amount, high-risk, expired, late, and repeated-webhook cases.
+- Complete Square tax evidence for pickup and shipping addresses in every nexus state, including whether the flat shipping charge is taxable. Verify that the Payment Link order tax and final payment amount equal the persisted local order.
 - Define the human review and refund procedure for `review` orders. No `review` order may be fulfilled.
 
 ## Security and compliance gates
@@ -48,7 +51,7 @@ Never expose these values through `NEXT_PUBLIC_*`, logs, support tickets, screen
 ## Enablement sequence
 
 1. Complete all business, Square, security, and compliance gates in sandbox/staging.
-2. Implement and test the selected pricing gateway.
+2. Save the checkout flat shipping rate and validate Square Catalog tax configuration.
 3. Deploy with the checkout kill switch still enabled.
 4. Validate signed Square webhooks and the expiration cron in production.
 5. Publish and observe Vercel bot/WAF rules.

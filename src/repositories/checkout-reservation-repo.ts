@@ -73,6 +73,7 @@ export type ExistingCheckout = {
   squareOrderId: string | null;
   squarePaymentLinkUrl: string | null;
   squarePaymentLinkDeletedAt: string | null;
+  items: CheckoutReservationItem[];
 };
 
 const reservationResultSchema = z.object({
@@ -99,6 +100,23 @@ const existingCheckoutSchema = z.object({
   square_order_id: z.string().min(1).nullable(),
   square_payment_link_url: z.string().url().nullable(),
   square_payment_link_deleted_at: z.string().nullable(),
+  order_items: z.array(
+    z.object({
+      product_id: z.string().min(1),
+      variant_id: z.string().min(1),
+      quantity: z.number().int().positive(),
+      unit_price: z.number().nonnegative(),
+      unit_cost: z.number().nonnegative(),
+      line_total: z.number().nonnegative(),
+      variant_sku: z.string(),
+      product_name: z.string(),
+      brand: z.string(),
+      model: z.string().nullable(),
+      category: z.string(),
+      condition: z.string(),
+      size_label: z.string(),
+    }),
+  ),
 });
 
 const expiredCheckoutSchema = z.object({
@@ -148,7 +166,7 @@ export class CheckoutReservationRepository {
     const { data, error } = await this.supabase
       .from("orders")
       .select(
-        "id, cart_hash, status, expires_at, subtotal, shipping, tax_amount, total, fulfillment, guest_email, square_payment_link_id, square_order_id, square_payment_link_url, square_payment_link_deleted_at",
+        "id, cart_hash, status, expires_at, subtotal, shipping, tax_amount, total, fulfillment, guest_email, square_payment_link_id, square_order_id, square_payment_link_url, square_payment_link_deleted_at, order_items(product_id, variant_id, quantity, unit_price, unit_cost, line_total, variant_sku, product_name, brand, model, category, condition, size_label)",
       )
       .eq("tenant_id", tenantId)
       .eq("idempotency_key", idempotencyKey)
@@ -181,6 +199,21 @@ export class CheckoutReservationRepository {
       squareOrderId: parsed.data.square_order_id,
       squarePaymentLinkUrl: parsed.data.square_payment_link_url,
       squarePaymentLinkDeletedAt: parsed.data.square_payment_link_deleted_at,
+      items: parsed.data.order_items.map((item) => ({
+        productId: item.product_id,
+        variantId: item.variant_id,
+        quantity: item.quantity,
+        unitPriceCents: dollarsToCents(item.unit_price),
+        unitCostCents: dollarsToCents(item.unit_cost),
+        lineTotalCents: dollarsToCents(item.line_total),
+        variantSku: item.variant_sku,
+        productName: item.product_name,
+        brand: item.brand,
+        model: item.model,
+        category: item.category,
+        condition: item.condition,
+        sizeLabel: item.size_label,
+      })),
     };
   }
 
@@ -257,6 +290,10 @@ export class CheckoutReservationRepository {
       p_square_payment_link_id: link.id,
       p_square_order_id: link.orderId,
       p_square_payment_link_url: link.url,
+      p_shipping_cents: link.shippingCents,
+      p_tax_cents: link.taxCents,
+      p_total_cents: link.totalCents,
+      p_tax_calculation_id: link.taxCalculationId,
     });
 
     if (error) {

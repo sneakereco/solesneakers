@@ -1966,6 +1966,35 @@ export type Database = {
         };
         Relationships: [];
       };
+      tenant_checkout_settings: {
+        Row: {
+          created_at: string;
+          flat_shipping_cents: number;
+          tenant_id: string;
+          updated_at: string;
+        };
+        Insert: {
+          created_at?: string;
+          flat_shipping_cents: number;
+          tenant_id: string;
+          updated_at?: string;
+        };
+        Update: {
+          created_at?: string;
+          flat_shipping_cents?: number;
+          tenant_id?: string;
+          updated_at?: string;
+        };
+        Relationships: [
+          {
+            foreignKeyName: "tenant_checkout_settings_tenant_id_fkey";
+            columns: ["tenant_id"];
+            isOneToOne: true;
+            referencedRelation: "tenants";
+            referencedColumns: ["id"];
+          },
+        ];
+      };
       tenant_store_access_settings: {
         Row: {
           checkout_lock_enabled: boolean;
@@ -2231,6 +2260,10 @@ export type Database = {
           p_square_order_id: string;
           p_square_payment_link_id: string;
           p_square_payment_link_url: string;
+          p_shipping_cents: number;
+          p_tax_calculation_id: string;
+          p_tax_cents: number;
+          p_total_cents: number;
         };
         Returns: boolean;
       };

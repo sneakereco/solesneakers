@@ -16,3 +16,9 @@ export const storeAccessSettingsSchema = z
     checkoutLockMessage: z.string().trim().min(1).max(500).optional(),
   })
   .strict();
+
+export const checkoutSettingsSchema = z
+  .object({
+    flatShippingCents: z.number().int().min(0).max(100_000),
+  })
+  .strict();

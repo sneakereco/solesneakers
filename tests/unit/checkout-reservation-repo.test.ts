@@ -51,6 +51,7 @@ describe("CheckoutReservationRepository", () => {
         square_order_id: "square-order-1",
         square_payment_link_url: "https://square.link/u/example",
         square_payment_link_deleted_at: null,
+        order_items: [],
       },
       error: null,
     });
@@ -199,6 +200,10 @@ describe("CheckoutReservationRepository", () => {
         id: "link-1",
         orderId: "square-order-1",
         url: "https://square.link/u/example",
+        taxCents: 900,
+        shippingCents: 1200,
+        totalCents: 17100,
+        taxCalculationId: "square:square-order-1:v1",
       }),
     ).resolves.toBeUndefined();
 
@@ -207,6 +212,10 @@ describe("CheckoutReservationRepository", () => {
       p_square_order_id: "square-order-1",
       p_square_payment_link_id: "link-1",
       p_square_payment_link_url: "https://square.link/u/example",
+      p_shipping_cents: 1200,
+      p_tax_cents: 900,
+      p_total_cents: 17100,
+      p_tax_calculation_id: "square:square-order-1:v1",
     });
   });
 });
