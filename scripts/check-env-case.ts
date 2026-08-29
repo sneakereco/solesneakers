@@ -3,6 +3,7 @@ import path from "node:path";
 
 // Starting from project root we create a absolute path to src/config/env.ts that works across all OSs and CI runners
 const ENV_MODULE_PATH = path.join(process.cwd(), "src/config/env.ts");
+const ALLOWED_PROCESS_ENV_VARS = new Set(["RLS_TEST_DB_URL", "TZ"]);
 // Gets the plain text contents of env.ts
 const envSource = fs.readFileSync(ENV_MODULE_PATH, "utf8");
 // Extracts the environment variables from the plain text with regex
@@ -91,7 +92,7 @@ for (const file of filesToScan) {
       }
 
       // Check if env var is not in env.ts meaning it would be illegal
-      if (!declaredEnvVars.includes(key)) {
+      if (!declaredEnvVars.includes(key) && !ALLOWED_PROCESS_ENV_VARS.has(key)) {
         if (!illegalEnvLocations.has(key)) {
           illegalEnvLocations.set(key, []);
         }

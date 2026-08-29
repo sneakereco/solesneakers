@@ -9,6 +9,8 @@ const allowedExactNames = [
   /^LICENSE\.txt$/,
   /^database\.types\.ts$/,
   /^jest\.config\.ts$/,
+  /^jest\.integration\.config\.ts$/,
+  /^jest\.setup\.ts$/,
   /^next-env\.d\.ts$/,
   /^playwright\.config\.ts$/,
   /^\.env\.example$/,
@@ -17,10 +19,11 @@ const allowedExactNames = [
   /^\.prettierrc$/,
   /^eslint\.config\.mjs$/,
   /^compose\.yml$/,
-  /^next\.config\.js$/,
+  /^next\.config\.(js|ts)$/,
   /^postcss\.config\.js$/,
   /^global\.css$/,
-  /^tailwind\.config\.js$/,
+  /^tailwind\.config\.(js|ts)$/,
+  /^authStyles\.tsx$/,
 ];
 
 // Whitelisted directories
@@ -128,7 +131,8 @@ for (const fullPath of allFiles) {
   }
 
   // RULE: Directories must be lowercase (except ignored)
-  const segments = dir.split(/[\\/]/).filter(Boolean);
+  const relativeDir = path.relative(ROOT, dir);
+  const segments = relativeDir.split(/[\\/]/).filter(Boolean);
 
   for (const seg of segments) {
     if (IGNORE_DIRS.has(seg)) {

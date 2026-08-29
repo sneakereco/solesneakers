@@ -1,6 +1,11 @@
 {
   "name": "solesneakers",
   "private": true,
+  "packageManager": "npm@11.11.0",
+  "engines": {
+    "node": "24.x",
+    "npm": "11.x"
+  },
   "scripts": {
     "env:check": "tsx ./src/config/env.ts",
     "ci-env:check": "tsx ./src/config/ci-env.ts",
