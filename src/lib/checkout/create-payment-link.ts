@@ -52,6 +52,7 @@ export type CreatePaymentLinkDependencies = {
   ): Promise<ResolvedCheckoutCart>;
   quote(input: CheckoutPricingQuoteInput): Promise<CheckoutPricingQuote>;
   reserve(input: ReserveCheckoutInput): Promise<CheckoutReservationResult>;
+  createGuestAccessToken(orderId: string): Promise<string>;
   createSquareLink(input: HostedPaymentLinkInput): Promise<HostedPaymentLink>;
   attachSquareLink(orderId: string, link: HostedPaymentLink): Promise<void>;
   deleteSquareLink(paymentLinkId: string): Promise<void>;
@@ -123,7 +124,10 @@ async function createAndAttachSquareLink(
   }
 }
 
-function existingLinkResponse(existing: ExistingCheckout): Response | null {
+async function existingLinkResponse(
+  existing: ExistingCheckout,
+  deps: CreatePaymentLinkDependencies,
+): Promise<Response | null> {
   if (
     existing.squarePaymentLinkId &&
     existing.squareOrderId &&
@@ -131,12 +135,16 @@ function existingLinkResponse(existing: ExistingCheckout): Response | null {
     !existing.squarePaymentLinkDeletedAt &&
     isSquareHostedUrl(existing.squarePaymentLinkUrl)
   ) {
+    const guestAccessToken = existing.guestEmail
+      ? await deps.createGuestAccessToken(existing.orderId)
+      : undefined;
     return json(
       {
         orderId: existing.orderId,
         url: existing.squarePaymentLinkUrl,
         expiresAt: existing.expiresAt,
         reused: true,
+        guestAccessToken,
       },
       200,
     );
@@ -219,7 +227,7 @@ export async function createPaymentLinkHandler(
         return json({ error: "Checkout expired; start a new checkout" }, 409);
       }
 
-      const reusableResponse = existingLinkResponse(existing);
+      const reusableResponse = await existingLinkResponse(existing, deps);
       if (reusableResponse) {
         return reusableResponse;
       }
@@ -242,12 +250,16 @@ export async function createPaymentLinkHandler(
         },
         deps,
       );
+      const guestAccessToken = existing.guestEmail
+        ? await deps.createGuestAccessToken(existing.orderId)
+        : undefined;
       return json(
         {
           orderId: existing.orderId,
           url: link.url,
           expiresAt: existing.expiresAt,
           reused: true,
+          guestAccessToken,
         },
         200,
       );
@@ -333,6 +345,9 @@ export async function createPaymentLinkHandler(
       },
       deps,
     );
+    const guestAccessToken = session
+      ? undefined
+      : await deps.createGuestAccessToken(reservation.orderId);
 
     return json(
       {
@@ -340,6 +355,7 @@ export async function createPaymentLinkHandler(
         url: link.url,
         expiresAt: reservation.expiresAt,
         reused: reservation.reused,
+        guestAccessToken,
       },
       reservation.reused ? 200 : 201,
     );

@@ -10,34 +10,9 @@ import type { OrderStatusResponse } from "@/types/domain/checkout";
 import { useCart } from "@/components/cart/CartProvider";
 import { clearGuestShippingAddress } from "@/lib/checkout/guest-shipping-address";
 import {
-  calculateCheckoutDisplayTotals,
-  PROCESSING_FEE_LABEL,
-} from "@/lib/checkout/display-pricing";
-
-const GUEST_ORDER_ID_STORAGE_KEY = "rdk_guest_order_id";
-const GUEST_ORDER_TOKEN_STORAGE_KEY = "rdk_guest_order_token";
-
-function persistGuestAccess(orderId: string, token: string) {
-  try {
-    sessionStorage.setItem(GUEST_ORDER_ID_STORAGE_KEY, orderId);
-    sessionStorage.setItem(GUEST_ORDER_TOKEN_STORAGE_KEY, token);
-  } catch {
-    // sessionStorage may be unavailable
-  }
-}
-
-function readStoredGuestToken(orderId: string): string | null {
-  try {
-    const storedOrderId = sessionStorage.getItem(GUEST_ORDER_ID_STORAGE_KEY);
-    const storedToken = sessionStorage.getItem(GUEST_ORDER_TOKEN_STORAGE_KEY);
-    if (storedOrderId === orderId && storedToken) {
-      return storedToken;
-    }
-  } catch {
-    // sessionStorage may be unavailable
-  }
-  return null;
-}
+  readGuestOrderAccess,
+  storeGuestOrderAccess,
+} from "@/lib/checkout/client-session";
 
 function SuccessContent() {
   const searchParams = useSearchParams();
@@ -76,9 +51,9 @@ function SuccessContent() {
       return;
     }
 
-    const resolvedToken = tokenParam ?? readStoredGuestToken(orderId);
+    const resolvedToken = tokenParam ?? readGuestOrderAccess(orderId);
     if (resolvedToken) {
-      persistGuestAccess(orderId, resolvedToken);
+      storeGuestOrderAccess(orderId, resolvedToken);
     }
     setAccessToken(resolvedToken ?? null);
   }, [orderId, tokenParam]);
@@ -248,13 +223,6 @@ function SuccessContent() {
   }
 
   const isPickup = status.fulfillment === "pickup" || isPickupParam;
-  const { processingFee, displayTotal } = calculateCheckoutDisplayTotals({
-    subtotal: status.subtotal,
-    shipping: status.shipping,
-    tax: status.tax,
-    fulfillment: status.fulfillment,
-  });
-
   return (
     <div className="max-w-2xl mx-auto px-4 py-20 text-center">
       <CheckCircle className="w-16 h-16 text-green-500 mx-auto mb-6" />
@@ -286,14 +254,10 @@ function SuccessContent() {
             <span>Tax:</span>
             <span className="text-white">${status.tax.toFixed(2)}</span>
           </div>
-          <div className="flex justify-between">
-            <span>Processing fee ({PROCESSING_FEE_LABEL}):</span>
-            <span className="text-white">${processingFee.toFixed(2)}</span>
-          </div>
           <div className="border-t border-zinc-800/70 pt-2 mt-2">
             <div className="flex justify-between text-xl font-bold">
               <span className="text-white">Total:</span>
-              <span className="text-white">${displayTotal.toFixed(2)}</span>
+              <span className="text-white">${status.total.toFixed(2)}</span>
             </div>
           </div>
         </div>

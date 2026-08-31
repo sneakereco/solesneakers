@@ -109,6 +109,9 @@ describe("customer email templates", () => {
     expect(email.html).toContain("https://example.com/jordan.png");
     expect(email.html).toContain("object-fit:contain");
     expect(email.html).toContain('class="email-button"');
+    expect(email.html).not.toContain("Processing fee");
+    expect(email.text).toContain("Total: $202.00");
+    expect(email.text).not.toContain("Processing fee");
   });
 });
 

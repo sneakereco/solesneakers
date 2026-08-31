@@ -73,6 +73,7 @@ function dependencies(): jest.Mocked<CreatePaymentLinkDependencies> {
       squareOrderId: null,
       squarePaymentLinkUrl: null,
     }),
+    createGuestAccessToken: jest.fn().mockResolvedValue("guest-order-token"),
     createSquareLink: jest.fn().mockResolvedValue({
       id: "link-1",
       orderId: "square-order-1",
@@ -144,7 +145,9 @@ describe("createPaymentLinkHandler", () => {
     await expect(response.json()).resolves.toMatchObject({
       reused: true,
       orderId: "order-1",
+      guestAccessToken: "guest-order-token",
     });
+    expect(deps.createGuestAccessToken).toHaveBeenCalledWith("order-1");
     expect(deps.checkAttempt).not.toHaveBeenCalled();
     expect(deps.reserve).not.toHaveBeenCalled();
     expect(deps.createSquareLink).not.toHaveBeenCalled();
@@ -160,6 +163,7 @@ describe("createPaymentLinkHandler", () => {
       reused: false,
       orderId: "order-1",
       url: "https://square.link/u/example",
+      guestAccessToken: "guest-order-token",
     });
     expect(deps.checkAttempt.mock.invocationCallOrder[0]).toBeLessThan(
       deps.reserve.mock.invocationCallOrder[0],
@@ -176,6 +180,19 @@ describe("createPaymentLinkHandler", () => {
       totalCents: 15900,
       taxCalculationId: "square:square-order-1:v1",
     });
+  });
+
+  it("does not create or return a guest token for an authenticated order", async () => {
+    const deps = dependencies();
+    deps.getSession.mockResolvedValue({
+      user: { id: "user-1", email: "buyer@example.com" },
+    });
+
+    const response = await createPaymentLinkHandler(request(), deps);
+
+    expect(response.status).toBe(201);
+    await expect(response.json()).resolves.not.toHaveProperty("guestAccessToken");
+    expect(deps.createGuestAccessToken).not.toHaveBeenCalled();
   });
 
   it("fails before reservation or Square when pricing is unavailable", async () => {

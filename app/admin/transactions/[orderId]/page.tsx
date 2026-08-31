@@ -25,10 +25,6 @@ import {
 import { AdminPage, AdminPageHeader } from "@/components/admin/AdminPage";
 import type { AdminOrderItem } from "@/components/admin/orders/OrderItemDetailsModal";
 import { Toast } from "@/components/ui/Toast";
-import {
-  calculateCheckoutDisplayTotals,
-  PROCESSING_FEE_LABEL,
-} from "@/lib/checkout/display-pricing";
 import { shouldShowOrderProfit } from "@/lib/orders/metrics";
 
 type ProductImage = { url: string; is_primary?: boolean; sort_order?: number };
@@ -708,12 +704,6 @@ export default function TransactionDetailPage() {
   const shipping = Number(order.shipping ?? 0);
   const tax = Number(order.tax_amount ?? 0);
   const total = Number(order.total ?? 0);
-  const { processingFee, displayTotal } = calculateCheckoutDisplayTotals({
-    subtotal,
-    shipping,
-    tax,
-    fulfillment: order.fulfillment === "pickup" ? "pickup" : "ship",
-  });
   const refundedCents = Math.round(Number(order.refund_amount ?? 0));
   const refundedAmount = refundedCents / 100;
   const showOrderProfit = shouldShowOrderProfit(order.status);
@@ -741,7 +731,7 @@ export default function TransactionDetailPage() {
     return sum + financials.unitCost * financials.quantity;
   }, 0);
   const effectiveItemCost = Math.max(0, totalItemCost - refundedItemCost);
-  const sellerRevenue = Math.max(displayTotal - processingFee - refundedAmount, 0);
+  const sellerRevenue = Math.max(total - refundedAmount, 0);
   const totalProfit = sellerRevenue - effectiveItemCost;
 
   const customerEmail =
@@ -937,7 +927,7 @@ export default function TransactionDetailPage() {
                   )}
                   <div className="flex justify-between border-t border-zinc-800/70 pt-2 font-semibold text-white">
                     <span>Customer total</span>
-                    <span>{fmtMoney(displayTotal)}</span>
+                    <span>{fmtMoney(total)}</span>
                   </div>
                 </div>
 
@@ -947,10 +937,6 @@ export default function TransactionDetailPage() {
                   </p>
                   {isOrderPlaced ? (
                     <>
-                      <div className="flex justify-between text-red-400">
-                        <span>Processing fee ({PROCESSING_FEE_LABEL})</span>
-                        <span>-{fmtMoney(processingFee)}</span>
-                      </div>
                       {refundedCents > 0 && (
                         <div className="flex justify-between text-red-400">
                           <span>Refunded</span>
@@ -958,7 +944,7 @@ export default function TransactionDetailPage() {
                         </div>
                       )}
                       <div className="flex justify-between text-zinc-300">
-                        <span>Seller revenue</span>
+                        <span>Revenue before processor fees</span>
                         <span>{fmtMoney(sellerRevenue)}</span>
                       </div>
                       {showOrderProfit ? (
@@ -968,7 +954,7 @@ export default function TransactionDetailPage() {
                             <span>-{fmtMoney(effectiveItemCost)}</span>
                           </div>
                           <div className="flex justify-between border-t border-zinc-800/70 pt-2 font-semibold text-white">
-                            <span>Total profit</span>
+                            <span>Gross profit before processor fees</span>
                             <span
                               className={
                                 totalProfit >= 0 ? "text-emerald-400" : "text-red-400"
@@ -988,7 +974,7 @@ export default function TransactionDetailPage() {
                     </>
                   ) : (
                     <div className="flex justify-between text-zinc-500">
-                      <span>Order total before fee</span>
+                      <span>Order total</span>
                       <span>{fmtMoney(total)}</span>
                     </div>
                   )}

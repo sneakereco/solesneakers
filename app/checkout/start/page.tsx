@@ -1,5 +1,5 @@
-import { CheckoutUnavailable } from "@/components/checkout/CheckoutUnavailable";
+import { redirect } from "next/navigation";
 
 export default function CheckoutStartPage() {
-  return <CheckoutUnavailable />;
+  redirect("/checkout");
 }

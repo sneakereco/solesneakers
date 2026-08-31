@@ -36,4 +36,5 @@ export function clearIdempotencyKeyFromStorage(): void {
     return;
   }
   sessionStorage.removeItem("checkout_idempotency_key");
+  sessionStorage.removeItem("checkout_cart_fingerprint");
 }

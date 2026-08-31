@@ -3,10 +3,6 @@ import { EMAIL_COLORS, emailStyles } from "@/lib/email/theme";
 import { renderEmailLayout } from "@/lib/email/template";
 import type { OrderConfirmationEmailInput } from "@/types/domain/email";
 import {
-  calculateCheckoutDisplayTotals,
-  PROCESSING_FEE_LABEL,
-} from "@/lib/checkout/display-pricing";
-import {
   buildAddressLines,
   buildEmailFooterText,
   buildOrderUrl,
@@ -50,13 +46,6 @@ export const buildOrderConfirmationEmail = (input: OrderConfirmationEmailInput) 
   const addressLines = buildAddressLines(input.shippingAddress);
   const orderUrl = buildOrderUrl(input.orderUrl);
   const orderUrlSafe = safeHttpsUrl(orderUrl) ?? orderUrl;
-  const { processingFee, displayTotal } = calculateCheckoutDisplayTotals({
-    subtotal: input.subtotal,
-    shipping: input.shipping,
-    tax: input.tax,
-    fulfillment: input.fulfillment,
-  });
-
   const itemsHtml = input.items
     .map((item) => {
       const title = safeText(item.title) || "Item";
@@ -195,17 +184,11 @@ export const buildOrderConfirmationEmail = (input: OrderConfirmationEmailInput) 
               </td>
             </tr>
             <tr>
-              <td style="padding:0 0 4px;font-size:13px;color:${EMAIL_COLORS.muted};">Processing fee (${PROCESSING_FEE_LABEL})</td>
-              <td align="right" style="padding:0 0 4px;font-size:13px;color:${EMAIL_COLORS.text};">
-                $${formatMoney(processingFee)}
-              </td>
-            </tr>
-            <tr>
               <td style="padding:0 0 12px;font-size:14px;color:${EMAIL_COLORS.text};font-weight:700;border-bottom:1px solid ${EMAIL_COLORS.panelBorder};">
                 Total
               </td>
               <td align="right" style="padding:0 0 12px;font-size:16px;color:${EMAIL_COLORS.text};font-weight:700;border-bottom:1px solid ${EMAIL_COLORS.panelBorder};">
-                $${formatMoney(displayTotal)}
+                $${formatMoney(input.total)}
               </td>
             </tr>
             ${shippingBlock}
@@ -247,8 +230,7 @@ export const buildOrderConfirmationEmail = (input: OrderConfirmationEmailInput) 
     `Subtotal: $${formatMoney(input.subtotal)}`,
     `Shipping: $${formatMoney(input.shipping)}`,
     `Tax: $${formatMoney(input.tax)}`,
-    `Processing fee (${PROCESSING_FEE_LABEL}): $${formatMoney(processingFee)}`,
-    `Total: $${formatMoney(displayTotal)}`,
+    `Total: $${formatMoney(input.total)}`,
   ];
 
   if (input.fulfillment === "ship") {

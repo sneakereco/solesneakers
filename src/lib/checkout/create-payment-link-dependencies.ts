@@ -17,6 +17,7 @@ import { CheckoutReservationRepository } from "@/repositories/checkout-reservati
 import { CheckoutSettingsRepository } from "@/repositories/checkout-settings-repo";
 import { ProductRepository } from "@/repositories/product-repo";
 import { TenantRepository } from "@/repositories/tenant-repo";
+import { OrderAccessTokenService } from "@/services/order-access-token-service";
 
 function getCheckoutSiteUrl(): string {
   const value = process.env.NEXT_PUBLIC_SITE_URL?.trim();
@@ -38,6 +39,7 @@ export function createPaymentLinkDependencies(
   const productRepository = new ProductRepository(supabase);
   const reservationRepository = new CheckoutReservationRepository(supabase);
   const checkoutSettingsRepository = new CheckoutSettingsRepository(supabase);
+  const accessTokenService = new OrderAccessTokenService(supabase);
   const limiter = createCheckoutAttemptLimiter();
   const pricingGateway = createCheckoutPricingGateway(checkoutSettingsRepository);
   let squareGateway: ReturnType<typeof createSquarePaymentLinksGateway> | null = null;
@@ -62,6 +64,10 @@ export function createPaymentLinkDependencies(
       resolveCheckoutCart(productRepository, tenantId, items),
     quote: (input) => pricingGateway.quote(input),
     reserve: (input) => reservationRepository.reserve(input),
+    createGuestAccessToken: async (orderId) => {
+      const { token } = await accessTokenService.createToken({ orderId });
+      return token;
+    },
     createSquareLink: (input) => getSquareGateway().create(input),
     attachSquareLink: (orderId, link) =>
       reservationRepository.attachPaymentLink(orderId, link),
