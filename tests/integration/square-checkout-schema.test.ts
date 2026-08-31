@@ -10,6 +10,10 @@ describe("Square checkout reservation schema", () => {
     resolve("supabase/migrations/20260828190000_tenant_checkout_settings.sql"),
     "utf8",
   );
+  const lifecycleMigration = readFileSync(
+    resolve("supabase/migrations/20260831120000_square_refunds_and_disputes.sql"),
+    "utf8",
+  );
 
   it("stores provider identifiers and atomic inventory reservations", () => {
     expect(migration).toContain("square_payment_link_id");
@@ -61,6 +65,34 @@ describe("Square checkout reservation schema", () => {
     expect(settingsMigration).toContain("tax_amount = p_tax_cents::numeric / 100");
     expect(settingsMigration).toContain(
       "round(subtotal * 100)::integer + p_shipping_cents + p_tax_cents = p_total_cents",
+    );
+  });
+
+  it("deduplicates Square refunds and standard dispute notifications", () => {
+    expect(lifecycleMigration).toContain(
+      "create table if not exists public.square_refunds",
+    );
+    expect(lifecycleMigration).toContain(
+      "create table if not exists public.square_disputes",
+    );
+    expect(lifecycleMigration).toContain(
+      "create or replace function public.process_square_refund_event",
+    );
+    expect(lifecycleMigration).toContain(
+      "create or replace function public.process_square_dispute_event",
+    );
+    expect(lifecycleMigration).toContain("on conflict (square_event_id) do nothing");
+    expect(lifecycleMigration).toContain("refund_amount = v_completed_refund_cents");
+    expect(lifecycleMigration).toContain("to service_role");
+    expect(lifecycleMigration).toContain(
+      "create table if not exists public.checkout_notification_outbox",
+    );
+    expect(lifecycleMigration).toContain("create trigger queue_paid_order_confirmation");
+    expect(lifecycleMigration).toContain(
+      "create trigger queue_square_refund_confirmation",
+    );
+    expect(lifecycleMigration).toContain(
+      "create or replace function public.claim_checkout_notifications",
     );
   });
 });

@@ -43,9 +43,9 @@ Upstash does not repeat either IP or JA4 window. It owns only the 24-hour email/
 
 ## Cron configuration
 
-The production deployment invokes `GET /api/cron/expire-checkouts` every five minutes from `vercel.json`. Set `CRON_SECRET` to a randomly generated value of at least 32 characters in every Vercel environment that runs the job. Vercel sends it as `Authorization: Bearer <secret>`; the endpoint compares it in constant time.
+The production deployment invokes `GET /api/cron/expire-checkouts` and `GET /api/cron/checkout-notifications` every five minutes from `vercel.json`. The second schedule is offset by two minutes. Set `CRON_SECRET` to a randomly generated value of at least 32 characters in every Vercel environment that runs the jobs. Vercel sends it as `Authorization: Bearer <secret>`; both endpoints compare it in constant time.
 
-Vercel does not immediately retry a failed cron invocation. A checkout whose Square link could not be deleted remains pending with inventory reserved and is retried by the next scheduled run. Alert on any failed invocation.
+Vercel does not immediately retry a failed cron invocation. A checkout whose Square link could not be deleted remains pending with inventory reserved and is retried by the next scheduled run. Failed customer notifications use the database outbox and are also reclaimed by the next scheduled run. Alert on any failed invocation.
 
 ## Verification
 

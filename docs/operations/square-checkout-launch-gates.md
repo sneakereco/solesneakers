@@ -1,6 +1,6 @@
 # Square Checkout Launch Gates
 
-Checkout remains publicly reachable but displays the unavailable state until every required gate below has an owner and dated evidence. The payment-link API also fails closed until the tenant flat shipping rate has been explicitly saved.
+Checkout is publicly reachable and renders the Square pre-checkout flow when the emergency checkout lock is disabled. Keep that lock enabled in production until every required gate below has an owner and dated evidence. The payment-link API also fails closed until the tenant flat shipping rate has been explicitly saved.
 
 ## Locked pricing decisions
 
@@ -15,13 +15,14 @@ The code intentionally contains no homemade tax-rate table or production tax est
 ## Square production controls
 
 - Create separate sandbox and production credentials; store tokens and webhook signature keys only in Vercel encrypted environment variables.
-- Configure the exact production notification URL ending in `/api/webhooks/square` and subscribe only to supported payment events until additional event processors are implemented.
+- Configure the exact production notification URL ending in `/api/webhooks/square`. Subscribe to `payment.created`, `payment.updated`, `refund.created`, `refund.updated`, `dispute.created`, and `dispute.state.updated`; other event types fail validation and return `400`.
 - Confirm Risk Manager rules apply to API-created Payment Links for the production location.
 - During the initial 60 days, require 3DS for every eligible online card payment and configure the approved high-risk, velocity, AVS, CVV, prepaid-card, and international-card actions.
 - Keep Afterpay/Clearpay and tipping disabled. The implementation also disables customer-entered amounts, coupons, and loyalty redemption.
 - Complete sandbox evidence for successful, declined, duplicate, altered-amount, high-risk, expired, late, and repeated-webhook cases.
 - Complete Square tax evidence for pickup and shipping addresses in every nexus state, including whether the flat shipping charge is taxable. Verify that the Payment Link order tax and final payment amount equal the persisted local order.
 - Define the human review and refund procedure for `review` orders. No `review` order may be fulfilled.
+- Verify the notification cron sends one order confirmation after a paid webhook and one refund confirmation after each completed Square refund; replaying the same event must not duplicate either notification.
 
 ## Security and compliance gates
 

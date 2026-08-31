@@ -24,11 +24,7 @@ const shippingAddressSchema = z
       .string()
       .trim()
       .regex(/^\d{5}(?:-\d{4})?$/),
-    country: z
-      .string()
-      .trim()
-      .toUpperCase()
-      .pipe(z.literal("US")),
+    country: z.string().trim().toUpperCase().pipe(z.literal("US")),
   })
   .strict();
 

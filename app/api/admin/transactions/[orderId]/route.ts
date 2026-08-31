@@ -89,6 +89,63 @@ export async function GET(
       .eq("order_id", orderId)
       .order("created_at", { ascending: true });
 
+    // Square refund and standard dispute records share the checkout timeline.
+    // eslint-disable-next-line @typescript-eslint/no-explicit-any
+    const { data: squareRefunds, error: squareRefundsError } = await (admin as any)
+      .from("square_refunds")
+      .select("square_refund_id, status, amount_cents, currency, reason, updated_at")
+      .eq("order_id", orderId)
+      .order("updated_at", { ascending: true });
+    if (squareRefundsError) {
+      throw squareRefundsError;
+    }
+
+    // eslint-disable-next-line @typescript-eslint/no-explicit-any
+    const { data: squareDisputes, error: squareDisputesError } = await (admin as any)
+      .from("square_disputes")
+      .select(
+        "square_dispute_id, state, reason, amount_cents, currency, due_at, updated_at",
+      )
+      .eq("order_id", orderId)
+      .order("updated_at", { ascending: true });
+    if (squareDisputesError) {
+      throw squareDisputesError;
+    }
+
+    const squareLifecycleEvents = [
+      ...(squareRefunds ?? []).map(
+        (refund: {
+          square_refund_id: string;
+          status: string;
+          amount_cents: number;
+          currency: string;
+          reason: string | null;
+          updated_at: string;
+        }) => ({
+          id: `square-refund-${refund.square_refund_id}`,
+          event_type: `square_refund_${refund.status.toLowerCase()}`,
+          event_data: refund,
+          created_at: refund.updated_at,
+        }),
+      ),
+      ...(squareDisputes ?? []).map(
+        (dispute: {
+          square_dispute_id: string;
+          state: string;
+          reason: string;
+          amount_cents: number;
+          currency: string;
+          due_at: string | null;
+          updated_at: string;
+        }) => ({
+          id: `square-dispute-${dispute.square_dispute_id}`,
+          event_type: "square_dispute_alert",
+          event_data: dispute,
+          created_at: dispute.updated_at,
+        }),
+      ),
+    ];
+
     // --- Email audit log ---
     const { data: emailLogs } = await supabase
       .from("email_audit_log")
@@ -121,7 +178,12 @@ export async function GET(
       {
         order,
         paymentTransaction: paymentTx,
-        paymentEvents: paymentEvents ?? [],
+        paymentEvents: [...(paymentEvents ?? []), ...squareLifecycleEvents].sort(
+          (left, right) =>
+            new Date(left.created_at).getTime() - new Date(right.created_at).getTime(),
+        ),
+        squareRefunds: squareRefunds ?? [],
+        squareDisputes: squareDisputes ?? [],
         emailLogs: emailLogs ?? [],
         trackingEvents: trackingEvents ?? [],
         checkoutLogs: checkoutLogs ?? [],

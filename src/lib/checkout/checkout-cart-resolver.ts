@@ -37,7 +37,9 @@ export async function resolveCheckoutCart(
       throw new Error("checkout_cart_unavailable");
     }
 
-    const variant = product.variants.find((candidate) => candidate.id === requested.variantId);
+    const variant = product.variants.find(
+      (candidate) => candidate.id === requested.variantId,
+    );
     if (!variant) {
       throw new Error("checkout_cart_unavailable");
     }

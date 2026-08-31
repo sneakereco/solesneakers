@@ -421,6 +421,29 @@ function getEventMeta(
         icon: <Info className="h-4 w-4 text-blue-400" />,
         label: "Partial refund issued",
       };
+    case "square_refund_completed":
+      return {
+        icon: <Info className="h-4 w-4 text-blue-400" />,
+        label: "Square refund completed",
+      };
+    case "square_refund_pending":
+      return {
+        icon: <Clock className="h-4 w-4 text-amber-400" />,
+        label: "Square refund pending",
+      };
+    case "square_refund_failed":
+    case "square_refund_rejected":
+      return {
+        icon: <XCircle className="h-4 w-4 text-red-400" />,
+        label: "Square refund failed",
+      };
+    case "square_dispute_alert":
+      return {
+        icon: <AlertTriangle className="h-4 w-4 text-red-400" />,
+        label: "Square dispute alert",
+        description:
+          typeof eventData?.state === "string" ? `State: ${eventData.state}` : undefined,
+      };
     default:
       return {
         icon: <Info className="h-4 w-4 text-zinc-400" />,

@@ -2267,6 +2267,10 @@ export type Database = {
         };
         Returns: boolean;
       };
+      claim_checkout_notifications: {
+        Args: { p_limit: number };
+        Returns: Json;
+      };
       consume_square_checkout_reservation: {
         Args: { p_order_id: string; p_square_payment_id: string };
         Returns: boolean;
@@ -2278,6 +2282,10 @@ export type Database = {
       increment_variant_stock: {
         Args: { p_quantity: number; p_variant_id: string };
         Returns: undefined;
+      };
+      finish_checkout_notification: {
+        Args: { p_notification_id: string; p_succeeded: boolean };
+        Returns: boolean;
       };
       is_admin: { Args: never; Returns: boolean };
       is_admin_for_tenant: { Args: { target_tenant: string }; Returns: boolean };
@@ -2309,6 +2317,42 @@ export type Database = {
           p_square_created_at: string | null;
           p_square_event_id: string;
           p_square_order_id: string;
+          p_square_payment_id: string;
+        };
+        Returns: Json;
+      };
+      process_square_refund_event: {
+        Args: {
+          p_amount_cents: number;
+          p_currency: string;
+          p_event_data: Json;
+          p_event_type: string;
+          p_location_id: string;
+          p_merchant_id: string;
+          p_payload_sha256: string;
+          p_refund_status: string;
+          p_square_created_at: string;
+          p_square_event_id: string;
+          p_square_payment_id: string;
+          p_square_refund_id: string;
+        };
+        Returns: Json;
+      };
+      process_square_dispute_event: {
+        Args: {
+          p_amount_cents: number;
+          p_currency: string;
+          p_dispute_reason: string;
+          p_dispute_state: string;
+          p_due_at: string | null;
+          p_event_data: Json;
+          p_event_type: string;
+          p_location_id: string;
+          p_merchant_id: string;
+          p_payload_sha256: string;
+          p_square_created_at: string;
+          p_square_dispute_id: string;
+          p_square_event_id: string;
           p_square_payment_id: string;
         };
         Returns: Json;

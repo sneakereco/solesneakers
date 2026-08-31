@@ -143,7 +143,10 @@ export function CheckoutClient() {
   if (!isReady) {
     return (
       <div className="flex min-h-[32rem] items-center justify-center bg-[var(--storefront-surface)]">
-        <Loader2 className="h-8 w-8 animate-spin text-zinc-700" aria-label="Loading cart" />
+        <Loader2
+          className="h-8 w-8 animate-spin text-zinc-700"
+          aria-label="Loading cart"
+        />
       </div>
     );
   }
@@ -152,7 +155,10 @@ export function CheckoutClient() {
     return (
       <div className="mx-auto flex min-h-[32rem] max-w-xl flex-col items-center justify-center px-5 text-center text-black">
         <h1 className="text-3xl uppercase">Your cart is empty</h1>
-        <Link className="mt-6 bg-black px-8 py-4 text-sm uppercase text-white" href="/store">
+        <Link
+          className="mt-6 bg-black px-8 py-4 text-sm uppercase text-white"
+          href="/store"
+        >
           Return to store
         </Link>
       </div>
@@ -162,13 +168,16 @@ export function CheckoutClient() {
   return (
     <main className="min-h-screen bg-[var(--storefront-surface)] px-5 py-12 text-black sm:px-8">
       <form
-        onSubmit={submit}
+        onSubmit={(event) => {
+          void submit(event);
+        }}
         className="mx-auto grid max-w-5xl gap-10 lg:grid-cols-[minmax(0,1fr)_22rem]"
       >
         <section>
           <h1 className="text-3xl font-normal uppercase">Checkout</h1>
           <p className="mt-3 flex items-center gap-2 text-sm text-zinc-600">
-            <LockKeyhole className="h-4 w-4" /> Card details are entered securely on Square.
+            <LockKeyhole className="h-4 w-4" /> Card details are entered securely on
+            Square.
           </p>
 
           <fieldset className="mt-10">
@@ -183,7 +192,9 @@ export function CheckoutClient() {
                     checked={fulfillment === method}
                     onChange={() => setFulfillment(method)}
                   />
-                  <span className="ml-2 capitalize">{method === "ship" ? "Ship" : "Local pickup"}</span>
+                  <span className="ml-2 capitalize">
+                    {method === "ship" ? "Ship" : "Local pickup"}
+                  </span>
                 </label>
               ))}
             </div>
@@ -204,7 +215,9 @@ export function CheckoutClient() {
 
           {fulfillment === "ship" && (
             <fieldset className="mt-8 grid grid-cols-2 gap-4">
-              <legend className="col-span-2 text-sm font-medium uppercase">Shipping address</legend>
+              <legend className="col-span-2 text-sm font-medium uppercase">
+                Shipping address
+              </legend>
               {(
                 [
                   ["name", "Full name", "name"],
@@ -218,7 +231,11 @@ export function CheckoutClient() {
               ).map(([field, label, autoComplete]) => (
                 <label
                   key={field}
-                  className={field === "line1" || field === "line2" ? "col-span-2 text-sm" : "text-sm"}
+                  className={
+                    field === "line1" || field === "line2"
+                      ? "col-span-2 text-sm"
+                      : "text-sm"
+                  }
                 >
                   {label}
                   <input
@@ -239,8 +256,13 @@ export function CheckoutClient() {
           <h2 className="text-lg font-medium uppercase">Order summary</h2>
           <div className="mt-5 space-y-4 border-b border-zinc-200 pb-5">
             {items.map((item) => (
-              <div key={`${item.productId}-${item.variantId}`} className="flex justify-between gap-4 text-sm">
-                <span>{item.titleDisplay} × {item.quantity}</span>
+              <div
+                key={`${item.productId}-${item.variantId}`}
+                className="flex justify-between gap-4 text-sm"
+              >
+                <span>
+                  {item.titleDisplay} × {item.quantity}
+                </span>
                 <span>{formatPrice(item.priceCents * item.quantity)}</span>
               </div>
             ))}
@@ -252,15 +274,26 @@ export function CheckoutClient() {
           <p className="mt-3 text-xs leading-5 text-zinc-500">
             Square calculates authoritative tax. Shipping uses the configured store rate.
           </p>
-          {error && <p className="mt-4 text-sm text-red-700" role="alert">{error}</p>}
+          {error && (
+            <p className="mt-4 text-sm text-red-700" role="alert">
+              {error}
+            </p>
+          )}
           <button
             type="submit"
             disabled={isSubmitting}
             className="mt-6 flex w-full items-center justify-center bg-black px-6 py-4 text-sm font-medium uppercase text-white disabled:cursor-wait disabled:bg-zinc-500"
           >
-            {isSubmitting ? <Loader2 className="h-5 w-5 animate-spin" /> : "Continue to Square"}
+            {isSubmitting ? (
+              <Loader2 className="h-5 w-5 animate-spin" />
+            ) : (
+              "Continue to Square"
+            )}
           </button>
-          <Link href="/cart" className="mt-4 block text-center text-sm underline underline-offset-4">
+          <Link
+            href="/cart"
+            className="mt-4 block text-center text-sm underline underline-offset-4"
+          >
             Return to cart
           </Link>
         </aside>

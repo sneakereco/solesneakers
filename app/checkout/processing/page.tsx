@@ -14,9 +14,7 @@ function ProcessingContent() {
   const searchParams = useSearchParams();
   const orderId = searchParams.get("orderId");
   const [view, setView] = useState<ViewState>("waiting");
-  const [message, setMessage] = useState(
-    "Waiting for Square to confirm your payment...",
-  );
+  const [message, setMessage] = useState("Waiting for Square to confirm your payment...");
 
   useEffect(() => {
     if (!orderId) {
@@ -30,7 +28,9 @@ function ProcessingContent() {
     const token = readGuestOrderAccess(orderId);
 
     const poll = async () => {
-      if (canceled) return;
+      if (canceled) {
+        return;
+      }
       if (attempts >= 60) {
         setView("error");
         setMessage(
@@ -87,11 +87,15 @@ function ProcessingContent() {
     void poll();
     return () => {
       canceled = true;
-      if (timer) clearTimeout(timer);
+      if (timer) {
+        clearTimeout(timer);
+      }
     };
   }, [orderId, router]);
 
-  if (!orderId) return null;
+  if (!orderId) {
+    return null;
+  }
 
   return (
     <main className="flex min-h-screen items-center justify-center bg-zinc-950 px-5 text-white">
@@ -102,9 +106,7 @@ function ProcessingContent() {
         {view === "review" && (
           <AlertTriangle className="mx-auto mb-6 h-16 w-16 text-amber-400" />
         )}
-        {view === "error" && (
-          <XCircle className="mx-auto mb-6 h-16 w-16 text-red-500" />
-        )}
+        {view === "error" && <XCircle className="mx-auto mb-6 h-16 w-16 text-red-500" />}
         <h1 className="text-2xl font-bold">
           {view === "review"
             ? "Payment under review"

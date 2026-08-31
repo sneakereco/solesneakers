@@ -30,6 +30,7 @@ export const security = {
       "/api/webhooks/shippo",
       "/api/webhooks/square",
       "/api/cron/expire-checkouts",
+      "/api/cron/checkout-notifications",
       "/api/healthz",
       "/api/readyz",
     ],
