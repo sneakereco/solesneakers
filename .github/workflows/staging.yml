@@ -44,6 +44,17 @@ jobs:
       UPSTASH_REDIS_REST_URL: ${{ secrets.UPSTASH_REDIS_REST_URL }}
       UPSTASH_REDIS_REST_TOKEN: ${{ secrets.UPSTASH_REDIS_REST_TOKEN }}
 
+      # Checkout security
+      CHECKOUT_IDENTITY_HMAC_SECRET: ${{ secrets.CHECKOUT_IDENTITY_HMAC_SECRET }}
+      CRON_SECRET: ${{ secrets.CRON_SECRET }}
+
+      # Square
+      SQUARE_ENVIRONMENT: sandbox
+      SQUARE_ACCESS_TOKEN: ${{ secrets.SQUARE_ACCESS_TOKEN }}
+      SQUARE_LOCATION_ID: ${{ secrets.SQUARE_LOCATION_ID }}
+      SQUARE_WEBHOOK_SIGNATURE_KEY: ${{ secrets.SQUARE_WEBHOOK_SIGNATURE_KEY }}
+      SQUARE_WEBHOOK_NOTIFICATION_URL: ${{ secrets.SQUARE_WEBHOOK_NOTIFICATION_URL }}
+
       # Auth
       ADMIN_SESSION_SECRET: ${{ secrets.ADMIN_SESSION_SECRET }}
       ORDER_ACCESS_TOKEN_SECRET: ${{ secrets.ORDER_ACCESS_TOKEN_SECRET }}
@@ -63,12 +74,19 @@ jobs:
       - name: Checkout
         uses: actions/checkout@v4
 
-      - name: Validate Vercel Configuration
+      - name: Validate Deployment Configuration
         shell: bash
         run: |
           [[ -n "$VERCEL_TOKEN" ]] || { echo "Missing stg environment secret: VERCEL_TOKEN"; exit 1; }
           [[ -n "$VERCEL_ORG_ID" ]] || { echo "Missing stg environment secret: VERCEL_ORG_ID"; exit 1; }
-          [[ -n "$VERCEL_PROJECT_ID" ]] || { echo "Missing stg environment secret: VERCEL_STAGING_PROJECT_ID"; exit 1; }
+          [[ -n "$VERCEL_PROJECT_ID" ]] || { echo "Missing stg environment secret: VERCEL_PROJECT_ID"; exit 1; }
+          [[ -n "$CHECKOUT_IDENTITY_HMAC_SECRET" ]] || { echo "Missing stg environment secret: CHECKOUT_IDENTITY_HMAC_SECRET"; exit 1; }
+          [[ -n "$CRON_SECRET" ]] || { echo "Missing stg environment secret: CRON_SECRET"; exit 1; }
+          [[ -n "$SQUARE_ACCESS_TOKEN" ]] || { echo "Missing stg environment secret: SQUARE_ACCESS_TOKEN"; exit 1; }
+          [[ -n "$SQUARE_LOCATION_ID" ]] || { echo "Missing stg environment secret: SQUARE_LOCATION_ID"; exit 1; }
+          [[ -n "$SQUARE_WEBHOOK_SIGNATURE_KEY" ]] || { echo "Missing stg environment secret: SQUARE_WEBHOOK_SIGNATURE_KEY"; exit 1; }
+          [[ -n "$SQUARE_WEBHOOK_NOTIFICATION_URL" ]] || { echo "Missing stg environment secret: SQUARE_WEBHOOK_NOTIFICATION_URL"; exit 1; }
+          [[ "$SQUARE_ENVIRONMENT" == "sandbox" ]] || { echo "Staging SQUARE_ENVIRONMENT must be sandbox"; exit 1; }
 
       - name: Setup Node
         uses: actions/setup-node@v4
