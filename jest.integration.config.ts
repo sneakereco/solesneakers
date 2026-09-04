@@ -39,10 +39,7 @@ const config: Config = {
     "^@/(.*)$": "<rootDir>/src/$1",
   },
   testPathIgnorePatterns: ["<rootDir>/node_modules/", "<rootDir>/.next/"],
-  testMatch: [
-    "**/tests/integration/**/*.test.ts",
-    "**/tests/integration/**/*.test.tsx",
-  ],
+  testMatch: ["**/tests/integration/**/*.test.ts", "**/tests/integration/**/*.test.tsx"],
 };
 
 export default createJestConfig(config);
