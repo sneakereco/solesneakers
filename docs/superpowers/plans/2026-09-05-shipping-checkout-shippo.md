@@ -528,9 +528,9 @@ git commit -m "fix: persist selectable shipping carriers"
 - Modify: `app/api/webhooks/square/route.ts`
 - Create: `tests/unit/square-order-shipping.test.ts`
 - Create: `tests/unit/square-shipping-address-sync.test.ts`
+- Create: `tests/unit/addresses-repo.test.ts`
 - Modify: `tests/unit/square-payment-event.test.ts`
 - Modify: `tests/unit/square-webhook-route.test.ts`
-- Modify: `tests/integration/square-checkout-schema.test.ts`
 
 **Interfaces:**
 - Produces: `SquareOrderShippingReader.get(squareOrderId: string): Promise<AddressInput | null>`.
@@ -611,16 +611,33 @@ it("retries synchronization for a duplicate completed webhook", async () => {
 });
 ```
 
-Extend the integration migration test with:
+Verify the repository emits the additive synchronization marker at the database boundary:
 
 ```typescript
-const addressSyncMigration = readFileSync(
-  resolve("supabase/migrations/20260905120000_square_shipping_address_sync.sql"),
-  "utf8",
-);
-expect(addressSyncMigration).toContain(
-  "alter table public.order_shipping add column if not exists square_synced_at",
-);
+it("upserts Square's final address with a synchronization timestamp", async () => {
+  const upsert = jest.fn().mockResolvedValue({ error: null });
+  const repository = new AddressesRepository({
+    from: jest.fn(() => ({ upsert })),
+  } as never);
+
+  await repository.upsertSquareOrderShippingSnapshot("order-1", {
+    name: "Buyer",
+    line1: "1 Main Street",
+    city: "Charleston",
+    state: "SC",
+    postalCode: "29401",
+    country: "US",
+  });
+
+  expect(upsert).toHaveBeenCalledWith(
+    expect.objectContaining({
+      order_id: "order-1",
+      postal_code: "29401",
+      square_synced_at: expect.any(String),
+    }),
+    { onConflict: "order_id" },
+  );
+});
 ```
 
 - [ ] **Step 2: Run Square-focused tests and verify they fail**
@@ -628,11 +645,10 @@ expect(addressSyncMigration).toContain(
 Run:
 
 ```powershell
-npm run test:jest:unit -- --runInBand tests/unit/square-order-shipping.test.ts tests/unit/square-shipping-address-sync.test.ts tests/unit/square-payment-event.test.ts tests/unit/square-webhook-route.test.ts
-npm run test:jest:integration -- --runInBand tests/integration/square-checkout-schema.test.ts
+npm run test:jest:unit -- --runInBand tests/unit/square-order-shipping.test.ts tests/unit/square-shipping-address-sync.test.ts tests/unit/addresses-repo.test.ts tests/unit/square-payment-event.test.ts tests/unit/square-webhook-route.test.ts
 ```
 
-Expected: FAIL because the reader, synchronizer, event metadata, repository methods, and migration marker are absent.
+Expected: FAIL because the reader, synchronizer, event metadata, and repository methods are absent.
 
 - [ ] **Step 3: Add an idempotent Square synchronization boundary**
 
@@ -745,8 +761,7 @@ Wire the synchronizer after verified durable event processing in the webhook rou
 Run:
 
 ```powershell
-npm run test:jest:unit -- --runInBand tests/unit/square-order-shipping.test.ts tests/unit/square-shipping-address-sync.test.ts tests/unit/square-payment-event.test.ts tests/unit/square-webhook-route.test.ts
-npm run test:jest:integration -- --runInBand tests/integration/square-checkout-schema.test.ts
+npm run test:jest:unit -- --runInBand tests/unit/square-order-shipping.test.ts tests/unit/square-shipping-address-sync.test.ts tests/unit/addresses-repo.test.ts tests/unit/square-payment-event.test.ts tests/unit/square-webhook-route.test.ts
 npm run typecheck
 ```
 
@@ -755,7 +770,7 @@ Expected: all selected tests PASS and TypeScript exits 0.
 - [ ] **Step 5: Commit Square address synchronization**
 
 ```powershell
-git add -- supabase/migrations/20260905120000_square_shipping_address_sync.sql src/types/db/database.types.ts src/repositories/addresses-repo.ts src/repositories/orders-repo.ts src/lib/square/order-shipping.ts src/lib/square/shipping-address-sync.ts src/lib/square/payment-event.ts app/api/webhooks/square/route.ts tests/unit/square-order-shipping.test.ts tests/unit/square-shipping-address-sync.test.ts tests/unit/square-payment-event.test.ts tests/unit/square-webhook-route.test.ts tests/integration/square-checkout-schema.test.ts
+git add -- supabase/migrations/20260905120000_square_shipping_address_sync.sql src/types/db/database.types.ts src/repositories/addresses-repo.ts src/repositories/orders-repo.ts src/lib/square/order-shipping.ts src/lib/square/shipping-address-sync.ts src/lib/square/payment-event.ts app/api/webhooks/square/route.ts tests/unit/square-order-shipping.test.ts tests/unit/square-shipping-address-sync.test.ts tests/unit/addresses-repo.test.ts tests/unit/square-payment-event.test.ts tests/unit/square-webhook-route.test.ts
 git commit -m "feat: sync Square shipping addresses"
 ```
 
