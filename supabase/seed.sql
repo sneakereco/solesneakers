@@ -1,8 +1,13 @@
 begin;
 
+update public.tenants
+set name = 'Solesneakers'
+where name = 'Realdealkickzsc'
+  and not exists (select 1 from public.tenants where name = 'Solesneakers');
+
 insert into public.tenants (name)
-select 'Realdealkickzsc'
-where not exists (select 1 from public.tenants where name = 'Realdealkickzsc');
+select 'Solesneakers'
+where not exists (select 1 from public.tenants where name = 'Solesneakers');
 
 insert into public.tag_brands (tenant_id, canonical_label, is_active)
 select null, seed.label, seed.is_active
@@ -226,7 +231,7 @@ insert into public.tag_aliases (
 select null, 'model', model.id, seed.alias_label, seed.alias_normalized, seed.priority, seed.is_active
 from (values
     ('A Bathing Ape', 'BAPE STA', 'BAPE STA', 'bape sta', 8, true),
-    ('A Bathing Ape', 'BAPE STA', 'BAPE STA™', 'bape sta ', 6, true),
+    ('A Bathing Ape', 'BAPE STA', 'BAPE STAâ„¢', 'bape sta ', 6, true),
     ('A Bathing Ape', 'BAPE STA', 'BAPESTA', 'bapesta', 10, true),
     ('Air Jordan', '1', 'Air Jordan 1', 'air jordan 1', 1, true),
     ('Air Jordan', '1', 'AJ1', 'aj1', 1, true),

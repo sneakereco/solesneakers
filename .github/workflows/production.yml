@@ -119,6 +119,19 @@ jobs:
       - name: Push Migrations to Production
         run: supabase db push --db-url "$SUPABASE_DB_URL"
 
+      # Seed global taxonomy reference data when rows are missing.
+      - name: Seed Production Reference Data
+        shell: bash
+        run: |
+          psql -v ON_ERROR_STOP=1 "$SUPABASE_DB_URL" -f supabase/seed.sql
+          taxonomy_ready="$(psql -v ON_ERROR_STOP=1 "$SUPABASE_DB_URL" -Atc "
+            select exists (select 1 from public.tag_brands)
+              and exists (select 1 from public.tag_models)
+              and exists (select 1 from public.tag_aliases)
+              and exists (select 1 from public.tag_sizes);
+          ")"
+          [[ "$taxonomy_ready" == "t" ]] || { echo "Seed verification failed: missing taxonomy data"; exit 1; }
+
       # Build (validates env vars and Next.js config)
       - name: Build
         run: npm run build
