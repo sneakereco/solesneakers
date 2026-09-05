@@ -10,6 +10,7 @@ import { ShippingCarriersRepository } from "@/repositories/shipping-carriers-rep
 import { AddressesRepository } from "@/repositories/addresses-repo";
 import { ShippoService } from "@/services/shipping-label-service";
 import { getRequestIdFromHeaders } from "@/lib/http/request-id";
+import { normalizeCarrier, parseStoredCarrierSelection } from "@/lib/shipping/carriers";
 import { logError } from "@/lib/utils/log";
 
 export const dynamic = "force-dynamic";
@@ -39,11 +40,6 @@ const ratesSchema = z
     recipient: recipientSchema.optional(),
   })
   .strict();
-
-const normalizeCarrier = (v: unknown) =>
-  String(v ?? "")
-    .trim()
-    .toUpperCase();
 
 const toShippoAddress = (address: {
   name?: string | null;
@@ -106,7 +102,7 @@ export async function POST(request: NextRequest) {
       );
     }
 
-    const { orderId, weight, length, width, height, recipient } = parsed.data;
+    const { orderId, weight, length, width, height } = parsed.data;
 
     const originsRepo = new ShippingOriginsRepository(supabase);
     const carriersRepo = new ShippingCarriersRepository(supabase);
@@ -115,11 +111,9 @@ export async function POST(request: NextRequest) {
 
     // Get enabled carriers
     const carriersConfig = await carriersRepo.get();
-    const enabledCarriers = (carriersConfig?.enabled_carriers ?? [])
-      .map(normalizeCarrier)
-      .filter(Boolean);
-
-    const enabledSet = new Set(enabledCarriers);
+    const enabledSet = new Set(
+      parseStoredCarrierSelection(carriersConfig?.enabled_carriers ?? []),
+    );
 
     if (enabledSet.size === 0) {
       return NextResponse.json(
@@ -132,11 +126,21 @@ export async function POST(request: NextRequest) {
     }
 
     // Get recipient address
-    const recipientSource = recipient ?? (await addressesRepo.getOrderShipping(orderId));
+    const recipientSource = await addressesRepo.getOrderShipping(orderId);
     if (!recipientSource) {
       return NextResponse.json(
         { error: "Recipient address not found for this order.", requestId },
         { status: 404, headers: noStoreHeaders },
+      );
+    }
+
+    if (!recipientSource.square_synced_at) {
+      return NextResponse.json(
+        {
+          error: "The shipping address has not been synchronized from Square.",
+          requestId,
+        },
+        { status: 400, headers: noStoreHeaders },
       );
     }
 
@@ -191,7 +195,7 @@ export async function POST(request: NextRequest) {
     // Filter rates by enabled carriers
     const filteredRates = normalizedShipment.rates.filter((rate) => {
       const provider = normalizeCarrier(rate.carrier);
-      return enabledSet.has(provider);
+      return provider !== null && enabledSet.has(provider);
     });
 
     if (filteredRates.length === 0) {

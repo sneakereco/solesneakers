@@ -253,13 +253,6 @@ export function CreateLabelForm({
     return null;
   }
 
-  const setRecipientField = (field: keyof ShippingAddressDraft, value: string) => {
-    setRecipient((prev) => ({ ...prev, [field]: value }));
-    if (validationStatus === "idle") {
-      setValidationStatus("validating");
-    }
-  };
-
   const handleParcelInput = (
     field: "weight" | "length" | "width" | "height",
     value: string,
@@ -339,16 +332,6 @@ export function CreateLabelForm({
           length: parcel.length,
           width: parcel.width,
           height: parcel.height,
-          recipient: {
-            name: recipient.name || null,
-            phone: recipient.phone || null,
-            line1: recipient.line1,
-            line2: recipient.line2 || null,
-            city: recipient.city,
-            state: recipient.state,
-            postal_code: recipient.postal_code,
-            country: recipient.country,
-          },
         }),
       });
 
@@ -474,7 +457,7 @@ export function CreateLabelForm({
             <div className="space-y-3">
               <div className="flex items-center justify-between">
                 <div className="text-xs uppercase tracking-wide text-zinc-500">
-                  Shipping to
+                  Shipping to (verified by Square)
                 </div>
                 {validationStatus === "valid" && (
                   <div className="flex items-center gap-1 text-xs text-green-400">
@@ -496,7 +479,7 @@ export function CreateLabelForm({
                   <input
                     type="text"
                     value={recipient.name}
-                    onChange={(e) => setRecipientField("name", e.target.value)}
+                    readOnly
                     className="w-full bg-zinc-900 border border-zinc-800/70 text-white px-2 py-1.5 text-[12px] sm:text-sm"
                   />
                 </div>
@@ -505,7 +488,7 @@ export function CreateLabelForm({
                   <input
                     type="text"
                     value={recipient.phone}
-                    onChange={(e) => setRecipientField("phone", e.target.value)}
+                    readOnly
                     className={`w-full bg-zinc-900 border text-white px-2 py-1.5 text-[12px] sm:text-sm ${
                       addressErrors.phone ? "border-red-500" : "border-zinc-800/70"
                     }`}
@@ -520,7 +503,7 @@ export function CreateLabelForm({
                   <input
                     type="text"
                     value={recipient.line1}
-                    onChange={(e) => setRecipientField("line1", e.target.value)}
+                    readOnly
                     className={`w-full bg-zinc-900 border text-white px-2 py-1.5 text-[12px] sm:text-sm ${
                       addressErrors.line1 ? "border-red-500" : "border-zinc-800/70"
                     }`}
@@ -534,7 +517,7 @@ export function CreateLabelForm({
                   <input
                     type="text"
                     value={recipient.line2}
-                    onChange={(e) => setRecipientField("line2", e.target.value)}
+                    readOnly
                     className="w-full bg-zinc-900 border border-zinc-800/70 text-white px-2 py-1.5 text-[12px] sm:text-sm"
                   />
                 </div>
@@ -544,7 +527,7 @@ export function CreateLabelForm({
                   <input
                     type="text"
                     value={recipient.city}
-                    onChange={(e) => setRecipientField("city", e.target.value)}
+                    readOnly
                     className={`w-full bg-zinc-900 border text-white px-2 py-1.5 text-[12px] sm:text-sm ${
                       addressErrors.city ? "border-red-500" : "border-zinc-800/70"
                     }`}
@@ -558,9 +541,7 @@ export function CreateLabelForm({
                   <input
                     type="text"
                     value={recipient.state}
-                    onChange={(e) =>
-                      setRecipientField("state", e.target.value.toUpperCase())
-                    }
+                    readOnly
                     maxLength={2}
                     placeholder="CA"
                     className={`w-full bg-zinc-900 border text-white px-2 py-1.5 text-[12px] sm:text-sm ${
@@ -576,7 +557,7 @@ export function CreateLabelForm({
                   <input
                     type="text"
                     value={recipient.postal_code}
-                    onChange={(e) => setRecipientField("postal_code", e.target.value)}
+                    readOnly
                     placeholder="12345"
                     className={`w-full bg-zinc-900 border text-white px-2 py-1.5 text-[12px] sm:text-sm ${
                       addressErrors.postal_code ? "border-red-500" : "border-zinc-800/70"
@@ -593,9 +574,7 @@ export function CreateLabelForm({
                   <input
                     type="text"
                     value={recipient.country}
-                    onChange={(e) =>
-                      setRecipientField("country", e.target.value.toUpperCase())
-                    }
+                    readOnly
                     maxLength={2}
                     placeholder="US"
                     className={`w-full bg-zinc-900 border text-white px-2 py-1.5 text-[12px] sm:text-sm ${

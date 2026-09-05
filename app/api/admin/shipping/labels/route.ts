@@ -14,7 +14,16 @@ import { ShippoService } from "@/services/shipping-label-service";
 import { OrderEmailService } from "@/services/order-email-service";
 import { OrderAccessTokenService } from "@/services/order-access-token-service";
 import { getRequestIdFromHeaders } from "@/lib/http/request-id";
+import { parseStoredCarrierSelection } from "@/lib/shipping/carriers";
+import {
+  assertOrderReadyForLabel,
+  assertRateAllowed,
+  ShippingLabelPolicyError,
+  type ShippingLabelPolicyCode,
+} from "@/lib/shipping/label-purchase-policy";
 import { logError } from "@/lib/utils/log";
+import { AddressesRepository } from "@/repositories/addresses-repo";
+import { ShippingCarriersRepository } from "@/repositories/shipping-carriers-repo";
 
 const labelsSchema = z
   .object({
@@ -24,23 +33,7 @@ const labelsSchema = z
   })
   .strict();
 
-type OrderSummary = {
-  fulfillment_status?: string | null;
-  tracking_number?: string | null;
-};
-
 type ReadyToShipInput = Parameters<OrdersRepository["markReadyToShip"]>[1];
-
-const isAlreadyLabeledOrPast = (order: OrderSummary) => {
-  const status = String(order?.fulfillment_status ?? "").toLowerCase();
-  if (order?.tracking_number) {
-    return true;
-  }
-  if (["ready_to_ship", "shipped", "delivered"].includes(status)) {
-    return true;
-  }
-  return false;
-};
 
 const mapShippoError = (error: string): string => {
   const lower = error.toLowerCase();
@@ -70,6 +63,19 @@ const dollarsToCents = (dollars: string | null | undefined): number => {
   return Math.round(num * 100);
 };
 
+const policyMessages: Record<ShippingLabelPolicyCode, string> = {
+  shipping_order_not_fulfillment_ready:
+    "This order is not paid and ready for shipping.",
+  shipping_label_already_purchased:
+    "A shipping label has already been purchased for this order.",
+  shipping_address_not_square_synced:
+    "The shipping address has not been synchronized from Square.",
+  shipping_rate_shipment_mismatch:
+    "The selected rate does not belong to this Shippo shipment.",
+  shipping_carrier_disabled:
+    "The selected carrier is disabled in Shipping Settings.",
+};
+
 export async function POST(request: NextRequest) {
   const requestId = getRequestIdFromHeaders(request.headers);
 
@@ -88,9 +94,11 @@ export async function POST(request: NextRequest) {
       );
     }
 
-    const { orderId, rateId } = parsed.data;
+    const { orderId, shipmentId, rateId } = parsed.data;
 
     const ordersRepo = new OrdersRepository(supabase);
+    const addressesRepo = new AddressesRepository(supabase);
+    const carriersRepo = new ShippingCarriersRepository(supabase);
     const profilesRepo = new ProfileRepository(supabase);
     const shippoService = new ShippoService();
     const accessTokenService = new OrderAccessTokenService(supabase);
@@ -100,16 +108,63 @@ export async function POST(request: NextRequest) {
       return NextResponse.json({ error: "Order not found", requestId }, { status: 404 });
     }
 
-    if (isAlreadyLabeledOrPast(order)) {
-      return NextResponse.json(
-        {
-          error: "A shipping label has already been purchased for this order.",
-          requestId,
-          carrier: order.shipping_carrier ?? null,
-          trackingNumber: order.tracking_number ?? null,
-        },
-        { status: 409 },
+    try {
+      assertOrderReadyForLabel(
+        order,
+        await addressesRepo.getOrderShipping(orderId),
       );
+    } catch (policyError) {
+      if (policyError instanceof ShippingLabelPolicyError) {
+        return NextResponse.json(
+          {
+            error: policyMessages[policyError.code],
+            code: policyError.code,
+            requestId,
+            carrier: order.shipping_carrier ?? null,
+            trackingNumber: order.tracking_number ?? null,
+          },
+          { status: policyError.status },
+        );
+      }
+      throw policyError;
+    }
+
+    const carriersConfig = await carriersRepo.get();
+    let rate;
+    try {
+      rate = await shippoService.getRate(rateId);
+    } catch (shippoError) {
+      logError(shippoError, {
+        layer: "api",
+        requestId,
+        orderId,
+        rateId,
+        message: "Shippo rate retrieval failed",
+      });
+      return NextResponse.json(
+        { error: "Unable to verify the selected Shippo rate.", requestId },
+        { status: 502 },
+      );
+    }
+
+    try {
+      assertRateAllowed(
+        rate,
+        shipmentId,
+        parseStoredCarrierSelection(carriersConfig?.enabled_carriers ?? []),
+      );
+    } catch (policyError) {
+      if (policyError instanceof ShippingLabelPolicyError) {
+        return NextResponse.json(
+          {
+            error: policyMessages[policyError.code],
+            code: policyError.code,
+            requestId,
+          },
+          { status: policyError.status },
+        );
+      }
+      throw policyError;
     }
 
     // Purchase label via Shippo

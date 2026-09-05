@@ -14,6 +14,12 @@ const shippo = new Shippo({
   apiKeyHeader: env.SHIPPO_API_TOKEN,
 });
 
+type ShippoClient = {
+  shipments: { create(input: unknown): Promise<unknown> };
+  rates: { get(rateId: string): Promise<unknown> };
+  transactions: { create(input: unknown): Promise<unknown> };
+};
+
 interface IAddress {
   name?: string | null;
   company?: string | null;
@@ -35,6 +41,7 @@ interface IParcel {
 
 export interface NormalizedRate {
   id: string;
+  shipmentId: string;
   carrier: string;
   service: string;
   rate: string;
@@ -73,6 +80,9 @@ interface ShippoRate {
   currency?: string;
   estimatedDays?: number;
   estimated_days?: number;
+  shipment?:
+    | string
+    | { objectId?: string; object_id?: string };
 }
 
 interface ShippoShipment {
@@ -101,6 +111,8 @@ interface ShippoTransaction {
 }
 
 export class ShippoService {
+  constructor(private readonly client: ShippoClient = shippo) {}
+
   private toShippoAddress(address: IAddress) {
     const clean = (value?: string | null) => {
       const trimmed = (value ?? "").trim();
@@ -139,7 +151,11 @@ export class ShippoService {
 
   private normalizeRate(rate: ShippoRate): NormalizedRate | null {
     const id = rate?.objectId ?? rate?.object_id ?? null;
-    if (!id) {
+    const shipmentId =
+      typeof rate?.shipment === "string"
+        ? rate.shipment
+        : rate?.shipment?.objectId ?? rate?.shipment?.object_id ?? null;
+    if (!id || !shipmentId) {
       return null;
     }
 
@@ -151,6 +167,7 @@ export class ShippoService {
 
     return {
       id: String(id),
+      shipmentId: String(shipmentId),
       carrier: String(carrier),
       service: String(service),
       rate: String(amount),
@@ -165,7 +182,7 @@ export class ShippoService {
     parcel: IParcel,
   ): Promise<NormalizedShipment> {
     try {
-      const shipment = await shippo.shipments.create({
+      const shipment = await this.client.shipments.create({
         addressFrom: this.toShippoAddress(fromAddress),
         addressTo: this.toShippoAddress(toAddress),
         parcels: [this.toShippoParcel(parcel)],
@@ -208,9 +225,18 @@ export class ShippoService {
     }
   }
 
+  async getRate(rateId: string): Promise<NormalizedRate> {
+    const rate = await this.client.rates.get(rateId);
+    const normalized = this.normalizeRate(rate as ShippoRate);
+    if (!normalized) {
+      throw new Error("Shippo rate returned invalid provenance");
+    }
+    return normalized;
+  }
+
   async purchaseLabel(rateId: string): Promise<NormalizedTransaction> {
     try {
-      const transaction = await shippo.transactions.create({
+      const transaction = await this.client.transactions.create({
         rate: rateId,
         labelFileType: LabelFileTypeEnum.Pdf,
         async: false,
