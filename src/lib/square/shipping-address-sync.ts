@@ -27,8 +27,7 @@ export function createSquareShippingSyncDependencies(
 
   return {
     getOrderById: (orderId) => orders.getById(orderId),
-    getOrderBySquareOrderId: (squareOrderId) =>
-      orders.getBySquareOrderId(squareOrderId),
+    getOrderBySquareOrderId: (squareOrderId) => orders.getBySquareOrderId(squareOrderId),
     getSquareShippingAddress: (squareOrderId) => squareOrders.get(squareOrderId),
     saveSquareShippingAddress: (orderId, address) =>
       addresses.upsertSquareOrderShippingSnapshot(orderId, address),

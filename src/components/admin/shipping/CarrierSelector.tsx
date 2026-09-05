@@ -6,7 +6,10 @@ const AVAILABLE_CARRIERS = [
   { key: "FEDEX", label: "FedEx", description: "Federal Express" },
 ] satisfies Array<{ key: CarrierKey; label: string; description: string }>;
 
-export function CarrierSelector({ enabled, onToggle }: {
+export function CarrierSelector({
+  enabled,
+  onToggle,
+}: {
   enabled: CarrierKey[];
   onToggle(carrier: CarrierKey): void;
 }) {

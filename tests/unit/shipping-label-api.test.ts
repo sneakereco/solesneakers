@@ -36,6 +36,7 @@ import { AddressesRepository } from "@/repositories/addresses-repo";
 import { OrdersRepository } from "@/repositories/orders-repo";
 import { ShippingCarriersRepository } from "@/repositories/shipping-carriers-repo";
 import { ShippoService } from "@/services/shipping-label-service";
+
 import { POST } from "../../app/api/admin/shipping/labels/route";
 
 const mockRequireAdminApi = jest.mocked(requireAdminApi);
@@ -71,15 +72,17 @@ describe("POST /api/admin/shipping/labels", () => {
           markReadyToShip: mockMarkReadyToShip,
         }) as never,
     );
-    jest.mocked(AddressesRepository).mockImplementation(
-      () => ({ getOrderShipping: mockGetShipping }) as never,
-    );
-    jest.mocked(ShippingCarriersRepository).mockImplementation(
-      () => ({ get: mockGetCarriers }) as never,
-    );
-    jest.mocked(ShippoService).mockImplementation(
-      () => ({ getRate: mockGetRate, purchaseLabel: mockPurchaseLabel }) as never,
-    );
+    jest
+      .mocked(AddressesRepository)
+      .mockImplementation(() => ({ getOrderShipping: mockGetShipping }) as never);
+    jest
+      .mocked(ShippingCarriersRepository)
+      .mockImplementation(() => ({ get: mockGetCarriers }) as never);
+    jest
+      .mocked(ShippoService)
+      .mockImplementation(
+        () => ({ getRate: mockGetRate, purchaseLabel: mockPurchaseLabel }) as never,
+      );
     mockRequireAdminApi.mockResolvedValue({
       profile: {
         id: "admin-1",

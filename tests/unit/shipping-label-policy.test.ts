@@ -1,7 +1,5 @@
-import {
-  assertShippingLabelPurchaseAllowed,
-  ShippingLabelPolicyError,
-} from "@/lib/shipping/label-purchase-policy";
+import { assertShippingLabelPurchaseAllowed } from "@/lib/shipping/label-purchase-policy";
+import type { ShippingLabelPolicyError } from "@/lib/shipping/label-purchase-policy";
 
 const ready = {
   order: {

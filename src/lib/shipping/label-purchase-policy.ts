@@ -44,10 +44,7 @@ export function assertOrderReadyForLabel(
   }
 
   if (order.status !== "paid" || order.fulfillment !== "ship") {
-    throw new ShippingLabelPolicyError(
-      "shipping_order_not_fulfillment_ready",
-      409,
-    );
+    throw new ShippingLabelPolicyError("shipping_order_not_fulfillment_ready", 409);
   }
 
   if (!shipping?.square_synced_at) {

@@ -80,9 +80,7 @@ interface ShippoRate {
   currency?: string;
   estimatedDays?: number;
   estimated_days?: number;
-  shipment?:
-    | string
-    | { objectId?: string; object_id?: string };
+  shipment?: string | { objectId?: string; object_id?: string };
 }
 
 interface ShippoShipment {
@@ -154,7 +152,7 @@ export class ShippoService {
     const shipmentId =
       typeof rate?.shipment === "string"
         ? rate.shipment
-        : rate?.shipment?.objectId ?? rate?.shipment?.object_id ?? null;
+        : (rate?.shipment?.objectId ?? rate?.shipment?.object_id ?? null);
     if (!id || !shipmentId) {
       return null;
     }

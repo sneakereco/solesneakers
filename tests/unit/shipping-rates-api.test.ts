@@ -19,6 +19,7 @@ import { AddressesRepository } from "@/repositories/addresses-repo";
 import { ShippingCarriersRepository } from "@/repositories/shipping-carriers-repo";
 import { ShippingOriginsRepository } from "@/repositories/shipping-origins-repo";
 import { ShippoService } from "@/services/shipping-label-service";
+
 import { POST } from "../../app/api/admin/shipping/rates/route";
 
 const mockGetOrigin = jest.fn();
@@ -56,18 +57,18 @@ describe("POST /api/admin/shipping/rates", () => {
     jest.clearAllMocks();
     jest.mocked(requireAdminApi).mockResolvedValue({} as never);
     jest.mocked(createSupabaseAdminClient).mockReturnValue({} as never);
-    jest.mocked(ShippingOriginsRepository).mockImplementation(
-      () => ({ get: mockGetOrigin }) as never,
-    );
-    jest.mocked(ShippingCarriersRepository).mockImplementation(
-      () => ({ get: mockGetCarriers }) as never,
-    );
-    jest.mocked(AddressesRepository).mockImplementation(
-      () => ({ getOrderShipping: mockGetShipping }) as never,
-    );
-    jest.mocked(ShippoService).mockImplementation(
-      () => ({ createShipment: mockCreateShipment }) as never,
-    );
+    jest
+      .mocked(ShippingOriginsRepository)
+      .mockImplementation(() => ({ get: mockGetOrigin }) as never);
+    jest
+      .mocked(ShippingCarriersRepository)
+      .mockImplementation(() => ({ get: mockGetCarriers }) as never);
+    jest
+      .mocked(AddressesRepository)
+      .mockImplementation(() => ({ getOrderShipping: mockGetShipping }) as never);
+    jest
+      .mocked(ShippoService)
+      .mockImplementation(() => ({ createShipment: mockCreateShipment }) as never);
     mockGetOrigin.mockResolvedValue({
       name: "Store",
       phone: "2125550199",

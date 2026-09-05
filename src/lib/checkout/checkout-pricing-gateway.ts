@@ -51,9 +51,7 @@ export function createCheckoutPricingGateway(
 
       const categories = [...new Set(input.items.map(({ category }) => category))];
       const rows = await repository.getByCategories(input.tenantId, categories);
-      const prices = new Map(
-        rows.map((row) => [row.category, row.shipping_cost_cents]),
-      );
+      const prices = new Map(rows.map((row) => [row.category, row.shipping_cost_cents]));
       let shippingCents = 0;
 
       for (const category of categories) {

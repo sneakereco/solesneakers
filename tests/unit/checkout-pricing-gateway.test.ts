@@ -37,17 +37,14 @@ describe("createCheckoutPricingGateway", () => {
     });
 
     expect(quote.shippingCents).toBe(1500);
-    expect(getByCategories).toHaveBeenCalledWith("tenant-1", [
-      "sneakers",
-      "clothing",
-    ]);
+    expect(getByCategories).toHaveBeenCalledWith("tenant-1", ["sneakers", "clothing"]);
   });
 
   it("fails closed when a represented category is missing", async () => {
     const gateway = createCheckoutPricingGateway({
-      getByCategories: jest.fn().mockResolvedValue([
-        { category: "sneakers", shipping_cost_cents: 1500 },
-      ]),
+      getByCategories: jest
+        .fn()
+        .mockResolvedValue([{ category: "sneakers", shipping_cost_cents: 1500 }]),
     } as never);
 
     await expect(
@@ -82,9 +79,9 @@ describe("createCheckoutPricingGateway", () => {
 
   it("rejects an invalid configured category price", async () => {
     const gateway = createCheckoutPricingGateway({
-      getByCategories: jest.fn().mockResolvedValue([
-        { category: "sneakers", shipping_cost_cents: -1 },
-      ]),
+      getByCategories: jest
+        .fn()
+        .mockResolvedValue([{ category: "sneakers", shipping_cost_cents: -1 }]),
     } as never);
 
     await expect(

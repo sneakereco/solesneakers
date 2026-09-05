@@ -3,7 +3,9 @@ export const CARRIER_KEYS = ["UPS", "USPS", "FEDEX"] as const;
 export type CarrierKey = (typeof CARRIER_KEYS)[number];
 
 export function normalizeCarrier(value: unknown): CarrierKey | null {
-  const normalized = String(value ?? "").trim().toUpperCase();
+  const normalized = String(value ?? "")
+    .trim()
+    .toUpperCase();
   return CARRIER_KEYS.find((carrier) => carrier === normalized) ?? null;
 }
 

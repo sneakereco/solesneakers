@@ -19,9 +19,7 @@ describe("shipping carrier configuration", () => {
   });
 
   it("rejects unknown submitted providers", () => {
-    expect(() => parseCarrierSelection(["DHL"])).toThrow(
-      "shipping_carrier_invalid",
-    );
+    expect(() => parseCarrierSelection(["DHL"])).toThrow("shipping_carrier_invalid");
   });
 
   it("drops unknown legacy providers when reading saved configuration", () => {

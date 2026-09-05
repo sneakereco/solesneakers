@@ -315,9 +315,7 @@ export default function ShippingSettingsPage() {
   };
 
   const toggleCarrier = (carrierKey: CarrierKey) => {
-    setEnabledCarriers((previous) =>
-      toggleCarrierSelection(previous, carrierKey),
-    );
+    setEnabledCarriers((previous) => toggleCarrierSelection(previous, carrierKey));
   };
 
   const saveDefaults = async () => {

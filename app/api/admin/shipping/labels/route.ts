@@ -64,16 +64,14 @@ const dollarsToCents = (dollars: string | null | undefined): number => {
 };
 
 const policyMessages: Record<ShippingLabelPolicyCode, string> = {
-  shipping_order_not_fulfillment_ready:
-    "This order is not paid and ready for shipping.",
+  shipping_order_not_fulfillment_ready: "This order is not paid and ready for shipping.",
   shipping_label_already_purchased:
     "A shipping label has already been purchased for this order.",
   shipping_address_not_square_synced:
     "The shipping address has not been synchronized from Square.",
   shipping_rate_shipment_mismatch:
     "The selected rate does not belong to this Shippo shipment.",
-  shipping_carrier_disabled:
-    "The selected carrier is disabled in Shipping Settings.",
+  shipping_carrier_disabled: "The selected carrier is disabled in Shipping Settings.",
 };
 
 export async function POST(request: NextRequest) {
@@ -109,10 +107,7 @@ export async function POST(request: NextRequest) {
     }
 
     try {
-      assertOrderReadyForLabel(
-        order,
-        await addressesRepo.getOrderShipping(orderId),
-      );
+      assertOrderReadyForLabel(order, await addressesRepo.getOrderShipping(orderId));
     } catch (policyError) {
       if (policyError instanceof ShippingLabelPolicyError) {
         return NextResponse.json(

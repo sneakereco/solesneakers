@@ -17,16 +17,16 @@ export async function getEditFormInitialData(productId: string) {
     const taxonomyRepo = new TagTaxonomyRepository(supabase);
 
     const [product, brandsData, modelsData, sizesData] = await Promise.all([
-        productService.getProductById(productId, {
-          tenantId,
-          includeOutOfStock: true,
-          includeUnpublished: true,
-          archivedStatus: "all",
-        }),
-        taxonomyRepo.listBrands(tenantId),
-        taxonomyRepo.listModels(tenantId),
-        taxonomyRepo.listSizes(tenantId),
-      ]);
+      productService.getProductById(productId, {
+        tenantId,
+        includeOutOfStock: true,
+        includeUnpublished: true,
+        archivedStatus: "all",
+      }),
+      taxonomyRepo.listBrands(tenantId),
+      taxonomyRepo.listModels(tenantId),
+      taxonomyRepo.listSizes(tenantId),
+    ]);
 
     if (product && !brandsData.some((brand) => brand.id === product.brand.id)) {
       brandsData.push({
