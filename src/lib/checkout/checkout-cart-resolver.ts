@@ -4,9 +4,7 @@ import type { PaymentLinkRequestItem } from "@/lib/checkout/payment-link-request
 
 type CheckoutProductRepository = Pick<ProductRepository, "getProductsForCheckout">;
 
-export type ResolvedCheckoutItem = CheckoutReservationItem & {
-  shippingPriceCents: number | null;
-};
+export type ResolvedCheckoutItem = CheckoutReservationItem;
 
 export type ResolvedCheckoutCart = {
   items: ResolvedCheckoutItem[];
@@ -66,7 +64,6 @@ export async function resolveCheckoutCart(
       category: product.category,
       condition: product.condition,
       sizeLabel: variant.sizeLabel,
-      shippingPriceCents: product.shippingPriceCents,
     });
   }
 

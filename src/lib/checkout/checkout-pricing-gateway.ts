@@ -1,9 +1,6 @@
 import type { PaymentLinkRequest } from "@/lib/checkout/payment-link-request";
 import type { ResolvedCheckoutItem } from "@/lib/checkout/checkout-cart-resolver";
-import type {
-  CheckoutSettings,
-  CheckoutSettingsRepository,
-} from "@/repositories/checkout-settings-repo";
+import type { ShippingDefaultsRepository } from "@/repositories/shipping-defaults-repo";
 
 export type CheckoutPricingQuoteInput = {
   tenantId: string;
@@ -21,42 +18,54 @@ export type CheckoutPricingQuote = {
 };
 
 export type CheckoutPricingGateway = {
-  assertReady(tenantId: string): Promise<void>;
   quote(input: CheckoutPricingQuoteInput): Promise<CheckoutPricingQuote>;
 };
 
 export class CheckoutPricingUnavailableError extends Error {
-  constructor() {
+  readonly category: string | null;
+
+  constructor(category: string | null = null) {
     super("checkout_pricing_unavailable");
+    this.name = "CheckoutPricingUnavailableError";
+    this.category = category;
   }
 }
 
-type CheckoutSettingsReader = Pick<CheckoutSettingsRepository, "getByTenant">;
-
-async function requireSettings(
-  repository: CheckoutSettingsReader,
-  tenantId: string,
-): Promise<CheckoutSettings> {
-  const settings = await repository.getByTenant(tenantId);
-  if (!settings) {
-    throw new CheckoutPricingUnavailableError();
-  }
-  return settings;
-}
+type ShippingDefaultsReader = Pick<ShippingDefaultsRepository, "getByCategories">;
 
 export function createCheckoutPricingGateway(
-  repository: CheckoutSettingsReader,
+  repository: ShippingDefaultsReader,
 ): CheckoutPricingGateway {
   return {
-    assertReady: async (tenantId) => {
-      await requireSettings(repository, tenantId);
-    },
     quote: async (input) => {
-      const settings = await requireSettings(repository, input.tenantId);
       const customerState = input.shippingAddress?.state ?? "SC";
 
+      if (input.fulfillment === "pickup") {
+        return {
+          shippingCents: 0,
+          taxCents: 0,
+          taxCalculationId: "square:pending",
+          customerState,
+        };
+      }
+
+      const categories = [...new Set(input.items.map(({ category }) => category))];
+      const rows = await repository.getByCategories(input.tenantId, categories);
+      const prices = new Map(
+        rows.map((row) => [row.category, row.shipping_cost_cents]),
+      );
+      let shippingCents = 0;
+
+      for (const category of categories) {
+        const cents = prices.get(category);
+        if (cents === undefined || !Number.isSafeInteger(cents) || cents < 0) {
+          throw new CheckoutPricingUnavailableError(category);
+        }
+        shippingCents = Math.max(shippingCents, cents);
+      }
+
       return {
-        shippingCents: input.fulfillment === "ship" ? settings.flatShippingCents : 0,
+        shippingCents,
         taxCents: 0,
         taxCalculationId: "square:pending",
         customerState,

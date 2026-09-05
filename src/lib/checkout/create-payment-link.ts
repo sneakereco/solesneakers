@@ -44,7 +44,6 @@ export type CreatePaymentLinkDependencies = {
     idempotencyKey: string,
     cartHash: string,
   ): Promise<ExistingCheckout | null>;
-  ensureCommerceReady(tenantId: string): Promise<void>;
   checkAttempt(identity: CheckoutAttemptIdentity): Promise<CheckoutAttemptDecision>;
   resolveCart(
     tenantId: string,
@@ -264,8 +263,6 @@ export async function createPaymentLinkHandler(
         200,
       );
     }
-
-    await deps.ensureCommerceReady(tenantId);
 
     const normalizedEmailHash = deps.hashEmail(buyerEmail);
     const attempt = await deps.checkAttempt({

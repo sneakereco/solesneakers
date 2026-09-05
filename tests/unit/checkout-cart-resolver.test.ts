@@ -6,7 +6,7 @@ const product = {
   brand: "Sole",
   model: "One",
   titleDisplay: "Sole Air Runner One",
-  category: "shoes",
+  category: "sneakers",
   condition: "new",
   tenantId: "tenant-1",
   shippingPriceCents: 1200,
@@ -43,6 +43,7 @@ describe("resolveCheckoutCart", () => {
         lineTotalCents: 30000,
       }),
     ]);
+    expect(result.items[0]).not.toHaveProperty("shippingPriceCents");
   });
 
   it("rejects cross-tenant products", async () => {

@@ -36,7 +36,6 @@ function dependencies(): jest.Mocked<CreatePaymentLinkDependencies> {
     getSession: jest.fn().mockResolvedValue(null),
     hashEmail: jest.fn().mockReturnValue("email-hash"),
     findExisting: jest.fn().mockResolvedValue(null),
-    ensureCommerceReady: jest.fn().mockResolvedValue(undefined),
     checkAttempt: jest.fn().mockResolvedValue({ allowed: true, retryAfterSeconds: null }),
     resolveCart: jest.fn().mockResolvedValue({
       subtotalCents: 15000,
@@ -52,10 +51,9 @@ function dependencies(): jest.Mocked<CreatePaymentLinkDependencies> {
           productName: "Air Runner",
           brand: "Sole",
           model: "One",
-          category: "shoes",
+          category: "sneakers",
           condition: "new",
           sizeLabel: "10",
-          shippingPriceCents: null,
         },
       ],
     }),
@@ -195,14 +193,14 @@ describe("createPaymentLinkHandler", () => {
     expect(deps.createGuestAccessToken).not.toHaveBeenCalled();
   });
 
-  it("fails before reservation or Square when pricing is unavailable", async () => {
+  it("fails before reservation or Square when category pricing is unavailable", async () => {
     const deps = dependencies();
-    deps.ensureCommerceReady.mockRejectedValue(new Error("checkout_pricing_unavailable"));
+    deps.quote.mockRejectedValue(new Error("checkout_pricing_unavailable"));
 
     const response = await createPaymentLinkHandler(request(), deps);
 
     expect(response.status).toBe(503);
-    expect(deps.checkAttempt).not.toHaveBeenCalled();
+    expect(deps.quote).toHaveBeenCalled();
     expect(deps.reserve).not.toHaveBeenCalled();
     expect(deps.createSquareLink).not.toHaveBeenCalled();
   });

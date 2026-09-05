@@ -150,7 +150,6 @@ type CheckoutProductRow = {
   category: string;
   condition: string;
   tenant_id: string | null;
-  shipping_price_cents: number | null;
   variants?: Array<{
     id: string;
     sku: string;
@@ -1962,7 +1961,6 @@ export class ProductRepository {
       category: string;
       condition: string;
       tenantId: string | null;
-      shippingPriceCents: number | null;
       variants: Array<{
         id: string;
         sku: string;
@@ -1977,7 +1975,7 @@ export class ProductRepository {
     const { data, error } = await this.supabase
       .from("products")
       .select(
-        "id, name, brand_id, model_id, brand:tag_brands(canonical_label), model:tag_models(canonical_label), category, condition, tenant_id, shipping_price_cents, variants:product_variants(id, sku, size_id, size:tag_sizes(canonical_label), sale_price_cents, unit_cost_cents, stock)",
+        "id, name, brand_id, model_id, brand:tag_brands(canonical_label), model:tag_models(canonical_label), category, condition, tenant_id, variants:product_variants(id, sku, size_id, size:tag_sizes(canonical_label), sale_price_cents, unit_cost_cents, stock)",
       )
       .in("id", productIds)
       .eq("is_active", true)
@@ -1997,7 +1995,6 @@ export class ProductRepository {
       category: p.category,
       condition: p.condition,
       tenantId: p.tenant_id ?? null,
-      shippingPriceCents: p.shipping_price_cents ?? null,
       variants: (p.variants ?? []).map((v) => ({
         id: v.id,
         sku: v.sku,

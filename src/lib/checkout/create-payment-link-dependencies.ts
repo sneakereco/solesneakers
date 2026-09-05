@@ -14,8 +14,8 @@ import { createSquarePaymentLinksGateway } from "@/lib/square/client";
 import { createSupabaseAdminClient } from "@/lib/supabase/service-role";
 import { logError } from "@/lib/utils/log";
 import { CheckoutReservationRepository } from "@/repositories/checkout-reservation-repo";
-import { CheckoutSettingsRepository } from "@/repositories/checkout-settings-repo";
 import { ProductRepository } from "@/repositories/product-repo";
+import { ShippingDefaultsRepository } from "@/repositories/shipping-defaults-repo";
 import { TenantRepository } from "@/repositories/tenant-repo";
 import { OrderAccessTokenService } from "@/services/order-access-token-service";
 
@@ -38,10 +38,10 @@ export function createPaymentLinkDependencies(
   const tenantRepository = new TenantRepository(supabase);
   const productRepository = new ProductRepository(supabase);
   const reservationRepository = new CheckoutReservationRepository(supabase);
-  const checkoutSettingsRepository = new CheckoutSettingsRepository(supabase);
+  const shippingDefaultsRepository = new ShippingDefaultsRepository(supabase);
   const accessTokenService = new OrderAccessTokenService(supabase);
   const limiter = createCheckoutAttemptLimiter();
-  const pricingGateway = createCheckoutPricingGateway(checkoutSettingsRepository);
+  const pricingGateway = createCheckoutPricingGateway(shippingDefaultsRepository);
   let squareGateway: ReturnType<typeof createSquarePaymentLinksGateway> | null = null;
 
   const getSquareGateway = () => {
@@ -58,7 +58,6 @@ export function createPaymentLinkDependencies(
     hashEmail: (email) => hashNormalizedCheckoutEmail(email, getCheckoutIdentitySecret()),
     findExisting: (tenantId, idempotencyKey) =>
       reservationRepository.findByIdempotencyKey(tenantId, idempotencyKey),
-    ensureCommerceReady: (tenantId) => pricingGateway.assertReady(tenantId),
     checkAttempt: (identity) => limiter.check(identity),
     resolveCart: (tenantId, items) =>
       resolveCheckoutCart(productRepository, tenantId, items),
