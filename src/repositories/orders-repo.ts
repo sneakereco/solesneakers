@@ -70,6 +70,19 @@ export class OrdersRepository {
     return data;
   }
 
+  async getBySquareOrderId(squareOrderId: string): Promise<OrderRow | null> {
+    const { data, error } = await this.supabase
+      .from("orders")
+      .select("*")
+      .eq("square_order_id", squareOrderId)
+      .maybeSingle();
+
+    if (error) {
+      throw error;
+    }
+    return data;
+  }
+
   async getByIdAndUser(orderId: string, userId: string): Promise<OrderRow | null> {
     const { data, error } = await this.supabase
       .from("orders")

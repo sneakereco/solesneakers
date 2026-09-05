@@ -770,6 +770,7 @@ export type Database = {
           order_id: string;
           phone: string | null;
           postal_code: string | null;
+          square_synced_at: string | null;
           state: string | null;
         };
         Insert: {
@@ -783,6 +784,7 @@ export type Database = {
           order_id: string;
           phone?: string | null;
           postal_code?: string | null;
+          square_synced_at?: string | null;
           state?: string | null;
         };
         Update: {
@@ -796,6 +798,7 @@ export type Database = {
           order_id?: string;
           phone?: string | null;
           postal_code?: string | null;
+          square_synced_at?: string | null;
           state?: string | null;
         };
         Relationships: [

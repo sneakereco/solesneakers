@@ -4,6 +4,10 @@ import { getRequestIdFromHeaders } from "@/lib/http/request-id";
 import { createSupabaseAdminClient } from "@/lib/supabase/service-role";
 import { getSquareConfig } from "@/lib/square/config";
 import { SquarePaymentEventProcessor } from "@/lib/square/payment-event";
+import {
+  createSquareShippingSyncDependencies,
+  synchronizeSquareShippingAddress,
+} from "@/lib/square/shipping-address-sync";
 import { verifySquareWebhookSignature } from "@/lib/square/webhook";
 import { log, logError } from "@/lib/utils/log";
 
@@ -39,11 +43,13 @@ export async function POST(request: Request) {
       );
     }
 
-    const processor = new SquarePaymentEventProcessor(
-      createSupabaseAdminClient(),
-      config.locationId,
+    const supabase = createSupabaseAdminClient();
+    const processor = new SquarePaymentEventProcessor(supabase, config.locationId);
+    const result = await processor.process(rawBody);
+    await synchronizeSquareShippingAddress(
+      result,
+      createSquareShippingSyncDependencies(supabase),
     );
-    await processor.process(rawBody);
 
     return NextResponse.json({ ok: true }, { headers: NO_STORE_HEADERS });
   } catch (error) {

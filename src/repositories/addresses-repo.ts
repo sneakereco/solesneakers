@@ -51,6 +51,32 @@ export class AddressesRepository {
     }
   }
 
+  async upsertSquareOrderShippingSnapshot(
+    orderId: string,
+    address: AddressInput,
+  ): Promise<void> {
+    const insert: OrderShippingInsert = {
+      order_id: orderId,
+      name: address.name ?? null,
+      phone: address.phone ?? null,
+      line1: address.line1 ?? null,
+      line2: address.line2 ?? null,
+      city: address.city ?? null,
+      state: address.state ?? null,
+      postal_code: address.postalCode ?? null,
+      country: address.country ?? null,
+      square_synced_at: new Date().toISOString(),
+    };
+
+    const { error } = await this.supabase
+      .from("order_shipping")
+      .upsert(insert, { onConflict: "order_id" });
+
+    if (error) {
+      throw error;
+    }
+  }
+
   async insertOrderShippingSnapshot(
     orderId: string,
     address: AddressInput,

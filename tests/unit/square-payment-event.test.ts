@@ -84,6 +84,8 @@ describe("SquarePaymentEventProcessor", () => {
       duplicate: false,
       fulfillmentAuthorized: true,
       orderId: "local-order-1",
+      paymentStatus: "COMPLETED",
+      squareOrderId: "square-order-1",
     });
 
     expect(rpc).toHaveBeenCalledWith(

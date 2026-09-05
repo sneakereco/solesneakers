@@ -82,7 +82,13 @@ const processResultSchema = z.object({
 
 export type SquarePaymentEventResult =
   | { ignored: true; reason: "location_mismatch" }
-  | { duplicate: boolean; fulfillmentAuthorized: boolean; orderId: string | null };
+  | {
+      duplicate: boolean;
+      fulfillmentAuthorized: boolean;
+      orderId: string | null;
+      paymentStatus?: string;
+      squareOrderId?: string;
+    };
 
 export class SquarePaymentEventProcessor {
   constructor(
@@ -126,7 +132,7 @@ export class SquarePaymentEventProcessor {
       return { ignored: true, reason: "location_mismatch" };
     }
     const riskLevel = payment.risk_evaluation?.risk_level ?? null;
-    return this.call("process_square_payment_event", {
+    const result = await this.call("process_square_payment_event", {
       p_square_event_id: event.event_id,
       p_event_type: event.type,
       p_merchant_id: event.merchant_id,
@@ -148,6 +154,11 @@ export class SquarePaymentEventProcessor {
       p_currency: payment.amount_money.currency,
       p_risk_level: riskLevel,
     });
+    return {
+      ...result,
+      paymentStatus: payment.status,
+      squareOrderId: payment.order_id,
+    };
   }
 
   private async processRefund(
