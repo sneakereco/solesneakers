@@ -7,6 +7,10 @@ import { createSupabaseAdminClient } from "@/lib/supabase/service-role";
 import { requireAdminApi } from "@/lib/auth/session";
 import { ShippingCarriersRepository } from "@/repositories/shipping-carriers-repo";
 import { getRequestIdFromHeaders } from "@/lib/http/request-id";
+import {
+  parseCarrierSelection,
+  parseStoredCarrierSelection,
+} from "@/lib/shipping/carriers";
 import { logError } from "@/lib/utils/log";
 
 export const dynamic = "force-dynamic";
@@ -44,7 +48,7 @@ export async function GET(request: NextRequest) {
 
     const row = await repo.get();
     return NextResponse.json(
-      { carriers: row?.enabled_carriers || [] },
+      { carriers: parseStoredCarrierSelection(row?.enabled_carriers ?? []) },
       { headers: noStoreHeaders },
     );
   } catch (err) {
@@ -82,19 +86,19 @@ export async function POST(request: NextRequest) {
       );
     }
 
-    // Normalize & dedupe
-    const normalizeCarrier = (v: unknown) =>
-      String(v ?? "")
-        .trim()
-        .toUpperCase();
-
-    const carriers = Array.from(
-      new Set(parsed.data.carriers.map(normalizeCarrier).filter(Boolean)),
-    );
+    let carriers;
+    try {
+      carriers = parseCarrierSelection(parsed.data.carriers);
+    } catch {
+      return NextResponse.json(
+        { error: "Invalid carrier selection", requestId },
+        { status: 400, headers: noStoreHeaders },
+      );
+    }
 
     const saved = await repo.upsert(carriers);
     return NextResponse.json(
-      { carriers: saved.enabled_carriers || [] },
+      { carriers: parseStoredCarrierSelection(saved.enabled_carriers ?? []) },
       { headers: noStoreHeaders },
     );
   } catch (err) {

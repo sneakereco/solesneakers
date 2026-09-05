@@ -4,6 +4,12 @@
 import { useEffect, useMemo, useState } from "react";
 
 import { AdminPage, AdminPageHeader } from "@/components/admin/AdminPage";
+import { CarrierSelector } from "@/components/admin/shipping/CarrierSelector";
+import {
+  parseStoredCarrierSelection,
+  toggleCarrierSelection,
+  type CarrierKey,
+} from "@/lib/shipping/carriers";
 import { logError } from "@/lib/utils/log";
 import { ModalPortal } from "@/components/ui/ModalPortal";
 
@@ -12,12 +18,6 @@ const SHIPPING_CATEGORIES = [
   { key: "clothing", label: "Clothing" },
   { key: "accessories", label: "Accessories" },
   { key: "electronics", label: "Electronics" },
-];
-
-const AVAILABLE_CARRIERS = [
-  { key: "UPS", label: "UPS", description: "United Parcel Service" },
-  { key: "USPS", label: "USPS", description: "United States Postal Service" },
-  { key: "FedEx", label: "FedEx", description: "Federal Express" },
 ];
 
 type ShippingDefaultValues = {
@@ -94,7 +94,7 @@ export default function ShippingSettingsPage() {
   >({});
   const [originAddress, setOriginAddress] =
     useState<ShippingOriginAddress>(initialOrigin);
-  const [enabledCarriers, setEnabledCarriers] = useState<string[]>([]);
+  const [enabledCarriers, setEnabledCarriers] = useState<CarrierKey[]>([]);
   const [isSavingDefaults, setIsSavingDefaults] = useState(false);
   const [isSavingOrigin, setIsSavingOrigin] = useState(false);
   const [isSavingCarriers, setIsSavingCarriers] = useState(false);
@@ -208,7 +208,7 @@ export default function ShippingSettingsPage() {
         }
 
         const carriersData = await carriersResponse.json();
-        setEnabledCarriers(carriersData.carriers || []);
+        setEnabledCarriers(parseStoredCarrierSelection(carriersData.carriers));
       } catch (error) {
         logError(error, { layer: "frontend", event: "admin_load_settings_shipping" });
       }
@@ -314,13 +314,10 @@ export default function ShippingSettingsPage() {
     }
   };
 
-  const toggleCarrier = (carrierKey: string) => {
-    setEnabledCarriers((prev) => {
-      if (prev.includes(carrierKey)) {
-        return prev.filter((c) => c !== carrierKey);
-      }
-      return [...prev, carrierKey];
-    });
+  const toggleCarrier = (carrierKey: CarrierKey) => {
+    setEnabledCarriers((previous) =>
+      toggleCarrierSelection(previous, carrierKey),
+    );
   };
 
   const saveDefaults = async () => {
@@ -429,7 +426,7 @@ export default function ShippingSettingsPage() {
       const data = await response.json().catch(() => ({}));
 
       if (response.ok) {
-        setEnabledCarriers(data.carriers || []);
+        setEnabledCarriers(parseStoredCarrierSelection(data.carriers));
         setCarriersMessage("Enabled carriers updated.");
         setTimeout(() => setCarriersMessage(""), 3000);
       } else {
@@ -509,29 +506,7 @@ export default function ShippingSettingsPage() {
               Select which carriers to offer for label creation.
             </p>
           </div>
-          <div className="space-y-2">
-            {AVAILABLE_CARRIERS.map((carrier) => (
-              <label
-                key={carrier.key}
-                className="flex items-start gap-3 p-2.5 sm:p-3 border border-zinc-800/70 rounded cursor-pointer hover:border-zinc-700"
-              >
-                <input
-                  type="checkbox"
-                  checked={enabledCarriers.includes(carrier.key)}
-                  onChange={() => toggleCarrier(carrier.key)}
-                  className="mt-1 rdk-checkbox"
-                />
-                <div className="flex-1">
-                  <div className="text-[12px] sm:text-sm font-medium text-white">
-                    {carrier.label}
-                  </div>
-                  <div className="text-[11px] sm:text-xs text-gray-500">
-                    {carrier.description}
-                  </div>
-                </div>
-              </label>
-            ))}
-          </div>
+          <CarrierSelector enabled={enabledCarriers} onToggle={toggleCarrier} />
           <div className="pt-2">
             <button
               type="button"
