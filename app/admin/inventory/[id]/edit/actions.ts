@@ -5,7 +5,6 @@ import { createSupabaseServerClient } from "@/lib/supabase/server";
 import { requireAdmin } from "@/lib/auth/session";
 import { TagTaxonomyRepository } from "@/repositories/tag-taxonomy-repo";
 import { ProductService } from "@/services/product-service";
-import { ShippingDefaultsService } from "@/services/shipping-defaults-service";
 import { ensureTenantId } from "@/lib/auth/tenant";
 
 export async function getEditFormInitialData(productId: string) {
@@ -16,18 +15,14 @@ export async function getEditFormInitialData(productId: string) {
 
     const productService = new ProductService(supabase);
     const taxonomyRepo = new TagTaxonomyRepository(supabase);
-    const shippingDefaultsService = new ShippingDefaultsService(supabase);
 
-    // Fetch product, shipping defaults, and brands in parallel using direct service calls
-    const [product, shippingDefaults, brandsData, modelsData, sizesData] =
-      await Promise.all([
+    const [product, brandsData, modelsData, sizesData] = await Promise.all([
         productService.getProductById(productId, {
           tenantId,
           includeOutOfStock: true,
           includeUnpublished: true,
           archivedStatus: "all",
         }),
-        shippingDefaultsService.list(tenantId),
         taxonomyRepo.listBrands(tenantId),
         taxonomyRepo.listModels(tenantId),
         taxonomyRepo.listSizes(tenantId),
@@ -58,7 +53,6 @@ export async function getEditFormInitialData(productId: string) {
 
     return {
       product,
-      shippingDefaults: shippingDefaults || [],
       brands: brandsData.map((brand: { id: string; canonical_label: string }) => ({
         id: brand.id,
         label: brand.canonical_label,

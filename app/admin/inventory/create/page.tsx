@@ -20,7 +20,6 @@ export default async function CreateProductPage() {
       />
 
       <CreateProductClient
-        initialShippingDefaults={initialData.shippingDefaults}
         initialBrands={initialData.brands}
         initialSizes={initialData.sizes}
       />

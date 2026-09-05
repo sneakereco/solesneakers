@@ -7,12 +7,6 @@ import { ProductForm } from "@/components/inventory/ProductForm";
 import type { ProductCreateInput } from "@/services/product-service";
 
 interface CreateProductClientProps {
-  initialShippingDefaults: Array<{
-    category: string;
-    shipping_cost_cents?: number;
-    default_price_cents?: number;
-    default_price?: number;
-  }>;
   initialBrands: Array<{
     id: string;
     label: string;
@@ -21,7 +15,6 @@ interface CreateProductClientProps {
 }
 
 export function CreateProductClient({
-  initialShippingDefaults,
   initialBrands,
   initialSizes,
 }: CreateProductClientProps) {
@@ -58,7 +51,6 @@ export function CreateProductClient({
     <ProductForm
       onSubmit={handleSubmit}
       onCancel={handleCancel}
-      initialShippingDefaults={initialShippingDefaults}
       initialBrands={initialBrands}
       initialSizes={initialSizes}
     />

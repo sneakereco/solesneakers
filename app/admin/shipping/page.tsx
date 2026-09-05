@@ -11,6 +11,7 @@ import {
   type AdminOrderItem,
 } from "@/components/admin/orders/OrderItemDetailsModal";
 import { logError } from "@/lib/utils/log";
+import { buildPackageProfile } from "@/lib/shipping/package-profile";
 import { CreateLabelForm } from "@/components/admin/shipping/CreateLabelForm";
 import { ConfirmDialog } from "@/components/ui/ConfirmDialog";
 
@@ -394,47 +395,25 @@ export default function ShippingPage() {
   };
 
   const getPackageProfile = (order: ShippingOrder) => {
-    const items = order.items ?? [];
-    if (items.length === 0) {
-      return {
-        weight: DEFAULT_PACKAGE.weight,
-        length: DEFAULT_PACKAGE.length,
-        width: DEFAULT_PACKAGE.width,
-        height: DEFAULT_PACKAGE.height,
-        costCents: 0,
-      };
-    }
+    const defaults = Object.fromEntries(
+      Object.entries(shippingDefaults).map(([category, entry]) => [
+        category,
+        {
+          weight: Number(entry.default_weight_oz ?? DEFAULT_PACKAGE.weight),
+          length: Number(entry.default_length_in ?? DEFAULT_PACKAGE.length),
+          width: Number(entry.default_width_in ?? DEFAULT_PACKAGE.width),
+          height: Number(entry.default_height_in ?? DEFAULT_PACKAGE.height),
+        },
+      ]),
+    );
 
-    let totalWeight = 0;
-    let maxLength = 0;
-    let maxWidth = 0;
-    let maxHeight = 0;
-    let maxCost = 0;
-
-    items.forEach((item: OrderItem) => {
-      const quantity = Math.max(1, Number(item.quantity ?? 0));
-      const category = item.product?.category ?? null;
-      const defaults = category ? shippingDefaults[category] : null;
-      const weight = Number(defaults?.default_weight_oz ?? DEFAULT_PACKAGE.weight);
-      const length = Number(defaults?.default_length_in ?? DEFAULT_PACKAGE.length);
-      const width = Number(defaults?.default_width_in ?? DEFAULT_PACKAGE.width);
-      const height = Number(defaults?.default_height_in ?? DEFAULT_PACKAGE.height);
-      const cost = Number(defaults?.shipping_cost_cents ?? 0);
-
-      totalWeight += weight * quantity;
-      maxLength = Math.max(maxLength, length);
-      maxWidth = Math.max(maxWidth, width);
-      maxHeight = Math.max(maxHeight, height);
-      maxCost = Math.max(maxCost, cost);
-    });
-
-    return {
-      weight: totalWeight > 0 ? totalWeight : DEFAULT_PACKAGE.weight,
-      length: maxLength > 0 ? maxLength : DEFAULT_PACKAGE.length,
-      width: maxWidth > 0 ? maxWidth : DEFAULT_PACKAGE.width,
-      height: maxHeight > 0 ? maxHeight : DEFAULT_PACKAGE.height,
-      costCents: maxCost,
-    };
+    return buildPackageProfile(
+      (order.items ?? []).map((item) => ({
+        quantity: item.quantity,
+        category: item.product?.category ?? null,
+      })),
+      defaults,
+    );
   };
 
   const handleMarkShipped = async (order: ShippingOrder) => {

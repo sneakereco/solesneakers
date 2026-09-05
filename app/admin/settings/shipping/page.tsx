@@ -96,9 +96,6 @@ export default function ShippingSettingsPage() {
     useState<ShippingOriginAddress>(initialOrigin);
   const [enabledCarriers, setEnabledCarriers] = useState<string[]>([]);
   const [isSavingDefaults, setIsSavingDefaults] = useState(false);
-  const [isSavingFlatRate, setIsSavingFlatRate] = useState(false);
-  const [flatShippingInput, setFlatShippingInput] = useState("");
-  const [flatShippingMessage, setFlatShippingMessage] = useState("");
   const [isSavingOrigin, setIsSavingOrigin] = useState(false);
   const [isSavingCarriers, setIsSavingCarriers] = useState(false);
   const [message, setMessage] = useState("");
@@ -183,13 +180,11 @@ export default function ShippingSettingsPage() {
   useEffect(() => {
     const loadData = async () => {
       try {
-        const [defaultsResponse, originResponse, carriersResponse, checkoutResponse] =
-          await Promise.all([
-            fetch("/api/admin/shipping/defaults", { cache: "no-store" }),
-            fetch("/api/admin/shipping/origin", { cache: "no-store" }),
-            fetch("/api/admin/shipping/carriers", { cache: "no-store" }),
-            fetch("/api/admin/checkout-settings", { cache: "no-store" }),
-          ]);
+        const [defaultsResponse, originResponse, carriersResponse] = await Promise.all([
+          fetch("/api/admin/shipping/defaults", { cache: "no-store" }),
+          fetch("/api/admin/shipping/origin", { cache: "no-store" }),
+          fetch("/api/admin/shipping/carriers", { cache: "no-store" }),
+        ]);
 
         const defaultsData = await defaultsResponse.json();
         const map: Record<string, ShippingDefaultValues> = {};
@@ -214,13 +209,6 @@ export default function ShippingSettingsPage() {
 
         const carriersData = await carriersResponse.json();
         setEnabledCarriers(carriersData.carriers || []);
-
-        const checkoutData = await checkoutResponse.json();
-        if (checkoutResponse.ok && checkoutData.settings) {
-          setFlatShippingInput(
-            centsToMoneyString(checkoutData.settings.flatShippingCents),
-          );
-        }
       } catch (error) {
         logError(error, { layer: "frontend", event: "admin_load_settings_shipping" });
       }
@@ -387,33 +375,6 @@ export default function ShippingSettingsPage() {
     }
   };
 
-  const saveFlatShipping = async () => {
-    setIsSavingFlatRate(true);
-    setFlatShippingMessage("");
-    const flatShippingCents = moneyToCents(flatShippingInput);
-
-    try {
-      const response = await fetch("/api/admin/checkout-settings", {
-        method: "POST",
-        headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({ flatShippingCents }),
-      });
-      const data = await response.json();
-      if (!response.ok) {
-        throw new Error(data.error ?? "Failed to save checkout shipping rate.");
-      }
-
-      setFlatShippingInput(centsToMoneyString(data.settings.flatShippingCents));
-      setFlatShippingMessage("Checkout flat rate updated.");
-    } catch (error) {
-      setFlatShippingMessage(
-        error instanceof Error ? error.message : "Failed to save checkout shipping rate.",
-      );
-    } finally {
-      setIsSavingFlatRate(false);
-    }
-  };
-
   const saveOrigin = async () => {
     setIsSavingOrigin(true);
     setOriginMessage("");
@@ -516,46 +477,6 @@ export default function ShippingSettingsPage() {
       />
 
       <div className="grid grid-cols-1 lg:grid-cols-2 gap-4">
-        <div className="bg-zinc-900 border border-zinc-800/70 rounded p-5 space-y-4 lg:col-span-2">
-          <div>
-            <h2 className="text-base sm:text-lg font-semibold text-white">
-              Public checkout flat rate
-            </h2>
-            <p className="text-xs sm:text-sm text-gray-400 mt-1">
-              Charged once for shipped Square checkouts. Pickup remains free.
-            </p>
-          </div>
-          <div className="flex flex-col sm:flex-row sm:items-end gap-3">
-            <label className="block w-full sm:max-w-xs">
-              <span className="block text-gray-400 text-xs mb-1">Flat rate ($)</span>
-              <input
-                type="text"
-                inputMode="decimal"
-                placeholder="0.00"
-                value={flatShippingInput}
-                onChange={(event) => setFlatShippingInput(event.target.value)}
-                onBlur={() =>
-                  setFlatShippingInput(
-                    centsToMoneyString(moneyToCents(flatShippingInput)),
-                  )
-                }
-                className="w-full bg-zinc-950 border border-zinc-800/70 text-white px-3 py-2"
-              />
-            </label>
-            <button
-              type="button"
-              onClick={() => void saveFlatShipping()}
-              disabled={isSavingFlatRate || flatShippingInput.trim() === ""}
-              className="px-4 py-2 bg-red-600 hover:bg-red-700 text-white text-[12px] sm:text-sm rounded disabled:bg-gray-600"
-            >
-              {isSavingFlatRate ? "Saving..." : "Save checkout rate"}
-            </button>
-          </div>
-          {flatShippingMessage && (
-            <p className="text-[12px] sm:text-sm text-gray-400">{flatShippingMessage}</p>
-          )}
-        </div>
-
         <div className="bg-zinc-900 border border-zinc-800/70 rounded p-5 space-y-3">
           <div className="flex items-start justify-between gap-4">
             <div>
