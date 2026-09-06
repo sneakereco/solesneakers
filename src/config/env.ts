@@ -20,8 +20,11 @@ const schema = z.object({
   ORDER_ACCESS_TOKEN_SECRET: z.string().min(16),
   CHECKOUT_IDENTITY_HMAC_SECRET: z.string().min(32).optional(),
   CRON_SECRET: z.string().min(32).optional(),
+  TURNSTILE_SECRET_KEY: z.string().min(1).optional(),
+  NEXT_PUBLIC_TURNSTILE_SITE_KEY: z.string().min(1).optional(),
 
   SQUARE_ENVIRONMENT: z.enum(["sandbox", "production"]).optional(),
+  SQUARE_APPLICATION_ID: z.string().min(1).optional(),
   SQUARE_ACCESS_TOKEN: z.string().min(1).optional(),
   SQUARE_LOCATION_ID: z.string().min(1).optional(),
   SQUARE_WEBHOOK_SIGNATURE_KEY: z.string().min(1).optional(),

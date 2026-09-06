@@ -8,7 +8,7 @@ export type CheckoutBotVerdict = {
 export async function verifyCheckoutBrowser(): Promise<CheckoutBotVerdict> {
   try {
     const result = await checkBotId({
-      advancedOptions: { checkLevel: "basic" },
+      advancedOptions: { checkLevel: "deepAnalysis" },
     });
 
     return result.isBot

@@ -13,12 +13,15 @@ describe("verifyCheckoutBrowser", () => {
     jest.clearAllMocks();
   });
 
-  it("allows a browser that passes BotID Basic", async () => {
+  it("allows a browser that passes BotID Deep Analysis", async () => {
     mockCheckBotId.mockResolvedValue({ isBot: false } as never);
 
     await expect(verifyCheckoutBrowser()).resolves.toEqual({
       allowed: true,
       reason: "passed",
+    });
+    expect(mockCheckBotId).toHaveBeenCalledWith({
+      advancedOptions: { checkLevel: "deepAnalysis" },
     });
   });
 

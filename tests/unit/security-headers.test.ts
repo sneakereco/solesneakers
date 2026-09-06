@@ -16,4 +16,17 @@ describe("production security headers", () => {
       "upgrade-insecure-requests",
     );
   });
+
+  it("allows only the payment providers required by embedded checkout", () => {
+    const response = NextResponse.next();
+
+    applySecurityHeaders(response, "production");
+
+    const csp = response.headers.get("content-security-policy");
+    expect(csp).toContain("https://web.squarecdn.com");
+    expect(csp).toContain("https://sandbox.web.squarecdn.com");
+    expect(csp).toContain("https://pci-connect.squareup.com");
+    expect(csp).toContain("https://pci-connect.squareupsandbox.com");
+    expect(csp).toContain("https://challenges.cloudflare.com");
+  });
 });

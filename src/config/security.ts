@@ -7,6 +7,9 @@ const prodConnectSrc = [
   "https://api.goshippo.com",
   "https://vitals.vercel-insights.com",
   "https://*.vercel-scripts.com",
+  "https://pci-connect.squareup.com",
+  "https://pci-connect.squareupsandbox.com",
+  "https://challenges.cloudflare.com",
 ].join(" ");
 
 export const security = {
@@ -122,7 +125,7 @@ export const security = {
           "default-src 'self'",
           "img-src 'self' data: https: blob:",
           "style-src 'self' 'unsafe-inline'",
-          "script-src 'self' 'unsafe-inline' 'unsafe-eval' https://*.vercel-scripts.com",
+          "script-src 'self' 'unsafe-inline' 'unsafe-eval' https://*.vercel-scripts.com https://web.squarecdn.com https://sandbox.web.squarecdn.com https://challenges.cloudflare.com",
           "worker-src 'self' blob:",
           [
             "connect-src",
@@ -136,7 +139,7 @@ export const security = {
           "base-uri 'self'",
           "frame-ancestors 'none'",
           "font-src 'self' data:",
-          "frame-src 'self' blob: https://www.openstreetmap.org https://*.openstreetmap.org",
+          "frame-src 'self' blob: https://www.openstreetmap.org https://*.openstreetmap.org https://web.squarecdn.com https://sandbox.web.squarecdn.com https://pci-connect.squareup.com https://pci-connect.squareupsandbox.com https://challenges.cloudflare.com",
           "form-action 'self'",
         ],
 
@@ -144,7 +147,7 @@ export const security = {
           "default-src 'self'",
           "img-src 'self' data: blob: https://*.supabase.co https://*.openstreetmap.org https://*.cloudfront.net https://*.fastly.net",
           "style-src 'self' 'unsafe-inline'",
-          "script-src 'self' 'unsafe-inline' https://*.vercel-scripts.com",
+          "script-src 'self' 'unsafe-inline' https://*.vercel-scripts.com https://web.squarecdn.com https://sandbox.web.squarecdn.com https://challenges.cloudflare.com",
           "worker-src 'self' blob:",
           "object-src 'none'",
           "base-uri 'self'",
@@ -153,7 +156,7 @@ export const security = {
 
           "frame-ancestors 'none'",
           "font-src 'self' data:",
-          "frame-src 'self' blob: https://www.openstreetmap.org https://*.openstreetmap.org",
+          "frame-src 'self' blob: https://www.openstreetmap.org https://*.openstreetmap.org https://web.squarecdn.com https://sandbox.web.squarecdn.com https://pci-connect.squareup.com https://pci-connect.squareupsandbox.com https://challenges.cloudflare.com",
           "form-action 'self'",
           "upgrade-insecure-requests",
         ],
