@@ -26,6 +26,12 @@ describe("Square checkout reservation schema", () => {
   const hostedShippingMigration = existsSync(hostedShippingMigrationPath)
     ? readFileSync(hostedShippingMigrationPath, "utf8")
     : "";
+  const webPaymentsMigrationPath = resolve(
+    "supabase/migrations/20260906120000_square_web_payments_checkout.sql",
+  );
+  const webPaymentsMigration = existsSync(webPaymentsMigrationPath)
+    ? readFileSync(webPaymentsMigrationPath, "utf8")
+    : "";
 
   it("stores provider identifiers and atomic inventory reservations", () => {
     expect(migration).toContain("square_payment_link_id");
@@ -126,5 +132,17 @@ describe("Square checkout reservation schema", () => {
     expect(hostedShippingMigration).toContain("delete from public.order_shipping");
     expect(hostedShippingMigration).toContain("square_synced_at is null");
     expect(hostedShippingMigration).toContain("to service_role");
+  });
+
+  it("attaches a direct Square order through a service-role-only RPC", () => {
+    expect(webPaymentsMigration).toContain("square_order_version integer");
+    expect(webPaymentsMigration).toContain(
+      "create or replace function public.attach_square_checkout_order",
+    );
+    expect(webPaymentsMigration).toContain(
+      "round(subtotal * 100)::integer + p_shipping_cents + p_tax_cents = p_total_cents",
+    );
+    expect(webPaymentsMigration).toContain("from public, anon, authenticated");
+    expect(webPaymentsMigration).toContain("to service_role");
   });
 });

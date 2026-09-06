@@ -2,6 +2,7 @@ import { z } from "zod";
 
 import type { TypedSupabaseClient } from "@/lib/supabase/server";
 import type { HostedPaymentLink } from "@/lib/square/payment-links";
+import type { SquareCheckoutOrder } from "@/lib/square/checkout-orders";
 import type { ExpiredCheckout } from "@/lib/checkout/expire-checkout-reservations";
 import type { Json } from "@/types/db/database.types";
 
@@ -301,6 +302,25 @@ export class CheckoutReservationRepository {
     }
     if (data !== true) {
       throw new Error("checkout_payment_link_attach_failed");
+    }
+  }
+
+  async attachSquareOrder(orderId: string, order: SquareCheckoutOrder): Promise<void> {
+    const { data, error } = await this.supabase.rpc("attach_square_checkout_order", {
+      p_order_id: orderId,
+      p_square_order_id: order.id,
+      p_square_order_version: order.version,
+      p_shipping_cents: order.shippingCents,
+      p_tax_cents: order.taxCents,
+      p_total_cents: order.totalCents,
+      p_tax_calculation_id: order.taxCalculationId,
+    });
+
+    if (error) {
+      throw error;
+    }
+    if (data !== true) {
+      throw new Error("checkout_square_order_attach_failed");
     }
   }
 

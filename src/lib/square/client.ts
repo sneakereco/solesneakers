@@ -3,6 +3,8 @@ import { SquareClient, SquareEnvironment } from "square";
 import { SUPPORT_EMAIL } from "@/config/constants/mail";
 import { getSquareConfig } from "@/lib/square/config";
 import { SquarePaymentLinksGateway } from "@/lib/square/payment-links";
+import { SquareCheckoutOrdersGateway } from "@/lib/square/checkout-orders";
+import { SquarePaymentsGateway } from "@/lib/square/payments";
 
 export function createSquareClient(): SquareClient {
   const config = getSquareConfig();
@@ -27,4 +29,16 @@ export function createSquarePaymentLinksGateway(): SquarePaymentLinksGateway {
     config.locationId,
     SUPPORT_EMAIL,
   );
+}
+
+export function createSquareCheckoutOrdersGateway(): SquareCheckoutOrdersGateway {
+  const config = getSquareConfig();
+  const client = createSquareClient();
+  return new SquareCheckoutOrdersGateway(client.orders, config.locationId);
+}
+
+export function createSquarePaymentsGateway(): SquarePaymentsGateway {
+  const config = getSquareConfig();
+  const client = createSquareClient();
+  return new SquarePaymentsGateway(client.payments, config.locationId);
 }

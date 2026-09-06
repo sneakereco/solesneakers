@@ -841,6 +841,7 @@ export type Database = {
           shipping: number;
           shipping_carrier: string | null;
           square_order_id: string | null;
+          square_order_version: number | null;
           square_payment_link_deleted_at: string | null;
           square_payment_link_id: string | null;
           square_payment_link_url: string | null;
@@ -884,6 +885,7 @@ export type Database = {
           shipping: number;
           shipping_carrier?: string | null;
           square_order_id?: string | null;
+          square_order_version?: number | null;
           square_payment_link_deleted_at?: string | null;
           square_payment_link_id?: string | null;
           square_payment_link_url?: string | null;
@@ -927,6 +929,7 @@ export type Database = {
           shipping?: number;
           shipping_carrier?: string | null;
           square_order_id?: string | null;
+          square_order_version?: number | null;
           square_payment_link_deleted_at?: string | null;
           square_payment_link_id?: string | null;
           square_payment_link_url?: string | null;
@@ -2263,6 +2266,18 @@ export type Database = {
           p_square_order_id: string;
           p_square_payment_link_id: string;
           p_square_payment_link_url: string;
+          p_shipping_cents: number;
+          p_tax_calculation_id: string;
+          p_tax_cents: number;
+          p_total_cents: number;
+        };
+        Returns: boolean;
+      };
+      attach_square_checkout_order: {
+        Args: {
+          p_order_id: string;
+          p_square_order_id: string;
+          p_square_order_version: number;
           p_shipping_cents: number;
           p_tax_calculation_id: string;
           p_tax_cents: number;

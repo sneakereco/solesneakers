@@ -218,4 +218,31 @@ describe("CheckoutReservationRepository", () => {
       p_tax_calculation_id: "square:square-order-1:v1",
     });
   });
+
+  it("attaches a direct Square order and its authoritative totals", async () => {
+    const rpc = jest.fn().mockResolvedValue({ data: true, error: null });
+    const repo = new CheckoutReservationRepository({ rpc } as never);
+
+    await expect(
+      repo.attachSquareOrder("order-1", {
+        id: "square-order-1",
+        version: 2,
+        subtotalCents: 15000,
+        shippingCents: 1200,
+        taxCents: 900,
+        totalCents: 17100,
+        taxCalculationId: "square:square-order-1:v2",
+      }),
+    ).resolves.toBeUndefined();
+
+    expect(rpc).toHaveBeenCalledWith("attach_square_checkout_order", {
+      p_order_id: "order-1",
+      p_square_order_id: "square-order-1",
+      p_square_order_version: 2,
+      p_shipping_cents: 1200,
+      p_tax_cents: 900,
+      p_total_cents: 17100,
+      p_tax_calculation_id: "square:square-order-1:v2",
+    });
+  });
 });
