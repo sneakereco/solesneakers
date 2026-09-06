@@ -2,11 +2,11 @@
 
 import Image from "next/image";
 import Link from "next/link";
-import { useRouter } from "next/navigation";
 import { Minus, Plus, ShoppingBag, Trash2 } from "lucide-react";
 
 import { useCart } from "@/components/cart/CartProvider";
 import { ShippingEstimate } from "@/components/cart/ShippingEstimate";
+import { CheckoutClient } from "@/components/checkout/CheckoutClient";
 
 const formatPrice = (priceCents: number) =>
   new Intl.NumberFormat("en-US", {
@@ -17,7 +17,6 @@ const formatPrice = (priceCents: number) =>
   }).format(priceCents / 100);
 
 export default function CartPage() {
-  const router = useRouter();
   const { items, itemCount, removeItem, updateQuantity, total } = useCart();
 
   if (items.length === 0) {
@@ -152,13 +151,7 @@ export default function CartPage() {
           <p className="mt-4 text-xs leading-5 text-zinc-500">
             Shipping and taxes are calculated at checkout.
           </p>
-          <button
-            type="button"
-            onClick={() => router.push("/checkout")}
-            className="mt-7 w-full cursor-pointer bg-zinc-900 px-6 py-4 text-sm font-medium uppercase text-white transition-colors hover:bg-black"
-          >
-            Checkout <span aria-hidden="true">&#8226;</span> {formatPrice(total)}
-          </button>
+          <CheckoutClient />
           <Link
             href="/store"
             className="mt-5 block text-center text-sm underline underline-offset-4"

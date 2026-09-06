@@ -23,6 +23,7 @@ const paymentEventSchema = z.object({
         id: z.string().min(1),
         order_id: z.string().min(1),
         location_id: z.string().min(1),
+        created_at: z.string().datetime(),
         status: z.string().min(1),
         amount_money: moneySchema,
         risk_evaluation: z.object({ risk_level: z.string().min(1) }).optional(),
@@ -90,10 +91,27 @@ export type SquarePaymentEventResult =
       squareOrderId?: string;
     };
 
+export type SquarePaymentSnapshot = {
+  eventId: string;
+  eventType: string;
+  merchantId: string;
+  locationId: string;
+  createdAt: string;
+  paymentId: string;
+  squareOrderId: string;
+  paymentStatus: string;
+  amountCents: number;
+  currency: string;
+  riskLevel: string | null;
+};
+
 export class SquarePaymentEventProcessor {
   constructor(
     private readonly supabase: TypedSupabaseClient,
     private readonly expectedLocationId: string,
+    private readonly verifyPaymentOrder: (
+      payment: SquarePaymentSnapshot,
+    ) => Promise<void>,
   ) {}
 
   async process(rawBody: string): Promise<SquarePaymentEventResult> {
@@ -131,33 +149,63 @@ export class SquarePaymentEventProcessor {
     if (payment.location_id !== this.expectedLocationId) {
       return { ignored: true, reason: "location_mismatch" };
     }
-    const riskLevel = payment.risk_evaluation?.risk_level ?? null;
-    const result = await this.call("process_square_payment_event", {
-      p_square_event_id: event.event_id,
-      p_event_type: event.type,
-      p_merchant_id: event.merchant_id,
-      p_location_id: payment.location_id,
-      p_square_created_at: event.created_at,
-      p_payload_sha256: payloadHash,
-      p_event_data: {
+    return this.processPaymentSnapshot(
+      {
+        eventId: event.event_id,
+        eventType: event.type,
+        merchantId: event.merchant_id,
+        locationId: payment.location_id,
+        createdAt: payment.created_at,
+        paymentId: payment.id,
+        squareOrderId: payment.order_id,
+        paymentStatus: payment.status,
         amountCents: payment.amount_money.amount,
         currency: payment.amount_money.currency,
-        paymentId: payment.id,
-        paymentStatus: payment.status,
-        riskLevel,
-        squareOrderId: payment.order_id,
+        riskLevel: payment.risk_evaluation?.risk_level ?? null,
       },
-      p_square_order_id: payment.order_id,
-      p_square_payment_id: payment.id,
-      p_payment_status: payment.status,
-      p_amount_cents: payment.amount_money.amount,
-      p_currency: payment.amount_money.currency,
-      p_risk_level: riskLevel,
+      payloadHash,
+    );
+  }
+
+  async processPaymentSnapshot(
+    payment: SquarePaymentSnapshot,
+    payloadHash = createHash("sha256")
+      .update(JSON.stringify(payment), "utf8")
+      .digest("hex"),
+  ): Promise<SquarePaymentEventResult> {
+    if (payment.locationId !== this.expectedLocationId) {
+      return { ignored: true, reason: "location_mismatch" };
+    }
+    if (payment.paymentStatus === "COMPLETED") {
+      await this.verifyPaymentOrder(payment);
+    }
+
+    const result = await this.call("process_square_payment_event", {
+      p_square_event_id: payment.eventId,
+      p_event_type: payment.eventType,
+      p_merchant_id: payment.merchantId,
+      p_location_id: payment.locationId,
+      p_square_created_at: payment.createdAt,
+      p_payload_sha256: payloadHash,
+      p_event_data: {
+        amountCents: payment.amountCents,
+        currency: payment.currency,
+        paymentId: payment.paymentId,
+        paymentStatus: payment.paymentStatus,
+        riskLevel: payment.riskLevel,
+        squareOrderId: payment.squareOrderId,
+      },
+      p_square_order_id: payment.squareOrderId,
+      p_square_payment_id: payment.paymentId,
+      p_payment_status: payment.paymentStatus,
+      p_amount_cents: payment.amountCents,
+      p_currency: payment.currency,
+      p_risk_level: payment.riskLevel,
     });
     return {
       ...result,
-      paymentStatus: payment.status,
-      squareOrderId: payment.order_id,
+      paymentStatus: payment.paymentStatus,
+      squareOrderId: payment.squareOrderId,
     };
   }
 

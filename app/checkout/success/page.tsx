@@ -144,12 +144,12 @@ function SuccessContent() {
   if (error) {
     return (
       <div className="max-w-2xl mx-auto px-4 py-20 text-center">
-        <div className="bg-red-900/20 border border-red-500 text-red-400 p-6 rounded">
+        <div className="border border-zinc-300 bg-white p-6 text-zinc-950">
           <p className="text-lg font-semibold mb-2">Error</p>
           <p>{error}</p>
           <button
             onClick={() => router.push("/cart")}
-            className="mt-4 px-6 py-2 bg-red-600 hover:bg-red-700 text-white rounded transition"
+            className="mt-4 bg-zinc-950 px-6 py-2 text-white transition hover:bg-black"
           >
             Return to Cart
           </button>
@@ -161,23 +161,23 @@ function SuccessContent() {
   if (canFetchStatus === false) {
     return (
       <div className="max-w-2xl mx-auto px-4 py-20 text-center">
-        <Mail className="w-16 h-16 text-red-600 mx-auto mb-6" />
-        <h1 className="text-3xl font-bold text-white mb-4">Order Confirmed!</h1>
-        <p className="text-gray-400 mb-6">
+        <Mail className="mx-auto mb-6 h-16 w-16 text-zinc-950" />
+        <h1 className="mb-4 text-3xl font-bold text-zinc-950">Order Confirmed!</h1>
+        <p className="mb-6 text-zinc-600">
           Your payment was accepted. We could not load the full order details on this
           device, but we will email your confirmation and secure order link shortly.
         </p>
         {isPickupParam && (
-          <div className="bg-zinc-900 border border-zinc-800/70 rounded p-6 mb-6 text-left">
-            <h2 className="text-lg font-semibold text-white mb-2">Local pickup</h2>
-            <p className="text-sm text-gray-400 mb-2">
+          <div className="mb-6 border border-zinc-300 bg-white p-6 text-left">
+            <h2 className="mb-2 text-lg font-semibold text-zinc-950">Local pickup</h2>
+            <p className="mb-2 text-sm text-zinc-600">
               Check your email for pickup instructions and scheduling.
             </p>
-            <p className="text-sm text-gray-400">
+            <p className="text-sm text-zinc-600">
               You can also DM us on Instagram{" "}
               <a
                 href="https://instagram.com/realdealkickzsc"
-                className="text-red-400 hover:text-red-300"
+                className="text-zinc-950 underline underline-offset-4"
                 target="_blank"
                 rel="noreferrer"
               >
@@ -190,7 +190,7 @@ function SuccessContent() {
         <p className="text-xs text-zinc-500 mb-6">Order ID: {orderId}</p>
         <button
           onClick={() => router.push("/store")}
-          className="w-full bg-red-600 hover:bg-red-700 text-white font-bold py-3 rounded transition"
+          className="w-full bg-zinc-950 py-3 font-bold text-white transition hover:bg-black"
         >
           Continue Shopping
         </button>
@@ -201,18 +201,20 @@ function SuccessContent() {
   if (isPolling || !status || status.status !== "paid") {
     return (
       <div className="max-w-2xl mx-auto px-4 py-20 text-center">
-        <Loader2 className="w-16 h-16 text-red-600 mx-auto mb-6 animate-spin" />
-        <h1 className="text-3xl font-bold text-white mb-4">Processing your payment...</h1>
-        <p className="text-gray-400 mb-8">
+        <Loader2 className="mx-auto mb-6 h-16 w-16 animate-spin text-zinc-950" />
+        <h1 className="mb-4 text-3xl font-bold text-zinc-950">
+          Processing your payment...
+        </h1>
+        <p className="mb-8 text-zinc-600">
           Please wait while we confirm your order. This should only take a moment.
         </p>
         {status && (
-          <div className="bg-zinc-900 border border-zinc-800/70 rounded p-6 text-left">
-            <div className="flex justify-between text-gray-400 mb-2">
+          <div className="border border-zinc-300 bg-white p-6 text-left">
+            <div className="mb-2 flex justify-between text-zinc-600">
               <span>Order ID:</span>
-              <span className="text-white font-mono text-sm">{status.id}</span>
+              <span className="font-mono text-sm text-zinc-950">{status.id}</span>
             </div>
-            <div className="flex justify-between text-gray-400">
+            <div className="flex justify-between text-zinc-600">
               <span>Status:</span>
               <span className="text-yellow-500 capitalize">{status.status}</span>
             </div>
@@ -226,25 +228,25 @@ function SuccessContent() {
   return (
     <div className="max-w-2xl mx-auto px-4 py-20 text-center">
       <CheckCircle className="w-16 h-16 text-green-500 mx-auto mb-6" />
-      <h1 className="text-3xl font-bold text-white mb-4">Order Confirmed!</h1>
-      <p className="text-gray-400 mb-8">
+      <h1 className="mb-4 text-3xl font-bold text-zinc-950">Order Confirmed!</h1>
+      <p className="mb-8 text-zinc-600">
         Thank you for your purchase. Your order has been successfully processed.
       </p>
 
-      <div className="bg-zinc-900 border border-zinc-800/70 rounded p-6 mb-6 text-left">
-        <h2 className="text-xl font-semibold text-white mb-4">Order Details</h2>
-        <div className="space-y-2 text-gray-400">
+      <div className="mb-6 border border-zinc-300 bg-white p-6 text-left">
+        <h2 className="mb-4 text-xl font-semibold text-zinc-950">Order Details</h2>
+        <div className="space-y-2 text-zinc-600">
           <div className="flex justify-between">
             <span>Order ID:</span>
-            <span className="text-white font-mono text-sm">{status.id}</span>
+            <span className="font-mono text-sm text-zinc-950">{status.id}</span>
           </div>
           <div className="flex justify-between">
             <span>Subtotal:</span>
-            <span className="text-white">${status.subtotal.toFixed(2)}</span>
+            <span className="text-zinc-950">${status.subtotal.toFixed(2)}</span>
           </div>
           <div className="flex justify-between">
             <span>Shipping:</span>
-            <span className="text-white">
+            <span className="text-zinc-950">
               {status.fulfillment === "pickup"
                 ? "Free (Pickup)"
                 : `$${status.shipping.toFixed(2)}`}
@@ -252,28 +254,28 @@ function SuccessContent() {
           </div>
           <div className="flex justify-between">
             <span>Tax:</span>
-            <span className="text-white">${status.tax.toFixed(2)}</span>
+            <span className="text-zinc-950">${status.tax.toFixed(2)}</span>
           </div>
-          <div className="border-t border-zinc-800/70 pt-2 mt-2">
+          <div className="mt-2 border-t border-zinc-300 pt-2">
             <div className="flex justify-between text-xl font-bold">
-              <span className="text-white">Total:</span>
-              <span className="text-white">${status.total.toFixed(2)}</span>
+              <span className="text-zinc-950">Total:</span>
+              <span className="text-zinc-950">${status.total.toFixed(2)}</span>
             </div>
           </div>
         </div>
       </div>
 
       {isPickup && (
-        <div className="bg-zinc-900 border border-zinc-800/70 rounded p-6 mb-6 text-left">
-          <h2 className="text-lg font-semibold text-white mb-2">Local pickup</h2>
-          <p className="text-sm text-gray-400 mb-2">
+        <div className="mb-6 border border-zinc-300 bg-white p-6 text-left">
+          <h2 className="mb-2 text-lg font-semibold text-zinc-950">Local pickup</h2>
+          <p className="mb-2 text-sm text-zinc-600">
             Check your email for pickup instructions and scheduling.
           </p>
-          <p className="text-sm text-gray-400 mb-2">
+          <p className="mb-2 text-sm text-zinc-600">
             You can also DM us on{" "}
             <a
               href="https://instagram.com/realdealkickzsc"
-              className="text-red-400 hover:text-red-300"
+              className="text-zinc-950 underline underline-offset-4"
               target="_blank"
               rel="noreferrer"
             >
@@ -288,7 +290,7 @@ function SuccessContent() {
         {isAuthenticated && (
           <button
             onClick={() => router.push("/account")}
-            className="w-full bg-red-600 hover:bg-red-700 text-white font-bold py-3 rounded transition"
+            className="w-full bg-zinc-950 py-3 font-bold text-white transition hover:bg-black"
           >
             Go to Account
           </button>
@@ -309,7 +311,7 @@ export default function CheckoutSuccessPage() {
     <Suspense
       fallback={
         <div className="max-w-2xl mx-auto px-4 py-20 text-center">
-          <Loader2 className="w-16 h-16 text-red-600 mx-auto animate-spin" />
+          <Loader2 className="mx-auto h-16 w-16 animate-spin text-zinc-950" />
         </div>
       }
     >

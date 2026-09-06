@@ -51,14 +51,6 @@ export const paymentLinkRequestSchema = z
       variants.add(item.variantId);
     }
 
-    if (value.fulfillment === "ship" && !value.shippingAddress) {
-      context.addIssue({
-        code: "custom",
-        path: ["shippingAddress"],
-        message: "A US shipping address is required",
-      });
-    }
-
     if (value.fulfillment === "pickup" && value.shippingAddress) {
       context.addIssue({
         code: "custom",

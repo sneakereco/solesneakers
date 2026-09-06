@@ -105,10 +105,7 @@ describe("SquarePaymentLinksGateway", () => {
             charge: { amount: BigInt(1500), currency: "USD" },
           },
         }),
-        prePopulatedData: expect.objectContaining({
-          buyerEmail: "buyer@example.com",
-          buyerAddress: expect.objectContaining({ postalCode: "29401" }),
-        }),
+        prePopulatedData: { buyerEmail: "buyer@example.com" },
       }),
     );
   });

@@ -39,5 +39,6 @@ describe("shipping carrier configuration", () => {
     expect(html.match(/<button/g)).toHaveLength(3);
     expect(html).toContain('aria-pressed="true"');
     expect(html).toContain("FedEx");
+    expect(html).not.toContain("red-");
   });
 });

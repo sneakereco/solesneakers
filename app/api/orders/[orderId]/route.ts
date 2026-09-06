@@ -9,7 +9,18 @@ import { createSupabaseServerClient } from "@/lib/supabase/server";
 import { OrdersService } from "@/services/orders-service";
 import { createSupabaseAdminClient } from "@/lib/supabase/service-role";
 import { getRequestIdFromHeaders } from "@/lib/http/request-id";
+import { getSquareConfig } from "@/lib/square/config";
+import { createSquareClient } from "@/lib/square/client";
+import { SquarePaymentEventProcessor } from "@/lib/square/payment-event";
+import { createSquarePaymentOrderVerifier } from "@/lib/square/payment-order-verification";
+import { reconcilePendingSquarePayment } from "@/lib/square/payment-reconciliation";
+import { createSquarePaymentReconciliationCooldown } from "@/lib/square/payment-reconciliation-cooldown";
+import {
+  createSquareShippingSyncDependencies,
+  synchronizeSquareShippingAddress,
+} from "@/lib/square/shipping-address-sync";
 import { log, logError } from "@/lib/utils/log";
+import { OrdersRepository } from "@/repositories/orders-repo";
 
 const paramsSchema = z.object({
   orderId: z.string().uuid(),
@@ -18,6 +29,7 @@ const paramsSchema = z.object({
 const querySchema = z
   .object({
     token: z.string().trim().min(1).optional(),
+    reconcile: z.literal("1").optional(),
   })
   .strict();
 
@@ -86,6 +98,7 @@ export async function GET(
 
     const queryParsed = querySchema.safeParse({
       token: tokenParam && tokenParam.trim().length > 0 ? tokenParam : undefined,
+      reconcile: request.nextUrl.searchParams.get("reconcile") ?? undefined,
     });
 
     if (!queryParsed.success) {
@@ -157,11 +170,108 @@ export async function GET(
       hasAccessToken: Boolean(accessToken),
     });
 
-    const status = await ordersService.getOrderStatus(
+    let status = await ordersService.getOrderStatus(
       paramsParsed.data.orderId,
       userId,
       accessToken,
     );
+
+    if (queryParsed.data.reconcile === "1" && status.status === "pending") {
+      try {
+        const acquired =
+          await createSquarePaymentReconciliationCooldown().acquire(orderId);
+        if (!acquired) {
+          return json(status, 200);
+        }
+        const square = createSquareClient();
+        const config = getSquareConfig();
+        const processor = new SquarePaymentEventProcessor(
+          adminSupabase,
+          config.locationId,
+          createSquarePaymentOrderVerifier(adminSupabase),
+        );
+        const orders = new OrdersRepository(adminSupabase);
+        await reconcilePendingSquarePayment(orderId, {
+          getLocalOrder: async (id) => {
+            const order = await orders.getById(id);
+            return order
+              ? {
+                  id: order.id,
+                  status: order.status,
+                  squareOrderId: order.square_order_id,
+                }
+              : null;
+          },
+          getSquareOrder: async (squareOrderId) => {
+            const response = await square.orders.get({ orderId: squareOrderId });
+            const order = response.order;
+            return order?.id && order.locationId
+              ? {
+                  id: order.id,
+                  locationId: order.locationId,
+                  referenceId: order.referenceId ?? null,
+                  tenders: (order.tenders ?? []).map((tender) => ({
+                    paymentId: tender.paymentId ?? null,
+                  })),
+                }
+              : null;
+          },
+          getSquarePayment: async (paymentId) => {
+            const response = await square.payments.get({ paymentId });
+            const payment = response.payment;
+            const amount = payment?.amountMoney?.amount;
+            if (
+              !payment?.id ||
+              !payment.orderId ||
+              !payment.locationId ||
+              !payment.status ||
+              amount === null ||
+              amount === undefined ||
+              !payment.amountMoney?.currency ||
+              !payment.createdAt ||
+              !payment.versionToken
+            ) {
+              return null;
+            }
+            return {
+              id: payment.id,
+              orderId: payment.orderId,
+              locationId: payment.locationId,
+              status: payment.status,
+              amountCents: Number(amount),
+              currency: String(payment.amountMoney.currency),
+              riskLevel: payment.riskEvaluation?.riskLevel
+                ? String(payment.riskEvaluation.riskLevel)
+                : null,
+              createdAt: payment.createdAt,
+              versionToken: payment.versionToken,
+            };
+          },
+          processPayment: async (payment) => {
+            await synchronizeSquareShippingAddress(
+              {
+                duplicate: false,
+                fulfillmentAuthorized: false,
+                orderId,
+                paymentStatus: payment.paymentStatus,
+                squareOrderId: payment.squareOrderId,
+              },
+              createSquareShippingSyncDependencies(adminSupabase),
+            );
+            return processor.processPaymentSnapshot(payment);
+          },
+        });
+        status = await ordersService.getOrderStatus(orderId, userId, accessToken);
+      } catch (reconciliationError) {
+        logError(reconciliationError, {
+          layer: "api",
+          requestId,
+          route: "/api/orders/:orderId",
+          orderId,
+          event: "square_payment_reconciliation_failed",
+        });
+      }
+    }
 
     log({
       level: "info",

@@ -5,6 +5,7 @@ import { useRouter, useSearchParams } from "next/navigation";
 import { AlertTriangle, Loader2, XCircle } from "lucide-react";
 
 import { classifyCheckoutOrderStatus } from "@/lib/checkout/checkout-order-state";
+import { buildCheckoutStatusUrl } from "@/lib/checkout/checkout-status-url";
 import { readGuestOrderAccess } from "@/lib/checkout/client-session";
 
 type ViewState = "waiting" | "review" | "error";
@@ -41,10 +42,12 @@ function ProcessingContent() {
       attempts += 1;
 
       try {
-        const query = token ? `?token=${encodeURIComponent(token)}` : "";
-        const response = await fetch(`/api/orders/${orderId}${query}`, {
-          cache: "no-store",
-        });
+        const response = await fetch(
+          buildCheckoutStatusUrl(orderId, token, attempts >= 3 && attempts % 3 === 0),
+          {
+            cache: "no-store",
+          },
+        );
         const data = await response.json().catch(() => null);
 
         if (!response.ok) {
@@ -98,15 +101,15 @@ function ProcessingContent() {
   }
 
   return (
-    <main className="flex min-h-screen items-center justify-center bg-zinc-950 px-5 text-white">
+    <main className="flex min-h-screen items-center justify-center bg-[var(--storefront-surface)] px-5 text-zinc-950">
       <div className="w-full max-w-md text-center">
         {view === "waiting" && (
-          <Loader2 className="mx-auto mb-6 h-16 w-16 animate-spin text-red-600" />
+          <Loader2 className="mx-auto mb-6 h-16 w-16 animate-spin text-zinc-950" />
         )}
         {view === "review" && (
           <AlertTriangle className="mx-auto mb-6 h-16 w-16 text-amber-400" />
         )}
-        {view === "error" && <XCircle className="mx-auto mb-6 h-16 w-16 text-red-500" />}
+        {view === "error" && <XCircle className="mx-auto mb-6 h-16 w-16 text-rose-700" />}
         <h1 className="text-2xl font-bold">
           {view === "review"
             ? "Payment under review"
@@ -114,8 +117,8 @@ function ProcessingContent() {
               ? "We could not confirm the order"
               : "Confirming your order"}
         </h1>
-        <p className="mt-4 text-zinc-400">{message}</p>
-        <p className="mt-6 text-xs text-zinc-600">Order ID: {orderId}</p>
+        <p className="mt-4 text-zinc-600">{message}</p>
+        <p className="mt-6 text-xs text-zinc-500">Order ID: {orderId}</p>
       </div>
     </main>
   );
@@ -125,8 +128,8 @@ export default function CheckoutProcessingPage() {
   return (
     <Suspense
       fallback={
-        <div className="flex min-h-screen items-center justify-center bg-zinc-950">
-          <Loader2 className="h-12 w-12 animate-spin text-red-600" />
+        <div className="flex min-h-screen items-center justify-center bg-[var(--storefront-surface)]">
+          <Loader2 className="h-12 w-12 animate-spin text-zinc-950" />
         </div>
       }
     >

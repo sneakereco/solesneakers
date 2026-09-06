@@ -25,7 +25,7 @@ export function CarrierSelector({
             onClick={() => onToggle(carrier.key)}
             className={
               selected
-                ? "w-full rounded border border-red-500 bg-red-950/40 p-3 text-left"
+                ? "w-full rounded border border-zinc-950 bg-zinc-800 p-3 text-left ring-1 ring-zinc-500"
                 : "w-full rounded border border-zinc-800/70 bg-zinc-950/40 p-3 text-left hover:border-zinc-700"
             }
           >

@@ -13,6 +13,7 @@ const completedPaymentEvent = {
         id: "payment-1",
         order_id: "square-order-1",
         location_id: "location-1",
+        created_at: "2026-08-26T17:59:58.000Z",
         status: "COMPLETED",
         amount_money: { amount: 14980, currency: "USD" },
         risk_evaluation: { risk_level: "NORMAL" },
@@ -68,6 +69,10 @@ const disputeCreatedEvent = {
 };
 
 describe("SquarePaymentEventProcessor", () => {
+  const verifyPaymentOrder = jest.fn().mockResolvedValue(undefined);
+
+  beforeEach(() => verifyPaymentOrder.mockClear());
+
   it("persists a sanitized, idempotent payment transition through one RPC", async () => {
     const rpc = jest.fn().mockResolvedValue({
       data: {
@@ -77,7 +82,11 @@ describe("SquarePaymentEventProcessor", () => {
       },
       error: null,
     });
-    const processor = new SquarePaymentEventProcessor({ rpc } as never, "location-1");
+    const processor = new SquarePaymentEventProcessor(
+      { rpc } as never,
+      "location-1",
+      verifyPaymentOrder,
+    );
     const rawBody = JSON.stringify(completedPaymentEvent);
 
     await expect(processor.process(rawBody)).resolves.toEqual({
@@ -92,6 +101,7 @@ describe("SquarePaymentEventProcessor", () => {
       "process_square_payment_event",
       expect.objectContaining({
         p_square_event_id: "event-1",
+        p_square_created_at: "2026-08-26T17:59:58.000Z",
         p_square_order_id: "square-order-1",
         p_square_payment_id: "payment-1",
         p_payment_status: "COMPLETED",
@@ -109,6 +119,7 @@ describe("SquarePaymentEventProcessor", () => {
         },
       }),
     );
+    expect(verifyPaymentOrder).toHaveBeenCalledTimes(1);
 
     const args = rpc.mock.calls[0]?.[1];
     expect(JSON.stringify(args)).not.toContain("buyer@example.com");
@@ -117,10 +128,43 @@ describe("SquarePaymentEventProcessor", () => {
 
   it("ignores a signed event for another configured location", async () => {
     const rpc = jest.fn();
-    const processor = new SquarePaymentEventProcessor({ rpc } as never, "location-2");
+    const processor = new SquarePaymentEventProcessor(
+      { rpc } as never,
+      "location-2",
+      verifyPaymentOrder,
+    );
 
     await expect(
       processor.process(JSON.stringify(completedPaymentEvent)),
+    ).resolves.toEqual({
+      ignored: true,
+      reason: "location_mismatch",
+    });
+    expect(rpc).not.toHaveBeenCalled();
+  });
+
+  it("ignores a reconciled payment for another configured location", async () => {
+    const rpc = jest.fn();
+    const processor = new SquarePaymentEventProcessor(
+      { rpc } as never,
+      "location-2",
+      verifyPaymentOrder,
+    );
+
+    await expect(
+      processor.processPaymentSnapshot({
+        eventId: "reconcile:payment-1:version-1",
+        eventType: "payment.reconciled",
+        merchantId: "reconciliation",
+        locationId: "location-1",
+        createdAt: "2026-09-05T18:03:33.155Z",
+        paymentId: "payment-1",
+        squareOrderId: "square-order-1",
+        paymentStatus: "COMPLETED",
+        amountCents: 14980,
+        currency: "USD",
+        riskLevel: "NORMAL",
+      }),
     ).resolves.toEqual({
       ignored: true,
       reason: "location_mismatch",
@@ -133,7 +177,11 @@ describe("SquarePaymentEventProcessor", () => {
       data: { duplicate: false, fulfillment_authorized: false, order_id: "order-1" },
       error: null,
     });
-    const processor = new SquarePaymentEventProcessor({ rpc } as never, "location-1");
+    const processor = new SquarePaymentEventProcessor(
+      { rpc } as never,
+      "location-1",
+      verifyPaymentOrder,
+    );
 
     await processor.process(JSON.stringify(completedRefundEvent));
 
@@ -165,7 +213,11 @@ describe("SquarePaymentEventProcessor", () => {
       data: { duplicate: false, fulfillment_authorized: false, order_id: "order-1" },
       error: null,
     });
-    const processor = new SquarePaymentEventProcessor({ rpc } as never, "location-1");
+    const processor = new SquarePaymentEventProcessor(
+      { rpc } as never,
+      "location-1",
+      verifyPaymentOrder,
+    );
 
     await processor.process(JSON.stringify(disputeCreatedEvent));
 
@@ -197,7 +249,11 @@ describe("SquarePaymentEventProcessor", () => {
 
   it("rejects malformed or unsupported event bodies before database access", async () => {
     const rpc = jest.fn();
-    const processor = new SquarePaymentEventProcessor({ rpc } as never, "location-1");
+    const processor = new SquarePaymentEventProcessor(
+      { rpc } as never,
+      "location-1",
+      verifyPaymentOrder,
+    );
 
     await expect(processor.process('{"type":"payment.updated"}')).rejects.toThrow(
       "square_webhook_invalid_event",

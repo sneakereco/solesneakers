@@ -1,4 +1,4 @@
-import { readFileSync } from "node:fs";
+import { existsSync, readFileSync } from "node:fs";
 import { resolve } from "node:path";
 
 describe("Square checkout reservation schema", () => {
@@ -14,6 +14,18 @@ describe("Square checkout reservation schema", () => {
     resolve("supabase/migrations/20260831120000_square_refunds_and_disputes.sql"),
     "utf8",
   );
+  const deliveryTimingMigrationPath = resolve(
+    "supabase/migrations/20260905190000_square_payment_event_timing.sql",
+  );
+  const deliveryTimingMigration = existsSync(deliveryTimingMigrationPath)
+    ? readFileSync(deliveryTimingMigrationPath, "utf8")
+    : "";
+  const hostedShippingMigrationPath = resolve(
+    "supabase/migrations/20260905200000_square_hosted_shipping_reservation.sql",
+  );
+  const hostedShippingMigration = existsSync(hostedShippingMigrationPath)
+    ? readFileSync(hostedShippingMigrationPath, "utf8")
+    : "";
 
   it("stores provider identifiers and atomic inventory reservations", () => {
     expect(migration).toContain("square_payment_link_id");
@@ -94,5 +106,25 @@ describe("Square checkout reservation schema", () => {
     expect(lifecycleMigration).toContain(
       "create or replace function public.claim_checkout_notifications",
     );
+  });
+
+  it("uses Square event time instead of delayed webhook arrival time", () => {
+    expect(deliveryTimingMigration).toContain("p_paid_at timestamp with time zone");
+    expect(deliveryTimingMigration).toContain(
+      "v_order.expires_at <= coalesce(p_paid_at, now())",
+    );
+    expect(deliveryTimingMigration).toContain("p_square_created_at");
+  });
+
+  it("allows Square to collect shipping details after inventory is reserved", () => {
+    expect(hostedShippingMigration).toContain(
+      "rename to reserve_square_checkout_inventory_with_address",
+    );
+    expect(hostedShippingMigration).toContain(
+      "when p_fulfillment = 'ship' and p_shipping_address is null",
+    );
+    expect(hostedShippingMigration).toContain("delete from public.order_shipping");
+    expect(hostedShippingMigration).toContain("square_synced_at is null");
+    expect(hostedShippingMigration).toContain("to service_role");
   });
 });

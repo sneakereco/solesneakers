@@ -22,7 +22,7 @@ describe("paymentLinkRequestSchema", () => {
     expect(result.fulfillment).toBe("pickup");
   });
 
-  it("requires a US address for shipping", () => {
+  it("lets Square collect the shipping address", () => {
     const missingAddress = paymentLinkRequestSchema.safeParse({
       ...base,
       fulfillment: "ship",
@@ -40,7 +40,7 @@ describe("paymentLinkRequestSchema", () => {
       },
     });
 
-    expect(missingAddress.success).toBe(false);
+    expect(missingAddress.success).toBe(true);
     expect(nonUsAddress.success).toBe(false);
   });
 

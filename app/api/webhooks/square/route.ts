@@ -4,6 +4,7 @@ import { getRequestIdFromHeaders } from "@/lib/http/request-id";
 import { createSupabaseAdminClient } from "@/lib/supabase/service-role";
 import { getSquareConfig } from "@/lib/square/config";
 import { SquarePaymentEventProcessor } from "@/lib/square/payment-event";
+import { createSquarePaymentOrderVerifier } from "@/lib/square/payment-order-verification";
 import {
   createSquareShippingSyncDependencies,
   synchronizeSquareShippingAddress,
@@ -44,7 +45,11 @@ export async function POST(request: Request) {
     }
 
     const supabase = createSupabaseAdminClient();
-    const processor = new SquarePaymentEventProcessor(supabase, config.locationId);
+    const processor = new SquarePaymentEventProcessor(
+      supabase,
+      config.locationId,
+      createSquarePaymentOrderVerifier(supabase),
+    );
     const result = await processor.process(rawBody);
     await synchronizeSquareShippingAddress(
       result,

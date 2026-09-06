@@ -141,22 +141,7 @@ export class SquarePaymentLinksGateway {
         enableCoupon: false,
         enableLoyalty: false,
       },
-      prePopulatedData:
-        input.buyerEmail || input.shippingAddress
-          ? {
-              buyerEmail: input.buyerEmail ?? undefined,
-              buyerAddress: input.shippingAddress
-                ? {
-                    addressLine1: input.shippingAddress.line1,
-                    addressLine2: input.shippingAddress.line2 ?? undefined,
-                    locality: input.shippingAddress.city,
-                    administrativeDistrictLevel1: input.shippingAddress.state,
-                    postalCode: input.shippingAddress.postalCode,
-                    country: "US",
-                  }
-                : undefined,
-            }
-          : undefined,
+      prePopulatedData: input.buyerEmail ? { buyerEmail: input.buyerEmail } : undefined,
     });
 
     const paymentLink = response.paymentLink;

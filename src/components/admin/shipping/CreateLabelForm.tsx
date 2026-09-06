@@ -691,7 +691,7 @@ export function CreateLabelForm({
                       key={r.id}
                       className={`flex items-start gap-3 p-3 rounded border cursor-pointer transition-colors ${
                         selected
-                          ? "border-red-600 bg-zinc-900/60"
+                          ? "border-zinc-400 bg-zinc-800 ring-1 ring-zinc-500"
                           : "border-zinc-800/70 bg-zinc-900 hover:border-zinc-700"
                       }`}
                     >
@@ -737,7 +737,7 @@ export function CreateLabelForm({
                   !selectedRateId ||
                   !!success
                 }
-                className="w-full px-4 py-2 bg-red-600 hover:bg-red-700 text-white text-sm font-semibold rounded disabled:bg-zinc-700 disabled:cursor-not-allowed"
+                className="w-full rounded bg-zinc-950 px-4 py-2 text-sm font-semibold text-white hover:bg-black disabled:cursor-not-allowed disabled:bg-zinc-700"
               >
                 {isPurchasing ? "Purchasing label..." : "Purchase shipping label"}
               </button>
