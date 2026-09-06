@@ -22,15 +22,17 @@ type RedisEvalClient = {
 };
 
 const DAILY_WINDOW_MS = 24 * 60 * 60 * 1000;
+const THIRTY_MINUTES_MS = 30 * 60 * 1000;
+const HOURLY_WINDOW_MS = 60 * 60 * 1000;
 
 const ATOMIC_SLIDING_WINDOW_SCRIPT = `
 local now = tonumber(ARGV[1])
-local window = tonumber(ARGV[2])
-local member = ARGV[3]
+local member = ARGV[2]
 local retry_after = 0
 
 for index, key in ipairs(KEYS) do
-  local limit = tonumber(ARGV[index + 3])
+  local window = tonumber(ARGV[index * 2 + 1])
+  local limit = tonumber(ARGV[index * 2 + 2])
   redis.call("ZREMRANGEBYSCORE", key, 0, now - window)
   local count = redis.call("ZCARD", key)
   if count >= limit then
@@ -48,6 +50,7 @@ if retry_after > 0 then
 end
 
 for index, key in ipairs(KEYS) do
+  local window = tonumber(ARGV[index * 2 + 1])
   redis.call("ZADD", key, now, member .. ":" .. index)
   redis.call("PEXPIRE", key, window)
 end
@@ -75,12 +78,72 @@ export class CheckoutAttemptLimiter {
     limits.push(10);
 
     try {
-      const result = await this.redis.eval(ATOMIC_SLIDING_WINDOW_SCRIPT, keys, [
-        String(this.now()),
-        String(DAILY_WINDOW_MS),
-        randomUUID(),
-        ...limits.map(String),
-      ]);
+      return await this.checkWindows(
+        keys.map((key, index) => ({
+          key,
+          windowMs: DAILY_WINDOW_MS,
+          limit: limits[index]!,
+        })),
+      );
+    } catch {
+      throw new Error("checkout_protection_unavailable");
+    }
+  }
+
+  async checkPaymentAttempt(input: {
+    tenantId: string;
+    orderId: string;
+    clientIp: string;
+    deviceSessionId: string;
+    normalizedEmailHash: string;
+  }): Promise<CheckoutAttemptDecision> {
+    const prefix = `rdk:checkout:tenant:${input.tenantId}:payment`;
+    return this.checkWindows([
+      {
+        key: `${prefix}:order:${input.orderId}`,
+        windowMs: THIRTY_MINUTES_MS,
+        limit: 3,
+      },
+      { key: `${prefix}:ip:${input.clientIp}`, windowMs: HOURLY_WINDOW_MS, limit: 10 },
+      {
+        key: `${prefix}:device:${input.deviceSessionId}`,
+        windowMs: HOURLY_WINDOW_MS,
+        limit: 5,
+      },
+      {
+        key: `${prefix}:email:${input.normalizedEmailHash}`,
+        windowMs: HOURLY_WINDOW_MS,
+        limit: 5,
+      },
+    ]);
+  }
+
+  async recordDecline(input: {
+    tenantId: string;
+    deviceSessionId: string;
+  }): Promise<CheckoutAttemptDecision> {
+    return this.checkWindows([
+      {
+        key: `rdk:checkout:tenant:${input.tenantId}:payment:decline:device:${input.deviceSessionId}`,
+        windowMs: HOURLY_WINDOW_MS,
+        limit: 5,
+      },
+    ]);
+  }
+
+  private async checkWindows(
+    windows: Array<{ key: string; windowMs: number; limit: number }>,
+  ): Promise<CheckoutAttemptDecision> {
+    try {
+      const result = await this.redis.eval(
+        ATOMIC_SLIDING_WINDOW_SCRIPT,
+        windows.map(({ key }) => key),
+        [
+          String(this.now()),
+          randomUUID(),
+          ...windows.flatMap(({ windowMs, limit }) => [String(windowMs), String(limit)]),
+        ],
+      );
 
       if (
         !Array.isArray(result) ||

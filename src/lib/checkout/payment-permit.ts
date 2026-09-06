@@ -1,13 +1,11 @@
 import { randomUUID } from "node:crypto";
 
 import { z } from "zod";
+import { Redis } from "@upstash/redis";
 
-export type PaymentMethod =
-  | "card"
-  | "afterpay"
-  | "applePay"
-  | "googlePay"
-  | "cashAppPay";
+import { env } from "@/config/env";
+
+export type PaymentMethod = "card" | "afterpay" | "applePay" | "googlePay" | "cashAppPay";
 
 export type PaymentPermitPayload = {
   tenantId: string;
@@ -21,11 +19,7 @@ export type PaymentPermitPayload = {
 };
 
 type RedisPermitClient = {
-  set(
-    key: string,
-    value: string,
-    options: { nx: true; ex: number },
-  ): Promise<unknown>;
+  set(key: string, value: string, options: { nx: true; ex: number }): Promise<unknown>;
   eval(script: string, keys: string[], args: string[]): Promise<unknown>;
 };
 
@@ -105,4 +99,10 @@ export class PaymentPermitStore {
   private key(token: string): string {
     return `rdk:checkout:payment-permit:${token}`;
   }
+}
+
+export function createPaymentPermitStore(): PaymentPermitStore {
+  return new PaymentPermitStore(
+    new Redis({ url: env.UPSTASH_REDIS_REST_URL, token: env.UPSTASH_REDIS_REST_TOKEN }),
+  );
 }

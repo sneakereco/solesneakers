@@ -64,4 +64,46 @@ describe("CheckoutAttemptLimiter", () => {
       "checkout_protection_unavailable",
     );
   });
+
+  it("limits payment permits by order and trusted IP in their own windows", async () => {
+    const evalScript = jest.fn().mockResolvedValue([1, 0]);
+    const limiter = new CheckoutAttemptLimiter({ eval: evalScript }, () => 1000);
+
+    await expect(
+      limiter.checkPaymentAttempt({
+        tenantId: "tenant-1",
+        orderId: "order-1",
+        clientIp: "203.0.113.10",
+        deviceSessionId: "device-session-1",
+        normalizedEmailHash: "email-hash",
+      }),
+    ).resolves.toEqual({ allowed: true, retryAfterSeconds: null });
+
+    const [, keys, args] = evalScript.mock.calls[0] ?? [];
+    expect(keys).toEqual([
+      "rdk:checkout:tenant:tenant-1:payment:order:order-1",
+      "rdk:checkout:tenant:tenant-1:payment:ip:203.0.113.10",
+      "rdk:checkout:tenant:tenant-1:payment:device:device-session-1",
+      "rdk:checkout:tenant:tenant-1:payment:email:email-hash",
+    ]);
+    expect(args).toEqual(expect.arrayContaining(["1800000", "3", "3600000", "10"]));
+  });
+
+  it("records and limits hourly device declines", async () => {
+    const evalScript = jest.fn().mockResolvedValue([0, 60000]);
+    const limiter = new CheckoutAttemptLimiter({ eval: evalScript }, () => 1000);
+
+    await expect(
+      limiter.recordDecline({
+        tenantId: "tenant-1",
+        deviceSessionId: "device-session-1",
+      }),
+    ).resolves.toEqual({ allowed: false, retryAfterSeconds: 60 });
+
+    const [, keys, args] = evalScript.mock.calls[0] ?? [];
+    expect(keys).toEqual([
+      "rdk:checkout:tenant:tenant-1:payment:decline:device:device-session-1",
+    ]);
+    expect(args).toEqual(expect.arrayContaining(["3600000", "5"]));
+  });
 });
