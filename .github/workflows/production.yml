@@ -65,7 +65,7 @@ jobs:
       SES_SMTP_PASS: ${{ secrets.SES_SMTP_PASS }}
 
       # Public Config (can use variables instead of secrets)
-      NEXT_PUBLIC_SITE_URL: ${{ secrets.NEXT_PUBLIC_SITE_URL }}
+      NEXT_PUBLIC_SITE_URL: ${{ vars.NEXT_PUBLIC_SITE_URL || secrets.NEXT_PUBLIC_SITE_URL }}
 
       # Local DB for validation
       LOCAL_SUPABASE_DB_URL: "postgresql://postgres:postgres@localhost:5432/postgres"
@@ -86,6 +86,7 @@ jobs:
           [[ -n "$SQUARE_LOCATION_ID" ]] || { echo "Missing production environment secret: SQUARE_LOCATION_ID"; exit 1; }
           [[ -n "$SQUARE_WEBHOOK_SIGNATURE_KEY" ]] || { echo "Missing production environment secret: SQUARE_WEBHOOK_SIGNATURE_KEY"; exit 1; }
           [[ -n "$SQUARE_WEBHOOK_NOTIFICATION_URL" ]] || { echo "Missing production environment secret: SQUARE_WEBHOOK_NOTIFICATION_URL"; exit 1; }
+          [[ "$NEXT_PUBLIC_SITE_URL" =~ ^https?://[^[:space:]]+$ ]] || { echo "Invalid NEXT_PUBLIC_SITE_URL: expected an absolute http(s) URL"; exit 1; }
           [[ "$SQUARE_ENVIRONMENT" == "production" ]] || { echo "Production SQUARE_ENVIRONMENT must be production"; exit 1; }
 
       - name: Setup Node

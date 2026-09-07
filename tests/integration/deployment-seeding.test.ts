@@ -26,4 +26,22 @@ describe("deployment reference-data seeding", () => {
     expect(buildStep).toBeGreaterThan(seedStep);
     expect(workflow).toContain("Seed verification failed: missing taxonomy data");
   });
+
+  it.each([
+    ["staging", stagingWorkflow],
+    ["production", productionWorkflow],
+  ])(
+    "maps and validates the public site URL before the %s build",
+    (_environment, workflow) => {
+      expect(workflow).toContain(
+        "NEXT_PUBLIC_SITE_URL: ${{ vars.NEXT_PUBLIC_SITE_URL || secrets.NEXT_PUBLIC_SITE_URL }}",
+      );
+      expect(workflow).toContain(
+        "Invalid NEXT_PUBLIC_SITE_URL: expected an absolute http(s) URL",
+      );
+      expect(workflow.indexOf("Invalid NEXT_PUBLIC_SITE_URL")).toBeLessThan(
+        workflow.indexOf("- name: Build"),
+      );
+    },
+  );
 });
