@@ -4,12 +4,10 @@ const prodConnectSrc = [
   "'self'",
   "https://*.supabase.co",
   "wss://*.supabase.co",
-  "https://api.goshippo.com",
-  "https://vitals.vercel-insights.com",
-  "https://*.vercel-scripts.com",
   "https://pci-connect.squareup.com",
   "https://pci-connect.squareupsandbox.com",
   "https://challenges.cloudflare.com",
+  "https://cloudflareinsights.com",
 ].join(" ");
 
 export const security = {
@@ -51,6 +49,8 @@ export const security = {
     },
 
     bot: {
+      internalProxyPrefix:
+        "/149e9513-01fa-4fb0-aad4-566afd725d1b/2d206a39-8ed7-437e-a3be-862e0f06eea3",
       blockStatus: 403,
       minUserAgentLength: 8,
       maxLoggedUserAgentLength: 200,
@@ -125,7 +125,7 @@ export const security = {
           "default-src 'self'",
           "img-src 'self' data: https: blob:",
           "style-src 'self' 'unsafe-inline'",
-          "script-src 'self' 'unsafe-inline' 'unsafe-eval' https://*.vercel-scripts.com https://web.squarecdn.com https://sandbox.web.squarecdn.com https://challenges.cloudflare.com",
+          "script-src 'self' 'unsafe-inline' 'unsafe-eval' https://web.squarecdn.com https://sandbox.web.squarecdn.com https://challenges.cloudflare.com https://static.cloudflareinsights.com/beacon.min.js",
           "worker-src 'self' blob:",
           [
             "connect-src",
@@ -139,15 +139,15 @@ export const security = {
           "base-uri 'self'",
           "frame-ancestors 'none'",
           "font-src 'self' data:",
-          "frame-src 'self' blob: https://www.openstreetmap.org https://*.openstreetmap.org https://web.squarecdn.com https://sandbox.web.squarecdn.com https://pci-connect.squareup.com https://pci-connect.squareupsandbox.com https://challenges.cloudflare.com",
+          "frame-src 'self' blob: https://web.squarecdn.com https://sandbox.web.squarecdn.com https://pci-connect.squareup.com https://pci-connect.squareupsandbox.com https://challenges.cloudflare.com",
           "form-action 'self'",
         ],
 
         prod: [
           "default-src 'self'",
-          "img-src 'self' data: blob: https://*.supabase.co https://*.openstreetmap.org https://*.cloudfront.net https://*.fastly.net",
+          "img-src 'self' data: blob: https://*.supabase.co https://*.cloudfront.net https://*.fastly.net",
           "style-src 'self' 'unsafe-inline'",
-          "script-src 'self' 'unsafe-inline' https://*.vercel-scripts.com https://web.squarecdn.com https://sandbox.web.squarecdn.com https://challenges.cloudflare.com",
+          "script-src 'self' 'unsafe-inline' https://web.squarecdn.com https://sandbox.web.squarecdn.com https://challenges.cloudflare.com https://static.cloudflareinsights.com/beacon.min.js",
           "worker-src 'self' blob:",
           "object-src 'none'",
           "base-uri 'self'",
@@ -156,7 +156,7 @@ export const security = {
 
           "frame-ancestors 'none'",
           "font-src 'self' data:",
-          "frame-src 'self' blob: https://www.openstreetmap.org https://*.openstreetmap.org https://web.squarecdn.com https://sandbox.web.squarecdn.com https://pci-connect.squareup.com https://pci-connect.squareupsandbox.com https://challenges.cloudflare.com",
+          "frame-src 'self' blob: https://web.squarecdn.com https://sandbox.web.squarecdn.com https://pci-connect.squareup.com https://pci-connect.squareupsandbox.com https://challenges.cloudflare.com",
           "form-action 'self'",
           "upgrade-insecure-requests",
         ],

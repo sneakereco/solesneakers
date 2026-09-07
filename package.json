@@ -42,8 +42,6 @@
     "@supabase/supabase-js": "^2.81.1",
     "@upstash/ratelimit": "^2.0.7",
     "@upstash/redis": "^1.35.6",
-    "@vercel/analytics": "^1.6.1",
-    "@vercel/speed-insights": "^1.3.1",
     "@vnedyalk0v/react19-simple-maps": "^1.2.1",
     "botid": "^1.5.11",
     "browser-image-compression": "^2.0.2",

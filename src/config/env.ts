@@ -22,6 +22,7 @@ const schema = z.object({
   CRON_SECRET: z.string().min(32).optional(),
   TURNSTILE_SECRET_KEY: z.string().min(1).optional(),
   NEXT_PUBLIC_TURNSTILE_SITE_KEY: z.string().min(1).optional(),
+  NEXT_PUBLIC_CLOUDFLARE_WEB_ANALYTICS_TOKEN: z.string().min(1).optional(),
 
   SQUARE_ENVIRONMENT: z.enum(["sandbox", "production"]).optional(),
   SQUARE_APPLICATION_ID: z.string().min(1).optional(),

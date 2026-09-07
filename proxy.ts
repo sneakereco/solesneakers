@@ -27,7 +27,7 @@ export async function proxy(request: NextRequest): Promise<NextResponse> {
   const canonicalizeResponse = canonicalizePath(request, requestId);
 
   if (canonicalizeResponse) {
-    return finalizeProxyResponse(canonicalizeResponse, requestId);
+    return finalizeProxyResponse(canonicalizeResponse, requestId, pathname);
   }
 
   // Refresh Supabase session and get response with cookies
@@ -55,16 +55,16 @@ export async function proxy(request: NextRequest): Promise<NextResponse> {
       siteLockResponse.cookies.set(cookie.name, cookie.value, cookie);
     });
 
-    return finalizeProxyResponse(siteLockResponse, requestId);
+    return finalizeProxyResponse(siteLockResponse, requestId, pathname);
   }
 
-  response = finalizeProxyResponse(response, requestId);
+  response = finalizeProxyResponse(response, requestId, pathname);
 
   if (!isLocalDev && startsWithAny(pathname, security.proxy.botCheckPrefixes)) {
     const botResponse = checkBot(request, requestId);
 
     if (botResponse) {
-      return finalizeProxyResponse(botResponse, requestId);
+      return finalizeProxyResponse(botResponse, requestId, pathname);
     }
   }
 
@@ -72,7 +72,7 @@ export async function proxy(request: NextRequest): Promise<NextResponse> {
     const csrfResponse = checkCsrf(request, requestId);
 
     if (csrfResponse) {
-      return finalizeProxyResponse(csrfResponse, requestId);
+      return finalizeProxyResponse(csrfResponse, requestId, pathname);
     }
   }
 
@@ -84,7 +84,7 @@ export async function proxy(request: NextRequest): Promise<NextResponse> {
     const rateLimitResponse = await applyRateLimit(request, requestId);
 
     if (rateLimitResponse) {
-      return finalizeProxyResponse(rateLimitResponse, requestId);
+      return finalizeProxyResponse(rateLimitResponse, requestId, pathname);
     }
   }
 
@@ -101,7 +101,7 @@ export async function proxy(request: NextRequest): Promise<NextResponse> {
     const adminResponse = await protectAdminRoute(request, requestId, supabase);
 
     if (adminResponse) {
-      return finalizeProxyResponse(adminResponse, requestId);
+      return finalizeProxyResponse(adminResponse, requestId, pathname);
     }
   }
 

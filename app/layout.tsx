@@ -1,10 +1,10 @@
 // app/layout.tsx
 
 import type { Metadata, Viewport } from "next";
-import { SpeedInsights } from "@vercel/speed-insights/next";
-import { Analytics } from "@vercel/analytics/next";
 
+import { CloudflareWebAnalytics } from "@/components/analytics/CloudflareWebAnalytics";
 import { CartProvider } from "@/components/cart/CartProvider";
+import { env } from "@/config/env";
 import { SessionProvider } from "@/contexts/SessionContext";
 import { getServerSession } from "@/lib/auth/session";
 import "@/styles/site.css";
@@ -48,8 +48,7 @@ export default async function RootLayout({ children }: { children: React.ReactNo
         <SessionProvider initialUser={sessionUser} initialRole={role}>
           <CartProvider userId={userId}>{children}</CartProvider>
         </SessionProvider>
-        <SpeedInsights />
-        <Analytics />
+        <CloudflareWebAnalytics token={env.NEXT_PUBLIC_CLOUDFLARE_WEB_ANALYTICS_TOKEN} />
       </body>
     </html>
   );

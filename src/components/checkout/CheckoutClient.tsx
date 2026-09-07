@@ -207,126 +207,127 @@ export function CheckoutClient() {
         ))}
       </div>
 
-      {!prepared ? (
-        <form onSubmit={(event) => void prepare(event)}>
-          <div className="mt-5 grid grid-cols-2 gap-2" aria-label="Fulfillment method">
-            {(["ship", "pickup"] as const).map((method) => (
-              <button
-                key={method}
-                type="button"
-                onClick={() => {
-                  setFulfillment(method);
-                  setPrepared(null);
-                }}
-                className={
-                  fulfillment === method
-                    ? "border border-zinc-950 bg-zinc-950 px-3 py-3 text-xs font-medium uppercase text-white"
-                    : "border border-zinc-300 bg-white px-3 py-3 text-xs font-medium uppercase text-zinc-800"
-                }
-              >
-                {method === "ship" ? "Shipping" : "Local pickup"}
-              </button>
-            ))}
-          </div>
-          <label className="mt-4 block text-xs font-medium uppercase">
-            Email
-            <input
-              type="email"
-              required
-              autoComplete="email"
-              value={user?.email ?? email}
-              disabled={Boolean(user)}
-              onChange={(event) => {
-                setEmail(event.target.value);
+      <form onSubmit={(event) => void prepare(event)}>
+        <div className="mt-5 grid grid-cols-2 gap-2" aria-label="Fulfillment method">
+          {(["ship", "pickup"] as const).map((method) => (
+            <button
+              key={method}
+              type="button"
+              onClick={() => {
+                setFulfillment(method);
                 setPrepared(null);
               }}
-              className="mt-2 w-full border border-zinc-300 bg-white px-3 py-3 normal-case disabled:bg-zinc-100"
+              className={
+                fulfillment === method
+                  ? "border border-zinc-950 bg-zinc-950 px-3 py-3 text-xs font-medium uppercase text-white"
+                  : "border border-zinc-300 bg-white px-3 py-3 text-xs font-medium uppercase text-zinc-800"
+              }
+            >
+              {method === "ship" ? "Shipping" : "Local pickup"}
+            </button>
+          ))}
+        </div>
+        <label className="mt-4 block text-xs font-medium uppercase">
+          Email
+          <input
+            type="email"
+            required
+            autoComplete="email"
+            value={user?.email ?? email}
+            disabled={Boolean(user)}
+            onChange={(event) => {
+              setEmail(event.target.value);
+              setPrepared(null);
+            }}
+            className="mt-2 w-full border border-zinc-300 bg-white px-3 py-3 normal-case disabled:bg-zinc-100"
+          />
+        </label>
+        {fulfillment === "ship" && (
+          <fieldset className="mt-4 grid gap-3">
+            <legend className="text-xs font-medium uppercase">Shipping address</legend>
+            <input
+              required
+              autoComplete="shipping name"
+              placeholder="Full name"
+              value={address.name}
+              onChange={(event) => updateAddress("name", event.target.value)}
+              className="border border-zinc-300 px-3 py-3 text-sm"
             />
-          </label>
-          {fulfillment === "ship" && (
-            <fieldset className="mt-4 grid gap-3">
-              <legend className="text-xs font-medium uppercase">Shipping address</legend>
+            <input
+              required
+              type="tel"
+              autoComplete="shipping tel"
+              placeholder="Phone"
+              value={address.phone}
+              onChange={(event) => updateAddress("phone", event.target.value)}
+              className="border border-zinc-300 px-3 py-3 text-sm"
+            />
+            <input
+              required
+              autoComplete="shipping street-address"
+              placeholder="Street address"
+              value={address.line1}
+              onChange={(event) => updateAddress("line1", event.target.value)}
+              className="border border-zinc-300 px-3 py-3 text-sm"
+            />
+            <input
+              autoComplete="shipping address-line2"
+              placeholder="Apartment, suite, etc. (optional)"
+              value={address.line2}
+              onChange={(event) => updateAddress("line2", event.target.value)}
+              className="border border-zinc-300 px-3 py-3 text-sm"
+            />
+            <input
+              required
+              autoComplete="shipping address-level2"
+              placeholder="City"
+              value={address.city}
+              onChange={(event) => updateAddress("city", event.target.value)}
+              className="border border-zinc-300 px-3 py-3 text-sm"
+            />
+            <div className="grid grid-cols-2 gap-3">
               <input
                 required
-                autoComplete="shipping name"
-                placeholder="Full name"
-                value={address.name}
-                onChange={(event) => updateAddress("name", event.target.value)}
-                className="border border-zinc-300 px-3 py-3 text-sm"
+                maxLength={2}
+                autoComplete="shipping address-level1"
+                placeholder="State"
+                value={address.state}
+                onChange={(event) =>
+                  updateAddress("state", event.target.value.toUpperCase())
+                }
+                className="border border-zinc-300 px-3 py-3 text-sm uppercase"
               />
               <input
                 required
-                type="tel"
-                autoComplete="shipping tel"
-                placeholder="Phone"
-                value={address.phone}
-                onChange={(event) => updateAddress("phone", event.target.value)}
+                autoComplete="shipping postal-code"
+                placeholder="ZIP code"
+                value={address.postalCode}
+                onChange={(event) => updateAddress("postalCode", event.target.value)}
                 className="border border-zinc-300 px-3 py-3 text-sm"
               />
-              <input
-                required
-                autoComplete="shipping street-address"
-                placeholder="Street address"
-                value={address.line1}
-                onChange={(event) => updateAddress("line1", event.target.value)}
-                className="border border-zinc-300 px-3 py-3 text-sm"
-              />
-              <input
-                autoComplete="shipping address-line2"
-                placeholder="Apartment, suite, etc. (optional)"
-                value={address.line2}
-                onChange={(event) => updateAddress("line2", event.target.value)}
-                className="border border-zinc-300 px-3 py-3 text-sm"
-              />
-              <input
-                required
-                autoComplete="shipping address-level2"
-                placeholder="City"
-                value={address.city}
-                onChange={(event) => updateAddress("city", event.target.value)}
-                className="border border-zinc-300 px-3 py-3 text-sm"
-              />
-              <div className="grid grid-cols-2 gap-3">
-                <input
-                  required
-                  maxLength={2}
-                  autoComplete="shipping address-level1"
-                  placeholder="State"
-                  value={address.state}
-                  onChange={(event) =>
-                    updateAddress("state", event.target.value.toUpperCase())
-                  }
-                  className="border border-zinc-300 px-3 py-3 text-sm uppercase"
-                />
-                <input
-                  required
-                  autoComplete="shipping postal-code"
-                  placeholder="ZIP code"
-                  value={address.postalCode}
-                  onChange={(event) => updateAddress("postalCode", event.target.value)}
-                  className="border border-zinc-300 px-3 py-3 text-sm"
-                />
-              </div>
-            </fieldset>
+            </div>
+          </fieldset>
+        )}
+        {error && (
+          <p className="mt-4 text-sm text-amber-800" role="alert">
+            {error}
+          </p>
+        )}
+        <button
+          type="submit"
+          disabled={isSubmitting}
+          className="mt-5 flex w-full items-center justify-center bg-zinc-950 px-6 py-4 text-sm font-medium uppercase text-white disabled:bg-zinc-400"
+        >
+          {isSubmitting ? (
+            <Loader2 className="h-5 w-5 animate-spin" />
+          ) : prepared ? (
+            "Update order"
+          ) : (
+            "Continue to secure payment"
           )}
-          {error && (
-            <p className="mt-4 text-sm text-amber-800" role="alert">
-              {error}
-            </p>
-          )}
-          <button
-            type="submit"
-            disabled={isSubmitting}
-            className="mt-5 flex w-full items-center justify-center bg-zinc-950 px-6 py-4 text-sm font-medium uppercase text-white disabled:bg-zinc-400"
-          >
-            {isSubmitting ? (
-              <Loader2 className="h-5 w-5 animate-spin" />
-            ) : (
-              "Continue to secure payment"
-            )}
-          </button>
-        </form>
-      ) : (
+        </button>
+      </form>
+      {prepared && (
         <>
           <dl className="mt-5 space-y-2 border-y border-zinc-200 py-4 text-sm">
             <div className="flex justify-between">
@@ -346,13 +347,6 @@ export function CheckoutClient() {
               <dd>{formatPrice(prepared.totals.totalCents)}</dd>
             </div>
           </dl>
-          <button
-            type="button"
-            onClick={() => setPrepared(null)}
-            className="mt-3 text-xs underline underline-offset-4"
-          >
-            Edit delivery details
-          </button>
           <SquarePaymentMethods
             checkout={prepared}
             deviceSessionId={prepared.deviceSessionId}

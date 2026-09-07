@@ -92,15 +92,16 @@ export async function POST(request: NextRequest) {
       { headers: { "Cache-Control": "no-store" } },
     );
   } catch (error: unknown) {
-    logError(error, {
+    logError(new Error("cart_validation_upstream_unavailable"), {
       layer: "api",
       requestId,
       route: "/api/cart/validate",
+      upstreamErrorType: error instanceof Error ? error.name : typeof error,
     });
 
     return NextResponse.json(
-      { error: "Failed to validate cart", requestId },
-      { status: 500, headers: { "Cache-Control": "no-store" } },
+      { error: "Cart validation is temporarily unavailable", requestId },
+      { status: 503, headers: { "Cache-Control": "no-store" } },
     );
   }
 }
