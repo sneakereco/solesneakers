@@ -1,6 +1,6 @@
 import { z } from "zod";
 
-const checkoutItemSchema = z
+export const checkoutItemSchema = z
   .object({
     productId: z.string().uuid(),
     variantId: z.string().uuid(),
@@ -28,28 +28,54 @@ export const checkoutShippingAddressSchema = z
   })
   .strict();
 
+function validateUniqueVariants(
+  value: { items: Array<{ variantId: string }> },
+  context: z.RefinementCtx,
+): void {
+  const variants = new Set<string>();
+  for (const [index, item] of value.items.entries()) {
+    if (variants.has(item.variantId)) {
+      context.addIssue({
+        code: "custom",
+        path: ["items", index, "variantId"],
+        message: "Duplicate variants are not allowed",
+      });
+    }
+    variants.add(item.variantId);
+  }
+}
+
+export const checkoutQuoteRequestSchema = z
+  .object({
+    items: z.array(checkoutItemSchema).min(1).max(10),
+    fulfillment: z.enum(["ship", "pickup"]),
+    shippingAddress: checkoutShippingAddressSchema.nullable(),
+  })
+  .strict()
+  .superRefine((value, context) => {
+    validateUniqueVariants(value, context);
+    if (value.fulfillment === "pickup" && value.shippingAddress) {
+      context.addIssue({
+        code: "custom",
+        path: ["shippingAddress"],
+        message: "Pickup checkout must not include a shipping address",
+      });
+    }
+  });
+
 export const prepareCheckoutRequestSchema = z
   .object({
     items: z.array(checkoutItemSchema).min(1).max(10),
     fulfillment: z.enum(["ship", "pickup"]),
     idempotencyKey: z.string().uuid(),
     deviceSessionId: z.string().uuid(),
+    quoteFingerprint: z.string().regex(/^[a-f0-9]{64}$/),
     buyerEmail: z.string().trim().toLowerCase().email().max(254).nullable().optional(),
     shippingAddress: checkoutShippingAddressSchema.nullable(),
   })
   .strict()
   .superRefine((value, context) => {
-    const variants = new Set<string>();
-    for (const [index, item] of value.items.entries()) {
-      if (variants.has(item.variantId)) {
-        context.addIssue({
-          code: "custom",
-          path: ["items", index, "variantId"],
-          message: "Duplicate variants are not allowed",
-        });
-      }
-      variants.add(item.variantId);
-    }
+    validateUniqueVariants(value, context);
 
     if (value.fulfillment === "ship" && !value.shippingAddress) {
       context.addIssue({
@@ -94,5 +120,27 @@ export const directPaymentRequestSchema = z
 
 export type PrepareCheckoutRequest = z.infer<typeof prepareCheckoutRequestSchema>;
 export type PrepareCheckoutRequestItem = PrepareCheckoutRequest["items"][number];
+export type CheckoutQuoteRequest = z.infer<typeof checkoutQuoteRequestSchema>;
+export type CheckoutTotals = {
+  subtotalCents: number;
+  shippingCents: number;
+  taxCents: number;
+  totalCents: number;
+};
+export type CheckoutQuoteResponse =
+  | {
+      completeness: "preliminary";
+      totals: Omit<CheckoutTotals, "taxCents"> & { taxCents: null };
+      quoteFingerprint: null;
+    }
+  | {
+      completeness: "exact";
+      totals: CheckoutTotals;
+      quoteFingerprint: string;
+    };
+export type ExactCheckoutQuote = Extract<
+  CheckoutQuoteResponse,
+  { completeness: "exact" }
+>;
 export type PaymentPermitRequest = z.infer<typeof paymentPermitRequestSchema>;
 export type DirectPaymentRequest = z.infer<typeof directPaymentRequestSchema>;

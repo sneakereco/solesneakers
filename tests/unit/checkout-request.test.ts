@@ -1,4 +1,5 @@
 import {
+  checkoutQuoteRequestSchema,
   directPaymentRequestSchema,
   paymentPermitRequestSchema,
   prepareCheckoutRequestSchema,
@@ -16,6 +17,7 @@ const base = {
   idempotencyKey: "33333333-3333-4333-8333-333333333333",
   deviceSessionId: "44444444-4444-4444-8444-444444444444",
   buyerEmail: " Buyer@Example.com ",
+  quoteFingerprint: "a".repeat(64),
   shippingAddress: {
     name: "Buyer Example",
     phone: "8435550100",
@@ -29,6 +31,40 @@ const base = {
 };
 
 describe("direct checkout request schemas", () => {
+  it("accepts an address-free preliminary shipping quote", () => {
+    const result = checkoutQuoteRequestSchema.parse({
+      items: [item],
+      fulfillment: "ship",
+      shippingAddress: null,
+    });
+
+    expect(result).toEqual({
+      items: [item],
+      fulfillment: "ship",
+      shippingAddress: null,
+    });
+  });
+
+  it("rejects a shipping address for a pickup quote", () => {
+    expect(
+      checkoutQuoteRequestSchema.safeParse({
+        items: [item],
+        fulfillment: "pickup",
+        shippingAddress: base.shippingAddress,
+      }).success,
+    ).toBe(false);
+  });
+
+  it("rejects duplicate variants in a quote", () => {
+    expect(
+      checkoutQuoteRequestSchema.safeParse({
+        items: [item, item],
+        fulfillment: "ship",
+        shippingAddress: null,
+      }).success,
+    ).toBe(false);
+  });
+
   it("accepts and normalizes a complete shipping checkout", () => {
     const result = prepareCheckoutRequestSchema.parse(base);
 
@@ -59,6 +95,21 @@ describe("direct checkout request schemas", () => {
     ).toBe(false);
     expect(
       prepareCheckoutRequestSchema.safeParse({ ...base, items: [item, item] }).success,
+    ).toBe(false);
+  });
+
+  it("requires a lowercase SHA-256 quote fingerprint for prepare", () => {
+    expect(
+      prepareCheckoutRequestSchema.safeParse({
+        ...base,
+        quoteFingerprint: undefined,
+      }).success,
+    ).toBe(false);
+    expect(
+      prepareCheckoutRequestSchema.safeParse({
+        ...base,
+        quoteFingerprint: "not-a-fingerprint",
+      }).success,
     ).toBe(false);
   });
 
