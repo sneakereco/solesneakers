@@ -1,4 +1,5 @@
 import { assertCheckoutOpen } from "@/lib/checkout/checkout-access";
+import { env } from "@/config/env";
 import { createCheckoutAttemptLimiter } from "@/lib/checkout/checkout-attempt-limit";
 import { resolveCheckoutCart } from "@/lib/checkout/checkout-cart-resolver";
 import { createCheckoutPricingGateway } from "@/lib/checkout/checkout-pricing-gateway";
@@ -11,6 +12,7 @@ import { getServerSession } from "@/lib/auth/session";
 import { getTrustedClientIp } from "@/lib/http/client-ip";
 import { verifyCheckoutBrowser } from "@/lib/security/checkout-bot";
 import { createSquareCheckoutOrdersGateway } from "@/lib/square/client";
+import { getSquareConfig } from "@/lib/square/config";
 import { createSupabaseAdminClient } from "@/lib/supabase/service-role";
 import { logError } from "@/lib/utils/log";
 import { CheckoutReservationRepository } from "@/repositories/checkout-reservation-repo";
@@ -30,7 +32,8 @@ export function createPrepareCheckoutDependencies(
   const accessTokens = new OrderAccessTokenService(supabase);
   const limiter = createCheckoutAttemptLimiter();
   const pricing = createCheckoutPricingGateway(shipping);
-  const squareOrders = createSquareCheckoutOrdersGateway();
+  let squareOrders: ReturnType<typeof createSquareCheckoutOrdersGateway> | null = null;
+  const getSquareOrders = () => (squareOrders ??= createSquareCheckoutOrdersGateway());
 
   return {
     findTenantId: () => tenants.getFirstTenantId(),
@@ -47,10 +50,21 @@ export function createPrepareCheckoutDependencies(
     reserve: (input) => reservations.reserve(input),
     createGuestAccessToken: async (orderId) =>
       (await accessTokens.createToken({ orderId })).token,
-    createSquareOrder: (input) => squareOrders.create(input),
+    getSquareClientConfig: () => {
+      const config = getSquareConfig();
+      if (!env.SQUARE_APPLICATION_ID) {
+        throw new Error("square_configuration_invalid");
+      }
+      return {
+        applicationId: env.SQUARE_APPLICATION_ID,
+        locationId: config.locationId,
+        environment: config.environment,
+      };
+    },
+    createSquareOrder: (input) => getSquareOrders().create(input),
     attachSquareOrder: (orderId, order) => reservations.attachSquareOrder(orderId, order),
     cancelSquareOrder: (orderId, version, idempotencyKey) =>
-      squareOrders.cancel(orderId, version, idempotencyKey),
+      getSquareOrders().cancel(orderId, version, idempotencyKey),
     releaseReservation: (orderId, reason) => reservations.release(orderId, reason),
     reportError: (error) =>
       logError(error, { layer: "api", route: "/api/checkout/prepare", requestId }),

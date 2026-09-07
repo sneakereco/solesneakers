@@ -69,6 +69,11 @@ function dependencies() {
       squarePaymentLinkUrl: null,
     }),
     createGuestAccessToken: jest.fn().mockResolvedValue("guest-token"),
+    getSquareClientConfig: jest.fn().mockReturnValue({
+      applicationId: "sandbox-app-id",
+      locationId: "location-1",
+      environment: "sandbox",
+    }),
     createSquareOrder: jest.fn().mockResolvedValue({
       id: "square-order-1",
       version: 1,

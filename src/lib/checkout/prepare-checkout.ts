@@ -48,6 +48,11 @@ export type PrepareCheckoutDependencies = {
   quote(input: CheckoutPricingQuoteInput): Promise<CheckoutPricingQuote>;
   reserve(input: ReserveCheckoutInput): Promise<CheckoutReservationResult>;
   createGuestAccessToken(orderId: string): Promise<string>;
+  getSquareClientConfig(): {
+    applicationId: string;
+    locationId: string;
+    environment: "sandbox" | "production";
+  };
   createSquareOrder(input: SquareCheckoutOrderInput): Promise<SquareCheckoutOrder>;
   attachSquareOrder(orderId: string, order: SquareCheckoutOrder): Promise<void>;
   cancelSquareOrder(
@@ -87,7 +92,9 @@ function isFuture(iso: string, now: Date) {
 }
 
 function maskIp(ip: string): string {
-  if (ip.includes(":")) return `${ip.split(":").slice(0, 4).join(":")}::/64`;
+  if (ip.includes(":")) {
+    return `${ip.split(":").slice(0, 4).join(":")}::/64`;
+  }
   const parts = ip.split(".");
   return parts.length === 4 ? `${parts.slice(0, 3).join(".")}.0/24` : "unparseable";
 }
@@ -106,23 +113,32 @@ export async function prepareCheckoutHandler(
 ): Promise<Response> {
   try {
     const tenantId = await deps.findTenantId();
-    if (!tenantId) return json({ error: "Checkout is temporarily unavailable" }, 503);
+    if (!tenantId) {
+      return json({ error: "Checkout is temporarily unavailable" }, 503);
+    }
     const access = await deps.getAccess(tenantId);
-    if (!access.open) return json({ error: access.message }, 503);
+    if (!access.open) {
+      return json({ error: access.message }, 503);
+    }
+    const paymentConfig = deps.getSquareClientConfig();
     const bot = await deps.verifyBrowser();
-    if (!bot.allowed)
+    if (!bot.allowed) {
       return json(
         { error: "Checkout verification failed" },
         bot.reason === "bot" ? 403 : 503,
       );
+    }
 
     const parsed = prepareCheckoutRequestSchema.safeParse(
       await request.json().catch(() => null),
     );
-    if (!parsed.success) return json({ error: "Invalid checkout request" }, 400);
+    if (!parsed.success) {
+      return json({ error: "Invalid checkout request" }, 400);
+    }
     const clientIp = deps.getClientIp(request);
-    if (!clientIp)
+    if (!clientIp) {
       return json({ error: "Checkout protection is temporarily unavailable" }, 503);
+    }
 
     const session = await deps.getSession();
     const accountEmail = session?.user.email
@@ -136,7 +152,9 @@ export async function prepareCheckoutHandler(
       return json({ error: "Checkout email does not match the signed-in account" }, 400);
     }
     const buyerEmail = accountEmail ?? parsed.data.buyerEmail ?? null;
-    if (!buyerEmail) return json({ error: "A buyer email is required" }, 400);
+    if (!buyerEmail) {
+      return json({ error: "A buyer email is required" }, 400);
+    }
 
     const cartHash = createCheckoutCartHash({
       tenantId,
@@ -147,8 +165,9 @@ export async function prepareCheckoutHandler(
     });
     const existing = await deps.findExisting(tenantId, parsed.data.idempotencyKey);
     if (existing) {
-      if (existing.cartHash !== cartHash)
+      if (existing.cartHash !== cartHash) {
         return json({ error: "Checkout key conflicts with another cart" }, 409);
+      }
       if (existing.status !== "pending" || !isFuture(existing.expiresAt, deps.now())) {
         return json({ error: "Checkout cannot be reused" }, 409);
       }
@@ -160,12 +179,14 @@ export async function prepareCheckoutHandler(
             reused: true,
             totals: totals(existing),
             guestAccessToken: await guestToken(existing.orderId, !session, deps),
+            paymentConfig,
           },
           200,
         );
       }
-      if (existing.squareOrderId)
+      if (existing.squareOrderId) {
         return json({ error: "Checkout cannot be migrated; start again" }, 409);
+      }
     }
 
     const normalizedEmailHash = deps.hashEmail(buyerEmail);
@@ -275,6 +296,7 @@ export async function prepareCheckoutHandler(
         reused: reservation.reused,
         totals: totals(squareOrder),
         guestAccessToken: await guestToken(reservation.orderId, !session, deps),
+        paymentConfig,
       },
       reservation.reused ? 200 : 201,
     );

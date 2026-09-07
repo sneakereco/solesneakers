@@ -24,13 +24,17 @@ jest.mock("@/contexts/SessionContext", () => ({
 import { CheckoutClient } from "@/components/checkout/CheckoutClient";
 
 describe("CheckoutClient", () => {
-  it("offers direct Square shipping and pickup without a local address form", () => {
+  it("keeps guest checkout and collects shipping details before embedded payment", () => {
     const html = renderToStaticMarkup(<CheckoutClient />);
 
-    expect(html).toContain("Ship to me");
+    expect(html).toContain("Shipping");
     expect(html).toContain("Local pickup");
     expect(html).toContain('type="email"');
-    expect(html).not.toContain("Shipping address");
-    expect(html).not.toContain("Address</label>");
+    expect(html).toContain('autoComplete="shipping street-address"');
+    expect(html).toContain("Card");
+    expect(html).toContain("Afterpay");
+    expect(html).toContain("Continue to secure payment");
+    expect(html).toContain("air-runner.jpg");
+    expect(html).not.toContain("Address and payment details are entered on Square");
   });
 });

@@ -23,7 +23,9 @@ import { OrderAccessTokenService } from "@/services/order-access-token-service";
 
 function checkoutHostname(): string {
   const value = process.env.NEXT_PUBLIC_SITE_URL?.trim();
-  if (!value) throw new Error("checkout_site_url_missing");
+  if (!value) {
+    throw new Error("checkout_site_url_missing");
+  }
   return new URL(value).hostname;
 }
 
@@ -77,12 +79,13 @@ export function createDirectPaymentDependencies(
   const orders = new OrdersRepository(supabase);
   const limiter = createCheckoutAttemptLimiter();
   const permits = createPaymentPermitStore();
-  const payments = createSquarePaymentsGateway();
+  let payments: ReturnType<typeof createSquarePaymentsGateway> | null = null;
+  const getPayments = () => (payments ??= createSquarePaymentsGateway());
 
   return {
     consumePermit: (token) => permits.consume(token),
     loadOrder: (orderId) => reservations.findPaymentCheckout(orderId),
-    createPayment: (input) => payments.create(input),
+    createPayment: (input) => getPayments().create(input),
     savePaymentId: (orderId, paymentId) =>
       orders.updatePaymentTransactionId(orderId, paymentId),
     recordDecline: (input) => limiter.recordDecline(input),

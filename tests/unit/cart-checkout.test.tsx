@@ -41,9 +41,10 @@ describe("CartPage checkout", () => {
   it("starts shipping or pickup checkout directly beside the order summary", () => {
     const html = renderToStaticMarkup(<CartPage />);
 
-    expect(html).toContain("Ship to me");
+    expect(html).toContain("Shipping");
     expect(html).toContain("Local pickup");
     expect(html).toContain("air-runner.jpg");
+    expect(html).toContain("Continue to secure payment");
     expect(html).not.toContain('href="/checkout"');
   });
 });
