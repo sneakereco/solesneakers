@@ -4,8 +4,10 @@ const PRODUCT_ID = "11111111-1111-4111-8111-111111111111";
 const VARIANT_ID = "22222222-2222-4222-8222-222222222222";
 const IDEMPOTENCY_KEY = "33333333-3333-4333-8333-333333333333";
 const DEVICE_ID = "44444444-4444-4444-8444-444444444444";
+const QUOTE_FINGERPRINT =
+  "610ae04d8f9e17f9c643e5d21637d830251ddeedd427e1ac9a32d3947d3e649b";
 
-function request() {
+function request(quoteFingerprint = QUOTE_FINGERPRINT) {
   return new Request("https://shop.example.com/api/checkout/prepare", {
     method: "POST",
     body: JSON.stringify({
@@ -13,6 +15,7 @@ function request() {
       fulfillment: "ship",
       idempotencyKey: IDEMPOTENCY_KEY,
       deviceSessionId: DEVICE_ID,
+      quoteFingerprint,
       buyerEmail: "buyer@example.com",
       shippingAddress: {
         name: "Buyer",
@@ -59,6 +62,12 @@ function dependencies() {
       taxCents: 0,
       taxCalculationId: "square:pending",
       customerState: "SC",
+    }),
+    calculateSquareOrder: jest.fn().mockResolvedValue({
+      subtotalCents: 10000,
+      shippingCents: 1000,
+      taxCents: 800,
+      totalCents: 11800,
     }),
     reserve: jest.fn().mockResolvedValue({
       orderId: "order-1",
@@ -112,6 +121,9 @@ describe("prepareCheckoutHandler", () => {
       "order-1",
       expect.objectContaining({ id: "square-order-1" }),
     );
+    expect(deps.calculateSquareOrder.mock.invocationCallOrder[0]).toBeLessThan(
+      deps.reserve.mock.invocationCallOrder[0],
+    );
   });
 
   it("does not reserve or contact Square when the daily limit is exhausted", async () => {
@@ -121,5 +133,44 @@ describe("prepareCheckoutHandler", () => {
     expect(response.status).toBe(429);
     expect(deps.reserve).not.toHaveBeenCalled();
     expect(deps.createSquareOrder).not.toHaveBeenCalled();
+  });
+
+  it("rejects a stale exact quote before reserving inventory", async () => {
+    const deps = dependencies();
+    const response = await prepareCheckoutHandler(request("b".repeat(64)), deps);
+
+    expect(response.status).toBe(409);
+    await expect(response.json()).resolves.toEqual({
+      error: "Checkout totals changed. Review the updated total and try again.",
+    });
+    expect(deps.reserve).not.toHaveBeenCalled();
+    expect(deps.createSquareOrder).not.toHaveBeenCalled();
+  });
+
+  it("cancels and releases when created Square totals change after calculation", async () => {
+    const deps = dependencies();
+    deps.createSquareOrder.mockResolvedValue({
+      id: "square-order-1",
+      version: 1,
+      subtotalCents: 10000,
+      shippingCents: 1000,
+      taxCents: 801,
+      totalCents: 11801,
+      taxCalculationId: "square:square-order-1:v1",
+    });
+
+    const response = await prepareCheckoutHandler(request(), deps);
+
+    expect(response.status).toBe(409);
+    expect(deps.attachSquareOrder).not.toHaveBeenCalled();
+    expect(deps.cancelSquareOrder).toHaveBeenCalledWith(
+      "square-order-1",
+      1,
+      expect.any(String),
+    );
+    expect(deps.releaseReservation).toHaveBeenCalledWith(
+      "order-1",
+      "square_order_totals_changed",
+    );
   });
 });

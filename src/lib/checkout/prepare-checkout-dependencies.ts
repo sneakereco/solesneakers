@@ -47,6 +47,7 @@ export function createPrepareCheckoutDependencies(
     checkAttempt: (identity) => limiter.check(identity),
     resolveCart: (tenantId, items) => resolveCheckoutCart(products, tenantId, items),
     quote: (input) => pricing.quote(input),
+    calculateSquareOrder: (input) => getSquareOrders().calculate(input),
     reserve: (input) => reservations.reserve(input),
     createGuestAccessToken: async (orderId) =>
       (await accessTokens.createToken({ orderId })).token,

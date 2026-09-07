@@ -1,4 +1,5 @@
 import type { NextRequest } from "next/server";
+import { timingSafeEqual } from "node:crypto";
 
 import type { CheckoutAccessDecision } from "@/lib/checkout/checkout-access";
 import type {
@@ -7,6 +8,7 @@ import type {
 } from "@/lib/checkout/checkout-attempt-limit";
 import type { ResolvedCheckoutCart } from "@/lib/checkout/checkout-cart-resolver";
 import { createCheckoutCartHash } from "@/lib/checkout/checkout-cart-hash";
+import { createCheckoutQuoteFingerprint } from "@/lib/checkout/checkout-quote-fingerprint";
 import type {
   CheckoutPricingQuote,
   CheckoutPricingQuoteInput,
@@ -14,6 +16,7 @@ import type {
 import { normalizeCheckoutEmail } from "@/lib/checkout/checkout-identity";
 import {
   prepareCheckoutRequestSchema,
+  type CheckoutTotals,
   type PrepareCheckoutRequest,
 } from "@/lib/checkout/checkout-request";
 import type { CheckoutBotVerdict } from "@/lib/security/checkout-bot";
@@ -21,6 +24,7 @@ import type {
   SquareCheckoutOrder,
   SquareCheckoutOrderInput,
 } from "@/lib/square/checkout-orders";
+import type { SquareCheckoutOrderPayloadInput } from "@/lib/square/checkout-order-payload";
 import type {
   CheckoutReservationResult,
   ExistingCheckout,
@@ -46,6 +50,7 @@ export type PrepareCheckoutDependencies = {
     items: PrepareCheckoutRequest["items"],
   ): Promise<ResolvedCheckoutCart>;
   quote(input: CheckoutPricingQuoteInput): Promise<CheckoutPricingQuote>;
+  calculateSquareOrder(input: SquareCheckoutOrderPayloadInput): Promise<CheckoutTotals>;
   reserve(input: ReserveCheckoutInput): Promise<CheckoutReservationResult>;
   createGuestAccessToken(orderId: string): Promise<string>;
   getSquareClientConfig(): {
@@ -89,6 +94,14 @@ function totals(value: {
 function isFuture(iso: string, now: Date) {
   const value = new Date(iso).getTime();
   return Number.isFinite(value) && value > now.getTime();
+}
+
+function quoteFingerprintsMatch(left: string, right: string): boolean {
+  const leftBuffer = Buffer.from(left, "hex");
+  const rightBuffer = Buffer.from(right, "hex");
+  return (
+    leftBuffer.length === rightBuffer.length && timingSafeEqual(leftBuffer, rightBuffer)
+  );
 }
 
 function maskIp(ip: string): string {
@@ -172,6 +185,24 @@ export async function prepareCheckoutHandler(
         return json({ error: "Checkout cannot be reused" }, 409);
       }
       if (existing.squareOrderId && existing.squareOrderVersion !== null) {
+        const existingFingerprint = createCheckoutQuoteFingerprint({
+          items: existing.items.map(({ variantId, quantity, unitPriceCents }) => ({
+            variantId,
+            quantity,
+            unitPriceCents,
+          })),
+          fulfillment: parsed.data.fulfillment,
+          shippingAddress: parsed.data.shippingAddress,
+          totals: totals(existing),
+        });
+        if (!quoteFingerprintsMatch(parsed.data.quoteFingerprint, existingFingerprint)) {
+          return json(
+            {
+              error: "Checkout totals changed. Review the updated total and try again.",
+            },
+            409,
+          );
+        }
         return json(
           {
             orderId: existing.orderId,
@@ -207,7 +238,7 @@ export async function prepareCheckoutHandler(
       );
     }
 
-    let reservation: CheckoutReservationResult;
+    let reservation: CheckoutReservationResult | null = null;
     let cart: ResolvedCheckoutCart;
     let pricing: CheckoutPricingQuote;
     if (existing) {
@@ -235,6 +266,36 @@ export async function prepareCheckoutHandler(
         subtotalCents: cart.subtotalCents,
         items: cart.items,
       });
+    }
+
+    const calculatedTotals = await deps.calculateSquareOrder({
+      fulfillment: parsed.data.fulfillment,
+      buyerEmail,
+      subtotalCents: cart.subtotalCents,
+      shippingCents: pricing.shippingCents,
+      shippingAddress: parsed.data.shippingAddress,
+      items: cart.items,
+    });
+    const currentFingerprint = createCheckoutQuoteFingerprint({
+      items: cart.items.map(({ variantId, quantity, unitPriceCents }) => ({
+        variantId,
+        quantity,
+        unitPriceCents,
+      })),
+      fulfillment: parsed.data.fulfillment,
+      shippingAddress: parsed.data.shippingAddress,
+      totals: calculatedTotals,
+    });
+    if (!quoteFingerprintsMatch(parsed.data.quoteFingerprint, currentFingerprint)) {
+      return json(
+        {
+          error: "Checkout totals changed. Review the updated total and try again.",
+        },
+        409,
+      );
+    }
+
+    if (!reservation) {
       const expiresAt = new Date(deps.now().getTime() + 15 * 60 * 1000);
       reservation = await deps.reserve({
         tenantId,
@@ -273,6 +334,29 @@ export async function prepareCheckoutHandler(
       shippingAddress: parsed.data.shippingAddress,
       items: cart.items,
     });
+    if (
+      squareOrder.subtotalCents !== calculatedTotals.subtotalCents ||
+      squareOrder.shippingCents !== calculatedTotals.shippingCents ||
+      squareOrder.taxCents !== calculatedTotals.taxCents ||
+      squareOrder.totalCents !== calculatedTotals.totalCents
+    ) {
+      try {
+        await deps.cancelSquareOrder(
+          squareOrder.id,
+          squareOrder.version,
+          crypto.randomUUID(),
+        );
+        await deps.releaseReservation(reservation.orderId, "square_order_totals_changed");
+      } catch {
+        // Preserve inventory if Square cancellation cannot be proved.
+      }
+      return json(
+        {
+          error: "Checkout totals changed. Review the updated total and try again.",
+        },
+        409,
+      );
+    }
     try {
       await deps.attachSquareOrder(reservation.orderId, squareOrder);
     } catch (error) {
