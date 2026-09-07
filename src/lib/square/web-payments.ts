@@ -7,8 +7,14 @@ export type SquareTokenResult = {
 };
 
 export type SquarePaymentMethod = {
-  attach(selector: string): Promise<void>;
+  attach?(selector: string): Promise<void>;
   tokenize(details?: Record<string, unknown>): Promise<SquareTokenResult>;
+  destroy?(): Promise<boolean>;
+};
+
+export type SquareCashAppPayMethod = {
+  attach(selector: string): Promise<void>;
+  addEventListener(event: "ontokenization", listener: (event: unknown) => void): void;
   destroy?(): Promise<boolean>;
 };
 
@@ -22,6 +28,16 @@ export type SquarePaymentRequest = {
 export type SquarePayments = {
   card(): Promise<SquarePaymentMethod>;
   paymentRequest(input: Record<string, unknown>): SquarePaymentRequest;
+  applePay(request: SquarePaymentRequest): Promise<SquarePaymentMethod>;
+  googlePay(request: SquarePaymentRequest): Promise<SquarePaymentMethod>;
+  cashAppPay(
+    request: SquarePaymentRequest,
+    options: {
+      redirectURL: string;
+      referenceId: string;
+      shouldTokenize?: () => boolean;
+    },
+  ): Promise<SquareCashAppPayMethod>;
   afterpayClearpay(request: SquarePaymentRequest): Promise<SquarePaymentMethod>;
 };
 
@@ -90,20 +106,38 @@ export async function authorizeAndTokenize(input: {
   verificationDetails?: Record<string, unknown>;
   fetchImpl?: typeof fetch;
 }): Promise<{ permit: string; sourceId: string }> {
-  const fetchImpl = input.fetchImpl ?? fetch;
+  const permit = await requestPermit(input.permitRequest, input.fetchImpl);
+  const token = await input.paymentMethod.tokenize(input.verificationDetails);
+  if (token.status !== "OK" || !token.token) {
+    throw new Error("Payment details could not be verified");
+  }
+  return { permit, sourceId: token.token };
+}
+
+async function requestPermit(
+  permitRequest: Record<string, unknown>,
+  fetchImplementation: typeof fetch | undefined,
+): Promise<string> {
+  const fetchImpl = fetchImplementation ?? fetch;
   const permitResponse = await fetchImpl("/api/checkout/payment-permit", {
     method: "POST",
     headers: { "Content-Type": "application/json" },
-    body: JSON.stringify(input.permitRequest),
+    body: JSON.stringify(permitRequest),
   });
   const permitData = await permitResponse.json().catch(() => null);
   if (!permitResponse.ok || typeof permitData?.permit !== "string") {
     throw new Error(permitData?.error || "Unable to authorize payment");
   }
+  return permitData.permit;
+}
 
-  const token = await input.paymentMethod.tokenize(input.verificationDetails);
-  if (token.status !== "OK" || !token.token) {
-    throw new Error("Payment details could not be verified");
-  }
-  return { permit: permitData.permit, sourceId: token.token };
+export async function authorizeTokenizedSource(input: {
+  permitRequest: Record<string, unknown>;
+  sourceId: string;
+  fetchImpl?: typeof fetch;
+}): Promise<{ permit: string; sourceId: string }> {
+  return {
+    permit: await requestPermit(input.permitRequest, input.fetchImpl),
+    sourceId: input.sourceId,
+  };
 }

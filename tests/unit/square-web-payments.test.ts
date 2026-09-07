@@ -1,4 +1,5 @@
 import {
+  authorizeTokenizedSource,
   authorizeAndTokenize,
   squareWebPaymentsScriptUrl,
 } from "@/lib/square/web-payments";
@@ -38,5 +39,24 @@ describe("Square Web Payments adapter", () => {
     expect(fetchImpl.mock.invocationCallOrder[0]).toBeLessThan(
       paymentMethod.tokenize.mock.invocationCallOrder[0],
     );
+  });
+
+  it("binds an already-tokenized wallet source after the wallet gesture", async () => {
+    const fetchImpl = jest.fn().mockResolvedValue({
+      ok: true,
+      json: () => Promise.resolve({ permit: "permit-1" }),
+    });
+
+    await expect(
+      authorizeTokenizedSource({
+        permitRequest: {
+          orderId: "order-1",
+          deviceSessionId: "device-1",
+          method: "applePay",
+        },
+        sourceId: "wallet-source-1",
+        fetchImpl: fetchImpl as never,
+      }),
+    ).resolves.toEqual({ permit: "permit-1", sourceId: "wallet-source-1" });
   });
 });

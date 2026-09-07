@@ -24,17 +24,51 @@ jest.mock("@/contexts/SessionContext", () => ({
 import { CheckoutClient } from "@/components/checkout/CheckoutClient";
 
 describe("CheckoutClient", () => {
-  it("keeps guest checkout and collects shipping details before embedded payment", () => {
-    const html = renderToStaticMarkup(<CheckoutClient />);
+  it("shows the complete checkout immediately with signed-in defaults", () => {
+    const html = renderToStaticMarkup(
+      <CheckoutClient
+        initialData={{
+          isGuest: false,
+          customer: {
+            email: "buyer@example.com",
+            address: {
+              name: "Buyer Example",
+              phone: "3025550100",
+              line1: "1 Market St",
+              line2: "",
+              city: "Wilmington",
+              state: "DE",
+              postalCode: "19801",
+              country: "US",
+            },
+          },
+          paymentConfig: {
+            applicationId: "sandbox-app",
+            locationId: "location-1",
+            environment: "sandbox",
+          },
+        }}
+      />,
+    );
 
+    expect(html).toContain("Contact");
+    expect(html).toContain("Delivery");
+    expect(html).toContain("Payment");
     expect(html).toContain("Shipping");
     expect(html).toContain("Local pickup");
     expect(html).toContain('type="email"');
+    expect(html).toContain('value="buyer@example.com"');
+    expect(html).toContain('value="1 Market St"');
     expect(html).toContain('autoComplete="shipping street-address"');
-    expect(html).toContain("Card");
-    expect(html).toContain("Afterpay");
-    expect(html).toContain("Continue to secure payment");
+    expect(html).toContain('id="square-card-container"');
+    expect(html).toContain("Subtotal");
+    expect(html).toContain("Tax");
+    expect(html).toContain("Estimated total");
     expect(html).toContain("air-runner.jpg");
-    expect(html).not.toContain("Address and payment details are entered on Square");
+    expect(html).not.toContain("Continue to secure payment");
+    expect(html).not.toContain("Update order");
+    expect(html).not.toContain("news and offers");
+    expect(html).not.toContain("Shipping method");
+    expect(html).not.toContain("Save my information");
   });
 });
