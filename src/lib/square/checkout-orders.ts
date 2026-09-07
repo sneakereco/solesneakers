@@ -143,7 +143,16 @@ export class SquareCheckoutOrdersGateway {
                   },
                 },
               ]
-            : [{ type: "PICKUP", state: "PROPOSED", pickupDetails: {} }],
+            : [
+                {
+                  type: "PICKUP",
+                  state: "PROPOSED",
+                  pickupDetails: {
+                    scheduleType: "ASAP",
+                    prepTimeDuration: "PT0S",
+                  },
+                },
+              ],
         pricingOptions: {
           autoApplyTaxes: true,
           autoApplyDiscounts: false,

@@ -127,7 +127,15 @@ describe("SquareCheckoutOrdersGateway", () => {
 
     const order = create.mock.calls[0]?.[0].order;
     expect(order.serviceCharges).toBeUndefined();
-    expect(order.fulfillments).toEqual([expect.objectContaining({ type: "PICKUP" })]);
+    expect(order.fulfillments).toEqual([
+      expect.objectContaining({
+        type: "PICKUP",
+        pickupDetails: {
+          scheduleType: "ASAP",
+          prepTimeDuration: "PT0S",
+        },
+      }),
+    ]);
   });
 
   it("rejects a provider total that does not reconcile", async () => {
