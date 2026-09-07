@@ -1,6 +1,12 @@
 jest.mock("@/lib/checkout/prepare-checkout", () => ({
   prepareCheckoutHandler: jest.fn(),
 }));
+jest.mock("@/lib/checkout/checkout-quote", () => ({
+  checkoutQuoteHandler: jest.fn(),
+}));
+jest.mock("@/lib/checkout/checkout-quote-dependencies", () => ({
+  createCheckoutQuoteDependencies: jest.fn(() => ({ stage: "quote" })),
+}));
 jest.mock("@/lib/checkout/issue-payment-permit", () => ({
   issuePaymentPermitHandler: jest.fn(),
 }));
@@ -16,15 +22,18 @@ jest.mock("@/lib/checkout/payment-api-dependencies", () => ({
 }));
 
 import { prepareCheckoutHandler } from "@/lib/checkout/prepare-checkout";
+import { checkoutQuoteHandler } from "@/lib/checkout/checkout-quote";
 import { issuePaymentPermitHandler } from "@/lib/checkout/issue-payment-permit";
 import { createDirectPaymentHandler } from "@/lib/checkout/create-direct-payment";
 
 import { POST as prepare } from "../../app/api/checkout/prepare/route";
+import { POST as quote } from "../../app/api/checkout/quote/route";
 import { POST as permit } from "../../app/api/checkout/payment-permit/route";
 import { POST as pay } from "../../app/api/checkout/pay/route";
 
 describe("direct checkout API routes", () => {
   it.each([
+    ["quote", quote, checkoutQuoteHandler],
     ["prepare", prepare, prepareCheckoutHandler],
     ["payment-permit", permit, issuePaymentPermitHandler],
     ["pay", pay, createDirectPaymentHandler],
