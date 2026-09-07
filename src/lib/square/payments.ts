@@ -1,7 +1,7 @@
 import type * as Square from "square";
 import { SquareError } from "square";
 
-import type { PaymentLinkRequest } from "@/lib/checkout/payment-link-request";
+import type { ReserveCheckoutInput } from "@/repositories/checkout-reservation-repo";
 
 type PaymentsClient = {
   create(request: Square.CreatePaymentRequest): PromiseLike<Square.CreatePaymentResponse>;
@@ -14,7 +14,7 @@ export type DirectPaymentInput = {
   sourceId: string;
   idempotencyKey: string;
   totalCents: number;
-  shippingAddress: PaymentLinkRequest["shippingAddress"] | null;
+  shippingAddress: ReserveCheckoutInput["shippingAddress"];
 };
 
 export type DirectPaymentResult = {
@@ -48,7 +48,7 @@ function parsePayment(payment: Square.Payment | null | undefined): DirectPayment
 }
 
 function toSquareAddress(
-  address: NonNullable<PaymentLinkRequest["shippingAddress"]>,
+  address: NonNullable<ReserveCheckoutInput["shippingAddress"]>,
 ): Square.Address {
   return {
     addressLine1: address.line1,

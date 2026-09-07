@@ -1,6 +1,6 @@
 import type { ProductRepository } from "@/repositories/product-repo";
 import type { CheckoutReservationItem } from "@/repositories/checkout-reservation-repo";
-import type { PaymentLinkRequestItem } from "@/lib/checkout/payment-link-request";
+import type { PrepareCheckoutRequestItem } from "@/lib/checkout/checkout-request";
 
 type CheckoutProductRepository = Pick<ProductRepository, "getProductsForCheckout">;
 
@@ -21,7 +21,7 @@ function checkedMoney(value: number): number {
 export async function resolveCheckoutCart(
   repository: CheckoutProductRepository,
   tenantId: string,
-  requestedItems: PaymentLinkRequestItem[],
+  requestedItems: PrepareCheckoutRequestItem[],
 ): Promise<ResolvedCheckoutCart> {
   const productIds = [...new Set(requestedItems.map((item) => item.productId))];
   const products = await repository.getProductsForCheckout(productIds);

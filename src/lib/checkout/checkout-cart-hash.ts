@@ -1,9 +1,9 @@
 import { createHash } from "node:crypto";
 
-import type { PaymentLinkRequest } from "@/lib/checkout/payment-link-request";
+import type { PrepareCheckoutRequest } from "@/lib/checkout/checkout-request";
 
 type CheckoutCartHashInput = Pick<
-  PaymentLinkRequest,
+  PrepareCheckoutRequest,
   "items" | "fulfillment" | "shippingAddress"
 > & {
   tenantId: string;

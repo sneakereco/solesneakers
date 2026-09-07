@@ -1,7 +1,7 @@
 import { reconcilePendingSquarePayment } from "@/lib/square/payment-reconciliation";
 
 describe("reconcilePendingSquarePayment", () => {
-  it("processes a completed Square tender when its webhook is delayed", async () => {
+  it("processes the locally recorded direct payment when its webhook is delayed", async () => {
     const processPayment = jest.fn().mockResolvedValue({
       duplicate: false,
       fulfillmentAuthorized: true,
@@ -12,12 +12,13 @@ describe("reconcilePendingSquarePayment", () => {
         id: "local-order-1",
         status: "pending",
         squareOrderId: "square-order-1",
+        paymentId: "payment-1",
       }),
       getSquareOrder: jest.fn().mockResolvedValue({
         id: "square-order-1",
         locationId: "location-1",
         referenceId: "local-order-1",
-        tenders: [{ paymentId: "payment-1" }],
+        tenders: [],
       }),
       getSquarePayment: jest.fn().mockResolvedValue({
         id: "payment-1",
@@ -59,6 +60,7 @@ describe("reconcilePendingSquarePayment", () => {
           id: "local-order-1",
           status: "pending",
           squareOrderId: "square-order-1",
+          paymentId: null,
         }),
         getSquareOrder: jest.fn().mockResolvedValue({
           id: "square-order-1",

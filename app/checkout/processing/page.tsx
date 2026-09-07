@@ -8,14 +8,14 @@ import { classifyCheckoutOrderStatus } from "@/lib/checkout/checkout-order-state
 import { buildCheckoutStatusUrl } from "@/lib/checkout/checkout-status-url";
 import { readGuestOrderAccess } from "@/lib/checkout/client-session";
 
-type ViewState = "waiting" | "review" | "error";
+type ViewState = "waiting" | "delayed" | "review" | "error";
 
 function ProcessingContent() {
   const router = useRouter();
   const searchParams = useSearchParams();
   const orderId = searchParams.get("orderId");
   const [view, setView] = useState<ViewState>("waiting");
-  const [message, setMessage] = useState("Waiting for Square to confirm your payment...");
+  const [message, setMessage] = useState("Confirming your payment securely...");
 
   useEffect(() => {
     if (!orderId) {
@@ -32,12 +32,11 @@ function ProcessingContent() {
       if (canceled) {
         return;
       }
-      if (attempts >= 60) {
-        setView("error");
+      if (attempts === 30) {
+        setView("delayed");
         setMessage(
-          "Confirmation is taking longer than expected. Check your email before trying again.",
+          "Confirmation is taking longer than usual. Do not submit another payment; this page will keep checking safely.",
         );
-        return;
       }
       attempts += 1;
 
@@ -81,9 +80,9 @@ function ProcessingContent() {
           return;
         }
 
-        timer = setTimeout(() => void poll(), 2_000);
+        timer = setTimeout(() => void poll(), attempts >= 30 ? 5_000 : 2_000);
       } catch {
-        timer = setTimeout(() => void poll(), 2_000);
+        timer = setTimeout(() => void poll(), attempts >= 30 ? 5_000 : 2_000);
       }
     };
 
@@ -103,19 +102,21 @@ function ProcessingContent() {
   return (
     <main className="flex min-h-screen items-center justify-center bg-[var(--storefront-surface)] px-5 text-zinc-950">
       <div className="w-full max-w-md text-center">
-        {view === "waiting" && (
+        {(view === "waiting" || view === "delayed") && (
           <Loader2 className="mx-auto mb-6 h-16 w-16 animate-spin text-zinc-950" />
         )}
         {view === "review" && (
           <AlertTriangle className="mx-auto mb-6 h-16 w-16 text-amber-400" />
         )}
-        {view === "error" && <XCircle className="mx-auto mb-6 h-16 w-16 text-rose-700" />}
+        {view === "error" && <XCircle className="mx-auto mb-6 h-16 w-16 text-zinc-700" />}
         <h1 className="text-2xl font-bold">
           {view === "review"
             ? "Payment under review"
             : view === "error"
               ? "We could not confirm the order"
-              : "Confirming your order"}
+              : view === "delayed"
+                ? "Still confirming your order"
+                : "Confirming your order"}
         </h1>
         <p className="mt-4 text-zinc-600">{message}</p>
         <p className="mt-6 text-xs text-zinc-500">Order ID: {orderId}</p>

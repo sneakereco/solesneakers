@@ -62,9 +62,13 @@ export async function issuePaymentPermitHandler(
 ): Promise<Response> {
   try {
     const tenantId = await deps.findTenantId();
-    if (!tenantId) return json({ error: "Checkout is temporarily unavailable" }, 503);
+    if (!tenantId) {
+      return json({ error: "Checkout is temporarily unavailable" }, 503);
+    }
     const access = await deps.getAccess(tenantId);
-    if (!access.open) return json({ error: access.message }, 503);
+    if (!access.open) {
+      return json({ error: access.message }, 503);
+    }
 
     const bot = await deps.verifyBrowser();
     if (!bot.allowed) {
@@ -77,19 +81,24 @@ export async function issuePaymentPermitHandler(
     const parsed = paymentPermitRequestSchema.safeParse(
       await request.json().catch(() => null),
     );
-    if (!parsed.success) return json({ error: "Invalid payment request" }, 400);
+    if (!parsed.success) {
+      return json({ error: "Invalid payment request" }, 400);
+    }
     const clientIp = deps.getClientIp(request);
-    if (!clientIp)
+    if (!clientIp) {
       return json({ error: "Checkout protection is temporarily unavailable" }, 503);
+    }
 
     const [session, order] = await Promise.all([
       deps.getSession(),
       deps.loadOrder(parsed.data.orderId),
     ]);
-    if (!order || order.tenantId !== tenantId)
+    if (!order || order.tenantId !== tenantId) {
       return json({ error: "Order not found" }, 404);
-    if (!isUsable(order, deps.now()))
+    }
+    if (!isUsable(order, deps.now())) {
       return json({ error: "Checkout is no longer payable" }, 409);
+    }
     if (order.deviceSessionId !== parsed.data.deviceSessionId) {
       return json({ error: "Checkout verification failed" }, 403);
     }
@@ -105,7 +114,9 @@ export async function issuePaymentPermitHandler(
     }
 
     const email = order.guestEmail ?? session?.user.email;
-    if (!email) throw new Error("checkout_payment_email_missing");
+    if (!email) {
+      throw new Error("checkout_payment_email_missing");
+    }
     const normalizedEmailHash = deps.hashEmail(normalizeCheckoutEmail(email));
     const attempt = await deps.checkPaymentAttempt({
       tenantId,
@@ -126,7 +137,9 @@ export async function issuePaymentPermitHandler(
 
     if (isGuest) {
       const token = parsed.data.turnstileToken;
-      if (!token) return json({ error: "Checkout verification failed" }, 403);
+      if (!token) {
+        return json({ error: "Checkout verification failed" }, 403);
+      }
       const verdict = await deps.verifyTurnstile(token, clientIp);
       if (!verdict.allowed) {
         return json(

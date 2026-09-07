@@ -141,9 +141,16 @@ export function getRateLimitPolicyForRequest(
     return { bucket: "auth_forgot", maxRequests: 3, window: "15 m" };
   }
 
-  // Vercel owns the short-window IP and JA4 limit for payment-link creation.
-  // Identity-aware daily quotas are applied inside the checkout route.
-  if (pathname === "/api/checkout/payment-link" && method.toUpperCase() === "POST") {
+  // Vercel owns the short-window IP and JA4 limits for checkout writes.
+  // Identity-aware quotas and one-use permits are applied inside these routes.
+  if (
+    [
+      "/api/checkout/prepare",
+      "/api/checkout/payment-permit",
+      "/api/checkout/pay",
+    ].includes(pathname) &&
+    method.toUpperCase() === "POST"
+  ) {
     return null;
   }
 

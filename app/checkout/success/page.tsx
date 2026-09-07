@@ -216,7 +216,7 @@ function SuccessContent() {
             </div>
             <div className="flex justify-between text-zinc-600">
               <span>Status:</span>
-              <span className="text-yellow-500 capitalize">{status.status}</span>
+              <span className="text-amber-600 capitalize">{status.status}</span>
             </div>
           </div>
         )}
@@ -227,7 +227,7 @@ function SuccessContent() {
   const isPickup = status.fulfillment === "pickup" || isPickupParam;
   return (
     <div className="max-w-2xl mx-auto px-4 py-20 text-center">
-      <CheckCircle className="w-16 h-16 text-green-500 mx-auto mb-6" />
+      <CheckCircle className="mx-auto mb-6 h-16 w-16 text-zinc-950" />
       <h1 className="mb-4 text-3xl font-bold text-zinc-950">Order Confirmed!</h1>
       <p className="mb-8 text-zinc-600">
         Thank you for your purchase. Your order has been successfully processed.
@@ -297,7 +297,7 @@ function SuccessContent() {
         )}
         <button
           onClick={() => router.push("/store")}
-          className="w-full bg-zinc-800 hover:bg-zinc-700 text-white font-semibold py-3 rounded transition"
+          className="w-full bg-zinc-800 py-3 font-semibold text-white transition hover:bg-zinc-700"
         >
           Continue Shopping
         </button>

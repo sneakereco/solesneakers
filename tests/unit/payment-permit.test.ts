@@ -65,9 +65,7 @@ describe("PaymentPermitStore", () => {
       eval: jest.fn().mockRejectedValue(new Error("redis unavailable")),
     });
 
-    await expect(store.issue(payload)).rejects.toThrow(
-      "checkout_protection_unavailable",
-    );
+    await expect(store.issue(payload)).rejects.toThrow("checkout_protection_unavailable");
     await expect(store.consume("permit-token")).rejects.toThrow(
       "checkout_protection_unavailable",
     );

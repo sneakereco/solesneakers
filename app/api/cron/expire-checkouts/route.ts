@@ -3,7 +3,10 @@ import type { NextRequest } from "next/server";
 import { expireCheckoutReservations } from "@/lib/checkout/expire-checkout-reservations";
 import { getCronSecret, isAuthorizedCronRequest } from "@/lib/http/cron-auth";
 import { getRequestIdFromHeaders } from "@/lib/http/request-id";
-import { createSquarePaymentLinksGateway } from "@/lib/square/client";
+import {
+  createSquareCheckoutOrdersGateway,
+  createSquarePaymentLinksGateway,
+} from "@/lib/square/client";
 import { createSupabaseAdminClient } from "@/lib/supabase/service-role";
 import { logError } from "@/lib/utils/log";
 import { CheckoutReservationRepository } from "@/repositories/checkout-reservation-repo";
@@ -25,15 +28,27 @@ export async function GET(request: NextRequest): Promise<Response> {
     const repository = new CheckoutReservationRepository(createSupabaseAdminClient());
     const checkouts = await repository.listExpired(new Date().toISOString(), 50);
     let squareGateway: ReturnType<typeof createSquarePaymentLinksGateway> | null = null;
+    let squareOrdersGateway: ReturnType<typeof createSquareCheckoutOrdersGateway> | null =
+      null;
     const getSquareGateway = () => {
       squareGateway ??= createSquarePaymentLinksGateway();
       return squareGateway;
+    };
+    const getSquareOrdersGateway = () => {
+      squareOrdersGateway ??= createSquareCheckoutOrdersGateway();
+      return squareOrdersGateway;
     };
 
     const result = await expireCheckoutReservations(checkouts, {
       deleteSquareLink: (paymentLinkId) => getSquareGateway().delete(paymentLinkId),
       markSquareLinkDeleted: (orderId, paymentLinkId) =>
         repository.markPaymentLinkDeleted(orderId, paymentLinkId),
+      cancelSquareOrder: (squareOrderId, version) =>
+        getSquareOrdersGateway().cancel(
+          squareOrderId,
+          version,
+          `expire:${squareOrderId}:${version}`,
+        ),
       releaseReservation: (orderId, reason) => repository.release(orderId, reason),
       reportError: (error, orderId) =>
         logError(error, {

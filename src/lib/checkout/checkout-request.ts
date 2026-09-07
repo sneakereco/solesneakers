@@ -93,5 +93,6 @@ export const directPaymentRequestSchema = z
   .strict();
 
 export type PrepareCheckoutRequest = z.infer<typeof prepareCheckoutRequestSchema>;
+export type PrepareCheckoutRequestItem = PrepareCheckoutRequest["items"][number];
 export type PaymentPermitRequest = z.infer<typeof paymentPermitRequestSchema>;
 export type DirectPaymentRequest = z.infer<typeof directPaymentRequestSchema>;

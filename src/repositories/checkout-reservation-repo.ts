@@ -1,7 +1,6 @@
 import { z } from "zod";
 
 import type { TypedSupabaseClient } from "@/lib/supabase/server";
-import type { HostedPaymentLink } from "@/lib/square/payment-links";
 import type { SquareCheckoutOrder } from "@/lib/square/checkout-orders";
 import type { ExpiredCheckout } from "@/lib/checkout/expire-checkout-reservations";
 import type { Json } from "@/types/db/database.types";
@@ -145,6 +144,8 @@ const expiredCheckoutSchema = z.object({
   id: z.string().min(1),
   square_payment_link_id: z.string().min(1).nullable(),
   square_payment_link_deleted_at: z.string().nullable(),
+  square_order_id: z.string().min(1).nullable(),
+  square_order_version: z.number().int().nonnegative().nullable(),
 });
 
 const paymentCheckoutSchema = z.object({
@@ -195,7 +196,9 @@ export class CheckoutReservationRepository {
   async listExpired(nowIso: string, limit: number): Promise<ExpiredCheckout[]> {
     const { data, error } = await this.supabase
       .from("orders")
-      .select("id, square_payment_link_id, square_payment_link_deleted_at")
+      .select(
+        "id, square_payment_link_id, square_payment_link_deleted_at, square_order_id, square_order_version",
+      )
       .eq("status", "pending")
       .lte("expires_at", nowIso)
       .order("expires_at", { ascending: true })
@@ -212,6 +215,8 @@ export class CheckoutReservationRepository {
         orderId: row.id,
         squarePaymentLinkId: row.square_payment_link_id,
         squarePaymentLinkDeletedAt: row.square_payment_link_deleted_at,
+        squareOrderId: row.square_order_id,
+        squareOrderVersion: row.square_order_version,
       }));
   }
 
@@ -283,11 +288,17 @@ export class CheckoutReservationRepository {
       .eq("id", orderId)
       .maybeSingle();
 
-    if (error) throw error;
-    if (!data) return null;
+    if (error) {
+      throw error;
+    }
+    if (!data) {
+      return null;
+    }
 
     const parsed = paymentCheckoutSchema.safeParse(data);
-    if (!parsed.success) throw new Error("checkout_payment_order_invalid");
+    if (!parsed.success) {
+      throw new Error("checkout_payment_order_invalid");
+    }
     const row = parsed.data;
     const address = row.order_shipping;
     return {
@@ -386,26 +397,6 @@ export class CheckoutReservationRepository {
       squareOrderId: parsed.data.square_order_id ?? null,
       squarePaymentLinkUrl: parsed.data.square_payment_link_url ?? null,
     };
-  }
-
-  async attachPaymentLink(orderId: string, link: HostedPaymentLink): Promise<void> {
-    const { data, error } = await this.supabase.rpc("attach_square_payment_link", {
-      p_order_id: orderId,
-      p_square_payment_link_id: link.id,
-      p_square_order_id: link.orderId,
-      p_square_payment_link_url: link.url,
-      p_shipping_cents: link.shippingCents,
-      p_tax_cents: link.taxCents,
-      p_total_cents: link.totalCents,
-      p_tax_calculation_id: link.taxCalculationId,
-    });
-
-    if (error) {
-      throw error;
-    }
-    if (data !== true) {
-      throw new Error("checkout_payment_link_attach_failed");
-    }
   }
 
   async attachSquareOrder(orderId: string, order: SquareCheckoutOrder): Promise<void> {

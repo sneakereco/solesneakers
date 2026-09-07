@@ -15,10 +15,6 @@ import { SquarePaymentEventProcessor } from "@/lib/square/payment-event";
 import { createSquarePaymentOrderVerifier } from "@/lib/square/payment-order-verification";
 import { reconcilePendingSquarePayment } from "@/lib/square/payment-reconciliation";
 import { createSquarePaymentReconciliationCooldown } from "@/lib/square/payment-reconciliation-cooldown";
-import {
-  createSquareShippingSyncDependencies,
-  synchronizeSquareShippingAddress,
-} from "@/lib/square/shipping-address-sync";
 import { log, logError } from "@/lib/utils/log";
 import { OrdersRepository } from "@/repositories/orders-repo";
 
@@ -199,6 +195,7 @@ export async function GET(
                   id: order.id,
                   status: order.status,
                   squareOrderId: order.square_order_id,
+                  paymentId: order.payment_transaction_id,
                 }
               : null;
           },
@@ -247,19 +244,7 @@ export async function GET(
               versionToken: payment.versionToken,
             };
           },
-          processPayment: async (payment) => {
-            await synchronizeSquareShippingAddress(
-              {
-                duplicate: false,
-                fulfillmentAuthorized: false,
-                orderId,
-                paymentStatus: payment.paymentStatus,
-                squareOrderId: payment.squareOrderId,
-              },
-              createSquareShippingSyncDependencies(adminSupabase),
-            );
-            return processor.processPaymentSnapshot(payment);
-          },
+          processPayment: (payment) => processor.processPaymentSnapshot(payment),
         });
         status = await ordersService.getOrderStatus(orderId, userId, accessToken);
       } catch (reconciliationError) {

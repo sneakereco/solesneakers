@@ -8,6 +8,8 @@ describe("CheckoutReservationRepository", () => {
           id: "order-1",
           square_payment_link_id: "link-1",
           square_payment_link_deleted_at: null,
+          square_order_id: "square-order-1",
+          square_order_version: 4,
         },
       ],
       error: null,
@@ -27,6 +29,8 @@ describe("CheckoutReservationRepository", () => {
         orderId: "order-1",
         squarePaymentLinkId: "link-1",
         squarePaymentLinkDeletedAt: null,
+        squareOrderId: "square-order-1",
+        squareOrderVersion: 4,
       },
     ]);
     expect(eq).toHaveBeenCalledWith("status", "pending");
@@ -240,34 +244,6 @@ describe("CheckoutReservationRepository", () => {
         items: [],
       }),
     ).rejects.toThrow("checkout_reservation_invalid_response");
-  });
-
-  it("persists Square identifiers only through the guarded RPC", async () => {
-    const rpc = jest.fn().mockResolvedValue({ data: true, error: null });
-    const repo = new CheckoutReservationRepository({ rpc } as never);
-
-    await expect(
-      repo.attachPaymentLink("order-1", {
-        id: "link-1",
-        orderId: "square-order-1",
-        url: "https://square.link/u/example",
-        taxCents: 900,
-        shippingCents: 1200,
-        totalCents: 17100,
-        taxCalculationId: "square:square-order-1:v1",
-      }),
-    ).resolves.toBeUndefined();
-
-    expect(rpc).toHaveBeenCalledWith("attach_square_payment_link", {
-      p_order_id: "order-1",
-      p_square_order_id: "square-order-1",
-      p_square_payment_link_id: "link-1",
-      p_square_payment_link_url: "https://square.link/u/example",
-      p_shipping_cents: 1200,
-      p_tax_cents: 900,
-      p_total_cents: 17100,
-      p_tax_calculation_id: "square:square-order-1:v1",
-    });
   });
 
   it("attaches a direct Square order and its authoritative totals", async () => {

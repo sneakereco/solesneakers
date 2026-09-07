@@ -4,6 +4,8 @@ const linked = {
   orderId: "order-1",
   squarePaymentLinkId: "link-1",
   squarePaymentLinkDeletedAt: null,
+  squareOrderId: "square-order-1",
+  squareOrderVersion: null,
 };
 
 describe("expireCheckoutReservations", () => {
@@ -15,6 +17,7 @@ describe("expireCheckoutReservations", () => {
     const result = await expireCheckoutReservations([linked], {
       deleteSquareLink,
       markSquareLinkDeleted,
+      cancelSquareOrder: jest.fn(),
       releaseReservation,
       reportError: jest.fn(),
     });
@@ -35,6 +38,7 @@ describe("expireCheckoutReservations", () => {
     const result = await expireCheckoutReservations([linked], {
       deleteSquareLink: jest.fn().mockRejectedValue(new Error("Square unavailable")),
       markSquareLinkDeleted: jest.fn(),
+      cancelSquareOrder: jest.fn(),
       releaseReservation,
       reportError,
     });
@@ -53,6 +57,7 @@ describe("expireCheckoutReservations", () => {
       {
         deleteSquareLink,
         markSquareLinkDeleted: jest.fn(),
+        cancelSquareOrder: jest.fn(),
         releaseReservation,
         reportError: jest.fn(),
       },
@@ -60,5 +65,57 @@ describe("expireCheckoutReservations", () => {
 
     expect(result.released).toBe(1);
     expect(deleteSquareLink).not.toHaveBeenCalled();
+  });
+
+  it("cancels a direct Square order before releasing reserved inventory", async () => {
+    const cancelSquareOrder = jest.fn().mockResolvedValue(undefined);
+    const releaseReservation = jest.fn().mockResolvedValue(true);
+
+    const result = await expireCheckoutReservations(
+      [
+        {
+          ...linked,
+          squarePaymentLinkId: null,
+          squareOrderVersion: 3,
+        },
+      ],
+      {
+        deleteSquareLink: jest.fn(),
+        markSquareLinkDeleted: jest.fn(),
+        cancelSquareOrder,
+        releaseReservation,
+        reportError: jest.fn(),
+      },
+    );
+
+    expect(result).toEqual({ examined: 1, released: 1, failed: 0 });
+    expect(cancelSquareOrder).toHaveBeenCalledWith("square-order-1", 3);
+    expect(cancelSquareOrder.mock.invocationCallOrder[0]).toBeLessThan(
+      releaseReservation.mock.invocationCallOrder[0],
+    );
+  });
+
+  it("does not release inventory when direct Square cancellation fails", async () => {
+    const releaseReservation = jest.fn();
+
+    const result = await expireCheckoutReservations(
+      [
+        {
+          ...linked,
+          squarePaymentLinkId: null,
+          squareOrderVersion: 3,
+        },
+      ],
+      {
+        deleteSquareLink: jest.fn(),
+        markSquareLinkDeleted: jest.fn(),
+        cancelSquareOrder: jest.fn().mockRejectedValue(new Error("Square unavailable")),
+        releaseReservation,
+        reportError: jest.fn(),
+      },
+    );
+
+    expect(result).toEqual({ examined: 1, released: 0, failed: 1 });
+    expect(releaseReservation).not.toHaveBeenCalled();
   });
 });

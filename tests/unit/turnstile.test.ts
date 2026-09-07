@@ -60,9 +60,9 @@ describe("verifyTurnstile", () => {
   });
 
   it("rejects malformed tokens without contacting Siteverify", async () => {
-    await expect(
-      verifyTurnstile({ ...input, token: "" }, dependencies),
-    ).resolves.toEqual({ allowed: false, reason: "invalid" });
+    await expect(verifyTurnstile({ ...input, token: "" }, dependencies)).resolves.toEqual(
+      { allowed: false, reason: "invalid" },
+    );
     expect(dependencies.fetch).not.toHaveBeenCalled();
   });
 });

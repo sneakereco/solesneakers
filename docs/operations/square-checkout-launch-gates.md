@@ -1,6 +1,6 @@
 # Square Checkout Launch Gates
 
-Checkout is publicly reachable and renders the Square pre-checkout flow when the emergency checkout lock is disabled. Keep that lock enabled in production until every required gate below has an owner and dated evidence. The payment-link API also fails closed until the tenant flat shipping rate has been explicitly saved.
+Checkout is publicly reachable and embeds Square Web Payments SDK fields when the emergency checkout lock is disabled. Keep that lock enabled in production until every required gate below has an owner and dated evidence. The prepare API also fails closed until the tenant flat shipping rate has been explicitly saved.
 
 ## Locked pricing decisions
 
@@ -16,11 +16,11 @@ The code intentionally contains no homemade tax-rate table or production tax est
 
 - Create separate sandbox and production credentials; store tokens and webhook signature keys only in Vercel encrypted environment variables.
 - Configure the exact production notification URL ending in `/api/webhooks/square`. Subscribe to `payment.created`, `payment.updated`, `refund.created`, `refund.updated`, `dispute.created`, and `dispute.state.updated`; other event types fail validation and return `400`.
-- Confirm Risk Manager rules apply to API-created Payment Links for the production location.
+- Confirm Risk Manager rules apply to Web Payments SDK transactions for the production location.
 - During the initial 60 days, require 3DS for every eligible online card payment and configure the approved high-risk, velocity, AVS, CVV, prepaid-card, and international-card actions.
-- Keep Afterpay/Clearpay and tipping disabled. The implementation also disables customer-entered amounts, coupons, and loyalty redemption.
+- Enable Afterpay/Clearpay only after Square approves it for the production account and test both shipping and pickup eligibility. Tipping, customer-entered amounts, coupons, and loyalty redemption remain disabled.
 - Complete sandbox evidence for successful, declined, duplicate, altered-amount, high-risk, expired, late, and repeated-webhook cases.
-- Complete Square tax evidence for pickup and shipping addresses in every nexus state, including whether the flat shipping charge is taxable. Verify that the Payment Link order tax and final payment amount equal the persisted local order.
+- Complete Square tax evidence for pickup and shipping addresses in every nexus state, including whether the flat shipping charge is taxable. Verify that the Square order tax, direct payment amount, and persisted local total match.
 - Define the human review and refund procedure for `review` orders. No `review` order may be fulfilled.
 - Verify the notification cron sends one order confirmation after a paid webhook and one refund confirmation after each completed Square refund; replaying the same event must not duplicate either notification.
 
@@ -41,18 +41,21 @@ The code intentionally contains no homemade tax-rate table or production tax est
 | --------------------------------- | --------------------------------------------------------------------- |
 | `CHECKOUT_IDENTITY_HMAC_SECRET`   | Keyed email identity hashes for Upstash quotas                        |
 | `CRON_SECRET`                     | Authenticates Vercel expiration invocations                           |
+| `TURNSTILE_SECRET_KEY`            | Server verification for strict guest checkout challenges              |
+| `NEXT_PUBLIC_TURNSTILE_SITE_KEY`  | Public Turnstile widget site key                                      |
 | `SQUARE_ENVIRONMENT`              | Must be `production` only in production                               |
+| `SQUARE_APPLICATION_ID`           | Public Square application identifier supplied to the Web Payments SDK |
 | `SQUARE_ACCESS_TOKEN`             | Square server API credential                                          |
 | `SQUARE_LOCATION_ID`              | Approved production selling location                                  |
 | `SQUARE_WEBHOOK_SIGNATURE_KEY`    | Verifies Square webhook signatures                                    |
 | `SQUARE_WEBHOOK_NOTIFICATION_URL` | Exact HTTPS `/api/webhooks/square` URL used in signature verification |
 
-Never expose these values through `NEXT_PUBLIC_*`, logs, support tickets, screenshots, or client bundles.
+Only the Turnstile site key is intentionally public. The Square application and location IDs are non-secret identifiers returned by the prepare endpoint. Never expose access tokens, HMAC secrets, Turnstile secret keys, or webhook signature keys through `NEXT_PUBLIC_*`, logs, support tickets, screenshots, or client bundles.
 
 ## Enablement sequence
 
 1. Complete all business, Square, security, and compliance gates in sandbox/staging.
-2. Save the checkout flat shipping rate and validate Square Catalog tax configuration.
+2. Save the checkout flat shipping rate and validate Square Catalog tax plus Afterpay configuration.
 3. Deploy with the checkout kill switch still enabled.
 4. Validate signed Square webhooks and the expiration cron in production.
 5. Publish and observe Vercel bot/WAF rules.

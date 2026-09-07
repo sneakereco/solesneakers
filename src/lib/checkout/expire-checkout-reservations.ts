@@ -2,11 +2,14 @@ export type ExpiredCheckout = {
   orderId: string;
   squarePaymentLinkId: string | null;
   squarePaymentLinkDeletedAt: string | null;
+  squareOrderId: string | null;
+  squareOrderVersion: number | null;
 };
 
 export type ExpireCheckoutDependencies = {
   deleteSquareLink(paymentLinkId: string): Promise<void>;
   markSquareLinkDeleted(orderId: string, paymentLinkId: string): Promise<void>;
+  cancelSquareOrder(squareOrderId: string, version: number): Promise<void>;
   releaseReservation(orderId: string, reason: string): Promise<boolean>;
   reportError(error: unknown, orderId: string): void;
 };
@@ -32,6 +35,14 @@ export async function expireCheckoutReservations(
       if (checkout.squarePaymentLinkId && !checkout.squarePaymentLinkDeletedAt) {
         await deps.deleteSquareLink(checkout.squarePaymentLinkId);
         await deps.markSquareLinkDeleted(checkout.orderId, checkout.squarePaymentLinkId);
+      }
+
+      if (
+        !checkout.squarePaymentLinkId &&
+        checkout.squareOrderId &&
+        checkout.squareOrderVersion !== null
+      ) {
+        await deps.cancelSquareOrder(checkout.squareOrderId, checkout.squareOrderVersion);
       }
 
       const released = await deps.releaseReservation(

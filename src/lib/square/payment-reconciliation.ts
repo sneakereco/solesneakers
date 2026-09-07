@@ -7,6 +7,7 @@ type LocalOrder = {
   id: string;
   status: string | null;
   squareOrderId: string | null;
+  paymentId: string | null;
 };
 
 type SquareOrder = {
@@ -53,7 +54,8 @@ export async function reconcilePendingSquarePayment(
     throw new Error("square_reconciliation_order_mismatch");
   }
 
-  const paymentId = squareOrder.tenders.find((tender) => tender.paymentId)?.paymentId;
+  const paymentId =
+    local.paymentId ?? squareOrder.tenders.find((tender) => tender.paymentId)?.paymentId;
   if (!paymentId) {
     return "skipped";
   }

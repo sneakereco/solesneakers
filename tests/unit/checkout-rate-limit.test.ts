@@ -1,8 +1,14 @@
 import { getRateLimitPolicyForRequest } from "@/proxy/rate-limit";
 
 describe("checkout proxy rate-limit ownership", () => {
-  it("does not duplicate Vercel's payment-link IP limit in Upstash", () => {
-    expect(getRateLimitPolicyForRequest("/api/checkout/payment-link", "POST")).toBeNull();
+  it("does not duplicate the dedicated checkout controls in the proxy limiter", () => {
+    for (const path of [
+      "/api/checkout/prepare",
+      "/api/checkout/payment-permit",
+      "/api/checkout/pay",
+    ]) {
+      expect(getRateLimitPolicyForRequest(path, "POST")).toBeNull();
+    }
   });
 
   it("retains the general write limit for unrelated API writes", () => {

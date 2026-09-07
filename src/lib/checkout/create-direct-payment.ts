@@ -49,7 +49,9 @@ export async function createDirectPaymentHandler(
   const parsed = directPaymentRequestSchema.safeParse(
     await request.json().catch(() => null),
   );
-  if (!parsed.success) return json({ error: "Invalid payment request" }, 400);
+  if (!parsed.success) {
+    return json({ error: "Invalid payment request" }, 400);
+  }
 
   let permit: PaymentPermitPayload | null;
   try {
@@ -58,7 +60,9 @@ export async function createDirectPaymentHandler(
     deps.reportError(error);
     return json({ error: "Checkout protection is temporarily unavailable" }, 503);
   }
-  if (!permit) return json({ error: "Payment authorization expired" }, 403);
+  if (!permit) {
+    return json({ error: "Payment authorization expired" }, 403);
+  }
 
   try {
     const order = await deps.loadOrder(permit.orderId);

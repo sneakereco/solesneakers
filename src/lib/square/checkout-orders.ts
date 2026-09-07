@@ -1,6 +1,6 @@
 import type * as Square from "square";
 
-import type { PaymentLinkRequest } from "@/lib/checkout/payment-link-request";
+import type { PrepareCheckoutRequest } from "@/lib/checkout/checkout-request";
 import type { CheckoutReservationItem } from "@/repositories/checkout-reservation-repo";
 
 type OrdersClient = {
@@ -17,7 +17,7 @@ export type SquareCheckoutOrderInput = {
   buyerEmail: string;
   subtotalCents: number;
   shippingCents: number;
-  shippingAddress: PaymentLinkRequest["shippingAddress"] | null;
+  shippingAddress: PrepareCheckoutRequest["shippingAddress"] | null;
   items: CheckoutReservationItem[];
 };
 
@@ -51,7 +51,7 @@ function itemName(item: CheckoutReservationItem): string {
 }
 
 function squareAddress(
-  address: NonNullable<PaymentLinkRequest["shippingAddress"]>,
+  address: NonNullable<PrepareCheckoutRequest["shippingAddress"]>,
 ): Square.Address {
   return {
     addressLine1: address.line1,
