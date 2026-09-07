@@ -1,22 +1,27 @@
 jest.mock("@/lib/checkout/checkout-page-access", () => ({
   loadCheckoutPageAccess: jest.fn(),
 }));
-jest.mock("next/navigation", () => ({ redirect: jest.fn() }));
+jest.mock("@/components/checkout/CheckoutClient", () => ({
+  CheckoutClient: () => null,
+}));
 
-import { redirect } from "next/navigation";
-
+import { CheckoutClient } from "@/components/checkout/CheckoutClient";
 import { CheckoutLockedNotice } from "@/components/checkout/CheckoutLockedNotice";
 import { loadCheckoutPageAccess } from "@/lib/checkout/checkout-page-access";
 
 import CheckoutPage from "../../app/checkout/page";
 
 describe("app/checkout/page", () => {
-  it("redirects the retired pre-checkout page back to the cart", async () => {
+  it("renders fulfillment and payment checkout when checkout is open", async () => {
     jest.mocked(loadCheckoutPageAccess).mockResolvedValue({ open: true });
 
-    await CheckoutPage();
+    const result = await CheckoutPage();
 
-    expect(redirect).toHaveBeenCalledWith("/cart");
+    expect(result).not.toBeNull();
+    if (!result) {
+      throw new Error("Expected the checkout client");
+    }
+    expect(result.type).toBe(CheckoutClient);
   });
 
   it("renders the configured notice when the emergency lock is enabled", async () => {

@@ -38,13 +38,13 @@ jest.mock("@/components/cart/ShippingEstimate", () => ({
 import CartPage from "../../app/(store)/cart/page";
 
 describe("CartPage checkout", () => {
-  it("starts shipping or pickup checkout directly beside the order summary", () => {
+  it("links to checkout without asking for fulfillment in the cart", () => {
     const html = renderToStaticMarkup(<CartPage />);
 
-    expect(html).toContain("Shipping");
-    expect(html).toContain("Local pickup");
     expect(html).toContain("air-runner.jpg");
-    expect(html).toContain("Continue to secure payment");
-    expect(html).not.toContain('href="/checkout"');
+    expect(html).toContain('href="/checkout"');
+    expect(html).toContain("Checkout");
+    expect(html).not.toContain("Local pickup");
+    expect(html).not.toContain("Continue to secure payment");
   });
 });

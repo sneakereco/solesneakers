@@ -44,4 +44,28 @@ describe("deployment reference-data seeding", () => {
       );
     },
   );
+
+  it.each([
+    ["staging", stagingWorkflow],
+    ["production", productionWorkflow],
+  ])(
+    "passes and validates browser payment configuration before the %s build",
+    (_environment, workflow) => {
+      expect(workflow).toContain(
+        "SQUARE_APPLICATION_ID: ${{ vars.SQUARE_APPLICATION_ID || secrets.SQUARE_APPLICATION_ID }}",
+      );
+      expect(workflow).toContain(
+        "NEXT_PUBLIC_TURNSTILE_SITE_KEY: ${{ vars.NEXT_PUBLIC_TURNSTILE_SITE_KEY || secrets.NEXT_PUBLIC_TURNSTILE_SITE_KEY }}",
+      );
+      expect(workflow).toContain(
+        "TURNSTILE_SECRET_KEY: ${{ secrets.TURNSTILE_SECRET_KEY }}",
+      );
+      expect(workflow).toContain('[[ -n "$SQUARE_APPLICATION_ID" ]]');
+      expect(workflow).toContain('[[ -n "$NEXT_PUBLIC_TURNSTILE_SITE_KEY" ]]');
+      expect(workflow).toContain('[[ -n "$TURNSTILE_SECRET_KEY" ]]');
+      expect(workflow.indexOf('[[ -n "$SQUARE_APPLICATION_ID" ]]')).toBeLessThan(
+        workflow.indexOf("- name: Build"),
+      );
+    },
+  );
 });

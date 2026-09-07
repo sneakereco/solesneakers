@@ -173,8 +173,9 @@ export function CheckoutClient() {
   }
 
   return (
-    <div className="mt-6 border-t border-zinc-200 pt-6">
-      <p className="flex items-center gap-2 text-xs text-zinc-600">
+    <section className="mx-auto my-12 max-w-2xl border border-zinc-300 bg-white p-6 text-black sm:p-8">
+      <h1 className="text-3xl font-normal uppercase tracking-[0.02em]">Checkout</h1>
+      <p className="mt-6 flex items-center gap-2 border-t border-zinc-200 pt-6 text-xs text-zinc-600">
         <LockKeyhole className="h-4 w-4" /> Guest checkout supports Card and Afterpay.
       </p>
 
@@ -365,6 +366,6 @@ export function CheckoutClient() {
           />
         </>
       )}
-    </div>
+    </section>
   );
 }

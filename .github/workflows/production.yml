@@ -47,9 +47,12 @@ jobs:
       # Checkout security
       CHECKOUT_IDENTITY_HMAC_SECRET: ${{ secrets.CHECKOUT_IDENTITY_HMAC_SECRET }}
       CRON_SECRET: ${{ secrets.CRON_SECRET }}
+      TURNSTILE_SECRET_KEY: ${{ secrets.TURNSTILE_SECRET_KEY }}
+      NEXT_PUBLIC_TURNSTILE_SITE_KEY: ${{ vars.NEXT_PUBLIC_TURNSTILE_SITE_KEY || secrets.NEXT_PUBLIC_TURNSTILE_SITE_KEY }}
 
       # Square
       SQUARE_ENVIRONMENT: production
+      SQUARE_APPLICATION_ID: ${{ vars.SQUARE_APPLICATION_ID || secrets.SQUARE_APPLICATION_ID }}
       SQUARE_ACCESS_TOKEN: ${{ secrets.SQUARE_ACCESS_TOKEN }}
       SQUARE_LOCATION_ID: ${{ secrets.SQUARE_LOCATION_ID }}
       SQUARE_WEBHOOK_SIGNATURE_KEY: ${{ secrets.SQUARE_WEBHOOK_SIGNATURE_KEY }}
@@ -82,6 +85,9 @@ jobs:
           [[ -n "$VERCEL_PROJECT_ID" ]] || { echo "Missing production environment secret: VERCEL_PROJECT_ID"; exit 1; }
           [[ -n "$CHECKOUT_IDENTITY_HMAC_SECRET" ]] || { echo "Missing production environment secret: CHECKOUT_IDENTITY_HMAC_SECRET"; exit 1; }
           [[ -n "$CRON_SECRET" ]] || { echo "Missing production environment secret: CRON_SECRET"; exit 1; }
+          [[ -n "$TURNSTILE_SECRET_KEY" ]] || { echo "Missing production environment secret: TURNSTILE_SECRET_KEY"; exit 1; }
+          [[ -n "$NEXT_PUBLIC_TURNSTILE_SITE_KEY" ]] || { echo "Missing production environment variable: NEXT_PUBLIC_TURNSTILE_SITE_KEY"; exit 1; }
+          [[ -n "$SQUARE_APPLICATION_ID" ]] || { echo "Missing production environment variable: SQUARE_APPLICATION_ID"; exit 1; }
           [[ -n "$SQUARE_ACCESS_TOKEN" ]] || { echo "Missing production environment secret: SQUARE_ACCESS_TOKEN"; exit 1; }
           [[ -n "$SQUARE_LOCATION_ID" ]] || { echo "Missing production environment secret: SQUARE_LOCATION_ID"; exit 1; }
           [[ -n "$SQUARE_WEBHOOK_SIGNATURE_KEY" ]] || { echo "Missing production environment secret: SQUARE_WEBHOOK_SIGNATURE_KEY"; exit 1; }
