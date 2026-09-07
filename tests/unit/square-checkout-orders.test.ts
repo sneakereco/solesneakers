@@ -28,6 +28,45 @@ const shippingAddress = {
 };
 
 describe("SquareCheckoutOrdersGateway", () => {
+  it("calculates an order without creating it", async () => {
+    const calculate = jest.fn().mockResolvedValue({
+      order: {
+        totalMoney: { amount: BigInt(28_563), currency: "USD" },
+        totalTaxMoney: { amount: BigInt(2_063), currency: "USD" },
+        totalServiceChargeMoney: { amount: BigInt(1_500), currency: "USD" },
+      },
+    });
+    const create = jest.fn();
+    const gateway = new SquareCheckoutOrdersGateway(
+      { calculate, create, get: jest.fn(), update: jest.fn() },
+      "square-location-1",
+    );
+
+    await expect(
+      gateway.calculate({
+        fulfillment: "ship",
+        buyerEmail: "buyer@example.com",
+        subtotalCents: 25_000,
+        shippingCents: 1_500,
+        shippingAddress,
+        items: [item],
+      }),
+    ).resolves.toEqual({
+      subtotalCents: 25_000,
+      shippingCents: 1_500,
+      taxCents: 2_063,
+      totalCents: 28_563,
+    });
+    expect(create).not.toHaveBeenCalled();
+    expect(calculate).toHaveBeenCalledWith({
+      order: expect.objectContaining({
+        locationId: "square-location-1",
+        referenceId: undefined,
+        pricingOptions: { autoApplyTaxes: true, autoApplyDiscounts: false },
+      }),
+    });
+  });
+
   it("creates an automatically taxed shipping order from server prices", async () => {
     const create = jest.fn().mockResolvedValue({
       order: {
@@ -39,7 +78,7 @@ describe("SquareCheckoutOrdersGateway", () => {
       },
     });
     const gateway = new SquareCheckoutOrdersGateway(
-      { create, get: jest.fn(), update: jest.fn() },
+      { calculate: jest.fn(), create, get: jest.fn(), update: jest.fn() },
       "square-location-1",
     );
 
@@ -110,7 +149,7 @@ describe("SquareCheckoutOrdersGateway", () => {
       },
     });
     const gateway = new SquareCheckoutOrdersGateway(
-      { create, get: jest.fn(), update: jest.fn() },
+      { calculate: jest.fn(), create, get: jest.fn(), update: jest.fn() },
       "square-location-1",
     );
 
@@ -141,6 +180,7 @@ describe("SquareCheckoutOrdersGateway", () => {
   it("rejects a provider total that does not reconcile", async () => {
     const gateway = new SquareCheckoutOrdersGateway(
       {
+        calculate: jest.fn(),
         create: jest.fn().mockResolvedValue({
           order: {
             id: "square-order-3",
@@ -175,7 +215,7 @@ describe("SquareCheckoutOrdersGateway", () => {
       order: { id: "square-order-1", state: "CANCELED", version: 4 },
     });
     const gateway = new SquareCheckoutOrdersGateway(
-      { create: jest.fn(), get: jest.fn(), update },
+      { calculate: jest.fn(), create: jest.fn(), get: jest.fn(), update },
       "square-location-1",
     );
 
@@ -202,7 +242,7 @@ describe("SquareCheckoutOrdersGateway", () => {
       },
     });
     const gateway = new SquareCheckoutOrdersGateway(
-      { create: jest.fn(), get, update: jest.fn() },
+      { calculate: jest.fn(), create: jest.fn(), get, update: jest.fn() },
       "square-location-1",
     );
 
