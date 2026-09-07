@@ -6,6 +6,9 @@ const prodConnectSrc = [
   "wss://*.supabase.co",
   "https://pci-connect.squareup.com",
   "https://pci-connect.squareupsandbox.com",
+  "https://web.squarecdn.com",
+  "https://sandbox.web.squarecdn.com",
+  "https://o160250.ingest.sentry.io",
   "https://challenges.cloudflare.com",
   "https://cloudflareinsights.com",
 ].join(" ");
@@ -124,7 +127,7 @@ export const security = {
         dev: [
           "default-src 'self'",
           "img-src 'self' data: https: blob:",
-          "style-src 'self' 'unsafe-inline'",
+          "style-src 'self' 'unsafe-inline' https://web.squarecdn.com https://sandbox.web.squarecdn.com",
           "script-src 'self' 'unsafe-inline' 'unsafe-eval' https://web.squarecdn.com https://sandbox.web.squarecdn.com https://challenges.cloudflare.com https://static.cloudflareinsights.com/beacon.min.js",
           "worker-src 'self' blob:",
           [
@@ -138,7 +141,7 @@ export const security = {
           "object-src 'none'",
           "base-uri 'self'",
           "frame-ancestors 'none'",
-          "font-src 'self' data:",
+          "font-src 'self' data: https://square-fonts-production-f.squarecdn.com https://d1g145x70srn7h.cloudfront.net",
           "frame-src 'self' blob: https://web.squarecdn.com https://sandbox.web.squarecdn.com https://pci-connect.squareup.com https://pci-connect.squareupsandbox.com https://challenges.cloudflare.com",
           "form-action 'self'",
         ],
@@ -146,7 +149,7 @@ export const security = {
         prod: [
           "default-src 'self'",
           "img-src 'self' data: blob: https://*.supabase.co https://*.cloudfront.net https://*.fastly.net",
-          "style-src 'self' 'unsafe-inline'",
+          "style-src 'self' 'unsafe-inline' https://web.squarecdn.com https://sandbox.web.squarecdn.com",
           "script-src 'self' 'unsafe-inline' https://web.squarecdn.com https://sandbox.web.squarecdn.com https://challenges.cloudflare.com https://static.cloudflareinsights.com/beacon.min.js",
           "worker-src 'self' blob:",
           "object-src 'none'",
@@ -155,7 +158,7 @@ export const security = {
           `connect-src ${prodConnectSrc}`,
 
           "frame-ancestors 'none'",
-          "font-src 'self' data:",
+          "font-src 'self' data: https://square-fonts-production-f.squarecdn.com https://d1g145x70srn7h.cloudfront.net",
           "frame-src 'self' blob: https://web.squarecdn.com https://sandbox.web.squarecdn.com https://pci-connect.squareup.com https://pci-connect.squareupsandbox.com https://challenges.cloudflare.com",
           "form-action 'self'",
           "upgrade-insecure-requests",

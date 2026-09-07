@@ -2,6 +2,16 @@ import { NextResponse } from "next/server";
 
 import { applySecurityHeaders } from "@/proxy/security-headers";
 
+function directives(csp: string | null): Map<string, string[]> {
+  return new Map(
+    (csp ?? "")
+      .split(";")
+      .map((value) => value.trim().split(/\s+/))
+      .filter(([name]) => Boolean(name))
+      .map(([name, ...values]) => [name, values]),
+  );
+}
+
 describe("production security headers", () => {
   it("sets isolation and transport headers", () => {
     const response = NextResponse.next();
@@ -22,12 +32,29 @@ describe("production security headers", () => {
 
     applySecurityHeaders(response, "production");
 
-    const csp = response.headers.get("content-security-policy");
-    expect(csp).toContain("https://web.squarecdn.com");
-    expect(csp).toContain("https://sandbox.web.squarecdn.com");
-    expect(csp).toContain("https://pci-connect.squareup.com");
-    expect(csp).toContain("https://pci-connect.squareupsandbox.com");
-    expect(csp).toContain("https://challenges.cloudflare.com");
+    const csp = directives(response.headers.get("content-security-policy"));
+    expect(csp.get("style-src")).toEqual(
+      expect.arrayContaining([
+        "https://web.squarecdn.com",
+        "https://sandbox.web.squarecdn.com",
+      ]),
+    );
+    expect(csp.get("font-src")).toEqual(
+      expect.arrayContaining([
+        "https://square-fonts-production-f.squarecdn.com",
+        "https://d1g145x70srn7h.cloudfront.net",
+      ]),
+    );
+    expect(csp.get("connect-src")).toEqual(
+      expect.arrayContaining([
+        "https://web.squarecdn.com",
+        "https://sandbox.web.squarecdn.com",
+        "https://pci-connect.squareup.com",
+        "https://pci-connect.squareupsandbox.com",
+        "https://o160250.ingest.sentry.io",
+        "https://challenges.cloudflare.com",
+      ]),
+    );
   });
 
   it("keeps application pages unavailable to frames", () => {

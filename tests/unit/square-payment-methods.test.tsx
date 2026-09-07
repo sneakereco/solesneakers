@@ -1,6 +1,9 @@
 import { renderToStaticMarkup } from "react-dom/server";
 
-import { SquarePaymentMethods } from "@/components/checkout/SquarePaymentMethods";
+import {
+  SquarePaymentMethods,
+  turnstileErrorMessage,
+} from "@/components/checkout/SquarePaymentMethods";
 
 const paymentConfig = {
   applicationId: "sandbox-app",
@@ -9,6 +12,13 @@ const paymentConfig = {
 };
 
 describe("SquarePaymentMethods", () => {
+  it("identifies an unauthorized Turnstile hostname as terminal configuration", () => {
+    expect(turnstileErrorMessage("110200")).toBe(
+      "Guest verification is not configured for this checkout hostname.",
+    );
+    expect(turnstileErrorMessage("110600")).toBeNull();
+  });
+
   it("renders express, card, Afterpay, and guest verification surfaces immediately", () => {
     const html = renderToStaticMarkup(
       <SquarePaymentMethods

@@ -76,6 +76,12 @@ function checkedToken(result: SquareTokenResult): string {
   return result.token;
 }
 
+export function turnstileErrorMessage(code: string): string | null {
+  return code === "110200"
+    ? "Guest verification is not configured for this checkout hostname."
+    : null;
+}
+
 function loadTurnstile(): Promise<TurnstileApi> {
   if (window.turnstile) {
     return Promise.resolve(window.turnstile);
@@ -137,6 +143,7 @@ export function SquarePaymentMethods({
   const [error, setError] = useState<string | null>(null);
   const turnstileContainer = useRef<HTMLDivElement>(null);
   const turnstileTokenRef = useRef<string | null>(null);
+  const turnstileTerminalError = useRef(false);
 
   function updateTurnstileToken(token: string | null) {
     turnstileTokenRef.current = token;
@@ -296,7 +303,14 @@ export function SquarePaymentMethods({
           appearance: "interaction-only",
           callback: (token: string) => updateTurnstileToken(token),
           "expired-callback": () => updateTurnstileToken(null),
-          "error-callback": () => updateTurnstileToken(null),
+          "error-callback": (code: string) => {
+            updateTurnstileToken(null);
+            const message = turnstileErrorMessage(code);
+            if (message) {
+              turnstileTerminalError.current = true;
+              setError(message);
+            }
+          },
         });
         setTurnstileWidget(widgetId);
       })
@@ -359,7 +373,7 @@ export function SquarePaymentMethods({
       setIsPaying(false);
     } finally {
       updateTurnstileToken(null);
-      if (turnstileWidget && window.turnstile) {
+      if (turnstileWidget && window.turnstile && !turnstileTerminalError.current) {
         window.turnstile.reset(turnstileWidget);
       }
     }
