@@ -1,7 +1,12 @@
+import type * as ReactModule from "react";
+import { renderToStaticMarkup } from "react-dom/server";
+
+import { CheckoutClient } from "@/components/checkout/CheckoutClient";
+
 const mockUseState = jest.fn();
 
 jest.mock("react", () => {
-  const actual = jest.requireActual<typeof import("react")>("react");
+  const actual = jest.requireActual<typeof ReactModule>("react");
   return {
     ...actual,
     useState: (initial: unknown) => mockUseState(initial),
@@ -29,10 +34,6 @@ jest.mock("@/components/cart/CartProvider", () => ({
 jest.mock("@/contexts/SessionContext", () => ({
   useSession: () => ({ user: null }),
 }));
-
-import { renderToStaticMarkup } from "react-dom/server";
-
-import { CheckoutClient } from "@/components/checkout/CheckoutClient";
 
 describe("CheckoutClient prepared order", () => {
   it("keeps fulfillment controls visible with the embedded payment fields", () => {
