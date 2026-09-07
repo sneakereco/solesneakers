@@ -14,6 +14,7 @@ import {
 } from "@/lib/checkout/client-session";
 import { clearIdempotencyKeyFromStorage } from "@/lib/checkout/idempotency";
 import type { SquareEnvironment } from "@/lib/square/web-payments";
+import type { CheckoutPageData } from "@/lib/checkout/checkout-page-data";
 
 type Fulfillment = "ship" | "pickup";
 type Address = {
@@ -62,12 +63,15 @@ function formatPrice(cents: number): string {
   );
 }
 
-export function CheckoutClient() {
+export function CheckoutClient({ initialData }: { initialData?: CheckoutPageData }) {
   const { items, isReady, clearCart } = useCart();
   const { user } = useSession();
-  const [email, setEmail] = useState(user?.email ?? "");
+  const [email, setEmail] = useState(initialData?.customer.email ?? user?.email ?? "");
   const [fulfillment, setFulfillment] = useState<Fulfillment>("ship");
-  const [address, setAddress] = useState(EMPTY_ADDRESS);
+  const [address, setAddress] = useState({
+    ...EMPTY_ADDRESS,
+    ...initialData?.customer.address,
+  });
   const [prepared, setPrepared] = useState<Prepared | null>(null);
   const [isSubmitting, setIsSubmitting] = useState(false);
   const [error, setError] = useState<string | null>(null);
