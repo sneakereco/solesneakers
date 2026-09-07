@@ -24,7 +24,7 @@ describe("checkout identity", () => {
 });
 
 describe("CheckoutAttemptLimiter", () => {
-  it("atomically consumes only email, account, and device daily quotas", async () => {
+  it("atomically consumes the prepare IP and identity quotas", async () => {
     const evalScript = jest.fn().mockResolvedValue([1, 0]);
     const limiter = new CheckoutAttemptLimiter({ eval: evalScript }, () => 1000);
 
@@ -38,9 +38,9 @@ describe("CheckoutAttemptLimiter", () => {
       "rdk:checkout:tenant:tenant-1:email:email-hmac",
       "rdk:checkout:tenant:tenant-1:user:user-1",
       "rdk:checkout:tenant:tenant-1:device:device-session-1",
+      "rdk:checkout:tenant:tenant-1:ip:203.0.113.10",
     ]);
-    expect(keys.join(" ")).not.toContain("203.0.113.10");
-    expect(args).toEqual(expect.arrayContaining(["5", "5", "10"]));
+    expect(args).toEqual(expect.arrayContaining(["5", "5", "10", "1800000", "3"]));
   });
 
   it("returns the provider retry time when a daily identity quota is full", async () => {

@@ -5,6 +5,7 @@ import type { CheckoutReservationItem } from "@/repositories/checkout-reservatio
 
 type OrdersClient = {
   create(request: Square.CreateOrderRequest): PromiseLike<Square.CreateOrderResponse>;
+  get(request: { orderId: string }): PromiseLike<Square.GetOrderResponse>;
   update(
     request: Square.orders.UpdateOrderRequest,
   ): PromiseLike<Square.UpdateOrderResponse>;
@@ -29,6 +30,12 @@ export type SquareCheckoutOrder = {
   taxCents: number;
   totalCents: number;
   taxCalculationId: string;
+};
+
+export type SquareOrderCancellationState = {
+  state: string;
+  version: number;
+  hasPayment: boolean;
 };
 
 function assertCents(value: number, field: string): void {
@@ -173,7 +180,7 @@ export class SquareCheckoutOrdersGateway {
   }
 
   async cancel(orderId: string, version: number, idempotencyKey: string): Promise<void> {
-    await this.orders.update({
+    const response = await this.orders.update({
       orderId,
       idempotencyKey,
       order: {
@@ -182,5 +189,26 @@ export class SquareCheckoutOrdersGateway {
         state: "CANCELED",
       },
     });
+    if (response.order?.id !== orderId || response.order.state !== "CANCELED") {
+      throw new Error("square_checkout_order_cancel_unconfirmed");
+    }
+  }
+
+  async getCancellationState(orderId: string): Promise<SquareOrderCancellationState> {
+    const response = await this.orders.get({ orderId });
+    const order = response.order;
+    if (
+      order?.id !== orderId ||
+      !order.state ||
+      !Number.isSafeInteger(order.version) ||
+      (order.version ?? -1) < 0
+    ) {
+      throw new Error("square_checkout_order_state_invalid");
+    }
+    return {
+      state: String(order.state),
+      version: order.version!,
+      hasPayment: (order.tenders ?? []).some((tender) => Boolean(tender.paymentId)),
+    };
   }
 }

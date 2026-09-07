@@ -43,6 +43,6 @@ Restrict evidence access by job role, require MFA, log administrative access, en
 
 ## Active step-up controls
 
-BotID Deep Analysis protects all three checkout POST routes. Guest buyers must also pass Cloudflare Turnstile immediately before a one-use, 120-second payment permit is issued. Tune challenges only from recorded attack and false-positive evidence; never bypass the server-side permit, identity quotas, or Vercel IP/JA4 controls.
+BotID Deep Analysis protects all three checkout POST routes. Guest buyers must also pass Cloudflare Turnstile immediately before a one-use, 120-second payment permit is issued. Prepare requests have a fail-closed 3-per-IP/30-minute application backstop in addition to identity quotas and Vercel IP/JA4 controls. Tune challenges only from recorded attack and false-positive evidence.
 
 True Verifi/Ethoca pre-dispute alerts remain deferred. A Square `dispute.created` notification is a standard dispute notification and must not be reported as an early-alert program.

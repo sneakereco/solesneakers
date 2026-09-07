@@ -43,6 +43,8 @@ export async function GET(request: NextRequest): Promise<Response> {
       deleteSquareLink: (paymentLinkId) => getSquareGateway().delete(paymentLinkId),
       markSquareLinkDeleted: (orderId, paymentLinkId) =>
         repository.markPaymentLinkDeleted(orderId, paymentLinkId),
+      getSquareOrder: (squareOrderId) =>
+        getSquareOrdersGateway().getCancellationState(squareOrderId),
       cancelSquareOrder: (squareOrderId, version) =>
         getSquareOrdersGateway().cancel(
           squareOrderId,

@@ -66,25 +66,37 @@ export class CheckoutAttemptLimiter {
 
   async check(identity: CheckoutAttemptIdentity): Promise<CheckoutAttemptDecision> {
     const prefix = `rdk:checkout:tenant:${identity.tenantId}`;
-    const keys = [`${prefix}:email:${identity.normalizedEmailHash}`];
-    const limits = [5];
+    const windows = [
+      {
+        key: `${prefix}:email:${identity.normalizedEmailHash}`,
+        windowMs: DAILY_WINDOW_MS,
+        limit: 5,
+      },
+    ];
 
     if (identity.userId) {
-      keys.push(`${prefix}:user:${identity.userId}`);
-      limits.push(5);
+      windows.push({
+        key: `${prefix}:user:${identity.userId}`,
+        windowMs: DAILY_WINDOW_MS,
+        limit: 5,
+      });
     }
 
-    keys.push(`${prefix}:device:${identity.deviceSessionId}`);
-    limits.push(10);
+    windows.push(
+      {
+        key: `${prefix}:device:${identity.deviceSessionId}`,
+        windowMs: DAILY_WINDOW_MS,
+        limit: 10,
+      },
+      {
+        key: `${prefix}:ip:${identity.clientIp}`,
+        windowMs: THIRTY_MINUTES_MS,
+        limit: 3,
+      },
+    );
 
     try {
-      return await this.checkWindows(
-        keys.map((key, index) => ({
-          key,
-          windowMs: DAILY_WINDOW_MS,
-          limit: limits[index]!,
-        })),
-      );
+      return await this.checkWindows(windows);
     } catch {
       throw new Error("checkout_protection_unavailable");
     }

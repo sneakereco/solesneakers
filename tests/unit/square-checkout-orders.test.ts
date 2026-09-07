@@ -39,7 +39,7 @@ describe("SquareCheckoutOrdersGateway", () => {
       },
     });
     const gateway = new SquareCheckoutOrdersGateway(
-      { create, update: jest.fn() },
+      { create, get: jest.fn(), update: jest.fn() },
       "square-location-1",
     );
 
@@ -110,7 +110,7 @@ describe("SquareCheckoutOrdersGateway", () => {
       },
     });
     const gateway = new SquareCheckoutOrdersGateway(
-      { create, update: jest.fn() },
+      { create, get: jest.fn(), update: jest.fn() },
       "square-location-1",
     );
 
@@ -142,6 +142,7 @@ describe("SquareCheckoutOrdersGateway", () => {
             totalServiceChargeMoney: { amount: BigInt(0), currency: "USD" },
           },
         }),
+        get: jest.fn(),
         update: jest.fn(),
       },
       "square-location-1",
@@ -162,9 +163,11 @@ describe("SquareCheckoutOrdersGateway", () => {
   });
 
   it("cancels an unpaid order using optimistic concurrency", async () => {
-    const update = jest.fn().mockResolvedValue({});
+    const update = jest.fn().mockResolvedValue({
+      order: { id: "square-order-1", state: "CANCELED", version: 4 },
+    });
     const gateway = new SquareCheckoutOrdersGateway(
-      { create: jest.fn(), update },
+      { create: jest.fn(), get: jest.fn(), update },
       "square-location-1",
     );
 
@@ -179,5 +182,27 @@ describe("SquareCheckoutOrdersGateway", () => {
         state: "CANCELED",
       },
     });
+  });
+
+  it("loads the current order state and version before expiration", async () => {
+    const get = jest.fn().mockResolvedValue({
+      order: {
+        id: "square-order-1",
+        state: "OPEN",
+        version: 7,
+        tenders: [{ paymentId: "payment-1" }],
+      },
+    });
+    const gateway = new SquareCheckoutOrdersGateway(
+      { create: jest.fn(), get, update: jest.fn() },
+      "square-location-1",
+    );
+
+    await expect(gateway.getCancellationState("square-order-1")).resolves.toEqual({
+      state: "OPEN",
+      version: 7,
+      hasPayment: true,
+    });
+    expect(get).toHaveBeenCalledWith({ orderId: "square-order-1" });
   });
 });

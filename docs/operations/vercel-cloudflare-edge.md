@@ -27,7 +27,7 @@ Create the following rules in the Vercel project and record their rule IDs, orde
 5. Enable the Bot Protection managed ruleset in log mode for at least one representative business day. Confirm legitimate shoppers, verified search bots, Square, Shippo, uptime checks, and the expiration cron behave as expected.
 6. Change Bot Protection to challenge mode only after the observed traffic is classified correctly.
 
-Upstash does not repeat either IP or JA4 window. It owns only the 24-hour email/account and device quotas implemented by the application.
+Upstash enforces a fail-closed application backstop of 3 prepares per trusted IP per 30 minutes, plus the email/account and device quotas. Vercel still owns JA4 controls and the first edge rejection layer.
 
 ### Published rule inventory
 
@@ -67,7 +67,7 @@ Then verify in a sandbox deployment:
 - Requests without a trusted Vercel client IP return `503` before Upstash, inventory, or Square.
 - Repeating an idempotency key for the same unexpired checkout returns the existing local order without consuming a new quota.
 - A guest cannot obtain a permit without valid Turnstile evidence, and a permit cannot be reused.
-- The expiration job cancels the direct Square order before stock is released.
+- The expiration job fetches the current Square order version, refuses to cancel an order with any payment tender, confirms cancellation, and only then releases stock.
 
 ## Rollback
 
