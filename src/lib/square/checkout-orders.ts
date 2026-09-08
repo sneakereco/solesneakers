@@ -94,12 +94,52 @@ export class SquareCheckoutOrdersGateway {
   }
 
   async cancel(orderId: string, version: number, idempotencyKey: string): Promise<void> {
+    const currentResponse = await this.orders.get({ orderId });
+    const currentOrder = currentResponse.order;
+    if (
+      currentOrder?.id !== orderId ||
+      currentOrder.state !== "OPEN" ||
+      !Number.isSafeInteger(currentOrder.version) ||
+      (currentOrder.version ?? -1) < version ||
+      (currentOrder.tenders ?? []).some((tender) => Boolean(tender.paymentId))
+    ) {
+      throw new Error("square_checkout_order_not_cancelable");
+    }
+
+    let currentVersion = currentOrder.version!;
+    const activeFulfillments = (currentOrder.fulfillments ?? []).flatMap((fulfillment) =>
+      fulfillment.uid &&
+      fulfillment.state &&
+      !["COMPLETED", "CANCELED", "FAILED"].includes(String(fulfillment.state))
+        ? [{ uid: fulfillment.uid, state: "CANCELED" as const }]
+        : [],
+    );
+    if (activeFulfillments.length > 0) {
+      const fulfillmentResponse = await this.orders.update({
+        orderId,
+        idempotencyKey: `${idempotencyKey}:fulfillments`,
+        order: {
+          locationId: this.locationId,
+          version: currentVersion,
+          fulfillments: activeFulfillments,
+        },
+      });
+      if (
+        fulfillmentResponse.order?.id !== orderId ||
+        !Number.isSafeInteger(fulfillmentResponse.order.version) ||
+        (fulfillmentResponse.order.version ?? -1) <= currentVersion
+      ) {
+        throw new Error("square_checkout_fulfillment_cancel_unconfirmed");
+      }
+      currentVersion = fulfillmentResponse.order.version!;
+    }
+
     const response = await this.orders.update({
       orderId,
-      idempotencyKey,
+      idempotencyKey: `${idempotencyKey}:order`,
       order: {
         locationId: this.locationId,
-        version,
+        version: currentVersion,
         state: "CANCELED",
       },
     });

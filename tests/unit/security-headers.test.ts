@@ -41,8 +41,15 @@ describe("production security headers", () => {
     );
     expect(csp.get("font-src")).toEqual(
       expect.arrayContaining([
+        "https://cash-f.squarecdn.com",
         "https://square-fonts-production-f.squarecdn.com",
         "https://d1g145x70srn7h.cloudfront.net",
+      ]),
+    );
+    expect(csp.get("img-src")).toEqual(
+      expect.arrayContaining([
+        "https://web.squarecdn.com",
+        "https://sandbox.web.squarecdn.com",
       ]),
     );
     expect(csp.get("connect-src")).toEqual(

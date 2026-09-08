@@ -141,14 +141,14 @@ export const security = {
           "object-src 'none'",
           "base-uri 'self'",
           "frame-ancestors 'none'",
-          "font-src 'self' data: https://square-fonts-production-f.squarecdn.com https://d1g145x70srn7h.cloudfront.net",
+          "font-src 'self' data: https://cash-f.squarecdn.com https://square-fonts-production-f.squarecdn.com https://d1g145x70srn7h.cloudfront.net",
           "frame-src 'self' blob: https://web.squarecdn.com https://sandbox.web.squarecdn.com https://pci-connect.squareup.com https://pci-connect.squareupsandbox.com https://challenges.cloudflare.com",
           "form-action 'self'",
         ],
 
         prod: [
           "default-src 'self'",
-          "img-src 'self' data: blob: https://*.supabase.co https://*.cloudfront.net https://*.fastly.net",
+          "img-src 'self' data: blob: https://*.supabase.co https://*.cloudfront.net https://*.fastly.net https://web.squarecdn.com https://sandbox.web.squarecdn.com",
           "style-src 'self' 'unsafe-inline' https://web.squarecdn.com https://sandbox.web.squarecdn.com",
           "script-src 'self' 'unsafe-inline' https://web.squarecdn.com https://sandbox.web.squarecdn.com https://challenges.cloudflare.com https://static.cloudflareinsights.com/beacon.min.js",
           "worker-src 'self' blob:",
@@ -158,7 +158,7 @@ export const security = {
           `connect-src ${prodConnectSrc}`,
 
           "frame-ancestors 'none'",
-          "font-src 'self' data: https://square-fonts-production-f.squarecdn.com https://d1g145x70srn7h.cloudfront.net",
+          "font-src 'self' data: https://cash-f.squarecdn.com https://square-fonts-production-f.squarecdn.com https://d1g145x70srn7h.cloudfront.net",
           "frame-src 'self' blob: https://web.squarecdn.com https://sandbox.web.squarecdn.com https://pci-connect.squareup.com https://pci-connect.squareupsandbox.com https://challenges.cloudflare.com",
           "form-action 'self'",
           "upgrade-insecure-requests",

@@ -210,23 +210,52 @@ describe("SquareCheckoutOrdersGateway", () => {
     ).rejects.toThrow("square_checkout_order_total_mismatch");
   });
 
-  it("cancels an unpaid order using optimistic concurrency", async () => {
-    const update = jest.fn().mockResolvedValue({
-      order: { id: "square-order-1", state: "CANCELED", version: 4 },
+  it("cancels active fulfillments before canceling an unpaid order", async () => {
+    const get = jest.fn().mockResolvedValue({
+      order: {
+        id: "square-order-1",
+        state: "OPEN",
+        version: 3,
+        tenders: [],
+        fulfillments: [{ uid: "fulfillment-1", state: "PROPOSED" }],
+      },
     });
+    const update = jest
+      .fn()
+      .mockResolvedValueOnce({
+        order: {
+          id: "square-order-1",
+          state: "OPEN",
+          version: 4,
+          fulfillments: [{ uid: "fulfillment-1", state: "CANCELED" }],
+        },
+      })
+      .mockResolvedValueOnce({
+        order: { id: "square-order-1", state: "CANCELED", version: 5 },
+      });
     const gateway = new SquareCheckoutOrdersGateway(
-      { calculate: jest.fn(), create: jest.fn(), get: jest.fn(), update },
+      { calculate: jest.fn(), create: jest.fn(), get, update },
       "square-location-1",
     );
 
     await gateway.cancel("square-order-1", 3, "cancel-idempotency-key");
 
-    expect(update).toHaveBeenCalledWith({
+    expect(get).toHaveBeenCalledWith({ orderId: "square-order-1" });
+    expect(update).toHaveBeenNthCalledWith(1, {
       orderId: "square-order-1",
-      idempotencyKey: "cancel-idempotency-key",
+      idempotencyKey: "cancel-idempotency-key:fulfillments",
       order: {
         locationId: "square-location-1",
         version: 3,
+        fulfillments: [{ uid: "fulfillment-1", state: "CANCELED" }],
+      },
+    });
+    expect(update).toHaveBeenNthCalledWith(2, {
+      orderId: "square-order-1",
+      idempotencyKey: "cancel-idempotency-key:order",
+      order: {
+        locationId: "square-location-1",
+        version: 4,
         state: "CANCELED",
       },
     });
