@@ -20,6 +20,32 @@ const item = {
 };
 
 describe("Square checkout order payload", () => {
+  it("builds a tax quote from a redacted wallet destination", () => {
+    const order = buildSquareCheckoutOrder("LOCATION", {
+      fulfillment: "ship",
+      subtotalCents: 25_000,
+      shippingCents: 1_500,
+      shippingAddress: {
+        state: "DE",
+        postalCode: "19801",
+        country: "US",
+      },
+      items: [item],
+    });
+
+    expect(order.fulfillments?.[0]).toMatchObject({
+      shipmentDetails: {
+        recipient: {
+          address: {
+            administrativeDistrictLevel1: "DE",
+            postalCode: "19801",
+            country: "US",
+          },
+        },
+      },
+    });
+  });
+
   it("builds the final shipment contract from server prices", () => {
     expect(
       buildSquareCheckoutOrder("LOCATION", {

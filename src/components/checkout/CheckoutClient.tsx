@@ -11,7 +11,10 @@ import {
 import {
   SquarePaymentMethods,
   type CheckoutPaymentAddress,
+  type PaymentMethod,
   type PreparedCheckout,
+  type WalletCheckoutContext,
+  type WalletShippingDestination,
 } from "@/components/checkout/SquarePaymentMethods";
 import { PICKUP_HOURS, PICKUP_LOCATION_SUMMARY } from "@/config/pickup";
 import {
@@ -19,7 +22,10 @@ import {
   getOrCreateCheckoutIdempotencyKey,
   storeGuestOrderAccess,
 } from "@/lib/checkout/client-session";
-import type { CheckoutQuoteResponse } from "@/lib/checkout/checkout-request";
+import type {
+  CheckoutQuoteRequest,
+  CheckoutQuoteResponse,
+} from "@/lib/checkout/checkout-request";
 import { checkoutShippingAddressSchema } from "@/lib/checkout/checkout-request";
 import type {
   CheckoutAddressForm,
@@ -39,6 +45,23 @@ function normalizedAddress(address: CheckoutAddressForm): CheckoutPaymentAddress
   return parsed.success ? { ...parsed.data, line2: parsed.data.line2 ?? null } : null;
 }
 
+async function requestCheckoutQuote(
+  input: CheckoutQuoteRequest,
+  signal?: AbortSignal,
+): Promise<CheckoutQuoteResponse> {
+  const response = await fetch("/api/checkout/quote", {
+    method: "POST",
+    headers: { "Content-Type": "application/json" },
+    signal,
+    body: JSON.stringify(input),
+  });
+  const data = await response.json().catch(() => null);
+  if (!response.ok) {
+    throw new Error(data?.error || "Unable to calculate checkout totals");
+  }
+  return data as CheckoutQuoteResponse;
+}
+
 export function CheckoutClient({ initialData }: { initialData: CheckoutPageData }) {
   const { items, isReady, clearCart } = useCart();
   const [email, setEmail] = useState(initialData.customer.email);
@@ -49,6 +72,7 @@ export function CheckoutClient({ initialData }: { initialData: CheckoutPageData 
   });
   const [quoteRevision, setQuoteRevision] = useState(0);
   const requestSequence = useRef(0);
+  const walletQuote = useRef<{ key: string; quote: CheckoutQuoteResponse } | null>(null);
 
   const checkoutItems = useMemo(
     () =>
@@ -74,6 +98,10 @@ export function CheckoutClient({ initialData }: { initialData: CheckoutPageData 
     if (!isReady || checkoutItems.length === 0) {
       return;
     }
+    if (walletQuote.current?.key === quoteKey) {
+      walletQuote.current = null;
+      return;
+    }
     const requestId = ++requestSequence.current;
     const controller = new AbortController();
     const delay = fulfillment === "ship" && shippingAddress ? 300 : 0;
@@ -82,23 +110,14 @@ export function CheckoutClient({ initialData }: { initialData: CheckoutPageData 
         status: "loading",
         quote: current.quote,
       }));
-      void fetch("/api/checkout/quote", {
-        method: "POST",
-        headers: { "Content-Type": "application/json" },
-        signal: controller.signal,
-        body: JSON.stringify({
+      void requestCheckoutQuote(
+        {
           items: checkoutItems,
           fulfillment,
           shippingAddress,
-        }),
-      })
-        .then(async (response) => {
-          const data = await response.json().catch(() => null);
-          if (!response.ok) {
-            throw new Error(data?.error || "Unable to calculate checkout totals");
-          }
-          return data as CheckoutQuoteResponse;
-        })
+        },
+        controller.signal,
+      )
         .then((quote) => {
           if (requestSequence.current === requestId) {
             setQuoteState({ status: "ready", quote });
@@ -129,17 +148,70 @@ export function CheckoutClient({ initialData }: { initialData: CheckoutPageData 
     quoteState.status === "ready" && quoteState.quote.completeness === "exact"
       ? quoteState.quote
       : null;
+  const currentQuote = quoteState.quote ?? null;
 
   function updateAddress(field: keyof CheckoutAddressForm, value: string) {
     setAddress((current) => ({ ...current, [field]: value }));
   }
 
-  async function prepare(): Promise<PreparedCheckout> {
-    const buyerEmail = email.trim().toLowerCase();
-    if (!buyerEmail || !exactQuote) {
+  async function quoteWalletShippingDestination(nextAddress: WalletShippingDestination) {
+    const nextQuote = await requestCheckoutQuote({
+      items: checkoutItems,
+      fulfillment: "ship",
+      shippingAddress: nextAddress,
+    });
+    if (nextQuote.completeness !== "exact") {
+      throw new Error("Unable to calculate shipping for this destination.");
+    }
+    return { quote: nextQuote };
+  }
+
+  async function resolveWalletShippingContact(
+    nextAddress: CheckoutPaymentAddress,
+    walletEmail?: string,
+  ): Promise<WalletCheckoutContext> {
+    const nextQuote = await requestCheckoutQuote({
+      items: checkoutItems,
+      fulfillment: "ship",
+      shippingAddress: nextAddress,
+    });
+    if (nextQuote.completeness !== "exact") {
+      throw new Error("Unable to calculate an exact total for this address.");
+    }
+    const nextAddressForm = {
+      ...nextAddress,
+      line2: nextAddress.line2 ?? "",
+    };
+    const nextQuoteKey = JSON.stringify({
+      items: checkoutItems,
+      fulfillment: "ship",
+      shippingAddress: nextAddress,
+      quoteRevision,
+    });
+    walletQuote.current = { key: nextQuoteKey, quote: nextQuote };
+    setAddress(nextAddressForm);
+    if (walletEmail) {
+      setEmail(walletEmail);
+    }
+    setQuoteState({ status: "ready", quote: nextQuote });
+    return {
+      quote: nextQuote,
+      shippingAddress: nextAddress,
+      buyerEmail: walletEmail,
+    };
+  }
+
+  async function prepare(
+    _method: PaymentMethod,
+    context?: WalletCheckoutContext,
+  ): Promise<PreparedCheckout> {
+    const buyerEmail = (context?.buyerEmail ?? email).trim().toLowerCase();
+    const selectedQuote = context?.quote ?? exactQuote;
+    const selectedShippingAddress = context?.shippingAddress ?? shippingAddress;
+    if (!buyerEmail || !selectedQuote) {
       throw new Error("Complete your contact and delivery details before paying.");
     }
-    if (fulfillment === "ship" && !shippingAddress) {
+    if (fulfillment === "ship" && !selectedShippingAddress) {
       throw new Error("Enter a complete US shipping address before paying.");
     }
 
@@ -147,8 +219,8 @@ export function CheckoutClient({ initialData }: { initialData: CheckoutPageData 
       items: checkoutItems,
       fulfillment,
       buyerEmail,
-      shippingAddress,
-      quoteFingerprint: exactQuote.quoteFingerprint,
+      shippingAddress: selectedShippingAddress,
+      quoteFingerprint: selectedQuote.quoteFingerprint,
     });
     const deviceSessionId = getOrCreateCheckoutDeviceSessionId();
     const response = await fetch("/api/checkout/prepare", {
@@ -158,8 +230,8 @@ export function CheckoutClient({ initialData }: { initialData: CheckoutPageData 
         items: checkoutItems,
         fulfillment,
         buyerEmail,
-        shippingAddress,
-        quoteFingerprint: exactQuote.quoteFingerprint,
+        shippingAddress: selectedShippingAddress,
+        quoteFingerprint: selectedQuote.quoteFingerprint,
         idempotencyKey: getOrCreateCheckoutIdempotencyKey(cartFingerprint),
         deviceSessionId,
       }),
@@ -210,11 +282,13 @@ export function CheckoutClient({ initialData }: { initialData: CheckoutPageData 
         <form className="flex flex-col" onSubmit={(event) => event.preventDefault()}>
           <SquarePaymentMethods
             paymentConfig={initialData.paymentConfig}
-            exactQuote={exactQuote}
+            quote={currentQuote}
             fulfillment={fulfillment}
             buyerEmail={email}
             shippingAddress={shippingAddress}
             isGuest={initialData.isGuest}
+            quoteWalletShippingDestination={quoteWalletShippingDestination}
+            resolveWalletShippingContact={resolveWalletShippingContact}
             prepare={prepare}
             clearCart={() => {
               clearIdempotencyKeyFromStorage();

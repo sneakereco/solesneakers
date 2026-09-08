@@ -31,6 +31,26 @@ const base = {
 };
 
 describe("direct checkout request schemas", () => {
+  it("accepts a redacted wallet destination for an exact shipping quote", () => {
+    expect(
+      checkoutQuoteRequestSchema.parse({
+        items: [item],
+        fulfillment: "ship",
+        shippingAddress: {
+          state: "de",
+          postalCode: "19801",
+          country: "us",
+        },
+      }),
+    ).toMatchObject({
+      shippingAddress: {
+        state: "DE",
+        postalCode: "19801",
+        country: "US",
+      },
+    });
+  });
+
   it("accepts an address-free preliminary shipping quote", () => {
     const result = checkoutQuoteRequestSchema.parse({
       items: [item],

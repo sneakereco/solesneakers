@@ -4,6 +4,21 @@ export type SquareTokenResult = {
   status: string;
   token?: string;
   errors?: Array<{ message?: string }>;
+  details?: {
+    shipping?: {
+      contact?: {
+        givenName?: string;
+        familyName?: string;
+        email?: string;
+        phone?: string;
+        addressLines?: string[];
+        city?: string;
+        state?: string;
+        postalCode?: string;
+        countryCode?: string;
+      };
+    };
+  };
 };
 
 export type SquarePaymentMethod = {
@@ -21,7 +36,9 @@ export type SquareCashAppPayMethod = {
 export type SquarePaymentRequest = {
   addEventListener(
     event: string,
-    listener: (value: unknown) => Record<string, unknown> | void,
+    listener: (
+      value: unknown,
+    ) => Record<string, unknown> | void | Promise<Record<string, unknown> | void>,
   ): void;
 };
 

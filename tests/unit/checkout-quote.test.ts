@@ -125,6 +125,30 @@ describe("checkoutQuoteHandler", () => {
     });
   });
 
+  it("calculates wallet tax from a redacted shipping destination", async () => {
+    const deps = dependencies();
+    const shippingAddress = {
+      state: "DE",
+      postalCode: "19801",
+      country: "US",
+    };
+
+    const response = await checkoutQuoteHandler(
+      request({ ...requestBody, shippingAddress }) as never,
+      deps,
+    );
+
+    expect(response.status).toBe(200);
+    expect((await response.json()).completeness).toBe("exact");
+    expect(deps.calculateSquareOrder).toHaveBeenCalledWith({
+      fulfillment: "ship",
+      subtotalCents: 10_000,
+      shippingCents: 1_500,
+      shippingAddress,
+      items: [resolvedItem],
+    });
+  });
+
   it("calculates pickup immediately with zero shipping", async () => {
     const deps = dependencies({
       quote: jest.fn().mockResolvedValue({

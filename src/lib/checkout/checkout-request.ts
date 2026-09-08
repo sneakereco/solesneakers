@@ -28,6 +28,21 @@ export const checkoutShippingAddressSchema = z
   })
   .strict();
 
+export const checkoutQuoteDestinationSchema = z
+  .object({
+    state: z
+      .string()
+      .trim()
+      .toUpperCase()
+      .regex(/^[A-Z]{2}$/),
+    postalCode: z
+      .string()
+      .trim()
+      .regex(/^\d{5}(?:-\d{4})?$/),
+    country: z.string().trim().toUpperCase().pipe(z.literal("US")),
+  })
+  .strict();
+
 function validateUniqueVariants(
   value: { items: Array<{ variantId: string }> },
   context: z.RefinementCtx,
@@ -49,7 +64,9 @@ export const checkoutQuoteRequestSchema = z
   .object({
     items: z.array(checkoutItemSchema).min(1).max(10),
     fulfillment: z.enum(["ship", "pickup"]),
-    shippingAddress: checkoutShippingAddressSchema.nullable(),
+    shippingAddress: z
+      .union([checkoutShippingAddressSchema, checkoutQuoteDestinationSchema])
+      .nullable(),
   })
   .strict()
   .superRefine((value, context) => {

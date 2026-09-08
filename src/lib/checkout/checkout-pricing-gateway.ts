@@ -1,11 +1,11 @@
-import type { PrepareCheckoutRequest } from "@/lib/checkout/checkout-request";
+import type { CheckoutQuoteRequest } from "@/lib/checkout/checkout-request";
 import type { ResolvedCheckoutItem } from "@/lib/checkout/checkout-cart-resolver";
 import type { ShippingDefaultsRepository } from "@/repositories/shipping-defaults-repo";
 
 export type CheckoutPricingQuoteInput = {
   tenantId: string;
-  fulfillment: PrepareCheckoutRequest["fulfillment"];
-  shippingAddress: PrepareCheckoutRequest["shippingAddress"] | null;
+  fulfillment: CheckoutQuoteRequest["fulfillment"];
+  shippingAddress: CheckoutQuoteRequest["shippingAddress"];
   subtotalCents: number;
   items: ResolvedCheckoutItem[];
 };

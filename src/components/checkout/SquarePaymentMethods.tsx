@@ -6,8 +6,13 @@ import { Loader2, ShieldCheck } from "lucide-react";
 import { clientEnv } from "@/config/client-env";
 import type { CheckoutPageData } from "@/lib/checkout/checkout-page-data";
 import type {
+  CheckoutQuoteResponse,
   ExactCheckoutQuote,
   PaymentPermitRequest,
+} from "@/lib/checkout/checkout-request";
+import {
+  checkoutQuoteDestinationSchema,
+  checkoutShippingAddressSchema,
 } from "@/lib/checkout/checkout-request";
 import {
   authorizeAndTokenize,
@@ -15,10 +20,12 @@ import {
   loadSquareWebPayments,
   type SquareCashAppPayMethod,
   type SquarePaymentMethod,
+  type SquarePaymentRequest,
   type SquareTokenResult,
 } from "@/lib/square/web-payments";
+import { log } from "@/lib/utils/log";
 
-type PaymentMethod = PaymentPermitRequest["method"];
+export type PaymentMethod = PaymentPermitRequest["method"];
 
 export type CheckoutPaymentAddress = {
   name: string;
@@ -38,6 +45,18 @@ export type PreparedCheckout = {
   totals: ExactCheckoutQuote["totals"];
 };
 
+export type WalletCheckoutContext = {
+  quote: ExactCheckoutQuote;
+  shippingAddress: CheckoutPaymentAddress;
+  buyerEmail?: string;
+};
+
+export type WalletShippingDestination = {
+  state: string;
+  postalCode: string;
+  country: "US";
+};
+
 type TurnstileApi = {
   render(element: HTMLElement, options: Record<string, unknown>): string;
   reset(widgetId: string): void;
@@ -52,6 +71,120 @@ declare global {
 
 function money(cents: number): string {
   return (cents / 100).toFixed(2);
+}
+
+export function walletPaymentTotal(quote: CheckoutQuoteResponse) {
+  return {
+    amount: money(quote.totals.totalCents),
+    label: quote.completeness === "exact" ? "Total" : "Estimated total",
+    pending: quote.completeness !== "exact",
+  };
+}
+
+export function assertWalletTotalUnchanged(
+  displayedQuote: ExactCheckoutQuote | null,
+  finalQuote: ExactCheckoutQuote,
+): void {
+  if (
+    !displayedQuote ||
+    displayedQuote.totals.totalCents !== finalQuote.totals.totalCents
+  ) {
+    throw new Error("Your total changed. Review the updated checkout and retry.");
+  }
+}
+
+export function walletShippingAddress(value: unknown): CheckoutPaymentAddress {
+  const candidate = value as {
+    givenName?: unknown;
+    familyName?: unknown;
+    phone?: unknown;
+    addressLines?: unknown;
+    city?: unknown;
+    state?: unknown;
+    postalCode?: unknown;
+    countryCode?: unknown;
+  };
+  const addressLines = Array.isArray(candidate?.addressLines)
+    ? candidate.addressLines
+    : [];
+  const parsed = checkoutShippingAddressSchema.safeParse({
+    name: [candidate?.givenName, candidate?.familyName]
+      .filter((part): part is string => typeof part === "string" && Boolean(part.trim()))
+      .join(" "),
+    phone: candidate?.phone,
+    line1: addressLines[0],
+    line2: addressLines[1] ?? null,
+    city: candidate?.city,
+    state: candidate?.state,
+    postalCode: candidate?.postalCode,
+    country: candidate?.countryCode,
+  });
+  if (!parsed.success) {
+    throw new Error("Choose a complete US shipping address.");
+  }
+  return { ...parsed.data, line2: parsed.data.line2 ?? null };
+}
+
+export function walletShippingDestination(value: unknown): WalletShippingDestination {
+  const candidate = value as Record<string, unknown> | null;
+  const parsed = checkoutQuoteDestinationSchema.safeParse({
+    state: candidate?.state,
+    postalCode: candidate?.postalCode,
+    country: candidate?.countryCode,
+  });
+  if (!parsed.success) {
+    throw new Error("Choose a valid US shipping destination.");
+  }
+  return parsed.data;
+}
+
+function walletShippingUpdate(quote: ExactCheckoutQuote) {
+  return {
+    shippingOptions: [
+      {
+        id: "STANDARD",
+        label: "Standard shipping",
+        amount: money(quote.totals.shippingCents),
+        taxLineItems: [{ label: "Tax", amount: money(quote.totals.taxCents) }],
+        total: { label: "Total", amount: money(quote.totals.totalCents) },
+      },
+    ],
+  };
+}
+
+export function bindWalletShippingContact(
+  request: Pick<SquarePaymentRequest, "addEventListener">,
+  resolveWalletShippingContact: (
+    address: WalletShippingDestination,
+  ) => Promise<{ quote: ExactCheckoutQuote }>,
+  onResolved?: (context: { quote: ExactCheckoutQuote }) => void,
+): void {
+  request.addEventListener("shippingcontactchanged", async (value) => {
+    try {
+      const context = await resolveWalletShippingContact(
+        walletShippingDestination(value),
+      );
+      onResolved?.(context);
+      return walletShippingUpdate(context.quote);
+    } catch (error) {
+      return {
+        error:
+          error instanceof Error
+            ? error.message
+            : "Unable to calculate shipping for this address.",
+      };
+    }
+  });
+}
+
+function reportUnavailable(method: PaymentMethod, error: unknown): void {
+  log({
+    level: "info",
+    layer: "frontend",
+    message: "Square payment method unavailable",
+    paymentMethod: method,
+    errorName: error instanceof Error ? error.name : "UnknownError",
+  });
 }
 
 function contact(name: string, email: string, address: CheckoutPaymentAddress | null) {
@@ -110,25 +243,38 @@ function loadTurnstile(): Promise<TurnstileApi> {
 
 export function SquarePaymentMethods({
   paymentConfig,
-  exactQuote,
+  quote,
   fulfillment,
   buyerEmail,
   shippingAddress,
   isGuest,
+  quoteWalletShippingDestination,
+  resolveWalletShippingContact,
   prepare,
   clearCart,
   children,
 }: {
   paymentConfig: CheckoutPageData["paymentConfig"];
-  exactQuote: ExactCheckoutQuote | null;
+  quote: CheckoutQuoteResponse | null;
   fulfillment: "ship" | "pickup";
   buyerEmail: string;
   shippingAddress: CheckoutPaymentAddress | null;
   isGuest: boolean;
-  prepare(method: PaymentMethod): Promise<PreparedCheckout>;
+  quoteWalletShippingDestination(
+    destination: WalletShippingDestination,
+  ): Promise<{ quote: ExactCheckoutQuote }>;
+  resolveWalletShippingContact(
+    address: CheckoutPaymentAddress,
+    buyerEmail?: string,
+  ): Promise<WalletCheckoutContext>;
+  prepare(
+    method: PaymentMethod,
+    context?: WalletCheckoutContext,
+  ): Promise<PreparedCheckout>;
   clearCart(): void;
   children?: ReactNode;
 }) {
+  const exactQuote = quote?.completeness === "exact" ? quote : null;
   const [payments, setPayments] = useState<Awaited<
     ReturnType<typeof loadSquareWebPayments>
   > | null>(null);
@@ -144,6 +290,11 @@ export function SquarePaymentMethods({
   const turnstileContainer = useRef<HTMLDivElement>(null);
   const turnstileTokenRef = useRef<string | null>(null);
   const turnstileTerminalError = useRef(false);
+  const walletQuote = useRef<ExactCheckoutQuote | null>(null);
+  const quoteWalletShippingDestinationRef = useRef(quoteWalletShippingDestination);
+  const resolveWalletShippingContactRef = useRef(resolveWalletShippingContact);
+  quoteWalletShippingDestinationRef.current = quoteWalletShippingDestination;
+  resolveWalletShippingContactRef.current = resolveWalletShippingContact;
 
   function updateTurnstileToken(token: string | null) {
     turnstileTokenRef.current = token;
@@ -178,23 +329,35 @@ export function SquarePaymentMethods({
   }, [paymentConfig.applicationId, paymentConfig.environment, paymentConfig.locationId]);
 
   useEffect(() => {
-    if (!payments || !exactQuote) {
+    if (!payments || !quote) {
       return;
     }
     let active = true;
     const created: Array<SquarePaymentMethod | SquareCashAppPayMethod> = [];
-    const total = money(exactQuote.totals.totalCents);
+    walletQuote.current = null;
+    const paymentTotal = walletPaymentTotal(quote);
     const request = payments.paymentRequest({
       countryCode: "US",
       currencyCode: "USD",
-      total: { amount: total, label: "Total", pending: false },
+      total: paymentTotal,
       shippingContact: shippingAddress
         ? contact(shippingAddress.name, buyerEmail, shippingAddress)
         : undefined,
       requestShippingContact: fulfillment === "ship",
     });
 
-    if (shippingAddress) {
+    if (fulfillment === "ship") {
+      bindWalletShippingContact(
+        request,
+        (value) => quoteWalletShippingDestinationRef.current(value),
+        (context) => {
+          walletQuote.current = context.quote;
+        },
+      );
+    }
+
+    if (shippingAddress && exactQuote) {
+      const total = money(exactQuote.totals.totalCents);
       request.addEventListener("afterpay_shippingaddresschanged", (value) => {
         const next = value as Partial<CheckoutPaymentAddress> & { countryCode?: string };
         if (
@@ -225,7 +388,9 @@ export function SquarePaymentMethods({
         if (active) {
           setApplePay(method);
         }
-      } catch {}
+      } catch (methodError) {
+        reportUnavailable("applePay", methodError);
+      }
       try {
         const method = await payments.googlePay(request);
         created.push(method);
@@ -236,37 +401,45 @@ export function SquarePaymentMethods({
         if (active) {
           setGooglePay(method);
         }
-      } catch {}
-      try {
-        const method = await payments.cashAppPay(request, {
-          redirectURL: window.location.href,
-          referenceId: exactQuote.quoteFingerprint.slice(0, 40),
-          shouldTokenize: () => !isGuest || Boolean(turnstileTokenRef.current),
-        });
-        created.push(method);
-        method.addEventListener("ontokenization", (event) => {
-          const detail = (event as { detail?: { tokenResult?: SquareTokenResult } })
-            .detail;
-          if (detail?.tokenResult) {
-            void submitTokenizedWallet("cashAppPay", detail.tokenResult);
+      } catch (methodError) {
+        reportUnavailable("googlePay", methodError);
+      }
+      if (exactQuote) {
+        try {
+          const method = await payments.cashAppPay(request, {
+            redirectURL: window.location.href,
+            referenceId: exactQuote.quoteFingerprint.slice(0, 40),
+            shouldTokenize: () => !isGuest || Boolean(turnstileTokenRef.current),
+          });
+          created.push(method);
+          method.addEventListener("ontokenization", (event) => {
+            const detail = (event as { detail?: { tokenResult?: SquareTokenResult } })
+              .detail;
+            if (detail?.tokenResult) {
+              void submitTokenizedWallet("cashAppPay", detail.tokenResult);
+            }
+          });
+          await method.attach("#square-cash-app-pay-container");
+          if (active) {
+            setCashAppPay(method);
           }
-        });
-        await method.attach("#square-cash-app-pay-container");
-        if (active) {
-          setCashAppPay(method);
+        } catch (methodError) {
+          reportUnavailable("cashAppPay", methodError);
         }
-      } catch {}
-      try {
-        const method = await payments.afterpayClearpay(request);
-        created.push(method);
-        if (!method.attach) {
-          throw new Error("square_afterpay_attach_unavailable");
+        try {
+          const method = await payments.afterpayClearpay(request);
+          created.push(method);
+          if (!method.attach) {
+            throw new Error("square_afterpay_attach_unavailable");
+          }
+          await method.attach("#square-afterpay-container");
+          if (active) {
+            setAfterpay(method);
+          }
+        } catch (methodError) {
+          reportUnavailable("afterpay", methodError);
         }
-        await method.attach("#square-afterpay-container");
-        if (active) {
-          setAfterpay(method);
-        }
-      } catch {}
+      }
     })();
 
     return () => {
@@ -280,7 +453,14 @@ export function SquarePaymentMethods({
       }
     };
     // Payment methods must be rebuilt when their authoritative amount or buyer email changes.
-  }, [buyerEmail, exactQuote?.quoteFingerprint, payments]);
+  }, [
+    buyerEmail,
+    exactQuote?.quoteFingerprint,
+    fulfillment,
+    payments,
+    quote,
+    shippingAddress,
+  ]);
 
   useEffect(() => {
     if (!isGuest || !turnstileContainer.current) {
@@ -346,8 +526,8 @@ export function SquarePaymentMethods({
     };
   }
 
-  function assertPayable(): void {
-    if (!exactQuote) {
+  function assertPayable(requireVisibleExactQuote: boolean): void {
+    if (requireVisibleExactQuote && !exactQuote) {
       throw new Error("Complete the address to calculate your total.");
     }
     if (isGuest && !turnstileTokenRef.current) {
@@ -355,14 +535,17 @@ export function SquarePaymentMethods({
     }
   }
 
-  async function runPayment(action: () => Promise<void>) {
+  async function runPayment(
+    action: () => Promise<void>,
+    requireVisibleExactQuote = true,
+  ) {
     if (isPaying) {
       return;
     }
     setIsPaying(true);
     setError(null);
     try {
-      assertPayable();
+      assertPayable(requireVisibleExactQuote);
       await action();
     } catch (paymentError) {
       setError(
@@ -393,20 +576,37 @@ export function SquarePaymentMethods({
   }
 
   function submitWallet(method: "applePay" | "googlePay", wallet: SquarePaymentMethod) {
-    if (isPaying || !exactQuote || (isGuest && !turnstileToken)) {
+    if (isPaying || (isGuest && !turnstileToken)) {
       return;
     }
     const tokenPromise = wallet.tokenize();
     void runPayment(async () => {
-      const sourceId = checkedToken(await tokenPromise);
-      const checkout = await prepare(method);
+      const result = await tokenPromise;
+      const sourceId = checkedToken(result);
+      let checkoutContext: WalletCheckoutContext | undefined;
+      if (fulfillment === "ship") {
+        const tokenContact = result.details?.shipping?.contact;
+        const walletEmail =
+          typeof tokenContact?.email === "string"
+            ? tokenContact.email.trim().toLowerCase()
+            : undefined;
+        checkoutContext = await resolveWalletShippingContactRef.current(
+          walletShippingAddress(tokenContact),
+          walletEmail,
+        );
+        assertWalletTotalUnchanged(
+          walletQuote.current ?? exactQuote,
+          checkoutContext.quote,
+        );
+      }
+      const checkout = await prepare(method, checkoutContext ?? undefined);
       await pay(
         await authorizeTokenizedSource({
           permitRequest: permitRequest(checkout, method),
           sourceId,
         }),
       );
-    });
+    }, false);
   }
 
   function submitPreparedMethod(

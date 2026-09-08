@@ -39,9 +39,9 @@ function squareAddress(
   address: NonNullable<CheckoutQuoteRequest["shippingAddress"]>,
 ): Square.Address {
   return {
-    addressLine1: address.line1,
-    addressLine2: address.line2 ?? undefined,
-    locality: address.city,
+    addressLine1: "line1" in address ? address.line1 : undefined,
+    addressLine2: "line2" in address ? (address.line2 ?? undefined) : undefined,
+    locality: "city" in address ? address.city : undefined,
     administrativeDistrictLevel1: address.state,
     postalCode: address.postalCode,
     country: "US",
@@ -108,9 +108,13 @@ export function buildSquareCheckoutOrder(
               state: "PROPOSED",
               shipmentDetails: {
                 recipient: {
-                  displayName: shippingAddress.name,
+                  displayName:
+                    "name" in shippingAddress ? shippingAddress.name : undefined,
                   emailAddress: input.buyerEmail,
-                  phoneNumber: shippingAddress.phone ?? undefined,
+                  phoneNumber:
+                    "phone" in shippingAddress
+                      ? (shippingAddress.phone ?? undefined)
+                      : undefined,
                   address: squareAddress(shippingAddress),
                 },
               },
