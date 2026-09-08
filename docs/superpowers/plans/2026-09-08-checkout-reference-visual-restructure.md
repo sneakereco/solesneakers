@@ -25,6 +25,7 @@
 **Files:**
 
 - Create: `src/components/checkout/square-card-style.ts`
+- Create: `src/components/checkout/square-card-initialization.ts`
 - Create: `src/components/checkout/square-payment-diagnostics.ts`
 - Modify: `src/components/checkout/SquarePaymentMethods.tsx`
 - Modify: `tests/unit/square-payment-methods.test.tsx`

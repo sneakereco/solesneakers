@@ -5,12 +5,13 @@ import {
   bindWalletShippingContact,
   resolveBillingAddress,
   squareBillingContact,
-  squareCardStyle,
   SquarePaymentMethods,
   turnstileErrorMessage,
   walletPaymentTotal,
   walletShippingAddress,
 } from "@/components/checkout/SquarePaymentMethods";
+import { squareCardStyle } from "@/components/checkout/square-card-style";
+import { initializeSquareCard } from "@/components/checkout/square-card-initialization";
 
 const paymentConfig = {
   applicationId: "sandbox-app",
@@ -109,12 +110,31 @@ describe("SquarePaymentMethods", () => {
   });
 
   it("uses supported Square selectors for the checkout card style", () => {
-    expect(squareCardStyle[".input-container.is-focus"]).toEqual(
-      expect.objectContaining({ borderColor: "#18181b" }),
+    expect(squareCardStyle[".input-container.is-focus"]).toEqual({
+      borderColor: "#18181b",
+      borderWidth: "1px",
+    });
+    expect(squareCardStyle[".input-container.is-error"]).toEqual({
+      borderColor: "#b45309",
+      borderWidth: "1px",
+    });
+    expect(JSON.stringify(squareCardStyle)).not.toContain("boxShadow");
+  });
+
+  it("publishes Square Payments before a card attachment failure", async () => {
+    const attachError = new Error("card attach failed");
+    const payments = {
+      card: jest.fn().mockResolvedValue({
+        attach: jest.fn().mockRejectedValue(attachError),
+        tokenize: jest.fn(),
+      }),
+    };
+    const onPaymentsReady = jest.fn();
+
+    await expect(initializeSquareCard(payments, onPaymentsReady)).rejects.toBe(
+      attachError,
     );
-    expect(squareCardStyle[".input-container.is-error"]).toEqual(
-      expect.objectContaining({ borderColor: "#b45309" }),
-    );
+    expect(onPaymentsReady).toHaveBeenCalledWith(payments);
   });
 
   it("blocks prepare when the final address changes the wallet-approved total", () => {

@@ -10,6 +10,11 @@ import {
 } from "@/components/checkout/BillingAddressFields";
 import { CHECKOUT_INPUT_CLASS } from "@/components/checkout/checkout-field-styles";
 import { PaymentBrandMarks } from "@/components/checkout/PaymentBrandMarks";
+import { initializeSquareCard } from "@/components/checkout/square-card-initialization";
+import {
+  squarePaymentDiagnostic,
+  type SquarePaymentPhase,
+} from "@/components/checkout/square-payment-diagnostics";
 import { clientEnv } from "@/config/client-env";
 import type { CheckoutPageData } from "@/lib/checkout/checkout-page-data";
 import type {
@@ -88,34 +93,6 @@ declare global {
 function money(cents: number): string {
   return (cents / 100).toFixed(2);
 }
-
-export const squareCardStyle: Record<string, Record<string, string>> = {
-  ".input-container": {
-    borderColor: "#d4d4d8",
-    borderRadius: "8px",
-  },
-  ".input-container.is-focus": {
-    borderColor: "#18181b",
-    boxShadow: "0 0 0 1px #18181b",
-  },
-  ".input-container.is-error": {
-    borderColor: "#b45309",
-  },
-  input: {
-    backgroundColor: "#ffffff",
-    color: "#18181b",
-    fontSize: "14px",
-  },
-  "input::placeholder": {
-    color: "#71717a",
-  },
-  ".message-text.is-error": {
-    color: "#92400e",
-  },
-  ".message-icon.is-error": {
-    color: "#92400e",
-  },
-};
 
 function splitName(name: string): { givenName: string; familyName: string } {
   const [givenName, ...family] = name.trim().split(/\s+/);
@@ -287,14 +264,12 @@ export function bindWalletShippingContact(
   });
 }
 
-function reportUnavailable(method: PaymentMethod, error: unknown): void {
-  log({
-    level: "warn",
-    layer: "frontend",
-    message: "Square payment method unavailable",
-    paymentMethod: method,
-    errorName: error instanceof Error ? error.name : "UnknownError",
-  });
+function reportUnavailable(
+  method: PaymentMethod,
+  phase: SquarePaymentPhase,
+  error: unknown,
+): void {
+  log(squarePaymentDiagnostic(method, phase, error));
 }
 
 function contact(name: string, email: string, address: CheckoutPaymentAddress | null) {
@@ -431,19 +406,26 @@ export function SquarePaymentMethods({
   useEffect(() => {
     let active = true;
     let nextCard: SquarePaymentMethod | null = null;
+    let phase: SquarePaymentPhase = "load";
     void (async () => {
       try {
         const nextPayments = await loadSquareWebPayments(paymentConfig);
-        nextCard = await nextPayments.card({ style: squareCardStyle });
-        if (!nextCard.attach) {
-          throw new Error("square_card_attach_unavailable");
-        }
-        await nextCard.attach("#square-card-container");
+        nextCard = await initializeSquareCard(
+          nextPayments,
+          (readyPayments) => {
+            if (active) {
+              setPayments(readyPayments);
+            }
+          },
+          (nextPhase) => {
+            phase = nextPhase;
+          },
+        );
         if (active) {
-          setPayments(nextPayments);
           setCard(nextCard);
         }
-      } catch {
+      } catch (caughtError) {
+        reportUnavailable("card", phase, caughtError);
         if (active) {
           setError("Secure payment fields could not be loaded. Please retry.");
         }
@@ -523,7 +505,7 @@ export function SquarePaymentMethods({
           setApplePay(method);
         }
       } catch (methodError) {
-        reportUnavailable("applePay", methodError);
+        reportUnavailable("applePay", "create", methodError);
       }
       try {
         const method = await payments.googlePay(request);
@@ -536,7 +518,7 @@ export function SquarePaymentMethods({
           setGooglePay(method);
         }
       } catch (methodError) {
-        reportUnavailable("googlePay", methodError);
+        reportUnavailable("googlePay", "create", methodError);
       }
       if (exactQuote) {
         try {
@@ -558,7 +540,7 @@ export function SquarePaymentMethods({
             setCashAppPay(method);
           }
         } catch (methodError) {
-          reportUnavailable("cashAppPay", methodError);
+          reportUnavailable("cashAppPay", "create", methodError);
         }
         try {
           const method = await payments.afterpayClearpay(request);
@@ -571,7 +553,7 @@ export function SquarePaymentMethods({
             setAfterpay(method);
           }
         } catch (methodError) {
-          reportUnavailable("afterpay", methodError);
+          reportUnavailable("afterpay", "create", methodError);
         }
       }
     })();
