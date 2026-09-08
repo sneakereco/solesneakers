@@ -1,5 +1,6 @@
-import type { NextRequest } from "next/server";
 import { timingSafeEqual } from "node:crypto";
+
+import type { NextRequest } from "next/server";
 
 import type { CheckoutAccessDecision } from "@/lib/checkout/checkout-access";
 import type {

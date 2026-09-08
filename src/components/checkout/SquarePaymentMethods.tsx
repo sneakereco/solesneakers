@@ -279,8 +279,8 @@ export function SquarePaymentMethods({
         void method.destroy?.();
       }
     };
-    // Payment methods must be rebuilt only when their authoritative amount changes.
-  }, [exactQuote?.quoteFingerprint, payments]);
+    // Payment methods must be rebuilt when their authoritative amount or buyer email changes.
+  }, [buyerEmail, exactQuote?.quoteFingerprint, payments]);
 
   useEffect(() => {
     if (!isGuest || !turnstileContainer.current) {
