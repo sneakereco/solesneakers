@@ -11,6 +11,7 @@ import {
 } from "@/components/checkout/CheckoutOrderSummary";
 import {
   SquarePaymentMethods,
+  type CheckoutPreparationContext,
   type CheckoutPaymentAddress,
   type PaymentMethod,
   type PreparedCheckout,
@@ -24,8 +25,10 @@ import {
   storeGuestOrderAccess,
 } from "@/lib/checkout/client-session";
 import type {
+  CheckoutBillingAddress,
   CheckoutQuoteRequest,
   CheckoutQuoteResponse,
+  PaymentPermitRequest,
 } from "@/lib/checkout/checkout-request";
 import { checkoutShippingAddressSchema } from "@/lib/checkout/checkout-request";
 import type {
@@ -59,6 +62,24 @@ async function requestCheckoutQuote(
     throw new Error(data?.error || "Unable to calculate checkout totals");
   }
   return data as CheckoutQuoteResponse;
+}
+
+type CheckoutPreparePayload = {
+  items: CheckoutQuoteRequest["items"];
+  fulfillment: Fulfillment;
+  paymentMethod: PaymentPermitRequest["method"];
+  buyerEmail: string;
+  shippingAddress: CheckoutPaymentAddress | null;
+  billingAddress: CheckoutBillingAddress | null;
+  quoteFingerprint: string;
+  idempotencyKey: string;
+  deviceSessionId: string;
+};
+
+export function buildCheckoutPreparePayload(
+  input: CheckoutPreparePayload,
+): CheckoutPreparePayload {
+  return input;
 }
 
 export function CheckoutClient({ initialData }: { initialData: CheckoutPageData }) {
@@ -201,12 +222,13 @@ export function CheckoutClient({ initialData }: { initialData: CheckoutPageData 
   }
 
   async function prepare(
-    _method: PaymentMethod,
-    context?: WalletCheckoutContext,
+    method: PaymentMethod,
+    context?: CheckoutPreparationContext,
   ): Promise<PreparedCheckout> {
     const buyerEmail = (context?.buyerEmail ?? email).trim().toLowerCase();
     const selectedQuote = context?.quote ?? exactQuote;
     const selectedShippingAddress = context?.shippingAddress ?? shippingAddress;
+    const selectedBillingAddress = context?.billingAddress ?? null;
     if (!buyerEmail || !selectedQuote) {
       throw new Error("Complete your contact and delivery details before paying.");
     }
@@ -218,22 +240,26 @@ export function CheckoutClient({ initialData }: { initialData: CheckoutPageData 
       items: checkoutItems,
       fulfillment,
       buyerEmail,
+      paymentMethod: method,
       shippingAddress: selectedShippingAddress,
+      billingAddress: selectedBillingAddress,
       quoteFingerprint: selectedQuote.quoteFingerprint,
     });
     const deviceSessionId = getOrCreateCheckoutDeviceSessionId();
     const response = await fetch("/api/checkout/prepare", {
       method: "POST",
       headers: { "Content-Type": "application/json" },
-      body: JSON.stringify({
+      body: JSON.stringify(buildCheckoutPreparePayload({
         items: checkoutItems,
         fulfillment,
+        paymentMethod: method,
         buyerEmail,
         shippingAddress: selectedShippingAddress,
+        billingAddress: selectedBillingAddress,
         quoteFingerprint: selectedQuote.quoteFingerprint,
         idempotencyKey: getOrCreateCheckoutIdempotencyKey(cartFingerprint),
         deviceSessionId,
-      }),
+      })),
     });
     const data = await response.json().catch(() => null);
     if (!response.ok) {

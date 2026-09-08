@@ -21,9 +21,50 @@ jest.mock("@/contexts/SessionContext", () => ({
   useSession: () => ({ user: null }),
 }));
 
-import { CheckoutClient } from "@/components/checkout/CheckoutClient";
+import {
+  buildCheckoutPreparePayload,
+  CheckoutClient,
+} from "@/components/checkout/CheckoutClient";
 
 describe("CheckoutClient", () => {
+  it("includes the selected payment method and billing address in prepare", () => {
+    const billingAddress = {
+      givenName: "Ada",
+      familyName: "Lovelace",
+      phone: null,
+      line1: "1 Billing St",
+      line2: null,
+      city: "Wilmington",
+      state: "DE",
+      postalCode: "19801",
+      country: "US" as const,
+    };
+
+    expect(
+      buildCheckoutPreparePayload({
+        items: [{ productId: "product-1", variantId: "variant-1", quantity: 1 }],
+        fulfillment: "pickup",
+        paymentMethod: "afterpay",
+        buyerEmail: "buyer@example.com",
+        shippingAddress: null,
+        billingAddress,
+        quoteFingerprint: "a".repeat(64),
+        idempotencyKey: "idempotency-1",
+        deviceSessionId: "device-1",
+      }),
+    ).toEqual({
+      items: [{ productId: "product-1", variantId: "variant-1", quantity: 1 }],
+      fulfillment: "pickup",
+      paymentMethod: "afterpay",
+      buyerEmail: "buyer@example.com",
+      shippingAddress: null,
+      billingAddress,
+      quoteFingerprint: "a".repeat(64),
+      idempotencyKey: "idempotency-1",
+      deviceSessionId: "device-1",
+    });
+  });
+
   it("shows the complete checkout immediately with signed-in defaults", () => {
     const html = renderToStaticMarkup(
       <CheckoutClient

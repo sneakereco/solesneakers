@@ -1,6 +1,6 @@
 "use client";
 
-import { useEffect, useRef, useState, type ReactNode } from "react";
+import { useEffect, useMemo, useRef, useState, type ReactNode } from "react";
 import { Loader2 } from "lucide-react";
 
 import {
@@ -58,6 +58,13 @@ export type WalletCheckoutContext = {
   quote: ExactCheckoutQuote;
   shippingAddress: CheckoutPaymentAddress;
   buyerEmail?: string;
+};
+
+export type CheckoutPreparationContext = {
+  quote?: ExactCheckoutQuote;
+  shippingAddress?: CheckoutPaymentAddress;
+  buyerEmail?: string;
+  billingAddress?: CheckoutBillingAddress | null;
 };
 
 export type WalletShippingDestination = {
@@ -149,6 +156,27 @@ export function resolveBillingAddress(input: {
   return parsed.success
     ? { ...parsed.data, phone: parsed.data.phone ?? null, line2: parsed.data.line2 ?? null }
     : null;
+}
+
+export function squareBillingContact(input: {
+  cardholderName: string;
+  buyerEmail: string;
+  billingAddress: CheckoutBillingAddress;
+}) {
+  const name = splitName(input.cardholderName);
+  return {
+    givenName: name.givenName,
+    familyName: name.familyName,
+    email: input.buyerEmail,
+    phone: input.billingAddress.phone || undefined,
+    addressLines: [input.billingAddress.line1, input.billingAddress.line2].filter(
+      (line): line is string => Boolean(line),
+    ),
+    city: input.billingAddress.city,
+    state: input.billingAddress.state,
+    postalCode: input.billingAddress.postalCode,
+    countryCode: input.billingAddress.country,
+  };
 }
 
 export function walletPaymentTotal(quote: CheckoutQuoteResponse) {
@@ -347,7 +375,7 @@ export function SquarePaymentMethods({
   ): Promise<WalletCheckoutContext>;
   prepare(
     method: PaymentMethod,
-    context?: WalletCheckoutContext,
+    context?: CheckoutPreparationContext,
   ): Promise<PreparedCheckout>;
   clearCart(): void;
   children?: ReactNode;
@@ -371,6 +399,8 @@ export function SquarePaymentMethods({
   const [isPaying, setIsPaying] = useState(false);
   const [error, setError] = useState<string | null>(null);
   const turnstileContainer = useRef<HTMLDivElement>(null);
+  const cardholderNameInput = useRef<HTMLInputElement>(null);
+  const billingFields = useRef<HTMLDivElement>(null);
   const turnstileTokenRef = useRef<string | null>(null);
   const turnstileTerminalError = useRef(false);
   const walletQuote = useRef<ExactCheckoutQuote | null>(null);
@@ -378,6 +408,16 @@ export function SquarePaymentMethods({
   const resolveWalletShippingContactRef = useRef(resolveWalletShippingContact);
   quoteWalletShippingDestinationRef.current = quoteWalletShippingDestination;
   resolveWalletShippingContactRef.current = resolveWalletShippingContact;
+  const resolvedBillingAddress = useMemo(
+    () =>
+      resolveBillingAddress({
+        fulfillment,
+        sameAsShipping,
+        shippingAddress,
+        billingAddress,
+      }),
+    [billingAddress, fulfillment, sameAsShipping, shippingAddress],
+  );
 
   function updateTurnstileToken(token: string | null) {
     turnstileTokenRef.current = token;
@@ -427,6 +467,13 @@ export function SquarePaymentMethods({
         ? contact(shippingAddress.name, buyerEmail, shippingAddress)
         : undefined,
       requestShippingContact: fulfillment === "ship",
+      billingContact: resolvedBillingAddress
+        ? squareBillingContact({
+            cardholderName: `${resolvedBillingAddress.givenName} ${resolvedBillingAddress.familyName}`,
+            buyerEmail,
+            billingAddress: resolvedBillingAddress,
+          })
+        : undefined,
     });
 
     if (fulfillment === "ship") {
@@ -542,6 +589,7 @@ export function SquarePaymentMethods({
     fulfillment,
     payments,
     quote,
+    resolvedBillingAddress,
     shippingAddress,
   ]);
 
@@ -697,12 +745,27 @@ export function SquarePaymentMethods({
     payment: SquarePaymentMethod,
   ) {
     void runPayment(async () => {
-      const checkout = await prepare(method);
-      const buyer = contact(
-        shippingAddress?.name ?? buyerEmail,
+      if (method === "card" && !cardholderName.trim()) {
+        cardholderNameInput.current?.reportValidity();
+        throw new Error("Enter the name shown on the card.");
+      }
+      if (!resolvedBillingAddress) {
+        billingFields.current
+          ?.querySelector<HTMLInputElement | HTMLSelectElement>("input:invalid, select:invalid")
+          ?.reportValidity();
+        throw new Error("Enter a complete US billing address.");
+      }
+      const checkout = await prepare(method, {
+        billingAddress: resolvedBillingAddress,
+      });
+      const buyer = squareBillingContact({
+        cardholderName:
+          method === "card"
+            ? cardholderName
+            : `${resolvedBillingAddress.givenName} ${resolvedBillingAddress.familyName}`,
         buyerEmail,
-        shippingAddress,
-      );
+        billingAddress: resolvedBillingAddress,
+      });
       await pay(
         await authorizeAndTokenize({
           permitRequest: permitRequest(checkout, method),
@@ -811,6 +874,7 @@ export function SquarePaymentMethods({
                 aria-label="Name on card"
                 placeholder="Name on card"
                 autoComplete="cc-name"
+                ref={cardholderNameInput}
                 value={cardholderName}
                 onChange={(event) => setCardholderName(event.target.value)}
                 className={CHECKOUT_INPUT_CLASS}
@@ -827,7 +891,7 @@ export function SquarePaymentMethods({
                 </label>
               )}
               {showSeparateBilling && (
-                <div className="grid gap-4 pt-2">
+                <div ref={billingFields} className="grid gap-4 pt-2">
                   <h3 className="text-xl font-semibold">Billing address</h3>
                   <BillingAddressFields
                     value={billingAddress}
@@ -874,7 +938,10 @@ export function SquarePaymentMethods({
               <p className="px-4 py-5 text-center text-sm">
                 You&apos;ll be redirected to Afterpay to complete your purchase.
               </p>
-              <div className="grid gap-4 border-t border-zinc-200 px-4 py-5">
+              <div
+                ref={billingFields}
+                className="grid gap-4 border-t border-zinc-200 px-4 py-5"
+              >
                 <h3 className="text-xl font-semibold">Billing address</h3>
                 {fulfillment === "ship" && (
                   <div className="overflow-hidden rounded-xl border border-zinc-300">

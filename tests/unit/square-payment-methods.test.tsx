@@ -4,6 +4,7 @@ import {
   assertWalletTotalUnchanged,
   bindWalletShippingContact,
   resolveBillingAddress,
+  squareBillingContact,
   squareCardStyle,
   SquarePaymentMethods,
   turnstileErrorMessage,
@@ -18,6 +19,36 @@ const paymentConfig = {
 };
 
 describe("SquarePaymentMethods", () => {
+  it("builds Square verification contact from cardholder and billing data", () => {
+    expect(
+      squareBillingContact({
+        cardholderName: "Ada Lovelace",
+        buyerEmail: "ada@example.com",
+        billingAddress: {
+          givenName: "Billing",
+          familyName: "Recipient",
+          phone: null,
+          line1: "1 Billing Street",
+          line2: null,
+          city: "Charleston",
+          state: "SC",
+          postalCode: "29401",
+          country: "US",
+        },
+      }),
+    ).toEqual({
+      givenName: "Ada",
+      familyName: "Lovelace",
+      email: "ada@example.com",
+      phone: undefined,
+      addressLines: ["1 Billing Street"],
+      city: "Charleston",
+      state: "SC",
+      postalCode: "29401",
+      countryCode: "US",
+    });
+  });
+
   it("resolves shipping and pickup billing without accepting partial data", () => {
     const shippingAddress = {
       name: "Ada Lovelace",
