@@ -12,12 +12,52 @@ const second = {
 };
 
 describe("createCheckoutCartHash", () => {
+  it("binds card checkout identity to its billing address", () => {
+    const input = {
+      tenantId: "tenant-1",
+      buyerEmail: "buyer@example.com",
+      fulfillment: "ship" as const,
+      paymentMethod: "card" as const,
+      shippingAddress: {
+        name: "Buyer Example",
+        phone: "8435550100",
+        line1: "1 Main Street",
+        line2: null,
+        city: "Charleston",
+        state: "SC",
+        postalCode: "29401",
+        country: "US" as const,
+      },
+      billingAddress: {
+        givenName: "Buyer",
+        familyName: "Example",
+        phone: null,
+        line1: "1 Billing Street",
+        line2: null,
+        city: "Charleston",
+        state: "SC",
+        postalCode: "29401",
+        country: "US" as const,
+      },
+      items: [first],
+    };
+
+    expect(createCheckoutCartHash(input)).not.toBe(
+      createCheckoutCartHash({
+        ...input,
+        billingAddress: { ...input.billingAddress, postalCode: "29403" },
+      }),
+    );
+  });
+
   it("is stable across cart item ordering", () => {
     const input = {
       tenantId: "tenant-1",
       buyerEmail: "buyer@example.com",
       fulfillment: "pickup" as const,
+      paymentMethod: "applePay" as const,
       shippingAddress: null,
+      billingAddress: null,
     };
 
     expect(createCheckoutCartHash({ ...input, items: [first, second] })).toBe(
@@ -30,14 +70,18 @@ describe("createCheckoutCartHash", () => {
       tenantId: "tenant-1",
       buyerEmail: "buyer@example.com",
       fulfillment: "pickup",
+      paymentMethod: "applePay",
       shippingAddress: null,
+      billingAddress: null,
       items: [first],
     });
     const otherBuyer = createCheckoutCartHash({
       tenantId: "tenant-1",
       buyerEmail: "other@example.com",
       fulfillment: "pickup",
+      paymentMethod: "applePay",
       shippingAddress: null,
+      billingAddress: null,
       items: [first],
     });
 

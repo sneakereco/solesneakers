@@ -17,6 +17,18 @@ const base = {
   idempotencyKey: "33333333-3333-4333-8333-333333333333",
   deviceSessionId: "44444444-4444-4444-8444-444444444444",
   buyerEmail: " Buyer@Example.com ",
+  paymentMethod: "card",
+  billingAddress: {
+    givenName: "Buyer",
+    familyName: "Example",
+    phone: null,
+    line1: "1 Billing Street",
+    line2: null,
+    city: "Charleston",
+    state: "SC",
+    postalCode: "29401",
+    country: "US",
+  },
   quoteFingerprint: "a".repeat(64),
   shippingAddress: {
     name: "Buyer Example",
@@ -30,7 +42,46 @@ const base = {
   },
 };
 
+const billingAddress = {
+  givenName: "Buyer",
+  familyName: "Example",
+  phone: null,
+  line1: "1 Billing Street",
+  line2: null,
+  city: "Charleston",
+  state: "sc",
+  postalCode: "29401",
+  country: "us",
+};
+
 describe("direct checkout request schemas", () => {
+  it("requires and normalizes billing for card and Afterpay checkout", () => {
+    const card = prepareCheckoutRequestSchema.parse({
+      ...base,
+      paymentMethod: "card",
+      billingAddress,
+    });
+
+    expect(card.billingAddress).toMatchObject({ state: "SC", country: "US" });
+    expect(
+      prepareCheckoutRequestSchema.safeParse({
+        ...base,
+        paymentMethod: "afterpay",
+        billingAddress: null,
+      }).success,
+    ).toBe(false);
+  });
+
+  it("leaves billing contact collection to express wallets", () => {
+    expect(
+      prepareCheckoutRequestSchema.safeParse({
+        ...base,
+        paymentMethod: "applePay",
+        billingAddress: null,
+      }).success,
+    ).toBe(true);
+  });
+
   it("accepts a redacted wallet destination for an exact shipping quote", () => {
     expect(
       checkoutQuoteRequestSchema.parse({

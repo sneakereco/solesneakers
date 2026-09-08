@@ -43,6 +43,35 @@ export const checkoutQuoteDestinationSchema = z
   })
   .strict();
 
+export const paymentMethodSchema = z.enum([
+  "card",
+  "afterpay",
+  "applePay",
+  "googlePay",
+  "cashAppPay",
+]);
+
+export const checkoutBillingAddressSchema = z
+  .object({
+    givenName: z.string().trim().min(1).max(50),
+    familyName: z.string().trim().min(1).max(50),
+    phone: z.string().trim().min(7).max(30).nullable().optional(),
+    line1: z.string().trim().min(1).max(120),
+    line2: z.string().trim().max(120).nullable().optional(),
+    city: z.string().trim().min(1).max(80),
+    state: z
+      .string()
+      .trim()
+      .toUpperCase()
+      .regex(/^[A-Z]{2}$/),
+    postalCode: z
+      .string()
+      .trim()
+      .regex(/^\d{5}(?:-\d{4})?$/),
+    country: z.string().trim().toUpperCase().pipe(z.literal("US")),
+  })
+  .strict();
+
 function validateUniqueVariants(
   value: { items: Array<{ variantId: string }> },
   context: z.RefinementCtx,
@@ -86,9 +115,11 @@ export const prepareCheckoutRequestSchema = z
     fulfillment: z.enum(["ship", "pickup"]),
     idempotencyKey: z.string().uuid(),
     deviceSessionId: z.string().uuid(),
+    paymentMethod: paymentMethodSchema,
     quoteFingerprint: z.string().regex(/^[a-f0-9]{64}$/),
     buyerEmail: z.string().trim().toLowerCase().email().max(254).nullable().optional(),
     shippingAddress: checkoutShippingAddressSchema.nullable(),
+    billingAddress: checkoutBillingAddressSchema.nullable(),
   })
   .strict()
   .superRefine((value, context) => {
@@ -108,15 +139,17 @@ export const prepareCheckoutRequestSchema = z
         message: "Pickup checkout must not include a shipping address",
       });
     }
+    if (
+      (value.paymentMethod === "card" || value.paymentMethod === "afterpay") &&
+      !value.billingAddress
+    ) {
+      context.addIssue({
+        code: "custom",
+        path: ["billingAddress"],
+        message: "Card and Afterpay checkout require a billing address",
+      });
+    }
   });
-
-export const paymentMethodSchema = z.enum([
-  "card",
-  "afterpay",
-  "applePay",
-  "googlePay",
-  "cashAppPay",
-]);
 
 export const paymentPermitRequestSchema = z
   .object({
@@ -137,6 +170,7 @@ export const directPaymentRequestSchema = z
 
 export type PrepareCheckoutRequest = z.infer<typeof prepareCheckoutRequestSchema>;
 export type PrepareCheckoutRequestItem = PrepareCheckoutRequest["items"][number];
+export type CheckoutBillingAddress = z.infer<typeof checkoutBillingAddressSchema>;
 export type CheckoutQuoteRequest = z.infer<typeof checkoutQuoteRequestSchema>;
 export type CheckoutTotals = {
   subtotalCents: number;
