@@ -804,6 +804,15 @@ export function SquarePaymentMethods({
         error={error}
         cardholderNameInput={cardholderNameInput}
         billingFields={billingFields}
+        securityChallenge={
+          isGuest ? (
+            <div
+              id="checkout-turnstile-container"
+              ref={turnstileContainer}
+              className="mt-4"
+            />
+          ) : null
+        }
         onSelectMethod={setSelectedMethod}
         onSameAsShippingChange={setSameAsShipping}
         onCardholderNameChange={setCardholderName}

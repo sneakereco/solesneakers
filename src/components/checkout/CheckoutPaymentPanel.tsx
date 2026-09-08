@@ -1,5 +1,5 @@
 import { Loader2 } from "lucide-react";
-import type { RefObject } from "react";
+import type { ReactNode, RefObject } from "react";
 
 import {
   BillingAddressFields,
@@ -22,6 +22,7 @@ export function CheckoutPaymentPanel({
   error,
   cardholderNameInput,
   billingFields,
+  securityChallenge,
   onSelectMethod,
   onSameAsShippingChange,
   onCardholderNameChange,
@@ -40,6 +41,7 @@ export function CheckoutPaymentPanel({
   error: string | null;
   cardholderNameInput?: RefObject<HTMLInputElement | null>;
   billingFields?: RefObject<HTMLDivElement | null>;
+  securityChallenge?: ReactNode;
   onSelectMethod(method: SelectedPaymentMethod): void;
   onSameAsShippingChange(value: boolean): void;
   onCardholderNameChange(value: string): void;
@@ -190,6 +192,7 @@ export function CheckoutPaymentPanel({
         ) : null}
       </div>
 
+      {securityChallenge}
       <button
         type="button"
         disabled={payDisabled}

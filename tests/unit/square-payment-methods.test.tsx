@@ -302,6 +302,7 @@ describe("SquarePaymentMethods", () => {
     expect(html).toContain('id="square-cash-app-pay-container"');
     expect(html).toContain('id="square-card-container"');
     expect(html).toContain('id="square-afterpay-container"');
+    expect(html).toContain('id="checkout-turnstile-container"');
     expect(html).toContain('role="radiogroup"');
     expect(html).not.toMatch(/aria-label="(?:Visa|Mastercard|American Express)"/);
     expect(html).not.toContain("+5");
@@ -342,5 +343,6 @@ describe("SquarePaymentMethods", () => {
     expect(html).not.toContain("PayPal");
     expect(html).not.toContain("Klarna");
     expect(html).not.toContain("Venmo");
+    expect(html).not.toContain('id="checkout-turnstile-container"');
   });
 });
