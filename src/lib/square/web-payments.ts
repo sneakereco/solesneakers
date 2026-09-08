@@ -22,7 +22,10 @@ export type SquareTokenResult = {
 };
 
 export type SquarePaymentMethod = {
-  attach?(selector: string): Promise<void>;
+  attach?(
+    selector: string,
+    options?: { useCustomButton?: boolean },
+  ): Promise<void>;
   tokenize(details?: Record<string, unknown>): Promise<SquareTokenResult>;
   destroy?(): Promise<boolean>;
 };
@@ -43,7 +46,9 @@ export type SquarePaymentRequest = {
 };
 
 export type SquarePayments = {
-  card(): Promise<SquarePaymentMethod>;
+  card(options?: {
+    style?: Record<string, Record<string, string>>;
+  }): Promise<SquarePaymentMethod>;
   paymentRequest(input: Record<string, unknown>): SquarePaymentRequest;
   applePay(request: SquarePaymentRequest): Promise<SquarePaymentMethod>;
   googlePay(request: SquarePaymentRequest): Promise<SquarePaymentMethod>;

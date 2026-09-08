@@ -4,6 +4,7 @@ import { useEffect, useMemo, useRef, useState } from "react";
 import { Loader2, MapPin, PackageCheck, Truck } from "lucide-react";
 
 import { useCart } from "@/components/cart/CartProvider";
+import { CHECKOUT_INPUT_CLASS } from "@/components/checkout/checkout-field-styles";
 import {
   CheckoutOrderSummary,
   type CheckoutQuoteState,
@@ -34,8 +35,6 @@ import type {
 import { clearIdempotencyKeyFromStorage } from "@/lib/checkout/idempotency";
 
 type Fulfillment = "ship" | "pickup";
-const inputClass =
-  "w-full rounded-lg border border-zinc-300 bg-white px-4 py-3 text-sm outline-none transition focus:border-zinc-950 focus:ring-1 focus:ring-zinc-950 disabled:bg-zinc-100";
 
 function normalizedAddress(address: CheckoutAddressForm): CheckoutPaymentAddress | null {
   const parsed = checkoutShippingAddressSchema.safeParse({
@@ -308,7 +307,7 @@ export function CheckoutClient({ initialData }: { initialData: CheckoutPageData 
                   value={email}
                   disabled={!initialData.isGuest}
                   onChange={(event) => setEmail(event.target.value)}
-                  className={`${inputClass} mt-2`}
+                  className={`${CHECKOUT_INPUT_CLASS} mt-2`}
                 />
               </label>
             </section>
@@ -347,7 +346,7 @@ export function CheckoutClient({ initialData }: { initialData: CheckoutPageData 
                       autoComplete="name"
                       value={address.name}
                       onChange={(event) => updateAddress("name", event.target.value)}
-                      className={`${inputClass} mt-2`}
+                      className={`${CHECKOUT_INPUT_CLASS} mt-2`}
                     />
                   </label>
                   <label className="text-sm text-zinc-700">
@@ -358,7 +357,7 @@ export function CheckoutClient({ initialData }: { initialData: CheckoutPageData 
                       autoComplete="tel"
                       value={address.phone}
                       onChange={(event) => updateAddress("phone", event.target.value)}
-                      className={`${inputClass} mt-2`}
+                      className={`${CHECKOUT_INPUT_CLASS} mt-2`}
                     />
                   </label>
                 </div>
@@ -372,7 +371,7 @@ export function CheckoutClient({ initialData }: { initialData: CheckoutPageData 
                         autoComplete="shipping street-address"
                         value={address.line1}
                         onChange={(event) => updateAddress("line1", event.target.value)}
-                        className={`${inputClass} mt-2`}
+                        className={`${CHECKOUT_INPUT_CLASS} mt-2`}
                       />
                     </label>
                     <label className="text-sm text-zinc-700">
@@ -381,7 +380,7 @@ export function CheckoutClient({ initialData }: { initialData: CheckoutPageData 
                         autoComplete="shipping address-line2"
                         value={address.line2}
                         onChange={(event) => updateAddress("line2", event.target.value)}
-                        className={`${inputClass} mt-2`}
+                        className={`${CHECKOUT_INPUT_CLASS} mt-2`}
                       />
                     </label>
                     <div className="grid gap-3 sm:grid-cols-[1fr_8rem_9rem]">
@@ -392,7 +391,7 @@ export function CheckoutClient({ initialData }: { initialData: CheckoutPageData 
                           autoComplete="shipping address-level2"
                           value={address.city}
                           onChange={(event) => updateAddress("city", event.target.value)}
-                          className={`${inputClass} mt-2`}
+                          className={`${CHECKOUT_INPUT_CLASS} mt-2`}
                         />
                       </label>
                       <label className="text-sm text-zinc-700">
@@ -405,7 +404,7 @@ export function CheckoutClient({ initialData }: { initialData: CheckoutPageData 
                           onChange={(event) =>
                             updateAddress("state", event.target.value.toUpperCase())
                           }
-                          className={`${inputClass} mt-2 uppercase`}
+                          className={`${CHECKOUT_INPUT_CLASS} mt-2 uppercase`}
                         />
                       </label>
                       <label className="text-sm text-zinc-700">
@@ -417,7 +416,7 @@ export function CheckoutClient({ initialData }: { initialData: CheckoutPageData 
                           onChange={(event) =>
                             updateAddress("postalCode", event.target.value)
                           }
-                          className={`${inputClass} mt-2`}
+                          className={`${CHECKOUT_INPUT_CLASS} mt-2`}
                         />
                       </label>
                     </div>

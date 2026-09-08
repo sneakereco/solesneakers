@@ -61,6 +61,7 @@ describe("CheckoutClient", () => {
     expect(html).toContain('value="1 Market St"');
     expect(html).toContain('autoComplete="shipping street-address"');
     expect(html).toContain('id="square-card-container"');
+    expect(html).toContain("focus-visible:outline-none");
     expect(html).toContain("Subtotal");
     expect(html).toContain("Tax");
     expect(html).toContain("Estimated total");

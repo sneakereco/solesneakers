@@ -3,6 +3,8 @@ import { renderToStaticMarkup } from "react-dom/server";
 import {
   assertWalletTotalUnchanged,
   bindWalletShippingContact,
+  resolveBillingAddress,
+  squareCardStyle,
   SquarePaymentMethods,
   turnstileErrorMessage,
   walletPaymentTotal,
@@ -16,6 +18,74 @@ const paymentConfig = {
 };
 
 describe("SquarePaymentMethods", () => {
+  it("resolves shipping and pickup billing without accepting partial data", () => {
+    const shippingAddress = {
+      name: "Ada Lovelace",
+      phone: "3025550100",
+      line1: "1 Market St",
+      line2: null,
+      city: "Wilmington",
+      state: "DE",
+      postalCode: "19801",
+      country: "US" as const,
+    };
+    const billingAddress = {
+      givenName: "Grace",
+      familyName: "Hopper",
+      phone: "2125550100",
+      line1: "1 Billing St",
+      line2: "Suite 2",
+      city: "New York",
+      state: "NY",
+      postalCode: "10001",
+      country: "US",
+    };
+
+    expect(
+      resolveBillingAddress({
+        fulfillment: "ship",
+        sameAsShipping: true,
+        shippingAddress,
+        billingAddress,
+      }),
+    ).toEqual({
+      givenName: "Ada",
+      familyName: "Lovelace",
+      phone: "3025550100",
+      line1: "1 Market St",
+      line2: null,
+      city: "Wilmington",
+      state: "DE",
+      postalCode: "19801",
+      country: "US",
+    });
+    expect(
+      resolveBillingAddress({
+        fulfillment: "pickup",
+        sameAsShipping: true,
+        shippingAddress: null,
+        billingAddress,
+      }),
+    ).toEqual({ ...billingAddress, country: "US" });
+    expect(
+      resolveBillingAddress({
+        fulfillment: "pickup",
+        sameAsShipping: false,
+        shippingAddress: null,
+        billingAddress: { ...billingAddress, postalCode: "" },
+      }),
+    ).toBeNull();
+  });
+
+  it("uses supported Square selectors for the checkout card style", () => {
+    expect(squareCardStyle[".input-container.is-focus"]).toEqual(
+      expect.objectContaining({ borderColor: "#18181b" }),
+    );
+    expect(squareCardStyle[".input-container.is-error"]).toEqual(
+      expect.objectContaining({ borderColor: "#b45309" }),
+    );
+  });
+
   it("blocks prepare when the final address changes the wallet-approved total", () => {
     const displayed = {
       completeness: "exact" as const,
@@ -175,6 +245,13 @@ describe("SquarePaymentMethods", () => {
     expect(html).toContain('id="square-cash-app-pay-container"');
     expect(html).toContain('id="square-card-container"');
     expect(html).toContain('id="square-afterpay-container"');
+    expect(html).toContain('role="radiogroup"');
+    expect(html).toContain('aria-label="Visa"');
+    expect(html).toContain('aria-label="Mastercard"');
+    expect(html).toContain('aria-label="American Express"');
+    expect(html).toContain("+5");
+    expect(html).toContain("Use shipping address as billing address");
+    expect(html.indexOf("Credit card")).toBeLessThan(html.indexOf("Afterpay"));
     expect(html).toContain("Calculated after address");
     expect(html).toContain("Pay now");
   });
@@ -205,6 +282,8 @@ describe("SquarePaymentMethods", () => {
     );
 
     expect(html).toContain("Pay $118.00 now");
+    expect(html).toContain("Billing address");
+    expect(html).toContain('autoComplete="billing given-name"');
     expect(html).not.toContain("PayPal");
     expect(html).not.toContain("Klarna");
     expect(html).not.toContain("Venmo");
