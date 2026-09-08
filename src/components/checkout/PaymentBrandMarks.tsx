@@ -7,10 +7,7 @@ export function PaymentBrandMarks() {
       >
         VISA
       </span>
-      <span
-        aria-label="Mastercard"
-        className="relative h-7 w-12 rounded bg-zinc-900"
-      >
+      <span aria-label="Mastercard" className="relative h-7 w-12 rounded bg-zinc-900">
         <span
           aria-hidden="true"
           className="absolute left-2 top-1.5 h-4 w-4 rounded-full bg-[#EB001B]"

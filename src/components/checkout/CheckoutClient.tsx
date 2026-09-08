@@ -249,17 +249,19 @@ export function CheckoutClient({ initialData }: { initialData: CheckoutPageData 
     const response = await fetch("/api/checkout/prepare", {
       method: "POST",
       headers: { "Content-Type": "application/json" },
-      body: JSON.stringify(buildCheckoutPreparePayload({
-        items: checkoutItems,
-        fulfillment,
-        paymentMethod: method,
-        buyerEmail,
-        shippingAddress: selectedShippingAddress,
-        billingAddress: selectedBillingAddress,
-        quoteFingerprint: selectedQuote.quoteFingerprint,
-        idempotencyKey: getOrCreateCheckoutIdempotencyKey(cartFingerprint),
-        deviceSessionId,
-      })),
+      body: JSON.stringify(
+        buildCheckoutPreparePayload({
+          items: checkoutItems,
+          fulfillment,
+          paymentMethod: method,
+          buyerEmail,
+          shippingAddress: selectedShippingAddress,
+          billingAddress: selectedBillingAddress,
+          quoteFingerprint: selectedQuote.quoteFingerprint,
+          idempotencyKey: getOrCreateCheckoutIdempotencyKey(cartFingerprint),
+          deviceSessionId,
+        }),
+      ),
     });
     const data = await response.json().catch(() => null);
     if (!response.ok) {

@@ -154,7 +154,11 @@ export function resolveBillingAddress(input: {
     line2: input.billingAddress.line2.trim() || null,
   });
   return parsed.success
-    ? { ...parsed.data, phone: parsed.data.phone ?? null, line2: parsed.data.line2 ?? null }
+    ? {
+        ...parsed.data,
+        phone: parsed.data.phone ?? null,
+        line2: parsed.data.line2 ?? null,
+      }
     : null;
 }
 
@@ -751,7 +755,9 @@ export function SquarePaymentMethods({
       }
       if (!resolvedBillingAddress) {
         billingFields.current
-          ?.querySelector<HTMLInputElement | HTMLSelectElement>("input:invalid, select:invalid")
+          ?.querySelector<
+            HTMLInputElement | HTMLSelectElement
+          >("input:invalid, select:invalid")
           ?.reportValidity();
         throw new Error("Enter a complete US billing address.");
       }
