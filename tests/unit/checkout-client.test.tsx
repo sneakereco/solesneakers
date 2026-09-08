@@ -98,8 +98,9 @@ describe("CheckoutClient", () => {
     expect(html).toContain('href="/cart"');
     expect(html).toContain("Delivery");
     expect(html).toContain("Payment");
-    expect(html).toContain("Shipping");
-    expect(html).toContain("Local pickup");
+    expect(html).toContain("Ship");
+    expect(html).toContain("Pickup");
+    expect(html).not.toContain('href="/auth/login?next=%2Fcheckout"');
     expect(html).toContain('type="email"');
     expect(html).toContain('value="buyer@example.com"');
     expect(html).toContain('value="1 Market St"');
