@@ -61,7 +61,7 @@ export function CheckoutDeliverySection({
               autoComplete="shipping country"
               value="US"
               disabled
-              className={CHECKOUT_INPUT_CLASS}
+              className={`${CHECKOUT_INPUT_CLASS} disabled:bg-white disabled:text-zinc-950 disabled:opacity-100`}
             >
               <option value="US">United States</option>
             </select>

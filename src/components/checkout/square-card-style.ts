@@ -1,7 +1,7 @@
 export const squareCardStyle: Record<string, Record<string, string>> = {
   ".input-container": {
     borderColor: "#d4d4d8",
-    borderRadius: "8px",
+    borderRadius: "12px",
     borderWidth: "1px",
   },
   ".input-container.is-focus": {
@@ -15,7 +15,7 @@ export const squareCardStyle: Record<string, Record<string, string>> = {
   input: {
     backgroundColor: "#ffffff",
     color: "#18181b",
-    fontSize: "14px",
+    fontSize: "16px",
   },
   "input::placeholder": {
     color: "#71717a",

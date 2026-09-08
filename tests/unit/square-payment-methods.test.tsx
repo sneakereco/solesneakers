@@ -110,6 +110,11 @@ describe("SquarePaymentMethods", () => {
   });
 
   it("uses supported Square selectors for the checkout card style", () => {
+    expect(squareCardStyle[".input-container"]).toEqual({
+      borderColor: "#d4d4d8",
+      borderRadius: "12px",
+      borderWidth: "1px",
+    });
     expect(squareCardStyle[".input-container.is-focus"]).toEqual({
       borderColor: "#18181b",
       borderWidth: "1px",
@@ -119,6 +124,7 @@ describe("SquarePaymentMethods", () => {
       borderWidth: "1px",
     });
     expect(JSON.stringify(squareCardStyle)).not.toContain("boxShadow");
+    expect(squareCardStyle.input).toEqual(expect.objectContaining({ fontSize: "16px" }));
   });
 
   it("publishes Square Payments before a card attachment failure", async () => {

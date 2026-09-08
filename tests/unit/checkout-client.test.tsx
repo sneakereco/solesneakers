@@ -111,10 +111,24 @@ describe("CheckoutClient", () => {
     expect(html).toContain("Tax");
     expect(html).toContain("Estimated total");
     expect(html).toContain("air-runner.jpg");
+    expect(html).toContain('<h1 class="sr-only">Checkout</h1>');
+    expect(html.indexOf("Order summary")).toBeLessThan(html.indexOf("Contact"));
     expect(html).not.toContain("Continue to secure payment");
     expect(html).not.toContain("Update order");
     expect(html).not.toContain("news and offers");
     expect(html).not.toContain("Shipping method");
     expect(html).not.toContain("Save my information");
+    for (const excluded of [
+      "Other Also Bought",
+      "unlocked free",
+      "Shipping Insurance",
+      "Protection Coverage",
+      "Discount code",
+      "Email me with news",
+      "Text me with news",
+      "5-Star Reviews",
+    ]) {
+      expect(html).not.toContain(excluded);
+    }
   });
 });

@@ -125,7 +125,7 @@
 - Modify: `tests/unit/checkout-theme.test.ts`
 
 - [ ] Write failing composition tests for left-column order, mobile summary-first order, cart-only summary content, and absence of every explicitly excluded section.
-- [ ] Add focused visual-contract checks for approved palette, divider, widths, radii, focus treatment, and responsive grids without snapshotting volatile class order.
+- [ ] Keep automated checks focused on rendered hierarchy, accessibility, provider styling, totals, and excluded content. Verify palette, divider, widths, spacing, and responsive grids with browser screenshots rather than brittle source-text assertions.
 - [ ] Run the three focused suites and confirm RED against the current composition.
 - [ ] Apply the reference shell, rhythm, divider, fields, segmented control, summary, and mobile collapse. Retain existing cart item data and server quote states.
 - [ ] Continue showing configured flat shipping and exact/preliminary tax honestly; add no discount or free-shipping claim.

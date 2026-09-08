@@ -306,9 +306,15 @@ export function CheckoutClient({ initialData }: { initialData: CheckoutPageData 
   return (
     <>
       <CheckoutHeader />
-      <main className="mx-auto grid w-full max-w-7xl grid-cols-1 bg-white text-black lg:grid-cols-[minmax(0,1fr)_minmax(22rem,0.78fr)]">
-        <section className="order-2 px-5 py-8 sm:px-8 lg:order-1 lg:px-12 lg:py-12">
-          <h1 className="mb-8 text-3xl font-semibold">Checkout</h1>
+      <main className="grid min-h-[calc(100vh-7rem)] w-full grid-cols-1 bg-[#f7f7f7] text-zinc-950 lg:grid-cols-2">
+        <CheckoutOrderSummary
+          className="order-1 lg:order-2"
+          items={items}
+          quoteState={quoteState}
+        />
+
+        <section className="order-2 px-5 py-10 sm:px-8 lg:order-1 lg:ml-auto lg:w-full lg:max-w-[44rem] lg:px-14 lg:py-16">
+          <h1 className="sr-only">Checkout</h1>
           <form className="flex flex-col" onSubmit={(event) => event.preventDefault()}>
             <SquarePaymentMethods
               paymentConfig={initialData.paymentConfig}
@@ -340,12 +346,6 @@ export function CheckoutClient({ initialData }: { initialData: CheckoutPageData 
             </SquarePaymentMethods>
           </form>
         </section>
-
-        <CheckoutOrderSummary
-          className="order-1 lg:order-2"
-          items={items}
-          quoteState={quoteState}
-        />
       </main>
     </>
   );

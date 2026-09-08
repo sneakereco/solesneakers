@@ -36,68 +36,70 @@ export function CheckoutOrderSummary({
 
   return (
     <aside
-      className={`${className} border-b border-zinc-200 bg-zinc-50 px-5 py-8 text-black lg:min-h-screen lg:border-b-0 lg:border-l lg:px-10 lg:py-12`}
+      className={`${className} border-b border-zinc-200 bg-[#f7f7f7] px-5 py-8 text-zinc-950 lg:min-h-[calc(100vh-7rem)] lg:border-b-0 lg:border-l lg:px-12 lg:py-16`}
       aria-labelledby="order-summary-heading"
     >
-      <h2 id="order-summary-heading" className="text-xl font-semibold">
+      <h2 id="order-summary-heading" className="sr-only">
         Order summary
       </h2>
-      <div className="mt-6 space-y-4">
-        {items.map((item) => (
-          <div key={`${item.productId}-${item.variantId}`} className="flex gap-4">
-            <div className="relative h-16 w-16 shrink-0 rounded-lg border border-zinc-200 bg-white">
-              <Image
-                src={item.imageUrl}
-                alt={item.titleDisplay}
-                fill
-                sizes="64px"
-                className="object-contain p-1 mix-blend-multiply"
-              />
-              <span className="absolute -right-2 -top-2 grid h-5 min-w-5 place-items-center rounded-full bg-zinc-700 px-1 text-xs text-white">
-                {item.quantity}
-              </span>
-            </div>
-            <div className="min-w-0 flex-1">
-              <p className="text-sm font-medium">{item.titleDisplay}</p>
-              <p className="mt-1 text-xs text-zinc-500">
-                Size {item.sizeLabel} · Qty {item.quantity}
+      <div className="w-full max-w-xl">
+        <div className="space-y-5">
+          {items.map((item) => (
+            <div key={`${item.productId}-${item.variantId}`} className="flex gap-4">
+              <div className="relative h-20 w-20 shrink-0 rounded-xl border border-zinc-200 bg-white">
+                <Image
+                  src={item.imageUrl}
+                  alt={item.titleDisplay}
+                  fill
+                  sizes="80px"
+                  className="object-contain p-1 mix-blend-multiply"
+                />
+                <span className="absolute -right-2 -top-2 grid h-5 min-w-5 place-items-center rounded-full bg-zinc-700 px-1 text-xs text-white">
+                  {item.quantity}
+                </span>
+              </div>
+              <div className="min-w-0 flex-1">
+                <p className="text-sm font-medium">{item.titleDisplay}</p>
+                <p className="mt-1 text-xs text-zinc-500">
+                  Size {item.sizeLabel} · Qty {item.quantity}
+                </p>
+              </div>
+              <p className="text-sm font-medium">
+                {formatPrice(item.priceCents * item.quantity)}
               </p>
             </div>
-            <p className="text-sm font-medium">
-              {formatPrice(item.priceCents * item.quantity)}
-            </p>
-          </div>
-        ))}
-      </div>
+          ))}
+        </div>
 
-      <dl
-        className="mt-8 space-y-3 border-t border-zinc-200 pt-6 text-sm"
-        aria-live="polite"
-      >
-        <div className="flex justify-between gap-4">
-          <dt>Subtotal</dt>
-          <dd>{formatPrice(subtotal)}</dd>
-        </div>
-        <div className="flex justify-between gap-4">
-          <dt>Shipping</dt>
-          <dd>{shipping === undefined ? "Calculating" : formatPrice(shipping)}</dd>
-        </div>
-        <div className="flex justify-between gap-4">
-          <dt>Tax</dt>
-          <dd>
-            {exact ? formatPrice(exact.totals.taxCents) : "Calculated after address"}
-          </dd>
-        </div>
-        <div className="flex justify-between gap-4 border-t border-zinc-200 pt-4 text-lg font-semibold">
-          <dt>{exact ? "Total" : "Estimated total"}</dt>
-          <dd>{formatPrice(total)}</dd>
-        </div>
-      </dl>
-      {quoteState.status === "error" && (
-        <p className="mt-4 text-sm text-amber-800" role="alert">
-          {quoteState.message}
-        </p>
-      )}
+        <dl
+          className="mt-8 space-y-3 border-t border-zinc-200 pt-6 text-sm"
+          aria-live="polite"
+        >
+          <div className="flex justify-between gap-4">
+            <dt>Subtotal</dt>
+            <dd>{formatPrice(subtotal)}</dd>
+          </div>
+          <div className="flex justify-between gap-4">
+            <dt>Shipping</dt>
+            <dd>{shipping === undefined ? "Calculating" : formatPrice(shipping)}</dd>
+          </div>
+          <div className="flex justify-between gap-4">
+            <dt>Tax</dt>
+            <dd>
+              {exact ? formatPrice(exact.totals.taxCents) : "Calculated after address"}
+            </dd>
+          </div>
+          <div className="flex justify-between gap-4 border-t border-zinc-200 pt-4 text-lg font-semibold">
+            <dt>{exact ? "Total" : "Estimated total"}</dt>
+            <dd>{formatPrice(total)}</dd>
+          </div>
+        </dl>
+        {quoteState.status === "error" && (
+          <p className="mt-4 text-sm text-amber-800" role="alert">
+            {quoteState.message}
+          </p>
+        )}
+      </div>
     </aside>
   );
 }
