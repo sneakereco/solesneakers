@@ -297,10 +297,8 @@ describe("SquarePaymentMethods", () => {
     expect(html).toContain('id="square-card-container"');
     expect(html).toContain('id="square-afterpay-container"');
     expect(html).toContain('role="radiogroup"');
-    expect(html).toContain('aria-label="Visa"');
-    expect(html).toContain('aria-label="Mastercard"');
-    expect(html).toContain('aria-label="American Express"');
-    expect(html).toContain("+5");
+    expect(html).not.toMatch(/aria-label="(?:Visa|Mastercard|American Express)"/);
+    expect(html).not.toContain("+5");
     expect(html).toContain("Use shipping address as billing address");
     expect(html.indexOf("Credit card")).toBeLessThan(html.indexOf("Afterpay"));
     expect(html).toContain("Calculated after address");
