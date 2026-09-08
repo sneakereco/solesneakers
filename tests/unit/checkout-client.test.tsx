@@ -12,6 +12,7 @@ jest.mock("@/components/cart/CartProvider", () => ({
         imageUrl: "https://images.example.com/air-runner.jpg",
       },
     ],
+    itemCount: 1,
     total: 10000,
     isReady: true,
   }),
@@ -93,6 +94,8 @@ describe("CheckoutClient", () => {
     );
 
     expect(html).toContain("Contact");
+    expect(html).toContain('aria-label="Go to cart, 1 item"');
+    expect(html).toContain('href="/cart"');
     expect(html).toContain("Delivery");
     expect(html).toContain("Payment");
     expect(html).toContain("Shipping");
