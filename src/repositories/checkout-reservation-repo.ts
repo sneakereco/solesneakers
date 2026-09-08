@@ -4,6 +4,10 @@ import type { TypedSupabaseClient } from "@/lib/supabase/server";
 import type { SquareCheckoutOrder } from "@/lib/square/checkout-orders";
 import type { ExpiredCheckout } from "@/lib/checkout/expire-checkout-reservations";
 import type { Json } from "@/types/db/database.types";
+import type {
+  CheckoutBillingAddress,
+  PaymentPermitRequest,
+} from "@/lib/checkout/checkout-request";
 
 export type CheckoutReservationItem = {
   productId: string;
@@ -26,6 +30,7 @@ export type ReserveCheckoutInput = {
   userId: string | null;
   guestEmail: string | null;
   fulfillment: "ship" | "pickup";
+  paymentMethod: PaymentPermitRequest["method"];
   idempotencyKey: string;
   cartHash: string;
   expiresAt: Date;
@@ -45,6 +50,7 @@ export type ReserveCheckoutInput = {
     postalCode: string;
     country: "US";
   } | null;
+  billingAddress: CheckoutBillingAddress | null;
   protectionEvidence: Json;
   items: CheckoutReservationItem[];
 };
@@ -364,6 +370,7 @@ export class CheckoutReservationRepository {
       p_total_cents: input.totalCents,
       p_tax_calculation_id: input.taxCalculationId,
       p_customer_state: input.customerState,
+      p_payment_method: input.paymentMethod,
       p_shipping_address: input.shippingAddress
         ? {
             name: input.shippingAddress.name,
@@ -374,6 +381,19 @@ export class CheckoutReservationRepository {
             state: input.shippingAddress.state,
             postal_code: input.shippingAddress.postalCode,
             country: input.shippingAddress.country,
+          }
+        : null,
+      p_billing_address: input.billingAddress
+        ? {
+            given_name: input.billingAddress.givenName,
+            family_name: input.billingAddress.familyName,
+            phone: input.billingAddress.phone ?? null,
+            line1: input.billingAddress.line1,
+            line2: input.billingAddress.line2 ?? null,
+            city: input.billingAddress.city,
+            state: input.billingAddress.state,
+            postal_code: input.billingAddress.postalCode,
+            country: input.billingAddress.country,
           }
         : null,
       p_items: items,

@@ -17,10 +17,22 @@ function request(quoteFingerprint = QUOTE_FINGERPRINT) {
       deviceSessionId: DEVICE_ID,
       quoteFingerprint,
       buyerEmail: "buyer@example.com",
+      paymentMethod: "card",
       shippingAddress: {
         name: "Buyer",
         phone: "5555555555",
         line1: "1 Main Street",
+        line2: null,
+        city: "Charleston",
+        state: "SC",
+        postalCode: "29401",
+        country: "US",
+      },
+      billingAddress: {
+        givenName: "Buyer",
+        familyName: "Example",
+        phone: null,
+        line1: "1 Billing Street",
         line2: null,
         city: "Charleston",
         state: "SC",
@@ -123,6 +135,17 @@ describe("prepareCheckoutHandler", () => {
     );
     expect(deps.calculateSquareOrder.mock.invocationCallOrder[0]).toBeLessThan(
       deps.reserve.mock.invocationCallOrder[0],
+    );
+    expect(deps.reserve).toHaveBeenCalledWith(
+      expect.objectContaining({
+        paymentMethod: "card",
+        billingAddress: expect.objectContaining({
+          givenName: "Buyer",
+          familyName: "Example",
+          postalCode: "29401",
+          country: "US",
+        }),
+      }),
     );
   });
 

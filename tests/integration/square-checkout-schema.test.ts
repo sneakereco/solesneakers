@@ -32,6 +32,12 @@ describe("Square checkout reservation schema", () => {
   const webPaymentsMigration = existsSync(webPaymentsMigrationPath)
     ? readFileSync(webPaymentsMigrationPath, "utf8")
     : "";
+  const billingMigrationPath = resolve(
+    "supabase/migrations/20260908120000_square_checkout_billing_snapshot.sql",
+  );
+  const billingMigration = existsSync(billingMigrationPath)
+    ? readFileSync(billingMigrationPath, "utf8")
+    : "";
 
   it("stores provider identifiers and atomic inventory reservations", () => {
     expect(migration).toContain("square_payment_link_id");
@@ -144,5 +150,15 @@ describe("Square checkout reservation schema", () => {
     );
     expect(webPaymentsMigration).toContain("from public, anon, authenticated");
     expect(webPaymentsMigration).toContain("to service_role");
+  });
+
+  it("stores an immutable billing snapshot in the reservation transaction", () => {
+    expect(billingMigration).toContain("p_payment_method text");
+    expect(billingMigration).toContain("p_billing_address jsonb");
+    expect(billingMigration).toContain("invalid_checkout_billing_address");
+    expect(billingMigration).toContain("insert into public.order_billing");
+    expect(billingMigration).toContain("on conflict (order_id) do nothing");
+    expect(billingMigration).toContain("from public, anon, authenticated");
+    expect(billingMigration).toContain("to service_role");
   });
 });

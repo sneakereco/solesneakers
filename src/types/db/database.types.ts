@@ -2382,6 +2382,7 @@ export type Database = {
       reserve_square_checkout_inventory: {
         Args: {
           p_cart_hash: string;
+          p_billing_address: Json | null;
           p_customer_state: string;
           p_currency: string;
           p_expires_at: string;
@@ -2389,6 +2390,7 @@ export type Database = {
           p_guest_email: string | null;
           p_idempotency_key: string;
           p_items: Json;
+          p_payment_method: string;
           p_protection_evidence: Json;
           p_shipping_address: Json | null;
           p_shipping_cents: number;

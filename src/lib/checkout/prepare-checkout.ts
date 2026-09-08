@@ -174,7 +174,9 @@ export async function prepareCheckoutHandler(
       tenantId,
       buyerEmail,
       fulfillment: parsed.data.fulfillment,
+      paymentMethod: parsed.data.paymentMethod,
       shippingAddress: parsed.data.shippingAddress,
+      billingAddress: parsed.data.billingAddress,
       items: parsed.data.items,
     });
     const existing = await deps.findExisting(tenantId, parsed.data.idempotencyKey);
@@ -303,6 +305,7 @@ export async function prepareCheckoutHandler(
         userId: session?.user.id ?? null,
         guestEmail: session ? null : buyerEmail,
         fulfillment: parsed.data.fulfillment,
+        paymentMethod: parsed.data.paymentMethod,
         idempotencyKey: parsed.data.idempotencyKey,
         cartHash,
         expiresAt,
@@ -313,6 +316,7 @@ export async function prepareCheckoutHandler(
         taxCalculationId: "square:pending",
         customerState: pricing.customerState,
         shippingAddress: parsed.data.shippingAddress,
+        billingAddress: parsed.data.billingAddress,
         protectionEvidence: {
           version: 2,
           bot_verdict: bot.reason,
