@@ -1,7 +1,7 @@
 # Checkout Payment and Billing Design
 
-**Status:** Approved  
-**Date:** 2026-09-08  
+**Status:** Approved
+**Date:** 2026-09-08
 **Extends:** `2026-09-07-single-page-checkout-overhaul-design.md`
 
 ## Decision
