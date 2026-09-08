@@ -31,11 +31,11 @@
 - Modify: `tests/unit/square-payment-methods.test.tsx`
 - Create: `tests/unit/square-payment-diagnostics.test.ts`
 
-- [ ] Write failing tests that require documented focus/error borders, reject `boxShadow`, and require sanitized method/phase/error diagnostics.
-- [ ] Run `npm run test:jest:unit -- --runTestsByPath tests/unit/square-payment-methods.test.tsx tests/unit/square-payment-diagnostics.test.ts`; confirm RED because the modules do not exist and `boxShadow` remains.
-- [ ] Extract the style object using only documented selector/property combinations. Replace the swallowed Card error with customer-safe retry state plus sanitized diagnostics.
-- [ ] Store the successfully created Square `Payments` object before Card creation/attachment so Card failure cannot stop wallet capability checks.
-- [ ] Rerun the focused tests, run `git diff --check`, and commit as `fix: isolate Square card initialization`.
+- [x] Write failing tests that require documented focus/error borders, reject `boxShadow`, and require sanitized method/phase/error diagnostics.
+- [x] Run `npm run test:jest:unit -- --runTestsByPath tests/unit/square-payment-methods.test.tsx tests/unit/square-payment-diagnostics.test.ts`; confirm RED because the modules do not exist and `boxShadow` remains.
+- [x] Extract the style object using only documented selector/property combinations. Replace the swallowed Card error with customer-safe retry state plus sanitized diagnostics.
+- [x] Store the successfully created Square `Payments` object before Card creation/attachment so Card failure cannot stop wallet capability checks.
+- [x] Rerun the focused tests, run `git diff --check`, and commit as `fix: isolate Square card initialization`.
 
 ---
 
@@ -48,11 +48,11 @@
 - Create: `tests/unit/checkout-header.test.tsx`
 - Modify: `tests/unit/checkout-client.test.tsx`
 
-- [ ] Read `03-layouts-and-pages.md`, `04-linking-and-navigating.md`, and `12-images.md` from the local Next 16 App Router guides.
-- [ ] Write a failing test for the Sole Sneakers logo, direct `/cart` link, accessible item count, and absence of a cart-drawer trigger.
-- [ ] Run `npm run test:jest:unit -- --runTestsByPath tests/unit/checkout-header.test.tsx tests/unit/checkout-client.test.tsx`; confirm RED because checkout has no route-specific header.
-- [ ] Implement a normal-flow checkout header using the existing logo, `next/link`, cart context, and an accessible cart icon/count. Render it only in the main checkout experience so processing, success, and cancel routes do not offer navigation away during payment handling. Keep checkout outside the storefront drawer shell.
-- [ ] Rerun the focused tests, run `git diff --check`, and commit as `feat: add checkout header`.
+- [x] Read `03-layouts-and-pages.md`, `04-linking-and-navigating.md`, and `12-images.md` from the local Next 16 App Router guides.
+- [x] Write a failing test for the Sole Sneakers logo, direct `/cart` link, accessible item count, and absence of a cart-drawer trigger.
+- [x] Run `npm run test:jest:unit -- --runTestsByPath tests/unit/checkout-header.test.tsx tests/unit/checkout-client.test.tsx`; confirm RED because checkout has no route-specific header.
+- [x] Implement a normal-flow checkout header using the existing logo, `next/link`, cart context, and an accessible cart icon/count. Render it only in the main checkout experience so processing, success, and cancel routes do not offer navigation away during payment handling. Keep checkout outside the storefront drawer shell.
+- [x] Rerun the focused tests, run `git diff --check`, and commit as `feat: add checkout header`.
 
 ---
 
@@ -67,12 +67,12 @@
 - Create: `tests/unit/checkout-delivery-section.test.tsx`
 - Modify: `tests/unit/checkout-client.test.tsx`
 
-- [ ] Write failing Contact tests: guests get `/auth/login?next=%2Fcheckout`; signed-in customers do not; account email is prefilled; no marketing controls render.
-- [ ] Write failing Delivery tests: Ship/Pickup semantics, reference field order, pickup location, split first/last UI fields, and no shipping-method chooser.
-- [ ] Run the three focused suites and confirm RED because the components do not exist and current Delivery markup differs.
-- [ ] Extract controlled presentation components. Keep state, address normalization, quote invalidation, stale-response protection, and prepare payload construction in `CheckoutClient`.
-- [ ] Adapt first/last UI values into the existing server address contract; do not change server schemas unless a failing contract test proves it necessary.
-- [ ] Rerun the focused tests, run `git diff --check`, and commit as `refactor: split checkout contact and delivery`.
+- [x] Write failing Contact tests: guests get `/auth/login?next=%2Fcheckout`; signed-in customers do not; account email is prefilled; no marketing controls render.
+- [x] Write failing Delivery tests: Ship/Pickup semantics, reference field order, pickup location, split first/last UI fields, and no shipping-method chooser.
+- [x] Run the three focused suites and confirm RED because the components do not exist and current Delivery markup differs.
+- [x] Extract controlled presentation components. Keep state, address normalization, quote invalidation, stale-response protection, and prepare payload construction in `CheckoutClient`.
+- [x] Adapt first/last UI values into the existing server address contract; do not change server schemas unless a failing contract test proves it necessary.
+- [x] Rerun the focused tests, run `git diff --check`, and commit as `refactor: split checkout contact and delivery`.
 
 ---
 
@@ -85,11 +85,11 @@
 - Create: `tests/unit/express-checkout-methods.test.tsx`
 - Modify: `tests/unit/square-payment-methods.test.tsx`
 
-- [ ] Write failing tests proving Apple Pay, Google Pay, and Cash App Pay render only when individually ready; one failure cannot hide another ready method or Card; zero ready methods collapses Express and its divider.
-- [ ] Add a regression test that rejects Card attachment and still expects Google Pay initialization from the shared `Payments` object.
-- [ ] Run both focused suites and confirm RED against the coupled component.
-- [ ] Extract the Express presentation and give every method independent readiness, cleanup, and diagnostics. Preserve Apple Pay's immediate-click tokenization and Google Pay/Cash App attachment containers.
-- [ ] Rerun the focused tests, run `git diff --check`, and commit as `refactor: isolate checkout wallets`.
+- [x] Write failing tests proving Apple Pay, Google Pay, and Cash App Pay render only when individually ready; one failure cannot hide another ready method or Card; zero ready methods collapses Express and its divider.
+- [x] Add a regression test that rejects Card attachment and still expects Google Pay initialization from the shared `Payments` object.
+- [x] Run both focused suites and confirm RED against the coupled component.
+- [x] Extract the Express presentation and give every method independent readiness, cleanup, and diagnostics. Preserve Apple Pay's immediate-click tokenization and Google Pay/Cash App attachment containers.
+- [x] Rerun the focused tests, run `git diff --check`, and commit as `refactor: isolate checkout wallets`.
 
 ---
 
@@ -104,12 +104,12 @@
 - Create: `tests/unit/checkout-payment-panel.test.tsx`
 - Modify: `tests/unit/square-payment-methods.test.tsx`
 
-- [ ] Write failing tests for Card default selection, conditional Afterpay row, same-as-shipping behavior, required pickup billing, Afterpay redirect copy, and radio semantics.
-- [ ] Replace the old brand-mark assertion with one proving no CSS-generated Visa/Mastercard/Amex or `+5` placeholder renders before genuine assets exist.
-- [ ] Run both focused suites and confirm RED.
-- [ ] Implement the controlled panel with reference borders, selected row, spacing, typography, billing expansion, and responsive grids. Keep Square's iframe mounted in its host.
-- [ ] Preserve Card/Afterpay tokenization, billing normalization, Turnstile, prepare, permit, clear-cart, and navigation. Delete the obsolete faux artwork only after no imports remain.
-- [ ] Rerun the focused tests, run `git diff --check`, and commit as `refactor: build checkout payment panel`.
+- [x] Write failing tests for Card default selection, conditional Afterpay row, same-as-shipping behavior, required pickup billing, Afterpay redirect copy, and radio semantics.
+- [x] Replace the old brand-mark assertion with one proving no CSS-generated Visa/Mastercard/Amex or `+5` placeholder renders before genuine assets exist.
+- [x] Run both focused suites and confirm RED.
+- [x] Implement the controlled panel with reference borders, selected row, spacing, typography, billing expansion, and responsive grids. Keep Square's iframe mounted in its host.
+- [x] Preserve Card/Afterpay tokenization, billing normalization, Turnstile, prepare, permit, clear-cart, and navigation. Delete the obsolete faux artwork only after no imports remain.
+- [x] Rerun the focused tests, run `git diff --check`, and commit as `refactor: build checkout payment panel`.
 
 ---
 
@@ -124,12 +124,12 @@
 - Modify: `tests/unit/checkout-order-summary.test.tsx`
 - Modify: `tests/unit/checkout-theme.test.ts`
 
-- [ ] Write failing composition tests for left-column order, mobile summary-first order, cart-only summary content, and absence of every explicitly excluded section.
-- [ ] Keep automated checks focused on rendered hierarchy, accessibility, provider styling, totals, and excluded content. Verify palette, divider, widths, spacing, and responsive grids with browser screenshots rather than brittle source-text assertions.
-- [ ] Run the three focused suites and confirm RED against the current composition.
-- [ ] Apply the reference shell, rhythm, divider, fields, segmented control, summary, and mobile collapse. Retain existing cart item data and server quote states.
-- [ ] Continue showing configured flat shipping and exact/preliminary tax honestly; add no discount or free-shipping claim.
-- [ ] Rerun the focused tests, run `git diff --check`, and commit as `feat: match checkout reference layout`.
+- [x] Write failing composition tests for left-column order, mobile summary-first order, cart-only summary content, and absence of every explicitly excluded section.
+- [x] Keep automated checks focused on rendered hierarchy, accessibility, provider styling, totals, and excluded content. Verify palette, divider, widths, spacing, and responsive grids with browser screenshots rather than brittle source-text assertions.
+- [x] Run the three focused suites and confirm RED against the current composition.
+- [x] Apply the reference shell, rhythm, divider, fields, segmented control, summary, and mobile collapse. Retain existing cart item data and server quote states.
+- [x] Continue showing configured flat shipping and exact/preliminary tax honestly; add no discount or free-shipping claim.
+- [x] Rerun the focused tests, run `git diff --check`, and commit as `feat: match checkout reference layout`.
 
 ---
 
@@ -140,8 +140,8 @@
 - Create: `docs/verification/2026-09-08-checkout-reference-visual-restructure.md`
 - Modify checkout files only when a demonstrated test/browser failure requires it.
 
-- [ ] Run all focused checkout suites from Tasks 1–6 together; require PASS.
-- [ ] Run `npm run lint`, `npm run typecheck`, `npm run test:jest`, and `npm run build`; require exit code 0. If Jest discovers a mounted worktree, apply the documented `.worktrees` exclusion before diagnosing an application regression.
+- [x] Run all focused checkout suites from Tasks 1–6 together; require PASS.
+- [x] Run `npm run lint`, `npm run typecheck`, `npm run test:jest`, and `npm run build`; require exit code 0. If Jest discovers a mounted worktree, apply the documented `.worktrees` exclusion before diagnosing an application regression.
 - [ ] Capture 1440px desktop and 390px mobile browser evidence for top, Delivery, Card, separate billing, Pickup, and eligible Afterpay states. Record Square iframe differences separately.
 - [ ] On deployed staging, record browser/device, visible state, diagnostic, tokenization, and payment result for Card, Apple Pay, Google Pay, Cash App Pay, and Afterpay. Verify Apple domain registration and Afterpay merchant/amount eligibility as external gates.
 - [ ] Record evidence in the verification document, run `git diff --check`, commit as `docs: verify checkout visual restructure`, and confirm `git status --short --branch` contains only intentionally preserved user changes.
