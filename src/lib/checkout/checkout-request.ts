@@ -139,16 +139,11 @@ export const prepareCheckoutRequestSchema = z
         message: "Pickup checkout must not include a shipping address",
       });
     }
-    if (
-      (value.paymentMethod === "card" ||
-        value.paymentMethod === "afterpay" ||
-        value.paymentMethod === "cashAppPay") &&
-      !value.billingAddress
-    ) {
+    if (!value.billingAddress) {
       context.addIssue({
         code: "custom",
         path: ["billingAddress"],
-        message: "Card, Afterpay, and Cash App Pay checkout require a billing address",
+        message: "Checkout requires a billing address",
       });
     }
   });

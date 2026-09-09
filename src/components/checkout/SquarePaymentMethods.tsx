@@ -3,6 +3,7 @@
 import { useEffect, useMemo, useRef, useState, type ReactNode } from "react";
 
 import {
+  BillingAddressFields,
   EMPTY_BILLING_ADDRESS,
   type CheckoutBillingAddressForm,
 } from "@/components/checkout/BillingAddressFields";
@@ -215,7 +216,10 @@ export function walletShippingAddress(value: unknown): CheckoutPaymentAddress {
   return { ...parsed.data, line2: parsed.data.line2 ?? null };
 }
 
-export function walletBillingAddress(value: unknown): CheckoutBillingAddress | null {
+export function walletBillingAddress(
+  value: unknown,
+  fallback?: CheckoutBillingAddressForm,
+): CheckoutBillingAddress | null {
   const candidate = value as {
     givenName?: unknown;
     familyName?: unknown;
@@ -246,7 +250,14 @@ export function walletBillingAddress(value: unknown): CheckoutBillingAddress | n
         phone: parsed.data.phone ?? null,
         line2: parsed.data.line2 ?? null,
       }
-    : null;
+    : fallback
+      ? resolveBillingAddress({
+          fulfillment: "pickup",
+          sameAsShipping: false,
+          shippingAddress: null,
+          billingAddress: fallback,
+        })
+      : null;
 }
 
 export function walletShippingDestination(value: unknown): WalletShippingDestination {
@@ -423,6 +434,9 @@ export function SquarePaymentMethods({
   const [turnstileToken, setTurnstileToken] = useState<string | null>(null);
   const [turnstileWidget, setTurnstileWidget] = useState<string | null>(null);
   const [isPaying, setIsPaying] = useState(false);
+  const [paymentMessage, setPaymentMessage] = useState<string | null>(null);
+  const [walletBillingRequired, setWalletBillingRequired] = useState(false);
+  const walletBillingFields = useRef<HTMLDivElement>(null);
   const [error, setError] = useState<string | null>(null);
   const [expressLoading, setExpressLoading] = useState(true);
   const turnstileContainer = useRef<HTMLDivElement>(null);
@@ -808,6 +822,7 @@ export function SquarePaymentMethods({
   }, [isGuest]);
 
   async function pay(authorization: { permit: string; sourceId: string }) {
+    setPaymentMessage("Processing your payment. Please do not close this page.");
     const response = await fetch("/api/checkout/pay", {
       method: "POST",
       headers: { "Content-Type": "application/json" },
@@ -818,7 +833,7 @@ export function SquarePaymentMethods({
       throw new Error(data?.error || "Payment could not be completed");
     }
     clearCart();
-    window.location.assign(data.statusUrl);
+    window.location.replace(data.statusUrl);
   }
 
   function permitRequest(checkout: PreparedCheckout, method: PaymentMethod) {
@@ -849,6 +864,7 @@ export function SquarePaymentMethods({
     }
     paymentInFlight.current = true;
     setIsPaying(true);
+    setPaymentMessage("Complete payment authorization. Please keep this page open.");
     setError(null);
     try {
       assertPayable(requireVisibleExactQuote);
@@ -860,6 +876,7 @@ export function SquarePaymentMethods({
           : "Payment could not be completed",
       );
       setIsPaying(false);
+      setPaymentMessage(null);
     } finally {
       paymentInFlight.current = false;
       updateTurnstileToken(null);
@@ -898,6 +915,13 @@ export function SquarePaymentMethods({
     if (!request) {
       return;
     }
+    if (walletBillingRequired && !walletBillingAddress(undefined, billingAddress)) {
+      walletBillingFields.current
+        ?.querySelector<HTMLInputElement>("input:invalid, select:invalid")
+        ?.reportValidity();
+      setError("Enter your complete billing address before reopening your wallet.");
+      return;
+    }
     try {
       updateSquarePaymentRequest(request, {
         total: walletPaymentTotal(quote),
@@ -916,7 +940,17 @@ export function SquarePaymentMethods({
     void runPayment(async () => {
       const result = await wallet.tokenize();
       const sourceId = checkedToken(result);
-      const walletBilling = walletBillingAddress(result.details?.billing);
+      setPaymentMessage("Processing your payment. Please do not close this page.");
+      const walletBilling = walletBillingAddress(
+        result.details?.billing,
+        walletBillingRequired ? billingAddress : undefined,
+      );
+      if (!walletBilling) {
+        setWalletBillingRequired(true);
+        throw new Error(
+          "Your wallet did not provide a complete billing address. Enter it below, then select your wallet again. You have not been charged.",
+        );
+      }
       const contactEmail =
         result.details?.shipping?.contact?.email ?? result.details?.billing?.email;
       const walletEmail =
@@ -1028,9 +1062,31 @@ export function SquarePaymentMethods({
         googlePayReady={Boolean(googlePay)}
         disabled={isPaying || !quoteReady || (isGuest && !turnstileToken)}
         loading={expressLoading}
+        statusMessage={isPaying ? paymentMessage : error}
         onApplePayClick={() => applePay && submitWallet("applePay", applePay)}
         onGooglePayClick={() => googlePay && submitWallet("googlePay", googlePay)}
       />
+
+      {walletBillingRequired && (
+        <div
+          ref={walletBillingFields}
+          className="order-1 mb-6"
+          aria-label="Wallet billing address"
+        >
+          <h2 className="mb-3 text-lg font-semibold">Wallet billing address</h2>
+          <p className="mb-3 text-sm text-zinc-600">
+            Enter the billing address for the card selected in your wallet, then select
+            Apple Pay or Google Pay again.
+          </p>
+          <BillingAddressFields
+            value={billingAddress}
+            disabled={isPaying}
+            onChange={(field, value) =>
+              setBillingAddress((current) => ({ ...current, [field]: value }))
+            }
+          />
+        </div>
+      )}
 
       <div className="contents" inert={isPaying}>
         {children}

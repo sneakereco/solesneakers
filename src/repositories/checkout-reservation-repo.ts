@@ -100,6 +100,10 @@ export type PaymentCheckout = {
   squareOrderVersion: number | null;
   deviceSessionId: string;
   shippingAddress: ReserveCheckoutInput["shippingAddress"];
+  billingAddress: Pick<
+    CheckoutBillingAddress,
+    "line1" | "line2" | "city" | "state" | "postalCode" | "country"
+  > | null;
 };
 
 const reservationResultSchema = z.object({
@@ -155,6 +159,16 @@ const expiredCheckoutSchema = z.object({
 });
 
 const paymentCheckoutSchema = z.object({
+  order_billing: z
+    .object({
+      line1: z.string().min(1),
+      line2: z.string().nullable(),
+      city: z.string().min(1),
+      state: z.string().regex(/^[A-Z]{2}$/),
+      postal_code: z.string().regex(/^\d{5}(?:-\d{4})?$/),
+      country: z.literal("US"),
+    })
+    .nullable(),
   id: z.string().min(1),
   tenant_id: z.string().min(1),
   user_id: z.string().nullable(),
@@ -289,7 +303,7 @@ export class CheckoutReservationRepository {
     const { data, error } = await this.supabase
       .from("orders")
       .select(
-        "id, tenant_id, user_id, guest_email, cart_hash, status, expires_at, subtotal, shipping, tax_amount, total, fulfillment, square_order_id, square_order_version, checkout_protection_evidence, order_shipping(name, phone, line1, line2, city, state, postal_code, country)",
+        "id, tenant_id, user_id, guest_email, cart_hash, status, expires_at, subtotal, shipping, tax_amount, total, fulfillment, square_order_id, square_order_version, checkout_protection_evidence, order_shipping(name, phone, line1, line2, city, state, postal_code, country), order_billing(line1, line2, city, state, postal_code, country)",
       )
       .eq("id", orderId)
       .maybeSingle();
@@ -323,6 +337,16 @@ export class CheckoutReservationRepository {
       squareOrderId: row.square_order_id,
       squareOrderVersion: row.square_order_version,
       deviceSessionId: row.checkout_protection_evidence.device_session_id,
+      billingAddress: row.order_billing
+        ? {
+            line1: row.order_billing.line1,
+            line2: row.order_billing.line2,
+            city: row.order_billing.city,
+            state: row.order_billing.state,
+            postalCode: row.order_billing.postal_code,
+            country: row.order_billing.country,
+          }
+        : null,
       shippingAddress: address
         ? {
             name: address.name,

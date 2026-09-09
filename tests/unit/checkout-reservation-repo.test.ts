@@ -100,6 +100,14 @@ describe("CheckoutReservationRepository", () => {
         square_order_id: "square-order-1",
         square_order_version: 2,
         checkout_protection_evidence: { device_session_id: "device-1" },
+        order_billing: {
+          line1: "2 Billing Street",
+          line2: null,
+          city: "Charleston",
+          state: "SC",
+          postal_code: "29402",
+          country: "US",
+        },
         order_shipping: {
           name: "Buyer",
           phone: "5555555555",
@@ -127,6 +135,7 @@ describe("CheckoutReservationRepository", () => {
         squareOrderVersion: 2,
         totalCents: 11800,
         shippingAddress: expect.objectContaining({ postalCode: "29401" }),
+        billingAddress: expect.objectContaining({ postalCode: "29402" }),
       }),
     );
     expect(eq).toHaveBeenCalledWith("id", "order-1");

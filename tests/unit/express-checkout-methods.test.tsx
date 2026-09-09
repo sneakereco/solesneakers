@@ -3,6 +3,21 @@ import { renderToStaticMarkup } from "react-dom/server";
 import { ExpressCheckoutMethods } from "@/components/checkout/ExpressCheckoutMethods";
 
 describe("ExpressCheckoutMethods", () => {
+  it("announces payment progress beside the disabled wallet buttons", () => {
+    const html = renderToStaticMarkup(
+      <ExpressCheckoutMethods
+        applePayReady
+        googlePayReady
+        disabled
+        loading={false}
+        statusMessage="Processing your payment. Please do not close this page."
+        onApplePayClick={jest.fn()}
+        onGooglePayClick={jest.fn()}
+      />,
+    );
+    expect(html).toContain('role="status"');
+    expect(html).toContain("Processing your payment");
+  });
   it("retains wallet hosts while preventing payment during an update", () => {
     const html = renderToStaticMarkup(
       <ExpressCheckoutMethods

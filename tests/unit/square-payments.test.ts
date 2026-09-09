@@ -6,6 +6,14 @@ const input = {
   sourceId: "cnon:card-nonce-ok",
   idempotencyKey: "33333333-3333-4333-8333-333333333333",
   totalCents: 28563,
+  billingAddress: {
+    line1: "2 Billing Street",
+    line2: null,
+    city: "Charleston",
+    state: "SC",
+    postalCode: "29402",
+    country: "US" as const,
+  },
   shippingAddress: {
     name: "Buyer Example",
     phone: "8435550100",
@@ -49,6 +57,13 @@ describe("SquarePaymentsGateway", () => {
         orderId: "square-order-1",
         locationId: "square-location-1",
         referenceId: "4a57e953-80dd-4609-970f-31984acfe810",
+        billingAddress: {
+          addressLine1: "2 Billing Street",
+          locality: "Charleston",
+          administrativeDistrictLevel1: "SC",
+          postalCode: "29402",
+          country: "US",
+        },
       }),
     );
     expect(create.mock.calls[0]?.[0]).not.toHaveProperty("buyerEmailAddress");

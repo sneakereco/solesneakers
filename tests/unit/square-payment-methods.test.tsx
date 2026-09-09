@@ -22,6 +22,25 @@ const paymentConfig = {
 };
 
 describe("SquarePaymentMethods", () => {
+  it("uses only a complete, explicitly entered fallback for missing wallet billing", () => {
+    const fallback = {
+      givenName: "Ada",
+      familyName: "Lovelace",
+      phone: "",
+      line1: "1 Billing St",
+      line2: "",
+      city: "Charleston",
+      state: "SC",
+      postalCode: "29401",
+      country: "US",
+    };
+    expect(walletBillingAddress(undefined, fallback)).toMatchObject({
+      line1: "1 Billing St",
+      phone: null,
+      line2: null,
+    });
+    expect(walletBillingAddress(undefined, { ...fallback, postalCode: "" })).toBeNull();
+  });
   it("builds Square verification contact from cardholder and billing data", () => {
     expect(
       squareBillingContact({

@@ -85,6 +85,7 @@ export function buildCheckoutPreparePayload(
 
 export function CheckoutClient({ initialData }: { initialData: CheckoutPageData }) {
   const { items, isReady, clearCart } = useCart();
+  const [isRedirecting, setIsRedirecting] = useState(false);
   const [email, setEmail] = useState(initialData.customer.email);
   const [fulfillment, setFulfillment] = useState<Fulfillment>("ship");
   const [address, setAddress] = useState(initialData.customer.address);
@@ -294,6 +295,13 @@ export function CheckoutClient({ initialData }: { initialData: CheckoutPageData 
     };
   }
 
+  if (isRedirecting) {
+    return (
+      <main className="flex min-h-screen items-center justify-center" role="status">
+        Opening your order confirmation. Please do not close this page.
+      </main>
+    );
+  }
   if (!isReady) {
     return (
       <div className="flex min-h-48 items-center justify-center">
@@ -330,6 +338,7 @@ export function CheckoutClient({ initialData }: { initialData: CheckoutPageData 
               resolveWalletShippingContact={resolveWalletShippingContact}
               prepare={prepare}
               clearCart={() => {
+                setIsRedirecting(true);
                 clearIdempotencyKeyFromStorage();
                 clearCart();
               }}

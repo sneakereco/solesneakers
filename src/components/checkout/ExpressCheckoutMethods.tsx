@@ -3,6 +3,7 @@ export function ExpressCheckoutMethods({
   googlePayReady,
   disabled = false,
   loading,
+  statusMessage,
   onApplePayClick,
   onGooglePayClick,
 }: {
@@ -10,6 +11,7 @@ export function ExpressCheckoutMethods({
   googlePayReady: boolean;
   disabled?: boolean;
   loading: boolean;
+  statusMessage?: string | null;
   onApplePayClick(): void;
   onGooglePayClick(): void;
 }) {
@@ -50,6 +52,11 @@ export function ExpressCheckoutMethods({
           onClick={disabled ? undefined : onGooglePayClick}
         />
       </div>
+      {statusMessage && (
+        <p role="status" className="mt-4 text-center text-sm text-zinc-700">
+          {statusMessage}
+        </p>
+      )}
       <div className="my-6 flex items-center gap-4 text-xs uppercase text-zinc-400">
         <span className="h-px flex-1 bg-zinc-200" /> or
         <span className="h-px flex-1 bg-zinc-200" />

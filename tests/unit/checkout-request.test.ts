@@ -55,7 +55,7 @@ const billingAddress = {
 };
 
 describe("direct checkout request schemas", () => {
-  it.each(["card", "afterpay", "cashAppPay"])(
+  it.each(["card", "afterpay", "cashAppPay", "applePay", "googlePay"])(
     "requires and normalizes billing for %s checkout",
     (paymentMethod) => {
       const card = prepareCheckoutRequestSchema.parse({
@@ -74,16 +74,6 @@ describe("direct checkout request schemas", () => {
       ).toBe(false);
     },
   );
-
-  it("leaves billing contact collection to express wallets", () => {
-    expect(
-      prepareCheckoutRequestSchema.safeParse({
-        ...base,
-        paymentMethod: "applePay",
-        billingAddress: null,
-      }).success,
-    ).toBe(true);
-  });
 
   it("accepts a redacted wallet destination for an exact shipping quote", () => {
     expect(

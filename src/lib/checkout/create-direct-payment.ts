@@ -37,6 +37,7 @@ function matches(order: PaymentCheckout, permit: PaymentPermitPayload, now: Date
     order.deviceSessionId === permit.deviceSessionId &&
     order.status === "pending" &&
     Boolean(order.squareOrderId) &&
+    Boolean(order.billingAddress) &&
     Number.isFinite(expiresAt) &&
     expiresAt > now.getTime()
   );
@@ -77,6 +78,7 @@ export async function createDirectPaymentHandler(
       idempotencyKey: permit.squareIdempotencyKey,
       totalCents: permit.totalCents,
       shippingAddress: order.shippingAddress,
+      billingAddress: order.billingAddress,
     });
     if (payment.status === "CANCELED" || payment.status === "FAILED") {
       await deps.recordDecline({
