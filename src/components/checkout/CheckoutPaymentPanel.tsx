@@ -161,13 +161,6 @@ export function CheckoutPaymentPanel({
             unoptimized
           />
         </button>
-        <div hidden={selectedMethod !== "cashAppPay"} className="p-3">
-          <div
-            id="square-cash-app-pay-container"
-            inert={!cashAppPayReady || payDisabled}
-            aria-disabled={!cashAppPayReady || payDisabled}
-          />
-        </div>
 
         <button
           type="button"
@@ -208,7 +201,8 @@ export function CheckoutPaymentPanel({
         {selectedMethod !== "card" ? (
           <div className="border-t border-[#dedede] bg-[#f4f4f4]">
             <p className="px-4 py-4 text-center text-sm">
-              Enter your contact and delivery details, then continue with{" "}
+              Enter your contact, {fulfillment === "ship" ? "shipping, and " : ""}billing
+              details, then continue with{" "}
               {selectedMethod === "cashAppPay" ? "Cash App Pay" : "Afterpay"} to approve
               your payment.
             </p>
@@ -269,14 +263,36 @@ export function CheckoutPaymentPanel({
           Retry
         </button>
       ) : null}
-      {selectedMethod !== "cashAppPay" ? (
+      <div
+        hidden={selectedMethod !== "cashAppPay" || !cashAppPayReady || payDisabled}
+        className="mt-5"
+      >
+        <div
+          id="square-cash-app-pay-container"
+          inert={selectedMethod !== "cashAppPay" || !cashAppPayReady || payDisabled}
+          aria-disabled={
+            selectedMethod !== "cashAppPay" || !cashAppPayReady || payDisabled
+          }
+        />
+      </div>
+      {selectedMethod !== "cashAppPay" || !cashAppPayReady || payDisabled ? (
         <button
           type="button"
-          disabled={payDisabled || (selectedMethod === "afterpay" && !afterpayReady)}
+          disabled={
+            selectedMethod === "cashAppPay" ||
+            payDisabled ||
+            (selectedMethod === "afterpay" && !afterpayReady)
+          }
           onClick={onPay}
           className="mt-5 flex h-12 w-full items-center justify-center rounded-xl bg-zinc-950 px-6 text-sm font-semibold text-white disabled:cursor-not-allowed disabled:bg-zinc-400"
         >
-          {isPaying ? <Loader2 className="h-5 w-5 animate-spin" /> : payLabel}
+          {isPaying ? (
+            <Loader2 className="h-5 w-5 animate-spin" />
+          ) : selectedMethod === "cashAppPay" ? (
+            "Continue with Cash App Pay"
+          ) : (
+            payLabel
+          )}
         </button>
       ) : null}
       {error ? (

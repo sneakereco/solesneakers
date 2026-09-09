@@ -131,7 +131,28 @@ try {
     buttonSizeMode: "fill",
   });
   await stableRows();
+  await page.getByRole("radio", { name: "Cash App Pay", exact: true }).click();
+  assert.equal(
+    await page
+      .getByRole("button", { name: "Continue with Cash App Pay", exact: true })
+      .isDisabled(),
+    true,
+  );
+  assert.equal(
+    await page.getByRole("status").textContent(),
+    "Enter your shipping address to continue.",
+  );
   await change({ fulfillment: "pickup", quote: exact });
+  assert.equal(
+    await page.getByRole("status").textContent(),
+    "Enter your billing address to continue.",
+  );
+  await change({ buyerEmail: "" });
+  assert.equal(
+    await page.getByRole("status").textContent(),
+    "Enter your email to continue.",
+  );
+  await change({ buyerEmail: "buyer@example.com" });
   await page.waitForFunction(() => window.paymentTest.counts.afterpay === 1);
   await change({ fulfillment: "ship", quoteReady: false });
   const address = {

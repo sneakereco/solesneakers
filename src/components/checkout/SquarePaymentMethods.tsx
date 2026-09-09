@@ -1043,18 +1043,20 @@ export function SquarePaymentMethods({
         methodMessage={
           selectedMethod === "card"
             ? null
-            : !exactQuote
-              ? quote?.completeness === "exact"
-                ? "Updating total�"
-                : "Enter your delivery details to continue."
+            : fulfillment === "ship" && !shippingAddress
+              ? "Enter your shipping address to continue."
               : !buyerEmail.trim()
                 ? "Enter your email to continue."
-                : (methodErrors[selectedMethod] ??
-                  ((selectedMethod === "cashAppPay" ? !cashAppPay : !afterpay)
-                    ? "Loading payment method�"
-                    : isGuest && !turnstileToken
-                      ? "Complete the security check to continue."
-                      : null))
+                : !resolvedBillingAddress
+                  ? "Enter your billing address to continue."
+                  : !exactQuote
+                    ? "Updating your total�"
+                    : (methodErrors[selectedMethod] ??
+                      ((selectedMethod === "cashAppPay" ? !cashAppPay : !afterpay)
+                        ? "Loading payment method�"
+                        : isGuest && !turnstileToken
+                          ? "Complete the security check to continue."
+                          : null))
         }
         onRetryMethod={
           selectedMethod !== "card" && methodErrors[selectedMethod]
