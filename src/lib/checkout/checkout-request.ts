@@ -140,13 +140,15 @@ export const prepareCheckoutRequestSchema = z
       });
     }
     if (
-      (value.paymentMethod === "card" || value.paymentMethod === "afterpay") &&
+      (value.paymentMethod === "card" ||
+        value.paymentMethod === "afterpay" ||
+        value.paymentMethod === "cashAppPay") &&
       !value.billingAddress
     ) {
       context.addIssue({
         code: "custom",
         path: ["billingAddress"],
-        message: "Card and Afterpay checkout require a billing address",
+        message: "Card, Afterpay, and Cash App Pay checkout require a billing address",
       });
     }
   });

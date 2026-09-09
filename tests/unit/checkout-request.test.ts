@@ -55,22 +55,25 @@ const billingAddress = {
 };
 
 describe("direct checkout request schemas", () => {
-  it("requires and normalizes billing for card and Afterpay checkout", () => {
-    const card = prepareCheckoutRequestSchema.parse({
-      ...base,
-      paymentMethod: "card",
-      billingAddress,
-    });
-
-    expect(card.billingAddress).toMatchObject({ state: "SC", country: "US" });
-    expect(
-      prepareCheckoutRequestSchema.safeParse({
+  it.each(["card", "afterpay", "cashAppPay"])(
+    "requires and normalizes billing for %s checkout",
+    (paymentMethod) => {
+      const card = prepareCheckoutRequestSchema.parse({
         ...base,
-        paymentMethod: "afterpay",
-        billingAddress: null,
-      }).success,
-    ).toBe(false);
-  });
+        paymentMethod,
+        billingAddress,
+      });
+
+      expect(card.billingAddress).toMatchObject({ state: "SC", country: "US" });
+      expect(
+        prepareCheckoutRequestSchema.safeParse({
+          ...base,
+          paymentMethod,
+          billingAddress: null,
+        }).success,
+      ).toBe(false);
+    },
+  );
 
   it("leaves billing contact collection to express wallets", () => {
     expect(

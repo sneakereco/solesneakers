@@ -216,7 +216,7 @@ export function CheckoutPaymentPanel({
         ) : null}
       </div>
 
-      {selectedMethod === "afterpay" ? (
+      {selectedMethod !== "card" ? (
         <div ref={billingFields} className="mt-8 grid gap-3">
           <h3 className="text-lg font-semibold">Billing address</h3>
           {fulfillment === "ship" ? (
@@ -224,7 +224,7 @@ export function CheckoutPaymentPanel({
               <label className="flex items-center gap-3 border-b border-[#dedede] bg-[#f2f7ff] px-4 py-3 font-medium">
                 <input
                   type="radio"
-                  name="afterpay-billing"
+                  name="payment-billing"
                   checked={sameAsShipping}
                   onChange={() => onSameAsShippingChange(true)}
                   className="h-4 w-4 accent-[#1878b9] focus-visible:outline-none"
@@ -234,7 +234,7 @@ export function CheckoutPaymentPanel({
               <label className="flex items-center gap-3 bg-white px-4 py-3 font-medium">
                 <input
                   type="radio"
-                  name="afterpay-billing"
+                  name="payment-billing"
                   checked={!sameAsShipping}
                   onChange={() => onSameAsShippingChange(false)}
                   className="h-4 w-4 accent-[#1878b9] focus-visible:outline-none"

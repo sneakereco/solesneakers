@@ -3,7 +3,6 @@ export function ExpressCheckoutMethods({
   googlePayReady,
   disabled = false,
   loading,
-  quoteIsExact,
   onApplePayClick,
   onGooglePayClick,
 }: {
@@ -11,7 +10,6 @@ export function ExpressCheckoutMethods({
   googlePayReady: boolean;
   disabled?: boolean;
   loading: boolean;
-  quoteIsExact: boolean;
   onApplePayClick(): void;
   onGooglePayClick(): void;
 }) {
@@ -40,23 +38,18 @@ export function ExpressCheckoutMethods({
           hidden={!applePayReady}
           disabled={disabled}
           aria-label="Pay with Apple Pay"
-          className="h-12 rounded bg-black [-webkit-appearance:-apple-pay-button] [-apple-pay-button-style:black] [-apple-pay-button-type:plain]"
+          className="h-12 w-full rounded bg-black [-webkit-appearance:-apple-pay-button] [-apple-pay-button-style:black] [-apple-pay-button-type:plain]"
           onClick={onApplePayClick}
         />
         <div
           id="square-google-pay-container"
           hidden={!googlePayReady}
-          className="min-h-12"
+          className="h-12 w-full"
           inert={disabled}
           aria-disabled={disabled}
           onClick={disabled ? undefined : onGooglePayClick}
         />
       </div>
-      {!quoteIsExact ? (
-        <p className="mt-3 text-center text-xs text-zinc-500">
-          Shipping and tax are calculated in your wallet.
-        </p>
-      ) : null}
       <div className="my-6 flex items-center gap-4 text-xs uppercase text-zinc-400">
         <span className="h-px flex-1 bg-zinc-200" /> or
         <span className="h-px flex-1 bg-zinc-200" />

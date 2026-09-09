@@ -25,7 +25,10 @@ export type SquareTokenResult = {
 };
 
 export type SquarePaymentMethod = {
-  attach?(selector: string, options?: { useCustomButton?: boolean }): Promise<void>;
+  attach?(
+    selector: string,
+    options?: { useCustomButton?: boolean; buttonSizeMode?: "static" | "fill" },
+  ): Promise<void>;
   tokenize(details?: Record<string, unknown>): Promise<SquareTokenResult>;
   destroy?(): Promise<boolean>;
 };

@@ -22,7 +22,7 @@ const result = await build({
         test.counts[name] = (test.counts[name] || 0) + 1;
         let host;
         return {
-          async attach(selector) { host = document.querySelector(selector);
+          async attach(selector, attachOptions) { if (name === "googlePay") test.googleAttachOptions = attachOptions; host = document.querySelector(selector);
             if (name === 'afterpay') host.replaceChildren(document.createTextNode('SDK owns this node'));
             if (name === 'googlePay' || name === 'cashAppPay') {
               const button = document.createElement('button'); button.type = 'button'; button.textContent = name;
@@ -127,6 +127,9 @@ try {
     },
   };
   await page.waitForFunction(() => window.paymentTest.counts.googlePay === 1);
+  assert.deepEqual(await page.evaluate(() => window.paymentTest.googleAttachOptions), {
+    buttonSizeMode: "fill",
+  });
   await stableRows();
   await change({ fulfillment: "pickup", quote: exact });
   await page.waitForFunction(() => window.paymentTest.counts.afterpay === 1);
@@ -160,6 +163,36 @@ try {
   assert.equal(counts.cashAppPay, 1);
   await page.getByRole("radio", { name: "Cash App Pay", exact: true }).click();
   await page.getByRole("button", { name: "cashAppPay", exact: true }).waitFor();
+  await page.getByText("Use a different billing address", { exact: true }).click();
+  assert.equal(
+    await page.evaluate(() => window.paymentTest.cashOptions.shouldTokenize()),
+    false,
+  );
+  await page.evaluate(() =>
+    window.paymentTest.cashCallback({
+      detail: { tokenResult: { status: "OK", token: "test" } },
+    }),
+  );
+  await page.getByRole("alert").waitFor();
+  assert.equal(await page.evaluate(() => window.paymentTest.prepareCalls), 0);
+  await page.getByText("Same as shipping address", { exact: true }).click();
+  assert.equal(
+    await page.evaluate(() => window.paymentTest.cashOptions.shouldTokenize()),
+    true,
+  );
+  await page.evaluate(() =>
+    window.paymentTest.cashCallback({
+      detail: { tokenResult: { status: "OK", token: "test" } },
+    }),
+  );
+  await page.waitForFunction(() => window.paymentTest.prepareCalls === 1);
+  assert.equal(
+    await page.evaluate(() => window.paymentTest.lastPrepare[1].billingAddress.line1),
+    "2 Test St",
+  );
+  await page.evaluate(() => {
+    window.paymentTest.prepareCalls = 0;
+  });
   await change({ quoteReady: false });
   assert.equal(
     await page.locator("#square-cash-app-pay-container").getAttribute("inert"),

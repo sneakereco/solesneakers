@@ -10,7 +10,6 @@ describe("ExpressCheckoutMethods", () => {
         googlePayReady
         disabled
         loading={false}
-        quoteIsExact
         onApplePayClick={jest.fn()}
         onGooglePayClick={jest.fn()}
       />,
@@ -27,7 +26,6 @@ describe("ExpressCheckoutMethods", () => {
         applePayReady={false}
         googlePayReady
         loading={false}
-        quoteIsExact
         onApplePayClick={jest.fn()}
         onGooglePayClick={jest.fn()}
       />,
@@ -36,7 +34,7 @@ describe("ExpressCheckoutMethods", () => {
     expect(html).not.toMatch(/<section[^>]*hidden/);
     expect(html).toContain('id="square-apple-pay-container"');
     expect(html).toContain('id="square-apple-pay-container" type="button" hidden');
-    expect(html).toContain('id="square-google-pay-container" class="min-h-12"');
+    expect(html).toContain('id="square-google-pay-container" class="h-12 w-full"');
     expect(html).not.toContain('id="square-cash-app-pay-container"');
     expect(html).not.toContain("sm:grid-cols-2");
   });
@@ -47,7 +45,6 @@ describe("ExpressCheckoutMethods", () => {
         applePayReady={false}
         googlePayReady={false}
         loading={false}
-        quoteIsExact={false}
         onApplePayClick={jest.fn()}
         onGooglePayClick={jest.fn()}
       />,
@@ -65,7 +62,6 @@ describe("ExpressCheckoutMethods", () => {
         applePayReady={false}
         googlePayReady={false}
         loading
-        quoteIsExact={false}
         onApplePayClick={jest.fn()}
         onGooglePayClick={jest.fn()}
       />,
@@ -76,6 +72,6 @@ describe("ExpressCheckoutMethods", () => {
     expect(html).toContain('role="status"');
     expect(html).toContain("Checking available express payment methods…");
     expect(html).not.toContain("Calculated after address");
-    expect(html).toContain("Shipping and tax are calculated in your wallet.");
+    expect(html).not.toContain("Shipping and tax are calculated in your wallet.");
   });
 });

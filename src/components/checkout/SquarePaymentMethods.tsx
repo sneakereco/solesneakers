@@ -461,6 +461,7 @@ export function SquarePaymentMethods({
   >({});
   const paymentInFlight = useRef(false);
   const latest = useRef({
+    resolvedBillingAddress,
     quote,
     quoteReady,
     fulfillment,
@@ -470,6 +471,7 @@ export function SquarePaymentMethods({
     isGuest,
   });
   latest.current = {
+    resolvedBillingAddress,
     quote,
     quoteReady,
     fulfillment,
@@ -563,7 +565,9 @@ export function SquarePaymentMethods({
               if (!method.attach) {
                 throw new Error("square_google_pay_attach_unavailable");
               }
-              await method.attach("#square-google-pay-container");
+              await method.attach("#square-google-pay-container", {
+                buttonSizeMode: "fill",
+              });
             }
             if (active) {
               if (name === "applePay") {
@@ -702,6 +706,7 @@ export function SquarePaymentMethods({
               !paymentInFlight.current &&
               latest.current.exactQuote?.quoteFingerprint === cashAppQuoteKey &&
               Boolean(latest.current.buyerEmail.trim()) &&
+              Boolean(latest.current.resolvedBillingAddress) &&
               (latest.current.fulfillment === "pickup" ||
                 Boolean(latest.current.shippingAddress)) &&
               (!latest.current.isGuest || Boolean(turnstileTokenRef.current)),
@@ -867,7 +872,10 @@ export function SquarePaymentMethods({
   async function submitTokenizedWallet(method: PaymentMethod, result: SquareTokenResult) {
     await runPayment(async () => {
       const sourceId = checkedToken(result);
-      const checkout = await prepare(method);
+      if (!resolvedBillingAddress) {
+        throw new Error("Enter your billing address to continue.");
+      }
+      const checkout = await prepare(method, { billingAddress: resolvedBillingAddress });
       await pay(
         await authorizeTokenizedSource({
           permitRequest: permitRequest(checkout, method),
@@ -1006,6 +1014,7 @@ export function SquarePaymentMethods({
   const cashAppDisabled =
     disabled ||
     !cashAppPay ||
+    !resolvedBillingAddress ||
     !buyerEmail.trim() ||
     (fulfillment === "ship" && !shippingAddress);
   const payLabel = exactQuote
@@ -1019,7 +1028,6 @@ export function SquarePaymentMethods({
         googlePayReady={Boolean(googlePay)}
         disabled={isPaying || !quoteReady || (isGuest && !turnstileToken)}
         loading={expressLoading}
-        quoteIsExact={Boolean(exactQuote)}
         onApplePayClick={() => applePay && submitWallet("applePay", applePay)}
         onGooglePayClick={() => googlePay && submitWallet("googlePay", googlePay)}
       />

@@ -89,14 +89,21 @@ describe("CheckoutPaymentPanel", () => {
     expect(html).not.toContain("Pay now");
   });
 
-  it("requires explicit billing fields for pickup", () => {
-    const html = renderToStaticMarkup(
-      <CheckoutPaymentPanel {...baseProps} selectedMethod="card" fulfillment="pickup" />,
-    );
+  it.each(["card", "cashAppPay", "afterpay"] as const)(
+    "requires explicit billing fields for pickup with %s",
+    (selectedMethod) => {
+      const html = renderToStaticMarkup(
+        <CheckoutPaymentPanel
+          {...baseProps}
+          selectedMethod={selectedMethod}
+          fulfillment="pickup"
+        />,
+      );
 
-    expect(html).not.toContain("Use shipping address as billing address");
-    expect(html).toContain("Billing address");
-    expect(html).toContain('autoComplete="billing given-name"');
-    expect(html).toContain('<option value="DE">Delaware</option>');
-  });
+      expect(html).not.toContain("Use shipping address as billing address");
+      expect(html).toContain("Billing address");
+      expect(html).toContain('autoComplete="billing given-name"');
+      expect(html).toContain('<option value="DE">Delaware</option>');
+    },
+  );
 });
