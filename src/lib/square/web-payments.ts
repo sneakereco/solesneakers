@@ -37,6 +37,7 @@ export type SquareCashAppPayMethod = {
 };
 
 export type SquarePaymentRequest = {
+  update(options: Record<string, unknown>): boolean;
   addEventListener(
     event: string,
     listener: (

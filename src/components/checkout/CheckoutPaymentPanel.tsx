@@ -8,11 +8,14 @@ import {
 } from "@/components/checkout/BillingAddressFields";
 import { CHECKOUT_INPUT_CLASS } from "@/components/checkout/checkout-field-styles";
 
-type SelectedPaymentMethod = "card" | "afterpay";
+type SelectedPaymentMethod = "card" | "cashAppPay" | "afterpay";
 
 export function CheckoutPaymentPanel({
   selectedMethod,
   afterpayReady,
+  cashAppPayReady,
+  methodMessage,
+  onRetryMethod,
   fulfillment,
   sameAsShipping,
   cardholderName,
@@ -32,6 +35,9 @@ export function CheckoutPaymentPanel({
 }: {
   selectedMethod: SelectedPaymentMethod;
   afterpayReady: boolean;
+  cashAppPayReady: boolean;
+  methodMessage?: string | null;
+  onRetryMethod?: () => void;
   fulfillment: "ship" | "pickup";
   sameAsShipping: boolean;
   cardholderName: string;
@@ -67,6 +73,7 @@ export function CheckoutPaymentPanel({
         <button
           type="button"
           role="radio"
+          disabled={isPaying}
           aria-checked={selectedMethod === "card"}
           onClick={() => onSelectMethod("card")}
           className={`flex w-full items-center gap-3 border-b px-4 py-3 text-left ${
@@ -125,13 +132,43 @@ export function CheckoutPaymentPanel({
         </div>
 
         <button
-          id="square-afterpay-container"
           type="button"
           role="radio"
+          disabled={isPaying}
+          aria-checked={selectedMethod === "cashAppPay"}
+          onClick={() => onSelectMethod("cashAppPay")}
+          className={`flex w-full items-center gap-3 border-t border-[#dedede] px-4 py-3 text-left ${
+            selectedMethod === "cashAppPay"
+              ? "bg-[#f2f7ff] ring-1 ring-inset ring-[#1878b9]"
+              : "bg-white"
+          }`}
+        >
+          <span
+            aria-hidden="true"
+            className={`h-4 w-4 rounded-full ${
+              selectedMethod === "cashAppPay"
+                ? "border-[5px] border-[#1878b9] bg-white"
+                : "border border-[#dedede] bg-white"
+            }`}
+          />
+          <span className="font-semibold">Cash App Pay</span>
+        </button>
+        <div hidden={selectedMethod !== "cashAppPay"} className="p-3">
+          <div
+            id="square-cash-app-pay-container"
+            inert={!cashAppPayReady || payDisabled}
+            aria-disabled={!cashAppPayReady || payDisabled}
+          />
+        </div>
+
+        <button
+          type="button"
+          role="radio"
+          disabled={isPaying}
           aria-checked={selectedMethod === "afterpay"}
-          hidden={!afterpayReady}
+          aria-label="Afterpay"
           onClick={() => onSelectMethod("afterpay")}
-          className={`${afterpayReady ? "flex" : "hidden"} w-full items-center justify-between gap-3 border-t border-[#dedede] px-4 py-3 text-left ${
+          className={`flex w-full items-center justify-between gap-3 border-t border-[#dedede] px-4 py-3 text-left ${
             selectedMethod === "afterpay"
               ? "bg-[#f2f7ff] ring-1 ring-inset ring-[#1878b9]"
               : "bg-white"
@@ -158,16 +195,18 @@ export function CheckoutPaymentPanel({
           />
         </button>
 
-        {selectedMethod === "afterpay" && afterpayReady ? (
+        <div id="square-afterpay-container" hidden />
+
+        {selectedMethod === "afterpay" ? (
           <div className="border-t border-[#dedede] bg-[#f4f4f4]">
             <p className="px-4 py-4 text-center text-sm">
-              You&apos;ll be redirected to Afterpay to complete your purchase.
+              Continue with Afterpay to complete your purchase in the Afterpay popup.
             </p>
           </div>
         ) : null}
       </div>
 
-      {selectedMethod === "afterpay" && afterpayReady ? (
+      {selectedMethod === "afterpay" ? (
         <div ref={billingFields} className="mt-8 grid gap-3">
           <h3 className="text-lg font-semibold">Billing address</h3>
           {fulfillment === "ship" ? (
@@ -205,14 +244,31 @@ export function CheckoutPaymentPanel({
       ) : null}
 
       {securityChallenge}
-      <button
-        type="button"
-        disabled={payDisabled}
-        onClick={onPay}
-        className="mt-5 flex h-12 w-full items-center justify-center rounded-xl bg-zinc-950 px-6 text-sm font-semibold text-white disabled:cursor-not-allowed disabled:bg-zinc-400"
-      >
-        {isPaying ? <Loader2 className="h-5 w-5 animate-spin" /> : payLabel}
-      </button>
+      {methodMessage ? (
+        <p role="status" className="mt-4 text-sm text-zinc-600">
+          {methodMessage}
+        </p>
+      ) : null}
+      {onRetryMethod ? (
+        <button
+          type="button"
+          onClick={onRetryMethod}
+          disabled={isPaying}
+          className="mt-3 text-sm underline"
+        >
+          Retry
+        </button>
+      ) : null}
+      {selectedMethod !== "cashAppPay" ? (
+        <button
+          type="button"
+          disabled={payDisabled || (selectedMethod === "afterpay" && !afterpayReady)}
+          onClick={onPay}
+          className="mt-5 flex h-12 w-full items-center justify-center rounded-xl bg-zinc-950 px-6 text-sm font-semibold text-white disabled:cursor-not-allowed disabled:bg-zinc-400"
+        >
+          {isPaying ? <Loader2 className="h-5 w-5 animate-spin" /> : payLabel}
+        </button>
+      ) : null}
       {error ? (
         <p role="alert" className="mt-4 text-sm text-amber-800">
           {error}

@@ -5,6 +5,7 @@ import { CheckoutPaymentPanel } from "@/components/checkout/CheckoutPaymentPanel
 
 const baseProps = {
   afterpayReady: true,
+  cashAppPayReady: true,
   fulfillment: "ship" as const,
   sameAsShipping: true,
   cardholderName: "",
@@ -21,6 +22,12 @@ const baseProps = {
 };
 
 describe("CheckoutPaymentPanel", () => {
+  it("locks the selected payment method while payment is in progress", () => {
+    const html = renderToStaticMarkup(
+      <CheckoutPaymentPanel {...baseProps} selectedMethod="card" isPaying />,
+    );
+    expect(html.match(/<button[^>]*role="radio"[^>]*disabled=""/g)).toHaveLength(3);
+  });
   it("renders Card first without fabricated card-brand artwork", () => {
     const html = renderToStaticMarkup(
       <CheckoutPaymentPanel {...baseProps} selectedMethod="card" />,
@@ -37,17 +44,46 @@ describe("CheckoutPaymentPanel", () => {
     expect(html).not.toContain("+5");
   });
 
-  it("shows Afterpay redirect and billing choices when selected", () => {
+  it("keeps Afterpay selected with billing choices while it is not ready", () => {
     const html = renderToStaticMarkup(
-      <CheckoutPaymentPanel {...baseProps} selectedMethod="afterpay" />,
+      <CheckoutPaymentPanel
+        {...baseProps}
+        selectedMethod="afterpay"
+        afterpayReady={false}
+      />,
     );
 
     expect(html).toMatch(
       /<div hidden="" class="hidden [^"]*"><div id="square-card-container"/,
     );
-    expect(html).toContain("redirected to Afterpay");
+    expect(html).toContain("Afterpay popup");
+    expect(html).toMatch(/<div id="square-afterpay-container" hidden/);
     expect(html).toContain("Same as shipping address");
     expect(html).toContain("Use a different billing address");
+  });
+
+  it("keeps all choices visible while Cash App waits for delivery details", () => {
+    const html = renderToStaticMarkup(
+      <CheckoutPaymentPanel
+        {...baseProps}
+        selectedMethod="cashAppPay"
+        cashAppPayReady={false}
+        afterpayReady={false}
+        methodMessage="Enter your delivery details to continue with Cash App Pay."
+        onRetryMethod={jest.fn()}
+      />,
+    );
+    expect(html).toMatch(
+      /<button[^>]*role="radio" aria-checked="true"[^>]*>.*Cash App Pay/,
+    );
+    expect(html).not.toMatch(/<button[^>]*role="radio"[^>]*hidden/);
+    expect(html.indexOf("Credit card")).toBeLessThan(html.indexOf("Cash App Pay"));
+    expect(html.indexOf("Cash App Pay")).toBeLessThan(html.indexOf(">Afterpay"));
+    expect(html).toContain('id="square-cash-app-pay-container"');
+    expect(html).toContain('role="status"');
+    expect(html).toContain("Enter your delivery details");
+    expect(html).toContain("Retry");
+    expect(html).not.toContain("Pay now");
   });
 
   it("requires explicit billing fields for pickup", () => {

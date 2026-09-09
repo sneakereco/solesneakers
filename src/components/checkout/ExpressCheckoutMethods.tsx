@@ -1,7 +1,7 @@
 export function ExpressCheckoutMethods({
   applePayReady,
   googlePayReady,
-  cashAppPayReady,
+  disabled = false,
   loading,
   quoteIsExact,
   onApplePayClick,
@@ -9,13 +9,13 @@ export function ExpressCheckoutMethods({
 }: {
   applePayReady: boolean;
   googlePayReady: boolean;
-  cashAppPayReady: boolean;
+  disabled?: boolean;
   loading: boolean;
   quoteIsExact: boolean;
   onApplePayClick(): void;
   onGooglePayClick(): void;
 }) {
-  const hasReadyMethod = applePayReady || googlePayReady || cashAppPayReady;
+  const hasReadyMethod = applePayReady || googlePayReady;
 
   return (
     <section
@@ -31,11 +31,12 @@ export function ExpressCheckoutMethods({
           Checking available express payment methods…
         </p>
       ) : null}
-      <div className="mt-4 grid grid-cols-1 gap-2 sm:grid-cols-3">
+      <div className="mt-4 grid grid-cols-1 gap-2 sm:grid-cols-2">
         <button
           id="square-apple-pay-container"
           type="button"
           hidden={!applePayReady}
+          disabled={disabled}
           aria-label="Pay with Apple Pay"
           className="h-12 rounded bg-black"
           onClick={onApplePayClick}
@@ -44,12 +45,9 @@ export function ExpressCheckoutMethods({
           id="square-google-pay-container"
           hidden={!googlePayReady}
           className="min-h-12"
-          onClick={onGooglePayClick}
-        />
-        <div
-          id="square-cash-app-pay-container"
-          hidden={!cashAppPayReady}
-          className="min-h-12"
+          inert={disabled}
+          aria-disabled={disabled}
+          onClick={disabled ? undefined : onGooglePayClick}
         />
       </div>
       {!quoteIsExact ? (

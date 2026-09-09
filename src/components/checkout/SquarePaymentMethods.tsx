@@ -13,6 +13,11 @@ import {
   squarePaymentDiagnostic,
   type SquarePaymentPhase,
 } from "@/components/checkout/square-payment-diagnostics";
+import {
+  createSquareMethodLifecycle,
+  updateSquarePaymentRequest,
+  assertPaymentQuoteCurrent,
+} from "@/components/checkout/square-method-lifecycle";
 import { clientEnv } from "@/config/client-env";
 import type { CheckoutPageData } from "@/lib/checkout/checkout-page-data";
 import type {
@@ -367,6 +372,7 @@ function loadTurnstile(): Promise<TurnstileApi> {
 export function SquarePaymentMethods({
   paymentConfig,
   quote,
+  quoteReady = true,
   fulfillment,
   buyerEmail,
   shippingAddress,
@@ -379,6 +385,7 @@ export function SquarePaymentMethods({
 }: {
   paymentConfig: CheckoutPageData["paymentConfig"];
   quote: CheckoutQuoteResponse | null;
+  quoteReady?: boolean;
   fulfillment: "ship" | "pickup";
   buyerEmail: string;
   shippingAddress: CheckoutPaymentAddress | null;
@@ -397,7 +404,7 @@ export function SquarePaymentMethods({
   clearCart(): void;
   children?: ReactNode;
 }) {
-  const exactQuote = quote?.completeness === "exact" ? quote : null;
+  const exactQuote = quoteReady && quote?.completeness === "exact" ? quote : null;
   const [payments, setPayments] = useState<Awaited<
     ReturnType<typeof loadSquareWebPayments>
   > | null>(null);
@@ -406,7 +413,9 @@ export function SquarePaymentMethods({
   const [googlePay, setGooglePay] = useState<SquarePaymentMethod | null>(null);
   const [cashAppPay, setCashAppPay] = useState<SquareCashAppPayMethod | null>(null);
   const [afterpay, setAfterpay] = useState<SquarePaymentMethod | null>(null);
-  const [selectedMethod, setSelectedMethod] = useState<"card" | "afterpay">("card");
+  const [selectedMethod, setSelectedMethod] = useState<
+    "card" | "cashAppPay" | "afterpay"
+  >("card");
   const [sameAsShipping, setSameAsShipping] = useState(true);
   const [cardholderName, setCardholderName] = useState("");
   const [billingAddress, setBillingAddress] =
@@ -436,6 +445,48 @@ export function SquarePaymentMethods({
       }),
     [billingAddress, fulfillment, sameAsShipping, shippingAddress],
   );
+
+  const [methodErrors, setMethodErrors] = useState<
+    Partial<Record<"cashAppPay" | "afterpay", string>>
+  >({});
+  const [methodRetries, setMethodRetries] = useState({ cashAppPay: 0, afterpay: 0 });
+  const [lifecycles] = useState(() => ({
+    applePay: createSquareMethodLifecycle<SquarePaymentMethod>(),
+    googlePay: createSquareMethodLifecycle<SquarePaymentMethod>(),
+    cashAppPay: createSquareMethodLifecycle<SquareCashAppPayMethod>(),
+    afterpay: createSquareMethodLifecycle<SquarePaymentMethod>(),
+  }));
+  const walletRequests = useRef<
+    Partial<Record<"applePay" | "googlePay" | "afterpay", SquarePaymentRequest>>
+  >({});
+  const paymentInFlight = useRef(false);
+  const latest = useRef({
+    quote,
+    quoteReady,
+    fulfillment,
+    buyerEmail,
+    shippingAddress,
+    exactQuote,
+    isGuest,
+  });
+  latest.current = {
+    quote,
+    quoteReady,
+    fulfillment,
+    buyerEmail,
+    shippingAddress,
+    exactQuote,
+    isGuest,
+  };
+  const submitCashAppRef = useRef(submitTokenizedWallet);
+  submitCashAppRef.current = submitTokenizedWallet;
+  const hasQuote = Boolean(quote);
+  const hasAfterpayQuote = quote?.completeness === "exact";
+  const cashAppQuoteKey = quote?.completeness === "exact" ? quote.quoteFingerprint : null;
+  const afterpayContext = useRef<{
+    quote: ExactCheckoutQuote;
+    shippingAddress: CheckoutPaymentAddress | null;
+  } | null>(null);
 
   function updateTurnstileToken(token: string | null) {
     turnstileTokenRef.current = token;
@@ -480,123 +531,122 @@ export function SquarePaymentMethods({
   }, [paymentConfig.applicationId, paymentConfig.environment, paymentConfig.locationId]);
 
   useEffect(() => {
-    if (!payments || !quote) {
+    if (!payments || !hasQuote || !latest.current.quote) {
       return;
     }
     let active = true;
-    const created: Array<SquarePaymentMethod | SquareCashAppPayMethod> = [];
     setExpressLoading(true);
-    walletQuote.current = null;
-    const paymentTotal = walletPaymentTotal(quote);
-    const request = payments.paymentRequest({
-      countryCode: "US",
-      currencyCode: "USD",
-      total: paymentTotal,
-      shippingContact: shippingAddress
-        ? contact(shippingAddress.name, buyerEmail, shippingAddress)
-        : undefined,
-      requestShippingContact: fulfillment === "ship",
-      requestBillingContact: true,
-      billingContact: resolvedBillingAddress
-        ? squareBillingContact({
-            cardholderName: `${resolvedBillingAddress.givenName} ${resolvedBillingAddress.familyName}`,
-            buyerEmail,
-            billingAddress: resolvedBillingAddress,
-          })
-        : undefined,
-    });
-
-    if (fulfillment === "ship") {
-      bindWalletShippingContact(
-        request,
-        (value) => quoteWalletShippingDestinationRef.current(value),
-        (context) => {
-          walletQuote.current = context.quote;
-        },
-      );
-    }
-
-    if (shippingAddress && exactQuote) {
-      const total = money(exactQuote.totals.totalCents);
-      request.addEventListener("afterpay_shippingaddresschanged", (value) => {
-        const next = value as Partial<CheckoutPaymentAddress> & { countryCode?: string };
-        if (
-          next.countryCode !== "US" ||
-          next.state !== shippingAddress.state ||
-          next.postalCode !== shippingAddress.postalCode
-        ) {
-          return { error: "Use the shipping address confirmed on the checkout page." };
-        }
-        return {
-          shippingOptions: [
-            {
-              id: "CONFIRMED",
-              label: "Confirmed shipping",
-              amount: money(exactQuote.totals.shippingCents),
-              taxLineItems: [{ label: "Tax", amount: money(exactQuote.totals.taxCents) }],
-              total: { label: "Total", amount: total },
-            },
-          ],
-        };
-      });
-    }
-
-    const expressInitializers: Array<() => Promise<void>> = [
-      async () => {
-        try {
-          const method = await payments.applePay(request);
-          created.push(method);
-          if (active) {
-            setApplePay(method);
-          }
-        } catch (methodError) {
-          reportUnavailable("applePay", "create", methodError);
-        }
-      },
-      async () => {
-        try {
-          const method = await payments.googlePay(request);
-          created.push(method);
-          if (!method.attach) {
-            throw new Error("square_google_pay_attach_unavailable");
-          }
-          await method.attach("#square-google-pay-container");
-          if (active) {
-            setGooglePay(method);
-          }
-        } catch (methodError) {
-          reportUnavailable("googlePay", "create", methodError);
-        }
-      },
-    ];
-    if (exactQuote) {
-      expressInitializers.push(async () => {
-        try {
-          const method = await payments.cashAppPay(request, {
-            redirectURL: window.location.href,
-            referenceId: exactQuote.quoteFingerprint.slice(0, 40),
-            shouldTokenize: () => !isGuest || Boolean(turnstileTokenRef.current),
-          });
-          created.push(method);
-          method.addEventListener("ontokenization", (event) => {
-            const detail = (event as { detail?: { tokenResult?: SquareTokenResult } })
-              .detail;
-            if (detail?.tokenResult) {
-              void submitTokenizedWallet("cashAppPay", detail.tokenResult);
+    const initialQuote = latest.current.quote;
+    const initialize = (name: "applePay" | "googlePay") => {
+      return lifecycles[name]
+        .replace(
+          () => {
+            const request = payments.paymentRequest({
+              countryCode: "US",
+              currencyCode: "USD",
+              total: walletPaymentTotal(initialQuote),
+              requestShippingContact: latest.current.fulfillment === "ship",
+              requestBillingContact: true,
+            });
+            bindWalletShippingContact(
+              request,
+              (value) => quoteWalletShippingDestinationRef.current(value),
+              (context) => {
+                walletQuote.current = context.quote;
+              },
+            );
+            walletRequests.current[name] = request;
+            return payments[name](request);
+          },
+          async (method) => {
+            if (name === "googlePay") {
+              if (!method.attach) {
+                throw new Error("square_google_pay_attach_unavailable");
+              }
+              await method.attach("#square-google-pay-container");
             }
-          });
-          await method.attach("#square-cash-app-pay-container");
-          if (active) {
-            setCashAppPay(method);
-          }
-        } catch (methodError) {
-          reportUnavailable("cashAppPay", "create", methodError);
+            if (active) {
+              if (name === "applePay") {
+                setApplePay(method);
+              } else {
+                setGooglePay(method);
+              }
+            }
+          },
+        )
+        .catch((methodError) => {
+          reportUnavailable(name, "create", methodError);
+        });
+    };
+    void Promise.allSettled([initialize("applePay"), initialize("googlePay")]).then(
+      () => {
+        if (active) {
+          setExpressLoading(false);
         }
-      });
-      void (async () => {
-        try {
-          const method = await payments.afterpayClearpay(request);
-          created.push(method);
+      },
+    );
+    return () => {
+      active = false;
+      setApplePay(null);
+      setGooglePay(null);
+      for (const name of ["applePay", "googlePay"] as const) {
+        delete walletRequests.current[name];
+        void lifecycles[name]
+          .dispose()
+          .catch((methodError) => reportUnavailable(name, "create", methodError));
+      }
+    };
+  }, [payments, hasQuote, lifecycles]);
+
+  useEffect(() => {
+    if (!payments || !hasAfterpayQuote) {
+      return;
+    }
+    const initial = latest.current;
+    if (initial.quote?.completeness !== "exact") {
+      return;
+    }
+    let active = true;
+    setMethodErrors((errors) => ({ ...errors, afterpay: undefined }));
+    void lifecycles.afterpay
+      .replace(
+        () => {
+          const request = payments.paymentRequest({
+            countryCode: "US",
+            currencyCode: "USD",
+            total: walletPaymentTotal(initial.quote!),
+            requestShippingContact: initial.fulfillment === "ship",
+            shippingContact: initial.shippingAddress
+              ? contact(
+                  initial.shippingAddress.name,
+                  initial.buyerEmail,
+                  initial.shippingAddress,
+                )
+              : undefined,
+          });
+          request.addEventListener("afterpay_shippingaddresschanged", (value) => {
+            const context = afterpayContext.current;
+            const destination = value as {
+              countryCode?: string;
+              state?: string;
+              postalCode?: string;
+            };
+            if (
+              !context?.shippingAddress ||
+              destination.countryCode !== "US" ||
+              destination.state !== context.shippingAddress.state ||
+              destination.postalCode !== context.shippingAddress.postalCode
+            ) {
+              return {
+                error: "Use the shipping address confirmed on the checkout page.",
+              };
+            }
+            return walletShippingUpdate(context.quote);
+          });
+          walletRequests.current.afterpay = request;
+          return payments.afterpayClearpay(request);
+        },
+        async (method) => {
           if (!method.attach) {
             throw new Error("square_afterpay_attach_unavailable");
           }
@@ -604,37 +654,113 @@ export function SquarePaymentMethods({
           if (active) {
             setAfterpay(method);
           }
-        } catch (methodError) {
-          reportUnavailable("afterpay", "create", methodError);
+        },
+      )
+      .catch((methodError) => {
+        reportUnavailable("afterpay", "create", methodError);
+        if (active) {
+          setMethodErrors((errors) => ({
+            ...errors,
+            afterpay:
+              "Afterpay is unavailable for this checkout. You can retry or choose another method.",
+          }));
         }
-      })();
-    }
-    void initializePaymentMethodsConcurrently(expressInitializers).then(() => {
-      if (active) {
-        setExpressLoading(false);
-      }
-    });
-
+      });
     return () => {
       active = false;
-      setApplePay(null);
-      setGooglePay(null);
-      setCashAppPay(null);
       setAfterpay(null);
-      for (const method of created) {
-        void method.destroy?.();
-      }
+      delete walletRequests.current.afterpay;
+      void lifecycles.afterpay
+        .dispose()
+        .catch((methodError) => reportUnavailable("afterpay", "create", methodError));
     };
-    // Payment methods must be rebuilt when their authoritative amount or buyer email changes.
-  }, [
-    buyerEmail,
-    exactQuote?.quoteFingerprint,
-    fulfillment,
-    payments,
-    quote,
-    resolvedBillingAddress,
-    shippingAddress,
-  ]);
+  }, [payments, hasAfterpayQuote, methodRetries.afterpay, lifecycles]);
+
+  useEffect(() => {
+    if (!payments || !cashAppQuoteKey) {
+      return;
+    }
+    let active = true;
+    const current = latest.current;
+    if (current.quote?.completeness !== "exact") {
+      return;
+    }
+    setMethodErrors((errors) => ({ ...errors, cashAppPay: undefined }));
+    void lifecycles.cashAppPay
+      .replace(
+        () => {
+          const request = payments.paymentRequest({
+            countryCode: "US",
+            currencyCode: "USD",
+            total: walletPaymentTotal(current.quote!),
+          });
+          return payments.cashAppPay(request, {
+            redirectURL: window.location.href,
+            referenceId: cashAppQuoteKey.slice(0, 40),
+            shouldTokenize: () =>
+              active &&
+              !paymentInFlight.current &&
+              latest.current.exactQuote?.quoteFingerprint === cashAppQuoteKey &&
+              Boolean(latest.current.buyerEmail.trim()) &&
+              (latest.current.fulfillment === "pickup" ||
+                Boolean(latest.current.shippingAddress)) &&
+              (!latest.current.isGuest || Boolean(turnstileTokenRef.current)),
+          });
+        },
+        async (method) => {
+          method.addEventListener("ontokenization", (event) => {
+            if (!active) {
+              return;
+            }
+            const detail = (
+              event as { detail?: { tokenResult?: SquareTokenResult; error?: unknown } }
+            ).detail;
+            if (detail?.error) {
+              reportUnavailable("cashAppPay", "tokenize", detail.error);
+              setError(
+                "Cash App Pay could not authorize this payment. Please try again.",
+              );
+            } else if (detail?.tokenResult) {
+              try {
+                assertPaymentQuoteCurrent(
+                  cashAppQuoteKey,
+                  latest.current.exactQuote?.quoteFingerprint,
+                  latest.current.quoteReady,
+                );
+                void submitCashAppRef.current("cashAppPay", detail.tokenResult);
+              } catch (methodError) {
+                setError(
+                  methodError instanceof Error
+                    ? methodError.message
+                    : "Checkout changed. Please try again.",
+                );
+              }
+            }
+          });
+          await method.attach("#square-cash-app-pay-container");
+          if (active) {
+            setCashAppPay(method);
+          }
+        },
+      )
+      .catch((methodError) => {
+        reportUnavailable("cashAppPay", "create", methodError);
+        if (active) {
+          setMethodErrors((errors) => ({
+            ...errors,
+            cashAppPay:
+              "Cash App Pay is unavailable for this checkout. You can retry or choose another method.",
+          }));
+        }
+      });
+    return () => {
+      active = false;
+      setCashAppPay(null);
+      void lifecycles.cashAppPay
+        .dispose()
+        .catch((methodError) => reportUnavailable("cashAppPay", "create", methodError));
+    };
+  }, [payments, cashAppQuoteKey, methodRetries.cashAppPay, lifecycles]);
 
   useEffect(() => {
     if (!isGuest || !turnstileContainer.current) {
@@ -713,9 +839,10 @@ export function SquarePaymentMethods({
     action: () => Promise<void>,
     requireVisibleExactQuote = true,
   ) {
-    if (isPaying) {
+    if (paymentInFlight.current) {
       return;
     }
+    paymentInFlight.current = true;
     setIsPaying(true);
     setError(null);
     try {
@@ -729,6 +856,7 @@ export function SquarePaymentMethods({
       );
       setIsPaying(false);
     } finally {
+      paymentInFlight.current = false;
       updateTurnstileToken(null);
       if (turnstileWidget && window.turnstile && !turnstileTerminalError.current) {
         window.turnstile.reset(turnstileWidget);
@@ -750,23 +878,47 @@ export function SquarePaymentMethods({
   }
 
   function submitWallet(method: "applePay" | "googlePay", wallet: SquarePaymentMethod) {
-    if (isPaying || (isGuest && !turnstileToken)) {
+    if (
+      paymentInFlight.current ||
+      !quoteReady ||
+      !quote ||
+      (isGuest && !turnstileToken)
+    ) {
       return;
     }
-    const tokenPromise = wallet.tokenize();
+    const request = walletRequests.current[method];
+    if (!request) {
+      return;
+    }
+    try {
+      updateSquarePaymentRequest(request, {
+        total: walletPaymentTotal(quote),
+        requestShippingContact: fulfillment === "ship",
+        requestBillingContact: true,
+      });
+    } catch (walletError) {
+      setError(
+        walletError instanceof Error
+          ? walletError.message
+          : "Payment details could not be updated.",
+      );
+      return;
+    }
+    walletQuote.current = null;
     void runPayment(async () => {
-      const result = await tokenPromise;
+      const result = await wallet.tokenize();
       const sourceId = checkedToken(result);
       const walletBilling = walletBillingAddress(result.details?.billing);
-      let checkoutContext: CheckoutPreparationContext | undefined = walletBilling
-        ? { billingAddress: walletBilling }
-        : undefined;
+      const contactEmail =
+        result.details?.shipping?.contact?.email ?? result.details?.billing?.email;
+      const walletEmail =
+        typeof contactEmail === "string" ? contactEmail.trim().toLowerCase() : undefined;
+      let checkoutContext: CheckoutPreparationContext = {
+        billingAddress: walletBilling,
+        buyerEmail: walletEmail,
+      };
       if (fulfillment === "ship") {
         const tokenContact = result.details?.shipping?.contact;
-        const walletEmail =
-          typeof tokenContact?.email === "string"
-            ? tokenContact.email.trim().toLowerCase()
-            : undefined;
         const shippingContext = await resolveWalletShippingContactRef.current(
           walletShippingAddress(tokenContact),
           walletEmail,
@@ -777,7 +929,7 @@ export function SquarePaymentMethods({
         );
         checkoutContext = { ...shippingContext, billingAddress: walletBilling };
       }
-      const checkout = await prepare(method, checkoutContext ?? undefined);
+      const checkout = await prepare(method, checkoutContext);
       await pay(
         await authorizeTokenizedSource({
           permitRequest: permitRequest(checkout, method),
@@ -803,6 +955,20 @@ export function SquarePaymentMethods({
           >("input:invalid, select:invalid")
           ?.reportValidity();
         throw new Error("Enter a complete US billing address.");
+      }
+      if (method === "afterpay") {
+        const request = walletRequests.current.afterpay;
+        if (!request || !exactQuote) {
+          throw new Error("Afterpay is still loading. Please try again.");
+        }
+        afterpayContext.current = { quote: exactQuote, shippingAddress };
+        updateSquarePaymentRequest(request, {
+          total: walletPaymentTotal(exactQuote),
+          requestShippingContact: fulfillment === "ship",
+          shippingContact: shippingAddress
+            ? contact(shippingAddress.name, buyerEmail, shippingAddress)
+            : undefined,
+        });
       }
       const checkout = await prepare(method, {
         billingAddress: resolvedBillingAddress,
@@ -837,6 +1003,11 @@ export function SquarePaymentMethods({
 
   const disabled = !exactQuote || isPaying || (isGuest && !turnstileToken);
   const selectedPayment = selectedMethod === "card" ? card : afterpay;
+  const cashAppDisabled =
+    disabled ||
+    !cashAppPay ||
+    !buyerEmail.trim() ||
+    (fulfillment === "ship" && !shippingAddress);
   const payLabel = exactQuote
     ? `Pay $${money(exactQuote.totals.totalCents)} now`
     : "Pay now";
@@ -846,25 +1017,55 @@ export function SquarePaymentMethods({
       <ExpressCheckoutMethods
         applePayReady={Boolean(applePay)}
         googlePayReady={Boolean(googlePay)}
-        cashAppPayReady={Boolean(cashAppPay)}
+        disabled={isPaying || !quoteReady || (isGuest && !turnstileToken)}
         loading={expressLoading}
         quoteIsExact={Boolean(exactQuote)}
         onApplePayClick={() => applePay && submitWallet("applePay", applePay)}
         onGooglePayClick={() => googlePay && submitWallet("googlePay", googlePay)}
       />
 
-      {children}
+      <div className="contents" inert={isPaying}>
+        {children}
+      </div>
 
       <CheckoutPaymentPanel
         selectedMethod={selectedMethod}
         afterpayReady={Boolean(afterpay)}
+        cashAppPayReady={Boolean(cashAppPay) && !disabled}
+        methodMessage={
+          selectedMethod === "card"
+            ? null
+            : !exactQuote
+              ? quote?.completeness === "exact"
+                ? "Updating total�"
+                : "Enter your delivery details to continue."
+              : !buyerEmail.trim()
+                ? "Enter your email to continue."
+                : (methodErrors[selectedMethod] ??
+                  ((selectedMethod === "cashAppPay" ? !cashAppPay : !afterpay)
+                    ? "Loading payment method�"
+                    : isGuest && !turnstileToken
+                      ? "Complete the security check to continue."
+                      : null))
+        }
+        onRetryMethod={
+          selectedMethod !== "card" && methodErrors[selectedMethod]
+            ? () =>
+                setMethodRetries((value) => ({
+                  ...value,
+                  [selectedMethod]: value[selectedMethod] + 1,
+                }))
+            : undefined
+        }
         fulfillment={fulfillment}
         sameAsShipping={sameAsShipping}
         cardholderName={cardholderName}
         billingAddress={billingAddress}
         isPaying={isPaying}
-        payDisabled={!selectedPayment || disabled}
-        payLabel={payLabel}
+        payDisabled={
+          selectedMethod === "cashAppPay" ? cashAppDisabled : !selectedPayment || disabled
+        }
+        payLabel={selectedMethod === "afterpay" ? "Continue with Afterpay" : payLabel}
         error={error}
         cardholderNameInput={cardholderNameInput}
         billingFields={billingFields}
@@ -884,7 +1085,9 @@ export function SquarePaymentMethods({
           setBillingAddress((current) => ({ ...current, [field]: value }))
         }
         onPay={() =>
-          selectedPayment && submitPreparedMethod(selectedMethod, selectedPayment)
+          selectedMethod !== "cashAppPay" &&
+          selectedPayment &&
+          submitPreparedMethod(selectedMethod, selectedPayment)
         }
       />
     </>

@@ -91,6 +91,7 @@ export function CheckoutClient({ initialData }: { initialData: CheckoutPageData 
   const [quoteState, setQuoteState] = useState<CheckoutQuoteState>({
     status: "loading",
   });
+  const [resolvedQuoteKey, setResolvedQuoteKey] = useState<string | null>(null);
   const [quoteRevision, setQuoteRevision] = useState(0);
   const requestSequence = useRef(0);
   const walletQuote = useRef<{ key: string; quote: CheckoutQuoteResponse } | null>(null);
@@ -141,6 +142,7 @@ export function CheckoutClient({ initialData }: { initialData: CheckoutPageData 
       )
         .then((quote) => {
           if (requestSequence.current === requestId) {
+            setResolvedQuoteKey(quoteKey);
             setQuoteState({ status: "ready", quote });
           }
         })
@@ -165,10 +167,9 @@ export function CheckoutClient({ initialData }: { initialData: CheckoutPageData 
     // quoteKey is the canonical trigger and prevents stale address responses.
   }, [isReady, quoteKey]);
 
+  const quoteReady = quoteState.status === "ready" && resolvedQuoteKey === quoteKey;
   const exactQuote =
-    quoteState.status === "ready" && quoteState.quote.completeness === "exact"
-      ? quoteState.quote
-      : null;
+    quoteReady && quoteState.quote.completeness === "exact" ? quoteState.quote : null;
   const currentQuote = quoteState.quote ?? null;
 
   function updateAddress(field: keyof CheckoutAddressForm, value: string) {
@@ -214,6 +215,7 @@ export function CheckoutClient({ initialData }: { initialData: CheckoutPageData 
     if (walletEmail) {
       setEmail(walletEmail);
     }
+    setResolvedQuoteKey(nextQuoteKey);
     setQuoteState({ status: "ready", quote: nextQuote });
     return {
       quote: nextQuote,
@@ -319,6 +321,7 @@ export function CheckoutClient({ initialData }: { initialData: CheckoutPageData 
             <SquarePaymentMethods
               paymentConfig={initialData.paymentConfig}
               quote={currentQuote}
+              quoteReady={quoteReady}
               fulfillment={fulfillment}
               buyerEmail={email}
               shippingAddress={shippingAddress}

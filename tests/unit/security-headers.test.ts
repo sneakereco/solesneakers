@@ -87,7 +87,7 @@ describe("production security headers", () => {
         "https://static.afterpay.com/modal",
       ]),
     );
-    expect(csp.get("connect-src")).not.toContain("https://google.com/pay");
+    expect(csp.get("connect-src")).toContain("https://google.com/pay");
     expect(csp.get("frame-src")).toEqual(
       expect.arrayContaining([
         "https://pay.google.com",
