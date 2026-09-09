@@ -13,6 +13,7 @@ const prodConnectSrc = [
   "https://cloudflareinsights.com",
   "https://pay.google.com",
   "https://google.com/pay",
+  "https://www.google.com/pay",
   "https://api.lab.amplitude.com/sdk/vardata",
   "https://static.afterpay.com/modal",
 ].join(" ");

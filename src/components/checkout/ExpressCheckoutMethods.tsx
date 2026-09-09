@@ -31,14 +31,16 @@ export function ExpressCheckoutMethods({
           Checking available express payment methods…
         </p>
       ) : null}
-      <div className="mt-4 grid grid-cols-1 gap-2 sm:grid-cols-2">
+      <div
+        className={`mt-4 grid grid-cols-1 gap-2 ${applePayReady && googlePayReady ? "sm:grid-cols-2" : ""}`}
+      >
         <button
           id="square-apple-pay-container"
           type="button"
           hidden={!applePayReady}
           disabled={disabled}
           aria-label="Pay with Apple Pay"
-          className="h-12 rounded bg-black"
+          className="h-12 rounded bg-black [-webkit-appearance:-apple-pay-button] [-apple-pay-button-style:black] [-apple-pay-button-type:plain]"
           onClick={onApplePayClick}
         />
         <div
@@ -51,7 +53,9 @@ export function ExpressCheckoutMethods({
         />
       </div>
       {!quoteIsExact ? (
-        <p className="mt-3 text-center text-xs text-zinc-500">Calculated after address</p>
+        <p className="mt-3 text-center text-xs text-zinc-500">
+          Shipping and tax are calculated in your wallet.
+        </p>
       ) : null}
       <div className="my-6 flex items-center gap-4 text-xs uppercase text-zinc-400">
         <span className="h-px flex-1 bg-zinc-200" /> or

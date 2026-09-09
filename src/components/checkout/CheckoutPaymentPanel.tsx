@@ -152,6 +152,14 @@ export function CheckoutPaymentPanel({
             }`}
           />
           <span className="font-semibold">Cash App Pay</span>
+          <Image
+            src="/images/payments/cash-app-pay.svg"
+            alt=""
+            width={48}
+            height={30}
+            className="ml-auto h-6 w-auto"
+            unoptimized
+          />
         </button>
         <div hidden={selectedMethod !== "cashAppPay"} className="p-3">
           <div
@@ -197,10 +205,12 @@ export function CheckoutPaymentPanel({
 
         <div id="square-afterpay-container" hidden />
 
-        {selectedMethod === "afterpay" ? (
+        {selectedMethod !== "card" ? (
           <div className="border-t border-[#dedede] bg-[#f4f4f4]">
             <p className="px-4 py-4 text-center text-sm">
-              Continue with Afterpay to complete your purchase in the Afterpay popup.
+              Enter your contact and delivery details, then continue with{" "}
+              {selectedMethod === "cashAppPay" ? "Cash App Pay" : "Afterpay"} to approve
+              your payment.
             </p>
           </div>
         ) : null}

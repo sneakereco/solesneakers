@@ -38,6 +38,7 @@ describe("ExpressCheckoutMethods", () => {
     expect(html).toContain('id="square-apple-pay-container" type="button" hidden');
     expect(html).toContain('id="square-google-pay-container" class="min-h-12"');
     expect(html).not.toContain('id="square-cash-app-pay-container"');
+    expect(html).not.toContain("sm:grid-cols-2");
   });
 
   it("collapses the express section while no wallet is ready", () => {
@@ -74,5 +75,7 @@ describe("ExpressCheckoutMethods", () => {
     expect(html).toContain("Express checkout");
     expect(html).toContain('role="status"');
     expect(html).toContain("Checking available express payment methods…");
+    expect(html).not.toContain("Calculated after address");
+    expect(html).toContain("Shipping and tax are calculated in your wallet.");
   });
 });

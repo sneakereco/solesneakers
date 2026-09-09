@@ -56,7 +56,8 @@ describe("CheckoutPaymentPanel", () => {
     expect(html).toMatch(
       /<div hidden="" class="hidden [^"]*"><div id="square-card-container"/,
     );
-    expect(html).toContain("Afterpay popup");
+    expect(html).toContain("Enter your contact and delivery details, then continue with");
+    expect(html).not.toContain("Afterpay popup");
     expect(html).toMatch(/<div id="square-afterpay-container" hidden/);
     expect(html).toContain("Same as shipping address");
     expect(html).toContain("Use a different billing address");
@@ -80,6 +81,8 @@ describe("CheckoutPaymentPanel", () => {
     expect(html.indexOf("Credit card")).toBeLessThan(html.indexOf("Cash App Pay"));
     expect(html.indexOf("Cash App Pay")).toBeLessThan(html.indexOf(">Afterpay"));
     expect(html).toContain('id="square-cash-app-pay-container"');
+    expect(html).toContain('src="/images/payments/cash-app-pay.svg"');
+    expect(html).toContain("Enter your contact and delivery details, then continue with");
     expect(html).toContain('role="status"');
     expect(html).toContain("Enter your delivery details");
     expect(html).toContain("Retry");

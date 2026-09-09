@@ -357,7 +357,7 @@ describe("SquarePaymentMethods", () => {
     expect(html).not.toContain("+5");
     expect(html).toContain("Use shipping address as billing address");
     expect(html.indexOf("Credit card")).toBeLessThan(html.indexOf("Afterpay"));
-    expect(html).toContain("Calculated after address");
+    expect(html).toContain("Shipping and tax are calculated in your wallet.");
     expect(html).toContain("Pay now");
   });
 
