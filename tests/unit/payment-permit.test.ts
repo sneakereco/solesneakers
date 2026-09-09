@@ -36,10 +36,7 @@ describe("PaymentPermitStore", () => {
   it("atomically consumes a permit once", async () => {
     const redis = {
       set: jest.fn(),
-      eval: jest
-        .fn()
-        .mockResolvedValueOnce(payload)
-        .mockResolvedValueOnce(null),
+      eval: jest.fn().mockResolvedValueOnce(payload).mockResolvedValueOnce(null),
     };
     const store = new PaymentPermitStore(redis);
 
