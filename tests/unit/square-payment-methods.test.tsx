@@ -3,10 +3,12 @@ import { renderToStaticMarkup } from "react-dom/server";
 import {
   assertWalletTotalUnchanged,
   bindWalletShippingContact,
+  initializePaymentMethodsConcurrently,
   resolveBillingAddress,
   squareBillingContact,
   SquarePaymentMethods,
   turnstileErrorMessage,
+  walletBillingAddress,
   walletPaymentTotal,
   walletShippingAddress,
 } from "@/components/checkout/SquarePaymentMethods";
@@ -144,6 +146,26 @@ describe("SquarePaymentMethods", () => {
     expect(onPaymentsReady).toHaveBeenCalledWith(payments);
   });
 
+  it("starts optional payment methods independently", async () => {
+    const started: string[] = [];
+    let finishApplePay: (() => void) | undefined;
+    const pending = initializePaymentMethodsConcurrently([
+      () =>
+        new Promise<void>((resolve) => {
+          started.push("applePay");
+          finishApplePay = resolve;
+        }),
+      () => {
+        started.push("googlePay");
+        return Promise.resolve();
+      },
+    ]);
+
+    expect(started).toEqual(["applePay", "googlePay"]);
+    finishApplePay?.();
+    await pending;
+  });
+
   it("blocks prepare when the final address changes the wallet-approved total", () => {
     const displayed = {
       completeness: "exact" as const,
@@ -273,6 +295,32 @@ describe("SquarePaymentMethods", () => {
       postalCode: "19801",
       country: "US",
     });
+  });
+
+  it("normalizes a complete wallet billing contact for the order snapshot", () => {
+    expect(
+      walletBillingAddress({
+        givenName: "Ada",
+        familyName: "Lovelace",
+        phone: "3025550100",
+        addressLines: ["1 Billing St", "Suite 2"],
+        city: "Wilmington",
+        state: "de",
+        postalCode: "19801",
+        countryCode: "US",
+      }),
+    ).toEqual({
+      givenName: "Ada",
+      familyName: "Lovelace",
+      phone: "3025550100",
+      line1: "1 Billing St",
+      line2: "Suite 2",
+      city: "Wilmington",
+      state: "DE",
+      postalCode: "19801",
+      country: "US",
+    });
+    expect(walletBillingAddress({ postalCode: "19801", countryCode: "US" })).toBeNull();
   });
 
   it("identifies an unauthorized Turnstile hostname as terminal configuration", () => {

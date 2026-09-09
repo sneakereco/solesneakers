@@ -1,22 +1,25 @@
 export type SquareEnvironment = "sandbox" | "production";
 
+type SquareWalletContact = {
+  givenName?: string;
+  familyName?: string;
+  email?: string;
+  phone?: string;
+  addressLines?: string[];
+  city?: string;
+  state?: string;
+  postalCode?: string;
+  countryCode?: string;
+};
+
 export type SquareTokenResult = {
   status: string;
   token?: string;
   errors?: Array<{ message?: string }>;
   details?: {
+    billing?: SquareWalletContact;
     shipping?: {
-      contact?: {
-        givenName?: string;
-        familyName?: string;
-        email?: string;
-        phone?: string;
-        addressLines?: string[];
-        city?: string;
-        state?: string;
-        postalCode?: string;
-        countryCode?: string;
-      };
+      contact?: SquareWalletContact;
     };
   };
 };

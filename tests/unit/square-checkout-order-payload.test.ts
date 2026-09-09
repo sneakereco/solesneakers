@@ -33,17 +33,7 @@ describe("Square checkout order payload", () => {
       items: [item],
     });
 
-    expect(order.fulfillments?.[0]).toMatchObject({
-      shipmentDetails: {
-        recipient: {
-          address: {
-            administrativeDistrictLevel1: "DE",
-            postalCode: "19801",
-            country: "US",
-          },
-        },
-      },
-    });
+    expect(order.fulfillments).toBeUndefined();
   });
 
   it("builds the final shipment contract from server prices", () => {

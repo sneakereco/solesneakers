@@ -2,6 +2,7 @@ export function ExpressCheckoutMethods({
   applePayReady,
   googlePayReady,
   cashAppPayReady,
+  loading,
   quoteIsExact,
   onApplePayClick,
   onGooglePayClick,
@@ -9,6 +10,7 @@ export function ExpressCheckoutMethods({
   applePayReady: boolean;
   googlePayReady: boolean;
   cashAppPayReady: boolean;
+  loading: boolean;
   quoteIsExact: boolean;
   onApplePayClick(): void;
   onGooglePayClick(): void;
@@ -19,11 +21,16 @@ export function ExpressCheckoutMethods({
     <section
       className="order-1"
       aria-labelledby="express-checkout-heading"
-      hidden={!hasReadyMethod}
+      hidden={!loading && !hasReadyMethod}
     >
       <h2 id="express-checkout-heading" className="text-center text-sm text-zinc-600">
         Express checkout
       </h2>
+      {loading && !hasReadyMethod ? (
+        <p role="status" className="mt-3 text-center text-sm text-zinc-500">
+          Checking available express payment methods…
+        </p>
+      ) : null}
       <div className="mt-4 grid grid-cols-1 gap-2 sm:grid-cols-3">
         <button
           id="square-apple-pay-container"
