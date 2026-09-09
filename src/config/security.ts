@@ -11,6 +11,9 @@ const prodConnectSrc = [
   "https://o160250.ingest.sentry.io",
   "https://challenges.cloudflare.com",
   "https://cloudflareinsights.com",
+  "https://google.com/pay",
+  "https://api.lab.amplitude.com/sdk/vardata",
+  "https://static.afterpay.com/modal",
 ].join(" ");
 
 export const security = {
@@ -126,9 +129,9 @@ export const security = {
       csp: {
         dev: [
           "default-src 'self'",
-          "img-src 'self' data: https: blob:",
-          "style-src 'self' 'unsafe-inline' https://web.squarecdn.com https://sandbox.web.squarecdn.com",
-          "script-src 'self' 'unsafe-inline' 'unsafe-eval' https://web.squarecdn.com https://sandbox.web.squarecdn.com https://challenges.cloudflare.com https://static.cloudflareinsights.com/beacon.min.js",
+          "img-src 'self' data: https: blob: https://www.gstatic.com https://sandbox.api.cash.app https://api.cash.app https://franklin-assets.s3.amazonaws.com https://static.afterpay.com https://site-assets.afterpay.com",
+          "style-src 'self' 'unsafe-inline' https://web.squarecdn.com https://sandbox.web.squarecdn.com https://fonts.googleapis.com https://sandbox.kit.cash.app https://kit.cash.app",
+          "script-src 'self' 'unsafe-inline' 'unsafe-eval' https://web.squarecdn.com https://sandbox.web.squarecdn.com https://challenges.cloudflare.com https://static.cloudflareinsights.com/beacon.min.js https://pay.google.com/gp/p/js/pay.js https://sandbox.kit.cash.app/v1/pay.js https://kit.cash.app/v1/pay.js https://portal.sandbox.afterpay.com/afterpay.js https://portal.afterpay.com/afterpay.js https://js.afterpay.com/afterpay-1.x.js",
           "worker-src 'self' blob:",
           [
             "connect-src",
@@ -141,16 +144,16 @@ export const security = {
           "object-src 'none'",
           "base-uri 'self'",
           "frame-ancestors 'none'",
-          "font-src 'self' data: https://cash-f.squarecdn.com https://square-fonts-production-f.squarecdn.com https://d1g145x70srn7h.cloudfront.net",
-          "frame-src 'self' blob: https://web.squarecdn.com https://sandbox.web.squarecdn.com https://pci-connect.squareup.com https://pci-connect.squareupsandbox.com https://challenges.cloudflare.com",
+          "font-src 'self' data: https://cash-f.squarecdn.com https://square-fonts-production-f.squarecdn.com https://d1g145x70srn7h.cloudfront.net https://fonts.gstatic.com",
+          "frame-src 'self' blob: https://web.squarecdn.com https://sandbox.web.squarecdn.com https://pci-connect.squareup.com https://pci-connect.squareupsandbox.com https://challenges.cloudflare.com https://pay.google.com https://sandbox.kit.cash.app https://kit.cash.app",
           "form-action 'self'",
         ],
 
         prod: [
           "default-src 'self'",
-          "img-src 'self' data: blob: https://*.supabase.co https://*.cloudfront.net https://*.fastly.net https://web.squarecdn.com https://sandbox.web.squarecdn.com",
-          "style-src 'self' 'unsafe-inline' https://web.squarecdn.com https://sandbox.web.squarecdn.com",
-          "script-src 'self' 'unsafe-inline' https://web.squarecdn.com https://sandbox.web.squarecdn.com https://challenges.cloudflare.com https://static.cloudflareinsights.com/beacon.min.js",
+          "img-src 'self' data: blob: https://*.supabase.co https://*.cloudfront.net https://*.fastly.net https://web.squarecdn.com https://sandbox.web.squarecdn.com https://www.gstatic.com https://sandbox.api.cash.app https://api.cash.app https://franklin-assets.s3.amazonaws.com https://static.afterpay.com https://site-assets.afterpay.com",
+          "style-src 'self' 'unsafe-inline' https://web.squarecdn.com https://sandbox.web.squarecdn.com https://fonts.googleapis.com https://sandbox.kit.cash.app https://kit.cash.app",
+          "script-src 'self' 'unsafe-inline' https://web.squarecdn.com https://sandbox.web.squarecdn.com https://challenges.cloudflare.com https://static.cloudflareinsights.com/beacon.min.js https://pay.google.com/gp/p/js/pay.js https://sandbox.kit.cash.app/v1/pay.js https://kit.cash.app/v1/pay.js https://portal.sandbox.afterpay.com/afterpay.js https://portal.afterpay.com/afterpay.js https://js.afterpay.com/afterpay-1.x.js",
           "worker-src 'self' blob:",
           "object-src 'none'",
           "base-uri 'self'",
@@ -158,8 +161,8 @@ export const security = {
           `connect-src ${prodConnectSrc}`,
 
           "frame-ancestors 'none'",
-          "font-src 'self' data: https://cash-f.squarecdn.com https://square-fonts-production-f.squarecdn.com https://d1g145x70srn7h.cloudfront.net",
-          "frame-src 'self' blob: https://web.squarecdn.com https://sandbox.web.squarecdn.com https://pci-connect.squareup.com https://pci-connect.squareupsandbox.com https://challenges.cloudflare.com",
+          "font-src 'self' data: https://cash-f.squarecdn.com https://square-fonts-production-f.squarecdn.com https://d1g145x70srn7h.cloudfront.net https://fonts.gstatic.com",
+          "frame-src 'self' blob: https://web.squarecdn.com https://sandbox.web.squarecdn.com https://pci-connect.squareup.com https://pci-connect.squareupsandbox.com https://challenges.cloudflare.com https://pay.google.com https://sandbox.kit.cash.app https://kit.cash.app",
           "form-action 'self'",
           "upgrade-insecure-requests",
         ],

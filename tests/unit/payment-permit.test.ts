@@ -38,7 +38,7 @@ describe("PaymentPermitStore", () => {
       set: jest.fn(),
       eval: jest
         .fn()
-        .mockResolvedValueOnce(JSON.stringify(payload))
+        .mockResolvedValueOnce(payload)
         .mockResolvedValueOnce(null),
     };
     const store = new PaymentPermitStore(redis);
@@ -46,6 +46,15 @@ describe("PaymentPermitStore", () => {
     await expect(store.consume("permit-token")).resolves.toEqual(payload);
     await expect(store.consume("permit-token")).resolves.toBeNull();
     expect(redis.eval).toHaveBeenCalledTimes(2);
+  });
+
+  it("accepts a raw serialized permit when Redis deserialization is disabled", async () => {
+    const store = new PaymentPermitStore({
+      set: jest.fn(),
+      eval: jest.fn().mockResolvedValue(JSON.stringify(payload)),
+    });
+
+    await expect(store.consume("permit-token")).resolves.toEqual(payload);
   });
 
   it("fails closed on malformed stored data", async () => {

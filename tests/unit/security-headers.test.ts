@@ -33,10 +33,23 @@ describe("production security headers", () => {
     applySecurityHeaders(response, "production");
 
     const csp = directives(response.headers.get("content-security-policy"));
+    expect(csp.get("script-src")).toEqual(
+      expect.arrayContaining([
+        "https://pay.google.com/gp/p/js/pay.js",
+        "https://sandbox.kit.cash.app/v1/pay.js",
+        "https://kit.cash.app/v1/pay.js",
+        "https://portal.sandbox.afterpay.com/afterpay.js",
+        "https://portal.afterpay.com/afterpay.js",
+        "https://js.afterpay.com/afterpay-1.x.js",
+      ]),
+    );
     expect(csp.get("style-src")).toEqual(
       expect.arrayContaining([
         "https://web.squarecdn.com",
         "https://sandbox.web.squarecdn.com",
+        "https://fonts.googleapis.com",
+        "https://sandbox.kit.cash.app",
+        "https://kit.cash.app",
       ]),
     );
     expect(csp.get("font-src")).toEqual(
@@ -44,12 +57,19 @@ describe("production security headers", () => {
         "https://cash-f.squarecdn.com",
         "https://square-fonts-production-f.squarecdn.com",
         "https://d1g145x70srn7h.cloudfront.net",
+        "https://fonts.gstatic.com",
       ]),
     );
     expect(csp.get("img-src")).toEqual(
       expect.arrayContaining([
         "https://web.squarecdn.com",
         "https://sandbox.web.squarecdn.com",
+        "https://www.gstatic.com",
+        "https://sandbox.api.cash.app",
+        "https://api.cash.app",
+        "https://franklin-assets.s3.amazonaws.com",
+        "https://static.afterpay.com",
+        "https://site-assets.afterpay.com",
       ]),
     );
     expect(csp.get("connect-src")).toEqual(
@@ -60,6 +80,16 @@ describe("production security headers", () => {
         "https://pci-connect.squareupsandbox.com",
         "https://o160250.ingest.sentry.io",
         "https://challenges.cloudflare.com",
+        "https://google.com/pay",
+        "https://api.lab.amplitude.com/sdk/vardata",
+        "https://static.afterpay.com/modal",
+      ]),
+    );
+    expect(csp.get("frame-src")).toEqual(
+      expect.arrayContaining([
+        "https://pay.google.com",
+        "https://sandbox.kit.cash.app",
+        "https://kit.cash.app",
       ]),
     );
   });

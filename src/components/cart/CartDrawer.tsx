@@ -55,7 +55,7 @@ export function CartDrawer({ isOpen, onClose }: CartDrawerProps) {
   return (
     <div
       className={`fixed inset-0 z-[80] ${isOpen ? "pointer-events-auto" : "pointer-events-none"}`}
-      aria-hidden={!isOpen}
+      inert={!isOpen}
     >
       <button
         type="button"
