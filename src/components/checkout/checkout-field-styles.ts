@@ -1,2 +1,2 @@
 export const CHECKOUT_INPUT_CLASS =
-  "w-full rounded-xl border border-zinc-300 bg-white px-4 py-4 text-base outline-none transition focus:border-sky-600 focus:ring-1 focus:ring-sky-600 focus-visible:outline-none disabled:bg-zinc-100";
+  "h-12 w-full rounded-xl border border-[#dedede] bg-white px-3 text-base text-zinc-950 outline-none transition placeholder:text-[#737373] focus:border-[#1878b9] focus:ring-1 focus:ring-[#1878b9] focus-visible:outline-none disabled:bg-white disabled:text-zinc-950 disabled:opacity-100";

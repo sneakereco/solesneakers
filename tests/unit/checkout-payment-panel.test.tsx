@@ -31,6 +31,8 @@ describe("CheckoutPaymentPanel", () => {
     expect(html).toContain('id="square-card-container"');
     expect(html).toContain("Use shipping address as billing address");
     expect(html).toContain('id="square-afterpay-container"');
+    expect(html).toContain('alt="Afterpay"');
+    expect(html).toContain('src="/images/payments/afterpay.svg"');
     expect(html).not.toMatch(/aria-label="(?:Visa|Mastercard|American Express)"/);
     expect(html).not.toContain("+5");
   });
@@ -40,7 +42,9 @@ describe("CheckoutPaymentPanel", () => {
       <CheckoutPaymentPanel {...baseProps} selectedMethod="afterpay" />,
     );
 
-    expect(html).toMatch(/<div hidden=""[^>]*><div id="square-card-container"/);
+    expect(html).toMatch(
+      /<div hidden="" class="hidden [^"]*"><div id="square-card-container"/,
+    );
     expect(html).toContain("redirected to Afterpay");
     expect(html).toContain("Same as shipping address");
     expect(html).toContain("Use a different billing address");
@@ -54,5 +58,6 @@ describe("CheckoutPaymentPanel", () => {
     expect(html).not.toContain("Use shipping address as billing address");
     expect(html).toContain("Billing address");
     expect(html).toContain('autoComplete="billing given-name"');
+    expect(html).toContain('<option value="DE">Delaware</option>');
   });
 });

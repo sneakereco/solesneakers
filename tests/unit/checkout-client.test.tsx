@@ -94,6 +94,7 @@ describe("CheckoutClient", () => {
     );
 
     expect(html).toContain("Contact");
+    expect(html).toContain("data-checkout");
     expect(html).toContain('aria-label="Go to cart, 1 item"');
     expect(html).toContain('href="/cart"');
     expect(html).toContain("Delivery");

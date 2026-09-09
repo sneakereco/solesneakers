@@ -1,3 +1,4 @@
+import { CircleHelp } from "lucide-react";
 import Link from "next/link";
 
 import { CHECKOUT_INPUT_CLASS } from "@/components/checkout/checkout-field-styles";
@@ -14,7 +15,7 @@ export function CheckoutContactSection({
   return (
     <section className="order-2" aria-labelledby="contact-heading">
       <div className="flex items-center justify-between gap-4">
-        <h2 id="contact-heading" className="text-2xl font-semibold">
+        <h2 id="contact-heading" className="text-xl font-semibold">
           Contact
         </h2>
         {isGuest ? (
@@ -26,7 +27,7 @@ export function CheckoutContactSection({
           </Link>
         ) : null}
       </div>
-      <label className="mt-4 block">
+      <label className="relative mt-3 block">
         <span className="sr-only">Email</span>
         <input
           type="email"
@@ -37,7 +38,12 @@ export function CheckoutContactSection({
           value={email}
           disabled={!isGuest}
           onChange={(event) => onEmailChange(event.target.value)}
-          className={CHECKOUT_INPUT_CLASS}
+          className={`${CHECKOUT_INPUT_CLASS} pr-10`}
+        />
+        <CircleHelp
+          role="img"
+          aria-label="Email help"
+          className="pointer-events-none absolute right-3 top-1/2 h-5 w-5 -translate-y-1/2 text-[#737373]"
         />
       </label>
     </section>

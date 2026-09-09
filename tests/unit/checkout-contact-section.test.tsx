@@ -23,6 +23,7 @@ describe("CheckoutContactSection", () => {
     expect(customerHtml).not.toContain("Sign in");
     expect(customerHtml).toContain('value="buyer@example.com"');
     expect(customerHtml).toContain("disabled");
+    expect(guestHtml).toContain('aria-label="Email help"');
     expect(guestHtml).not.toMatch(/news|offers|marketing/i);
   });
 });

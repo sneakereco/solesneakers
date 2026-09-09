@@ -304,16 +304,16 @@ export function CheckoutClient({ initialData }: { initialData: CheckoutPageData 
   }
 
   return (
-    <>
+    <div data-checkout className="min-h-screen bg-[#f3f3f3]">
       <CheckoutHeader />
-      <main className="grid min-h-[calc(100vh-7rem)] w-full grid-cols-1 bg-[#f7f7f7] text-zinc-950 lg:grid-cols-2">
+      <main className="grid min-h-[calc(100vh-7rem)] w-full grid-cols-1 bg-[#f3f3f3] text-zinc-950 lg:grid-cols-[53.4%_46.6%]">
         <CheckoutOrderSummary
           className="order-1 lg:order-2"
           items={items}
           quoteState={quoteState}
         />
 
-        <section className="order-2 px-5 py-10 sm:px-8 lg:order-1 lg:ml-auto lg:w-full lg:max-w-[44rem] lg:px-14 lg:py-16">
+        <section className="order-2 px-5 py-10 sm:px-8 lg:order-1 lg:ml-auto lg:w-full lg:max-w-[36.25rem] lg:px-10 lg:py-16">
           <h1 className="sr-only">Checkout</h1>
           <form className="flex flex-col" onSubmit={(event) => event.preventDefault()}>
             <SquarePaymentMethods
@@ -347,6 +347,6 @@ export function CheckoutClient({ initialData }: { initialData: CheckoutPageData 
           </form>
         </section>
       </main>
-    </>
+    </div>
   );
 }

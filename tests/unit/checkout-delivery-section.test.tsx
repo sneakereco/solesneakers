@@ -31,6 +31,10 @@ describe("CheckoutDeliverySection", () => {
     expect(html).toContain('aria-label="Last name"');
     expect(html).toContain('value="Example"');
     expect(html).toContain('autoComplete="shipping street-address"');
+    expect(html).toContain('aria-label="State"');
+    expect(html).toContain('<option value="DE" selected="">Delaware</option>');
+    expect(html).toContain('aria-label="Search address"');
+    expect(html).toContain('aria-label="Phone help"');
     expect(html).not.toContain("Shipping method");
   });
 

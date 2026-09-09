@@ -1,4 +1,5 @@
 import { Loader2 } from "lucide-react";
+import Image from "next/image";
 import type { ReactNode, RefObject } from "react";
 
 import {
@@ -52,14 +53,14 @@ export function CheckoutPaymentPanel({
 
   return (
     <section className="order-4 mt-8" aria-labelledby="payment-heading">
-      <h2 id="payment-heading" className="text-2xl font-semibold">
+      <h2 id="payment-heading" className="text-xl font-semibold">
         Payment
       </h2>
       <p className="mt-1 text-sm text-zinc-500">
         All transactions are secure and encrypted.
       </p>
       <div
-        className="mt-4 overflow-hidden rounded-xl border border-zinc-300 bg-zinc-50"
+        className="mt-3 overflow-hidden rounded-xl border border-[#dedede] bg-[#f4f4f4]"
         role="radiogroup"
         aria-label="Payment method"
       >
@@ -68,25 +69,28 @@ export function CheckoutPaymentPanel({
           role="radio"
           aria-checked={selectedMethod === "card"}
           onClick={() => onSelectMethod("card")}
-          className={`flex w-full items-center gap-3 border-b px-4 py-4 text-left ${
+          className={`flex w-full items-center gap-3 border-b px-4 py-3 text-left ${
             selectedMethod === "card"
-              ? "border-sky-600 bg-sky-50 ring-1 ring-inset ring-sky-600"
-              : "border-zinc-200 bg-white"
+              ? "border-[#1878b9] bg-[#f2f7ff] ring-1 ring-inset ring-[#1878b9]"
+              : "border-[#dedede] bg-white"
           }`}
         >
           <span
             aria-hidden="true"
-            className={`h-5 w-5 rounded-full border-[6px] ${
+            className={`h-4 w-4 rounded-full ${
               selectedMethod === "card"
-                ? "border-sky-600 bg-white"
-                : "border border-zinc-300 bg-white"
+                ? "border-[5px] border-[#1878b9] bg-white"
+                : "border border-[#dedede] bg-white"
             }`}
           />
           <span className="font-semibold">Credit card</span>
         </button>
 
-        <div hidden={selectedMethod !== "card"} className="grid gap-3 px-4 py-4">
-          <div id="square-card-container" className="min-h-24 rounded bg-white" />
+        <div
+          hidden={selectedMethod !== "card"}
+          className={`${selectedMethod === "card" ? "grid" : "hidden"} gap-[10px] bg-[#f4f4f4] p-3`}
+        >
+          <div id="square-card-container" className="min-h-24 rounded-xl bg-white" />
           <input
             required
             aria-label="Name on card"
@@ -103,14 +107,14 @@ export function CheckoutPaymentPanel({
                 type="checkbox"
                 checked={sameAsShipping}
                 onChange={(event) => onSameAsShippingChange(event.target.checked)}
-                className="h-5 w-5 rounded border-zinc-300 accent-sky-600 focus-visible:outline-none"
+                className="checkout-checkbox h-5 w-5 focus-visible:outline-none"
               />
               Use shipping address as billing address
             </label>
           ) : null}
-          {showSeparateBilling ? (
-            <div ref={billingFields} className="grid gap-4 pt-2">
-              <h3 className="text-xl font-semibold">Billing address</h3>
+          {showSeparateBilling && selectedMethod === "card" ? (
+            <div ref={billingFields} className="grid gap-3 pt-2">
+              <h3 className="text-lg font-semibold">Billing address</h3>
               <BillingAddressFields
                 value={billingAddress}
                 onChange={onBillingAddressChange}
@@ -127,77 +131,85 @@ export function CheckoutPaymentPanel({
           aria-checked={selectedMethod === "afterpay"}
           hidden={!afterpayReady}
           onClick={() => onSelectMethod("afterpay")}
-          className={`flex w-full items-center justify-between gap-3 px-4 py-4 text-left ${
+          className={`${afterpayReady ? "flex" : "hidden"} w-full items-center justify-between gap-3 border-t border-[#dedede] px-4 py-3 text-left ${
             selectedMethod === "afterpay"
-              ? "bg-sky-50 ring-1 ring-inset ring-sky-600"
+              ? "bg-[#f2f7ff] ring-1 ring-inset ring-[#1878b9]"
               : "bg-white"
           }`}
         >
           <span className="flex items-center gap-3 font-semibold">
             <span
               aria-hidden="true"
-              className={`h-5 w-5 rounded-full border-[6px] ${
+              className={`h-4 w-4 rounded-full ${
                 selectedMethod === "afterpay"
-                  ? "border-sky-600 bg-white"
-                  : "border border-zinc-300 bg-white"
+                  ? "border-[5px] border-[#1878b9] bg-white"
+                  : "border border-[#dedede] bg-white"
               }`}
             />
             Afterpay
           </span>
+          <Image
+            src="/images/payments/afterpay.svg"
+            alt="Afterpay"
+            width={48}
+            height={30}
+            className="h-6 w-auto"
+            unoptimized
+          />
         </button>
 
         {selectedMethod === "afterpay" && afterpayReady ? (
-          <div className="border-t border-zinc-200">
-            <p className="px-4 py-5 text-center text-sm">
+          <div className="border-t border-[#dedede] bg-[#f4f4f4]">
+            <p className="px-4 py-4 text-center text-sm">
               You&apos;ll be redirected to Afterpay to complete your purchase.
             </p>
-            <div
-              ref={billingFields}
-              className="grid gap-4 border-t border-zinc-200 px-4 py-5"
-            >
-              <h3 className="text-xl font-semibold">Billing address</h3>
-              {fulfillment === "ship" ? (
-                <div className="overflow-hidden rounded-xl border border-zinc-300">
-                  <label className="flex items-center gap-3 border-b border-zinc-200 bg-white px-4 py-4 font-medium">
-                    <input
-                      type="radio"
-                      name="afterpay-billing"
-                      checked={sameAsShipping}
-                      onChange={() => onSameAsShippingChange(true)}
-                      className="h-5 w-5 accent-sky-600 focus-visible:outline-none"
-                    />
-                    Same as shipping address
-                  </label>
-                  <label className="flex items-center gap-3 bg-white px-4 py-4 font-medium">
-                    <input
-                      type="radio"
-                      name="afterpay-billing"
-                      checked={!sameAsShipping}
-                      onChange={() => onSameAsShippingChange(false)}
-                      className="h-5 w-5 accent-sky-600 focus-visible:outline-none"
-                    />
-                    Use a different billing address
-                  </label>
-                </div>
-              ) : null}
-              {showSeparateBilling ? (
-                <BillingAddressFields
-                  value={billingAddress}
-                  onChange={onBillingAddressChange}
-                  disabled={isPaying}
-                />
-              ) : null}
-            </div>
           </div>
         ) : null}
       </div>
+
+      {selectedMethod === "afterpay" && afterpayReady ? (
+        <div ref={billingFields} className="mt-8 grid gap-3">
+          <h3 className="text-lg font-semibold">Billing address</h3>
+          {fulfillment === "ship" ? (
+            <div className="overflow-hidden rounded-xl border border-[#dedede]">
+              <label className="flex items-center gap-3 border-b border-[#dedede] bg-[#f2f7ff] px-4 py-3 font-medium">
+                <input
+                  type="radio"
+                  name="afterpay-billing"
+                  checked={sameAsShipping}
+                  onChange={() => onSameAsShippingChange(true)}
+                  className="h-4 w-4 accent-[#1878b9] focus-visible:outline-none"
+                />
+                Same as shipping address
+              </label>
+              <label className="flex items-center gap-3 bg-white px-4 py-3 font-medium">
+                <input
+                  type="radio"
+                  name="afterpay-billing"
+                  checked={!sameAsShipping}
+                  onChange={() => onSameAsShippingChange(false)}
+                  className="h-4 w-4 accent-[#1878b9] focus-visible:outline-none"
+                />
+                Use a different billing address
+              </label>
+            </div>
+          ) : null}
+          {showSeparateBilling ? (
+            <BillingAddressFields
+              value={billingAddress}
+              onChange={onBillingAddressChange}
+              disabled={isPaying}
+            />
+          ) : null}
+        </div>
+      ) : null}
 
       {securityChallenge}
       <button
         type="button"
         disabled={payDisabled}
         onClick={onPay}
-        className="mt-5 flex w-full items-center justify-center rounded bg-zinc-950 px-6 py-4 text-sm font-semibold text-white disabled:cursor-not-allowed disabled:bg-zinc-400"
+        className="mt-5 flex h-12 w-full items-center justify-center rounded-xl bg-zinc-950 px-6 text-sm font-semibold text-white disabled:cursor-not-allowed disabled:bg-zinc-400"
       >
         {isPaying ? <Loader2 className="h-5 w-5 animate-spin" /> : payLabel}
       </button>

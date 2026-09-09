@@ -11,8 +11,8 @@ export function CheckoutHeader() {
   const cartLabel = `Go to cart, ${itemCount} ${itemCount === 1 ? "item" : "items"}`;
 
   return (
-    <header className="border-b border-zinc-200 bg-[#f7f7f7]">
-      <div className="mx-auto grid h-24 w-full max-w-7xl grid-cols-[1fr_auto_1fr] items-center px-5 sm:h-28 sm:px-8 lg:px-12">
+    <header className="border-b border-[#d3d3d3] bg-[#f3f3f3]">
+      <div className="mx-auto grid h-24 w-full max-w-5xl grid-cols-[1fr_auto_1fr] items-center px-5 sm:h-28 sm:px-8">
         <Link href="/" aria-label="Sole Sneakers home" className="col-start-2">
           <Image
             src="/images/logo.png"

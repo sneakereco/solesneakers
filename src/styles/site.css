@@ -953,7 +953,7 @@ body:has([data-auth-shell]) {
   }
 }
 
-* {
+*:not([data-checkout], [data-checkout] *) {
   border-radius: 0 !important;
 }
 
@@ -1176,6 +1176,27 @@ body[data-route="admin"] main {
 *:focus-visible {
   outline: 2px solid #dc2626;
   outline-offset: 2px;
+}
+
+[data-checkout] *:focus-visible {
+  outline: none;
+  outline-offset: 0;
+}
+
+[data-checkout] .checkout-checkbox {
+  flex-shrink: 0;
+  appearance: none;
+  border: 1px solid #1878b9;
+  border-radius: 5px;
+  background-color: #ffffff;
+  background-position: center;
+  background-repeat: no-repeat;
+  background-size: 14px 14px;
+}
+
+[data-checkout] .checkout-checkbox:checked {
+  background-color: #1878b9;
+  background-image: url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 20 20'%3E%3Cpath fill='none' stroke='white' stroke-linecap='round' stroke-linejoin='round' stroke-width='2.4' d='m5 10 3 3 7-7'/%3E%3C/svg%3E");
 }
 
 .modal-scroll {

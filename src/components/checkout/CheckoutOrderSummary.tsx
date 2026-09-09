@@ -36,13 +36,13 @@ export function CheckoutOrderSummary({
 
   return (
     <aside
-      className={`${className} border-b border-zinc-200 bg-[#f7f7f7] px-5 py-8 text-zinc-950 lg:min-h-[calc(100vh-7rem)] lg:border-b-0 lg:border-l lg:px-12 lg:py-16`}
+      className={`${className} border-b border-[#d3d3d3] bg-[#f3f3f3] px-5 py-8 text-zinc-950 lg:min-h-[calc(100vh-7rem)] lg:border-b-0 lg:border-l lg:px-10 lg:py-16`}
       aria-labelledby="order-summary-heading"
     >
       <h2 id="order-summary-heading" className="sr-only">
         Order summary
       </h2>
-      <div className="w-full max-w-xl">
+      <div className="w-full max-w-[25rem]">
         <div className="space-y-5">
           {items.map((item) => (
             <div key={`${item.productId}-${item.variantId}`} className="flex gap-4">

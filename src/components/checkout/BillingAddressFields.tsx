@@ -1,4 +1,7 @@
+import { ChevronDown, CircleHelp, Search } from "lucide-react";
+
 import { CHECKOUT_INPUT_CLASS } from "@/components/checkout/checkout-field-styles";
+import { US_STATE_OPTIONS } from "@/components/checkout/us-state-options";
 
 export type CheckoutBillingAddressForm = {
   givenName: string;
@@ -34,21 +37,25 @@ export function BillingAddressFields({
   disabled?: boolean;
 }) {
   return (
-    <div className="grid gap-3">
-      <label className="relative block rounded-lg border border-zinc-300 bg-white px-4 py-2 text-xs text-zinc-500">
-        Country/Region
+    <div className="grid gap-[10px]">
+      <label className="relative flex h-12 flex-col justify-center rounded-xl border border-[#dedede] bg-white px-3">
+        <span className="text-xs leading-3 text-[#737373]">Country/Region</span>
         <select
           required
           autoComplete="billing country"
           value={value.country}
           disabled={disabled}
           onChange={(event) => onChange("country", event.target.value)}
-          className="block w-full appearance-none bg-transparent text-sm text-zinc-950 outline-none focus-visible:outline-none"
+          className="w-full appearance-none bg-transparent pr-7 text-base leading-5 text-zinc-950 outline-none focus-visible:outline-none disabled:opacity-100"
         >
           <option value="US">United States</option>
         </select>
+        <ChevronDown
+          aria-hidden="true"
+          className="pointer-events-none absolute right-3 top-1/2 h-4 w-4 -translate-y-1/2 text-[#737373]"
+        />
       </label>
-      <div className="grid gap-3 sm:grid-cols-2">
+      <div className="grid gap-[10px] sm:grid-cols-2">
         <input
           required
           aria-label="Billing first name"
@@ -70,16 +77,23 @@ export function BillingAddressFields({
           className={CHECKOUT_INPUT_CLASS}
         />
       </div>
-      <input
-        required
-        aria-label="Billing address"
-        placeholder="Address"
-        autoComplete="billing address-line1"
-        value={value.line1}
-        disabled={disabled}
-        onChange={(event) => onChange("line1", event.target.value)}
-        className={CHECKOUT_INPUT_CLASS}
-      />
+      <label className="relative">
+        <span className="sr-only">Billing address</span>
+        <input
+          required
+          aria-label="Billing address"
+          placeholder="Address"
+          autoComplete="billing address-line1"
+          value={value.line1}
+          disabled={disabled}
+          onChange={(event) => onChange("line1", event.target.value)}
+          className={`${CHECKOUT_INPUT_CLASS} pr-10`}
+        />
+        <Search
+          aria-hidden="true"
+          className="pointer-events-none absolute right-3 top-1/2 h-5 w-5 -translate-y-1/2 text-[#737373]"
+        />
+      </label>
       <input
         aria-label="Billing apartment, suite, etc."
         placeholder="Apartment, suite, etc. (optional)"
@@ -89,7 +103,7 @@ export function BillingAddressFields({
         onChange={(event) => onChange("line2", event.target.value)}
         className={CHECKOUT_INPUT_CLASS}
       />
-      <div className="grid gap-3 sm:grid-cols-[1fr_8rem_9rem]">
+      <div className="grid gap-[10px] sm:grid-cols-3">
         <input
           required
           aria-label="Billing city"
@@ -100,17 +114,37 @@ export function BillingAddressFields({
           onChange={(event) => onChange("city", event.target.value)}
           className={CHECKOUT_INPUT_CLASS}
         />
-        <input
-          required
-          aria-label="Billing state"
-          placeholder="State"
-          maxLength={2}
-          autoComplete="billing address-level1"
-          value={value.state}
-          disabled={disabled}
-          onChange={(event) => onChange("state", event.target.value.toUpperCase())}
-          className={`${CHECKOUT_INPUT_CLASS} uppercase`}
-        />
+        <label className="relative">
+          {value.state ? (
+            <span className="pointer-events-none absolute left-3 top-1.5 z-10 text-xs leading-3 text-[#737373]">
+              State
+            </span>
+          ) : (
+            <span className="sr-only">Billing state</span>
+          )}
+          <select
+            required
+            aria-label="Billing state"
+            autoComplete="billing address-level1"
+            value={value.state}
+            disabled={disabled}
+            onChange={(event) => onChange("state", event.target.value)}
+            className={`${CHECKOUT_INPUT_CLASS} appearance-none pr-8 ${value.state ? "pt-3" : "text-[#737373]"}`}
+          >
+            <option value="" disabled>
+              State
+            </option>
+            {US_STATE_OPTIONS.map(([code, name]) => (
+              <option key={code} value={code}>
+                {name}
+              </option>
+            ))}
+          </select>
+          <ChevronDown
+            aria-hidden="true"
+            className="pointer-events-none absolute right-3 top-1/2 h-4 w-4 -translate-y-1/2 text-[#737373]"
+          />
+        </label>
         <input
           required
           aria-label="Billing ZIP code"
@@ -122,16 +156,23 @@ export function BillingAddressFields({
           className={CHECKOUT_INPUT_CLASS}
         />
       </div>
-      <input
-        type="tel"
-        aria-label="Billing phone"
-        placeholder="Phone (optional)"
-        autoComplete="billing tel"
-        value={value.phone}
-        disabled={disabled}
-        onChange={(event) => onChange("phone", event.target.value)}
-        className={CHECKOUT_INPUT_CLASS}
-      />
+      <label className="relative">
+        <span className="sr-only">Billing phone</span>
+        <input
+          type="tel"
+          aria-label="Billing phone"
+          placeholder="Phone (optional)"
+          autoComplete="billing tel"
+          value={value.phone}
+          disabled={disabled}
+          onChange={(event) => onChange("phone", event.target.value)}
+          className={`${CHECKOUT_INPUT_CLASS} pr-10`}
+        />
+        <CircleHelp
+          aria-hidden="true"
+          className="pointer-events-none absolute right-3 top-1/2 h-5 w-5 -translate-y-1/2 text-[#737373]"
+        />
+      </label>
     </div>
   );
 }
