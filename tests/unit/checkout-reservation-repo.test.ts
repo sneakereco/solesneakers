@@ -82,64 +82,90 @@ describe("CheckoutReservationRepository", () => {
     expect(eqIdempotency).toHaveBeenCalledWith("idempotency_key", "key-1");
   });
 
-  it("loads a payment checkout with ownership, address, and protection binding", async () => {
-    const maybeSingle = jest.fn().mockResolvedValue({
-      data: {
-        id: "order-1",
-        tenant_id: "tenant-1",
-        user_id: null,
-        guest_email: "buyer@example.com",
-        cart_hash: "cart-hash",
-        status: "pending",
-        expires_at: "2026-09-06T12:15:00.000Z",
-        subtotal: 100,
-        shipping: 10,
-        tax_amount: 8,
-        total: 118,
-        fulfillment: "ship",
-        square_order_id: "square-order-1",
-        square_order_version: 2,
-        checkout_protection_evidence: { device_session_id: "device-1" },
-        order_billing: {
-          line1: "2 Billing Street",
-          line2: null,
-          city: "Charleston",
-          state: "SC",
-          postal_code: "29402",
-          country: "US",
+  it.each(["object", "array"])(
+    "loads a payment checkout with %s billing",
+    async (shape) => {
+      const maybeSingle = jest.fn().mockResolvedValue({
+        data: {
+          id: "order-1",
+          tenant_id: "tenant-1",
+          user_id: null,
+          guest_email: "buyer@example.com",
+          cart_hash: "cart-hash",
+          status: "pending",
+          expires_at: "2026-09-06T12:15:00.000Z",
+          subtotal: 100,
+          shipping: 10,
+          tax_amount: 8,
+          total: 118,
+          fulfillment: "ship",
+          square_order_id: "square-order-1",
+          square_order_version: 2,
+          checkout_protection_evidence: { device_session_id: "device-1" },
+          order_billing: {
+            line1: "2 Billing Street",
+            line2: null,
+            city: "Charleston",
+            state: "SC",
+            postal_code: "29402",
+            country: "US",
+          },
+          order_shipping: {
+            name: "Buyer",
+            phone: "5555555555",
+            line1: "1 Main Street",
+            line2: null,
+            city: "Charleston",
+            state: "SC",
+            postal_code: "29401",
+            country: "US",
+          },
         },
-        order_shipping: {
-          name: "Buyer",
-          phone: "5555555555",
-          line1: "1 Main Street",
-          line2: null,
-          city: "Charleston",
-          state: "SC",
-          postal_code: "29401",
-          country: "US",
-        },
-      },
-      error: null,
-    });
-    const eq = jest.fn(() => ({ maybeSingle }));
-    const select = jest.fn(() => ({ eq }));
-    const repository = new CheckoutReservationRepository({
-      from: jest.fn(() => ({ select })),
-    } as never);
+        error: null,
+      });
+      const eq = jest.fn(() => ({ maybeSingle }));
+      const select = jest.fn(() => ({ eq }));
+      const repository = new CheckoutReservationRepository({
+        from: jest.fn(() => ({ select })),
+      } as never);
 
-    await expect(repository.findPaymentCheckout("order-1")).resolves.toEqual(
-      expect.objectContaining({
-        orderId: "order-1",
-        tenantId: "tenant-1",
-        deviceSessionId: "device-1",
-        squareOrderVersion: 2,
-        totalCents: 11800,
-        shippingAddress: expect.objectContaining({ postalCode: "29401" }),
-        billingAddress: expect.objectContaining({ postalCode: "29402" }),
-      }),
-    );
-    expect(eq).toHaveBeenCalledWith("id", "order-1");
-  });
+      const response = await maybeSingle();
+      const billing = response.data.order_billing;
+      if (shape === "array") {
+        maybeSingle.mockResolvedValue({
+          ...response,
+          data: { ...response.data, order_billing: [billing] },
+        });
+      }
+
+      await expect(repository.findPaymentCheckout("order-1")).resolves.toEqual(
+        expect.objectContaining({
+          orderId: "order-1",
+          tenantId: "tenant-1",
+          deviceSessionId: "device-1",
+          squareOrderVersion: 2,
+          totalCents: 11800,
+          shippingAddress: expect.objectContaining({ postalCode: "29401" }),
+          billingAddress: expect.objectContaining({ postalCode: "29402" }),
+        }),
+      );
+      expect(eq).toHaveBeenCalledWith("id", "order-1");
+      maybeSingle.mockResolvedValue({
+        ...response,
+        data: { ...response.data, order_billing: [billing, billing] },
+      });
+      await expect(repository.findPaymentCheckout("order-1")).rejects.toThrow(
+        "checkout_payment_order_invalid",
+      );
+      maybeSingle.mockResolvedValue({
+        ...response,
+        data: { ...response.data, order_billing: [] },
+      });
+      await expect(repository.findPaymentCheckout("order-1")).resolves.toMatchObject({
+        billingAddress: null,
+      });
+    },
+  );
 
   it("passes integer money and purchase snapshots to the atomic reservation RPC", async () => {
     const rpc = jest.fn().mockResolvedValue({

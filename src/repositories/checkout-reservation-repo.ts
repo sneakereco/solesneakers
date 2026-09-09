@@ -159,16 +159,19 @@ const expiredCheckoutSchema = z.object({
 });
 
 const paymentCheckoutSchema = z.object({
-  order_billing: z
-    .object({
-      line1: z.string().min(1),
-      line2: z.string().nullable(),
-      city: z.string().min(1),
-      state: z.string().regex(/^[A-Z]{2}$/),
-      postal_code: z.string().regex(/^\d{5}(?:-\d{4})?$/),
-      country: z.literal("US"),
-    })
-    .nullable(),
+  order_billing: z.preprocess(
+    (value) => (Array.isArray(value) && value.length <= 1 ? (value[0] ?? null) : value),
+    z
+      .object({
+        line1: z.string().min(1),
+        line2: z.string().nullable(),
+        city: z.string().min(1),
+        state: z.string().regex(/^[A-Z]{2}$/),
+        postal_code: z.string().regex(/^\d{5}(?:-\d{4})?$/),
+        country: z.literal("US"),
+      })
+      .nullable(),
+  ),
   id: z.string().min(1),
   tenant_id: z.string().min(1),
   user_id: z.string().nullable(),

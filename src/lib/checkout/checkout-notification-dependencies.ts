@@ -38,7 +38,7 @@ async function loadDetailedOrder(admin: AdminSupabaseClient, orderId: string) {
       items:order_items(
         product_name, brand, model, category, variant_sku, size_label,
         quantity, unit_price, line_total,
-        product:products(name, brand, model, category, images:product_images(url, is_primary, sort_order)),
+        product:products(name, category, images:product_images(url, is_primary, sort_order)),
         variant:product_variants(sku)
       ),
       shipping:order_shipping(*)

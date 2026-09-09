@@ -7,6 +7,7 @@ import { useCart } from "@/components/cart/CartProvider";
 import { CheckoutContactSection } from "@/components/checkout/CheckoutContactSection";
 import { CheckoutDeliverySection } from "@/components/checkout/CheckoutDeliverySection";
 import { CheckoutHeader } from "@/components/checkout/CheckoutHeader";
+import { CheckoutPaymentDialog } from "@/components/checkout/CheckoutPaymentDialog";
 import {
   CheckoutOrderSummary,
   type CheckoutQuoteState,
@@ -296,11 +297,7 @@ export function CheckoutClient({ initialData }: { initialData: CheckoutPageData 
   }
 
   if (isRedirecting) {
-    return (
-      <main className="flex min-h-screen items-center justify-center" role="status">
-        Opening your order confirmation. Please do not close this page.
-      </main>
-    );
+    return <CheckoutPaymentDialog open />;
   }
   if (!isReady) {
     return (

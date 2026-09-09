@@ -1,6 +1,7 @@
 "use client";
 
 import { useEffect, useMemo, useRef, useState, type ReactNode } from "react";
+import { flushSync } from "react-dom";
 
 import {
   BillingAddressFields,
@@ -8,6 +9,7 @@ import {
   type CheckoutBillingAddressForm,
 } from "@/components/checkout/BillingAddressFields";
 import { CheckoutPaymentPanel } from "@/components/checkout/CheckoutPaymentPanel";
+import { CheckoutPaymentDialog } from "@/components/checkout/CheckoutPaymentDialog";
 import { ExpressCheckoutMethods } from "@/components/checkout/ExpressCheckoutMethods";
 import { initializeSquareCard } from "@/components/checkout/square-card-initialization";
 import {
@@ -434,6 +436,7 @@ export function SquarePaymentMethods({
   const [turnstileToken, setTurnstileToken] = useState<string | null>(null);
   const [turnstileWidget, setTurnstileWidget] = useState<string | null>(null);
   const [isPaying, setIsPaying] = useState(false);
+  const [paymentDialogOpen, setPaymentDialogOpen] = useState(false);
   const [paymentMessage, setPaymentMessage] = useState<string | null>(null);
   const [walletBillingRequired, setWalletBillingRequired] = useState(false);
   const walletBillingFields = useRef<HTMLDivElement>(null);
@@ -864,12 +867,14 @@ export function SquarePaymentMethods({
     }
     paymentInFlight.current = true;
     setIsPaying(true);
+    setPaymentDialogOpen(requireVisibleExactQuote);
     setPaymentMessage("Complete payment authorization. Please keep this page open.");
     setError(null);
     try {
       assertPayable(requireVisibleExactQuote);
       await action();
     } catch (paymentError) {
+      setPaymentDialogOpen(true);
       setError(
         paymentError instanceof Error
           ? paymentError.message
@@ -920,6 +925,7 @@ export function SquarePaymentMethods({
         ?.querySelector<HTMLInputElement>("input:invalid, select:invalid")
         ?.reportValidity();
       setError("Enter your complete billing address before reopening your wallet.");
+      setPaymentDialogOpen(true);
       return;
     }
     try {
@@ -929,6 +935,7 @@ export function SquarePaymentMethods({
         requestBillingContact: true,
       });
     } catch (walletError) {
+      setPaymentDialogOpen(true);
       setError(
         walletError instanceof Error
           ? walletError.message
@@ -939,6 +946,7 @@ export function SquarePaymentMethods({
     walletQuote.current = null;
     void runPayment(async () => {
       const result = await wallet.tokenize();
+      setPaymentDialogOpen(true);
       const sourceId = checkedToken(result);
       setPaymentMessage("Processing your payment. Please do not close this page.");
       const walletBilling = walletBillingAddress(
@@ -1026,7 +1034,17 @@ export function SquarePaymentMethods({
       await pay(
         await authorizeAndTokenize({
           permitRequest: permitRequest(checkout, method),
-          paymentMethod: payment,
+          paymentMethod: {
+            tokenize: async (details) => {
+              // Let Square own focus while its verification or wallet UI is open.
+              flushSync(() => setPaymentDialogOpen(false));
+              try {
+                return await payment.tokenize(details);
+              } finally {
+                setPaymentDialogOpen(true);
+              }
+            },
+          },
           verificationDetails:
             method === "card"
               ? {
@@ -1057,6 +1075,11 @@ export function SquarePaymentMethods({
 
   return (
     <>
+      <CheckoutPaymentDialog
+        open={paymentDialogOpen}
+        error={error}
+        onDismiss={() => setPaymentDialogOpen(false)}
+      />
       <ExpressCheckoutMethods
         applePayReady={Boolean(applePay)}
         googlePayReady={Boolean(googlePay)}
