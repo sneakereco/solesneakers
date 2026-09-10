@@ -301,7 +301,11 @@ export function bindWalletShippingContact(
     address: WalletShippingDestination,
   ) => Promise<{ quote: ExactCheckoutQuote }>,
   onResolved?: (context: { quote: ExactCheckoutQuote }) => void,
+  fulfillment: "ship" | "pickup" = "ship",
 ): void {
+  if (fulfillment === "pickup") {
+    return;
+  }
   request.addEventListener("shippingcontactchanged", async (value) => {
     try {
       const context = await resolveWalletShippingContact(
@@ -437,7 +441,6 @@ export function SquarePaymentMethods({
   const [turnstileWidget, setTurnstileWidget] = useState<string | null>(null);
   const [isPaying, setIsPaying] = useState(false);
   const [paymentDialogOpen, setPaymentDialogOpen] = useState(false);
-  const [paymentMessage, setPaymentMessage] = useState<string | null>(null);
   const [walletBillingRequired, setWalletBillingRequired] = useState(false);
   const walletBillingFields = useRef<HTMLDivElement>(null);
   const [error, setError] = useState<string | null>(null);
@@ -573,6 +576,7 @@ export function SquarePaymentMethods({
               (context) => {
                 walletQuote.current = context.quote;
               },
+              fulfillment,
             );
             walletRequests.current[name] = request;
             return payments[name](request);
@@ -617,7 +621,7 @@ export function SquarePaymentMethods({
           .catch((methodError) => reportUnavailable(name, "create", methodError));
       }
     };
-  }, [payments, hasQuote, lifecycles]);
+  }, [payments, hasQuote, fulfillment, lifecycles]);
 
   useEffect(() => {
     if (!payments || !hasAfterpayQuote) {
@@ -825,7 +829,6 @@ export function SquarePaymentMethods({
   }, [isGuest]);
 
   async function pay(authorization: { permit: string; sourceId: string }) {
-    setPaymentMessage("Processing your payment. Please do not close this page.");
     const response = await fetch("/api/checkout/pay", {
       method: "POST",
       headers: { "Content-Type": "application/json" },
@@ -868,7 +871,6 @@ export function SquarePaymentMethods({
     paymentInFlight.current = true;
     setIsPaying(true);
     setPaymentDialogOpen(requireVisibleExactQuote);
-    setPaymentMessage("Complete payment authorization. Please keep this page open.");
     setError(null);
     try {
       assertPayable(requireVisibleExactQuote);
@@ -881,7 +883,6 @@ export function SquarePaymentMethods({
           : "Payment could not be completed",
       );
       setIsPaying(false);
-      setPaymentMessage(null);
     } finally {
       paymentInFlight.current = false;
       updateTurnstileToken(null);
@@ -948,7 +949,6 @@ export function SquarePaymentMethods({
       const result = await wallet.tokenize();
       setPaymentDialogOpen(true);
       const sourceId = checkedToken(result);
-      setPaymentMessage("Processing your payment. Please do not close this page.");
       const walletBilling = walletBillingAddress(
         result.details?.billing,
         walletBillingRequired ? billingAddress : undefined,
@@ -1085,7 +1085,6 @@ export function SquarePaymentMethods({
         googlePayReady={Boolean(googlePay)}
         disabled={isPaying || !quoteReady || (isGuest && !turnstileToken)}
         loading={expressLoading}
-        statusMessage={isPaying ? paymentMessage : error}
         onApplePayClick={() => applePay && submitWallet("applePay", applePay)}
         onGooglePayClick={() => googlePay && submitWallet("googlePay", googlePay)}
       />

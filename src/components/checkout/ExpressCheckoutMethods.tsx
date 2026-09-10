@@ -3,7 +3,6 @@ export function ExpressCheckoutMethods({
   googlePayReady,
   disabled = false,
   loading,
-  statusMessage,
   onApplePayClick,
   onGooglePayClick,
 }: {
@@ -11,7 +10,6 @@ export function ExpressCheckoutMethods({
   googlePayReady: boolean;
   disabled?: boolean;
   loading: boolean;
-  statusMessage?: string | null;
   onApplePayClick(): void;
   onGooglePayClick(): void;
 }) {
@@ -27,9 +25,13 @@ export function ExpressCheckoutMethods({
         Express checkout
       </h2>
       {loading && !hasReadyMethod ? (
-        <p role="status" className="mt-3 text-center text-sm text-zinc-500">
-          Checking available express payment methods…
-        </p>
+        <div role="status" className="mt-3 flex justify-center text-zinc-500">
+          <Loader2
+            aria-hidden="true"
+            className="h-6 w-6 animate-spin motion-reduce:animate-none"
+          />
+          <span className="sr-only">Loading express checkout</span>
+        </div>
       ) : null}
       <div
         className={`mt-4 grid grid-cols-1 gap-2 ${applePayReady && googlePayReady ? "sm:grid-cols-2" : ""}`}
@@ -52,11 +54,6 @@ export function ExpressCheckoutMethods({
           onClick={disabled ? undefined : onGooglePayClick}
         />
       </div>
-      {statusMessage && (
-        <p role="status" className="mt-4 text-center text-sm text-zinc-700">
-          {statusMessage}
-        </p>
-      )}
       <div className="my-6 flex items-center gap-4 text-xs uppercase text-zinc-400">
         <span className="h-px flex-1 bg-zinc-200" /> or
         <span className="h-px flex-1 bg-zinc-200" />
@@ -64,3 +61,4 @@ export function ExpressCheckoutMethods({
     </section>
   );
 }
+import { Loader2 } from "lucide-react";

@@ -22,6 +22,11 @@ const paymentConfig = {
 };
 
 describe("SquarePaymentMethods", () => {
+  it("does not register shipping callbacks for pickup wallets", () => {
+    const request = { addEventListener: jest.fn() };
+    bindWalletShippingContact(request, jest.fn(), undefined, "pickup");
+    expect(request.addEventListener).not.toHaveBeenCalled();
+  });
   it("uses only a complete, explicitly entered fallback for missing wallet billing", () => {
     const fallback = {
       givenName: "Ada",
