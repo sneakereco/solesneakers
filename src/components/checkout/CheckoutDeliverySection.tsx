@@ -1,13 +1,7 @@
-import {
-  ChevronDown,
-  CircleHelp,
-  MapPin,
-  Package,
-  PackageCheck,
-  Search,
-} from "lucide-react";
+import { ChevronDown, MapPin, Package, PackageCheck, Search } from "lucide-react";
 
 import { CHECKOUT_INPUT_CLASS } from "@/components/checkout/checkout-field-styles";
+import { CheckoutHelpTooltip } from "@/components/checkout/CheckoutHelpTooltip";
 import { PICKUP_HOURS, PICKUP_LOCATION_SUMMARY } from "@/config/pickup";
 import type { CheckoutAddressForm } from "@/lib/checkout/checkout-page-data";
 import { US_STATE_OPTIONS } from "@/components/checkout/us-state-options";
@@ -39,7 +33,7 @@ export function CheckoutDeliverySection({
   return (
     <fieldset className="order-3 mt-8">
       <legend className="text-xl font-semibold">Delivery</legend>
-      <div className="mt-4 grid grid-cols-2 rounded-xl bg-zinc-100 p-1">
+      <div className="mt-4 grid grid-cols-2 rounded-xl bg-[#e8e8e8] p-1">
         {(["ship", "pickup"] as const).map((method) => (
           <button
             key={method}
@@ -211,8 +205,7 @@ export function CheckoutDeliverySection({
           </div>
         )}
 
-        <label className="relative">
-          <span className="sr-only">Phone</span>
+        <div className="relative">
           <input
             required
             type="tel"
@@ -223,12 +216,10 @@ export function CheckoutDeliverySection({
             onChange={(event) => onAddressChange("phone", event.target.value)}
             className={`${CHECKOUT_INPUT_CLASS} pr-10`}
           />
-          <CircleHelp
-            role="img"
-            aria-label="Phone help"
-            className="pointer-events-none absolute right-3 top-1/2 h-5 w-5 -translate-y-1/2 text-[#737373]"
-          />
-        </label>
+          <CheckoutHelpTooltip label="Phone help">
+            In case we need to contact you about your order
+          </CheckoutHelpTooltip>
+        </div>
       </div>
     </fieldset>
   );

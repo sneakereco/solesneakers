@@ -35,6 +35,8 @@ describe("CheckoutDeliverySection", () => {
     expect(html).toContain('<option value="DE" selected="">Delaware</option>');
     expect(html).toContain('aria-label="Search address"');
     expect(html).toContain('aria-label="Phone help"');
+    expect(html).toContain("In case we need to contact you about your order");
+    expect(html).toContain("bg-[#e8e8e8]");
     expect(html).not.toContain("Shipping method");
   });
 

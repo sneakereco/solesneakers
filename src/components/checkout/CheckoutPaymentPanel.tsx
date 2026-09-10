@@ -1,5 +1,6 @@
 import { Loader2 } from "lucide-react";
 import Image from "next/image";
+import Link from "next/link";
 import type { ReactNode, RefObject } from "react";
 
 import {
@@ -300,6 +301,26 @@ export function CheckoutPaymentPanel({
           {error}
         </p>
       ) : null}
+      <nav
+        aria-label="Checkout policies"
+        className="mt-8 flex flex-wrap gap-x-5 gap-y-2 border-t border-zinc-300 pt-4 text-sm"
+      >
+        <Link href="/refunds" className="text-sky-700 underline">
+          Refund policy
+        </Link>
+        <Link href="/shipping" className="text-sky-700 underline">
+          Shipping
+        </Link>
+        <Link href="/privacy" className="text-sky-700 underline">
+          Privacy policy
+        </Link>
+        <Link href="/terms" className="text-sky-700 underline">
+          Terms of service
+        </Link>
+        <Link href="/contact" className="text-sky-700 underline">
+          Contact
+        </Link>
+      </nav>
     </section>
   );
 }

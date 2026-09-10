@@ -1,6 +1,7 @@
-import { ChevronDown, CircleHelp, Search } from "lucide-react";
+import { ChevronDown, Search } from "lucide-react";
 
 import { CHECKOUT_INPUT_CLASS } from "@/components/checkout/checkout-field-styles";
+import { CheckoutHelpTooltip } from "@/components/checkout/CheckoutHelpTooltip";
 import { US_STATE_OPTIONS } from "@/components/checkout/us-state-options";
 
 export type CheckoutBillingAddressForm = {
@@ -156,8 +157,7 @@ export function BillingAddressFields({
           className={CHECKOUT_INPUT_CLASS}
         />
       </div>
-      <label className="relative">
-        <span className="sr-only">Billing phone</span>
+      <div className="relative">
         <input
           type="tel"
           aria-label="Billing phone"
@@ -168,11 +168,10 @@ export function BillingAddressFields({
           onChange={(event) => onChange("phone", event.target.value)}
           className={`${CHECKOUT_INPUT_CLASS} pr-10`}
         />
-        <CircleHelp
-          aria-hidden="true"
-          className="pointer-events-none absolute right-3 top-1/2 h-5 w-5 -translate-y-1/2 text-[#737373]"
-        />
-      </label>
+        <CheckoutHelpTooltip label="Billing phone help">
+          In case we need to contact you about your order
+        </CheckoutHelpTooltip>
+      </div>
     </div>
   );
 }

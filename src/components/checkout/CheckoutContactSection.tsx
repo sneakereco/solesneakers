@@ -1,7 +1,7 @@
-import { CircleHelp } from "lucide-react";
 import Link from "next/link";
 
 import { CHECKOUT_INPUT_CLASS } from "@/components/checkout/checkout-field-styles";
+import { CheckoutHelpTooltip } from "@/components/checkout/CheckoutHelpTooltip";
 
 export function CheckoutContactSection({
   email,
@@ -27,8 +27,7 @@ export function CheckoutContactSection({
           </Link>
         ) : null}
       </div>
-      <label className="relative mt-3 block">
-        <span className="sr-only">Email</span>
+      <div className="relative mt-3">
         <input
           type="email"
           required
@@ -40,12 +39,10 @@ export function CheckoutContactSection({
           onChange={(event) => onEmailChange(event.target.value)}
           className={`${CHECKOUT_INPUT_CLASS} pr-10`}
         />
-        <CircleHelp
-          role="img"
-          aria-label="Email help"
-          className="pointer-events-none absolute right-3 top-1/2 h-5 w-5 -translate-y-1/2 text-[#737373]"
-        />
-      </label>
+        <CheckoutHelpTooltip label="Email help">
+          Used for your order confirmation and cart reminders
+        </CheckoutHelpTooltip>
+      </div>
     </section>
   );
 }

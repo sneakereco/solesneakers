@@ -24,6 +24,8 @@ describe("CheckoutContactSection", () => {
     expect(customerHtml).toContain('value="buyer@example.com"');
     expect(customerHtml).toContain("disabled");
     expect(guestHtml).toContain('aria-label="Email help"');
+    expect(guestHtml).toContain('role="tooltip"');
+    expect(guestHtml).toContain("Used for your order confirmation and cart reminders");
     expect(guestHtml).not.toMatch(/news|offers|marketing/i);
   });
 });

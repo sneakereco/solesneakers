@@ -107,6 +107,19 @@ describe("CheckoutPaymentPanel", () => {
       expect(html).toContain("Billing address");
       expect(html).toContain('autoComplete="billing given-name"');
       expect(html).toContain('<option value="DE">Delaware</option>');
+      expect(html).toContain("In case we need to contact you about your order");
     },
   );
+
+  it("keeps checkout policies available beside the payment action", () => {
+    const html = renderToStaticMarkup(
+      <CheckoutPaymentPanel {...baseProps} selectedMethod="card" />,
+    );
+
+    expect(html).toContain('href="/refunds"');
+    expect(html).toContain('href="/shipping"');
+    expect(html).toContain('href="/privacy"');
+    expect(html).toContain('href="/terms"');
+    expect(html).toContain('href="/contact"');
+  });
 });
