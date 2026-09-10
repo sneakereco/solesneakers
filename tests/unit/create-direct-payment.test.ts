@@ -9,6 +9,7 @@ function request() {
 
 function dependencies() {
   return {
+    validateShippingAddress: jest.fn().mockResolvedValue({ status: "valid" }),
     consumePermit: jest.fn().mockResolvedValue({
       tenantId: "tenant-1",
       orderId: "order-1",
@@ -28,6 +29,7 @@ function dependencies() {
       expiresAt: "2026-09-06T12:15:00.000Z",
       squareOrderId: "square-order-1",
       deviceSessionId: "device-1",
+      fulfillment: "pickup",
       shippingAddress: null,
       billingAddress: {
         line1: "2 Billing Street",
@@ -89,6 +91,7 @@ describe("createDirectPaymentHandler", () => {
     const deps = dependencies();
     const response = await createDirectPaymentHandler(request(), deps);
     expect(response.status).toBe(202);
+    expect(deps.validateShippingAddress).not.toHaveBeenCalled();
     expect(deps.consumePermit.mock.invocationCallOrder[0]).toBeLessThan(
       deps.createPayment.mock.invocationCallOrder[0],
     );
@@ -107,4 +110,60 @@ describe("createDirectPaymentHandler", () => {
     expect(response.status).toBe(409);
     expect(deps.createPayment).not.toHaveBeenCalled();
   });
+});
+
+describe("final shipping verification", () => {
+  it.each(["invalid", "suggestion", "unavailable"])(
+    "blocks %s stored destinations even with a previously issued permit",
+    async (status) => {
+      const deps = dependencies();
+      deps.loadOrder.mockResolvedValue({
+        ...(await deps.loadOrder()),
+        fulfillment: "ship",
+        shippingAddress: {
+          name: "Buyer",
+          phone: "2025550100",
+          line1: "1 Main St",
+          line2: null,
+          city: "Washington",
+          state: "DC",
+          postalCode: "20500",
+          country: "US",
+        },
+      });
+      deps.validateShippingAddress.mockResolvedValue({ status });
+      const response = await createDirectPaymentHandler(request(), deps);
+      expect(response.status).toBe(status === "unavailable" ? 503 : 409);
+      expect(deps.createPayment).not.toHaveBeenCalled();
+      expect(deps.savePaymentId).not.toHaveBeenCalled();
+    },
+  );
+});
+
+it("charges an older shipping order only after validating the stored destination", async () => {
+  const deps = dependencies();
+  const shippingAddress = {
+    name: "Buyer",
+    phone: "2025550100",
+    line1: "1 Main St",
+    line2: null,
+    city: "Washington",
+    state: "DC",
+    postalCode: "20500",
+    country: "US",
+  };
+  deps.loadOrder.mockResolvedValue({
+    ...(await deps.loadOrder()),
+    fulfillment: "ship",
+    shippingAddress,
+  });
+  const response = await createDirectPaymentHandler(request(), deps);
+  expect(response.status).toBe(202);
+  expect(deps.validateShippingAddress).toHaveBeenCalledWith(shippingAddress);
+  expect(deps.validateShippingAddress.mock.invocationCallOrder[0]).toBeLessThan(
+    deps.createPayment.mock.invocationCallOrder[0],
+  );
+  expect(deps.createPayment).toHaveBeenCalledWith(
+    expect.objectContaining({ shippingAddress }),
+  );
 });

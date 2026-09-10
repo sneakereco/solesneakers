@@ -1,3 +1,4 @@
+import { validateShippingAddress } from "@/lib/shipping/validate-shipping-address";
 import { assertCheckoutOpen } from "@/lib/checkout/checkout-access";
 import { env } from "@/config/env";
 import { createCheckoutAttemptLimiter } from "@/lib/checkout/checkout-attempt-limit";
@@ -36,6 +37,8 @@ export function createPrepareCheckoutDependencies(
   const getSquareOrders = () => (squareOrders ??= createSquareCheckoutOrdersGateway());
 
   return {
+    validateShippingAddress: (address) =>
+      validateShippingAddress(address, env.SHIPPO_API_TOKEN),
     findTenantId: () => tenants.getFirstTenantId(),
     getAccess: assertCheckoutOpen,
     verifyBrowser: verifyCheckoutBrowser,
@@ -44,6 +47,7 @@ export function createPrepareCheckoutDependencies(
     hashEmail: (email) => hashNormalizedCheckoutEmail(email, getCheckoutIdentitySecret()),
     findExisting: (tenantId, idempotencyKey) =>
       reservations.findByIdempotencyKey(tenantId, idempotencyKey),
+    checkAddressValidationAttempt: (identity) => limiter.checkAddressValidation(identity),
     checkAttempt: (identity) => limiter.check(identity),
     resolveCart: (tenantId, items) => resolveCheckoutCart(products, tenantId, items),
     quote: (input) => pricing.quote(input),

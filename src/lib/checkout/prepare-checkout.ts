@@ -2,6 +2,10 @@ import { timingSafeEqual } from "node:crypto";
 
 import type { NextRequest } from "next/server";
 
+import type {
+  ShippingAddress,
+  ShippingValidationResult,
+} from "@/lib/checkout/shipping-address-validation";
 import type { CheckoutAccessDecision } from "@/lib/checkout/checkout-access";
 import type {
   CheckoutAttemptDecision,
@@ -35,6 +39,7 @@ import type {
 type CheckoutSession = { user: { id: string; email: string } } | null;
 
 export type PrepareCheckoutDependencies = {
+  validateShippingAddress(address: ShippingAddress): Promise<ShippingValidationResult>;
   findTenantId(): Promise<string | null>;
   getAccess(tenantId: string): Promise<CheckoutAccessDecision>;
   verifyBrowser(): Promise<CheckoutBotVerdict>;
@@ -45,6 +50,9 @@ export type PrepareCheckoutDependencies = {
     tenantId: string,
     idempotencyKey: string,
   ): Promise<ExistingCheckout | null>;
+  checkAddressValidationAttempt(
+    identity: CheckoutAttemptIdentity,
+  ): Promise<CheckoutAttemptDecision>;
   checkAttempt(identity: CheckoutAttemptIdentity): Promise<CheckoutAttemptDecision>;
   resolveCart(
     tenantId: string,
@@ -170,6 +178,48 @@ export async function prepareCheckoutHandler(
       return json({ error: "A buyer email is required" }, 400);
     }
 
+    const normalizedEmailHash = deps.hashEmail(buyerEmail);
+    if (parsed.data.fulfillment === "ship" && parsed.data.shippingAddress) {
+      const validationAttempt = await deps.checkAddressValidationAttempt({
+        tenantId,
+        clientIp,
+        userId: session?.user.id ?? null,
+        normalizedEmailHash,
+        deviceSessionId: parsed.data.deviceSessionId,
+      });
+      if (!validationAttempt.allowed) {
+        return json(
+          { error: "Too many address checks; please try again later" },
+          429,
+          validationAttempt.retryAfterSeconds
+            ? { "Retry-After": String(validationAttempt.retryAfterSeconds) }
+            : undefined,
+        );
+      }
+      const validation = await deps.validateShippingAddress(parsed.data.shippingAddress);
+      if (validation.status !== "valid") {
+        const unavailable = validation.status === "unavailable";
+        return json(
+          {
+            code: unavailable
+              ? "SHIPPING_ADDRESS_UNAVAILABLE"
+              : validation.status === "suggestion"
+                ? "SHIPPING_ADDRESS_SUGGESTION"
+                : "SHIPPING_ADDRESS_INVALID",
+            error: unavailable
+              ? "Address verification is temporarily unavailable. Please try again. You have not been charged."
+              : validation.status === "suggestion"
+                ? "Please confirm the suggested shipping address before continuing. You have not been charged."
+                : "We could not verify this shipping address as deliverable. Check the street, apartment, city, state, and ZIP code. You have not been charged.",
+            ...(validation.status === "suggestion"
+              ? { suggestedAddress: validation.address }
+              : {}),
+          },
+          unavailable ? 503 : 422,
+        );
+      }
+    }
+
     const cartHash = createCheckoutCartHash({
       tenantId,
       buyerEmail,
@@ -223,7 +273,6 @@ export async function prepareCheckoutHandler(
       }
     }
 
-    const normalizedEmailHash = deps.hashEmail(buyerEmail);
     const attempt = await deps.checkAttempt({
       tenantId,
       clientIp,

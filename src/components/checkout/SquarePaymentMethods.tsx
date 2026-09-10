@@ -45,6 +45,10 @@ import {
   type SquarePaymentRequest,
   type SquareTokenResult,
 } from "@/lib/square/web-payments";
+import {
+  ShippingAddressValidationError,
+  type ShippingAddress,
+} from "@/lib/checkout/shipping-address-validation";
 import { log } from "@/lib/utils/log";
 
 export type PaymentMethod = PaymentPermitRequest["method"];
@@ -400,6 +404,7 @@ export function SquarePaymentMethods({
   resolveWalletShippingContact,
   prepare,
   clearCart,
+  onAcceptShippingAddress,
   children,
 }: {
   paymentConfig: CheckoutPageData["paymentConfig"];
@@ -420,6 +425,7 @@ export function SquarePaymentMethods({
     method: PaymentMethod,
     context?: CheckoutPreparationContext,
   ): Promise<PreparedCheckout>;
+  onAcceptShippingAddress?(entered: ShippingAddress, suggested: ShippingAddress): void;
   clearCart(): void;
   children?: ReactNode;
 }) {
@@ -443,9 +449,14 @@ export function SquarePaymentMethods({
   const [turnstileWidget, setTurnstileWidget] = useState<string | null>(null);
   const [isPaying, setIsPaying] = useState(false);
   const [paymentDialogOpen, setPaymentDialogOpen] = useState(false);
+  const [paymentStage, setPaymentStage] = useState<
+    "preparing" | "afterpay" | "processing"
+  >("preparing");
   const [walletBillingRequired, setWalletBillingRequired] = useState(false);
   const walletBillingFields = useRef<HTMLDivElement>(null);
   const [error, setError] = useState<string | null>(null);
+  const [addressReview, setAddressReview] =
+    useState<ShippingAddressValidationError | null>(null);
   const [expressLoading, setExpressLoading] = useState(true);
   const turnstileContainer = useRef<HTMLDivElement>(null);
   const cardholderNameInput = useRef<HTMLInputElement>(null);
@@ -779,7 +790,12 @@ export function SquarePaymentMethods({
               }
             }
           });
-          await method.attach("#square-cash-app-pay-container");
+          await method.attach("#square-cash-app-pay-container", {
+            shape: "semiround",
+            size: "medium",
+            theme: "dark",
+            width: "full",
+          });
           if (active) {
             setCashAppPay(method);
           }
@@ -845,6 +861,8 @@ export function SquarePaymentMethods({
   }, [isGuest]);
 
   async function pay(authorization: { permit: string; sourceId: string }) {
+    setPaymentStage("processing");
+    setPaymentDialogOpen(true);
     const response = await fetch("/api/checkout/pay", {
       method: "POST",
       headers: { "Content-Type": "application/json" },
@@ -886,13 +904,18 @@ export function SquarePaymentMethods({
     }
     paymentInFlight.current = true;
     cardInputError.current = false;
+    setAddressReview(null);
     setIsPaying(true);
+    setPaymentStage("preparing");
     setPaymentDialogOpen(requireVisibleExactQuote);
     setError(null);
     try {
       assertPayable(requireVisibleExactQuote);
       await action();
     } catch (paymentError) {
+      if (paymentError instanceof ShippingAddressValidationError) {
+        setAddressReview(paymentError);
+      }
       setPaymentDialogOpen(!cardInputError.current);
       setError(
         paymentError instanceof Error
@@ -1015,6 +1038,7 @@ export function SquarePaymentMethods({
     payment: SquarePaymentMethod,
   ) {
     void runPayment(async () => {
+      setPaymentStage(method === "afterpay" ? "afterpay" : "preparing");
       if (method === "card" && !cardholderName.trim()) {
         cardholderNameInput.current?.reportValidity();
         throw new Error("Enter the name shown on the card.");
@@ -1129,6 +1153,21 @@ export function SquarePaymentMethods({
     <>
       <CheckoutPaymentDialog
         open={paymentDialogOpen}
+        stage={paymentStage}
+        addressReview={addressReview}
+        onAcceptAddress={
+          addressReview?.suggestedAddress && onAcceptShippingAddress
+            ? () => {
+                onAcceptShippingAddress(
+                  addressReview.enteredAddress,
+                  addressReview.suggestedAddress!,
+                );
+                setAddressReview(null);
+                setError(null);
+                setPaymentDialogOpen(false);
+              }
+            : undefined
+        }
         error={error}
         onDismiss={() => setPaymentDialogOpen(false)}
       />

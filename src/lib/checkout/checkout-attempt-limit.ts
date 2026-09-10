@@ -102,6 +102,29 @@ export class CheckoutAttemptLimiter {
     }
   }
 
+  async checkAddressValidation(
+    identity: CheckoutAttemptIdentity,
+  ): Promise<CheckoutAttemptDecision> {
+    const prefix = `rdk:checkout:tenant:${identity.tenantId}:address`;
+    return this.checkWindows([
+      {
+        key: `${prefix}:ip:${identity.clientIp}`,
+        windowMs: THIRTY_MINUTES_MS,
+        limit: 30,
+      },
+      {
+        key: `${prefix}:email:${identity.normalizedEmailHash}`,
+        windowMs: THIRTY_MINUTES_MS,
+        limit: 20,
+      },
+      {
+        key: `${prefix}:device:${identity.deviceSessionId}`,
+        windowMs: THIRTY_MINUTES_MS,
+        limit: 20,
+      },
+    ]);
+  }
+
   async checkPaymentAttempt(input: {
     tenantId: string;
     orderId: string;

@@ -107,3 +107,19 @@ describe("CheckoutAttemptLimiter", () => {
     expect(args).toEqual(expect.arrayContaining(["3600000", "5"]));
   });
 });
+
+it("uses separate address-validation quotas without consuming reservation or payment quotas", async () => {
+  const evalScript = jest.fn().mockResolvedValue([1, 0]);
+  const limiter = new CheckoutAttemptLimiter({ eval: evalScript }, () => 1000);
+  await expect(limiter.checkAddressValidation(identity)).resolves.toEqual({
+    allowed: true,
+    retryAfterSeconds: null,
+  });
+  const [, keys, args] = evalScript.mock.calls[0];
+  expect(keys).toEqual([
+    "rdk:checkout:tenant:tenant-1:address:ip:203.0.113.10",
+    "rdk:checkout:tenant:tenant-1:address:email:email-hmac",
+    "rdk:checkout:tenant:tenant-1:address:device:device-session-1",
+  ]);
+  expect(args.slice(2)).toEqual(["1800000", "30", "1800000", "20", "1800000", "20"]);
+});

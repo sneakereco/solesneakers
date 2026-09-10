@@ -53,7 +53,15 @@ export type SquareCardInputEvent = {
 };
 
 export type SquareCashAppPayMethod = {
-  attach(selector: string): Promise<void>;
+  attach(
+    selector: string,
+    options?: {
+      shape?: "round" | "semiround";
+      size?: "medium" | "small";
+      theme?: "dark" | "light";
+      width?: "full" | "static";
+    },
+  ): Promise<void>;
   addEventListener(event: "ontokenization", listener: (event: unknown) => void): void;
   destroy?(): Promise<boolean>;
 };

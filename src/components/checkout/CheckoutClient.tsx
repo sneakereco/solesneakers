@@ -37,6 +37,11 @@ import type {
   CheckoutAddressForm,
   CheckoutPageData,
 } from "@/lib/checkout/checkout-page-data";
+import {
+  ShippingAddressValidationError,
+  shippingAddressKey,
+  type ShippingAddress,
+} from "@/lib/checkout/shipping-address-validation";
 import { clearIdempotencyKeyFromStorage } from "@/lib/checkout/idempotency";
 
 type Fulfillment = "ship" | "pickup";
@@ -96,6 +101,17 @@ export function CheckoutClient({ initialData }: { initialData: CheckoutPageData 
   const [resolvedQuoteKey, setResolvedQuoteKey] = useState<string | null>(null);
   const [quoteRevision, setQuoteRevision] = useState(0);
   const requestSequence = useRef(0);
+  const acceptedShippingCorrection = useRef<{
+    entered: ShippingAddress;
+    suggested: ShippingAddress;
+  } | null>(null);
+
+  function acceptShippingAddress(entered: ShippingAddress, suggested: ShippingAddress) {
+    acceptedShippingCorrection.current = { entered, suggested };
+    setAddress({ ...suggested, line2: suggested.line2 ?? "" });
+    setQuoteRevision((value) => value + 1);
+  }
+
   const walletQuote = useRef<{ key: string; quote: CheckoutQuoteResponse } | null>(null);
 
   const checkoutItems = useMemo(
@@ -175,10 +191,24 @@ export function CheckoutClient({ initialData }: { initialData: CheckoutPageData 
   const currentQuote = quoteState.quote ?? null;
 
   function updateAddress(field: keyof CheckoutAddressForm, value: string) {
+    acceptedShippingCorrection.current = null;
     setAddress((current) => ({ ...current, [field]: value }));
   }
 
   async function quoteWalletShippingDestination(nextAddress: WalletShippingDestination) {
+    const correction = acceptedShippingCorrection.current;
+    if (
+      correction &&
+      nextAddress.country === correction.entered.country &&
+      nextAddress.state === correction.entered.state &&
+      nextAddress.postalCode === correction.entered.postalCode
+    ) {
+      nextAddress = {
+        country: correction.suggested.country,
+        state: correction.suggested.state,
+        postalCode: correction.suggested.postalCode,
+      };
+    }
     const nextQuote = await requestCheckoutQuote({
       items: checkoutItems,
       fulfillment: "ship",
@@ -194,6 +224,23 @@ export function CheckoutClient({ initialData }: { initialData: CheckoutPageData 
     nextAddress: CheckoutPaymentAddress,
     walletEmail?: string,
   ): Promise<WalletCheckoutContext> {
+    const correction = acceptedShippingCorrection.current;
+    if (
+      correction &&
+      shippingAddressKey(nextAddress) === shippingAddressKey(correction.entered)
+    ) {
+      nextAddress = {
+        ...correction.suggested,
+        name: nextAddress.name,
+        phone: nextAddress.phone,
+        line2: correction.suggested.line2 ?? null,
+      };
+    } else if (
+      correction &&
+      shippingAddressKey(nextAddress) !== shippingAddressKey(correction.suggested)
+    ) {
+      acceptedShippingCorrection.current = null;
+    }
     const nextQuote = await requestCheckoutQuote({
       items: checkoutItems,
       fulfillment: "ship",
@@ -270,6 +317,23 @@ export function CheckoutClient({ initialData }: { initialData: CheckoutPageData 
     });
     const data = await response.json().catch(() => null);
     if (!response.ok) {
+      if (
+        selectedShippingAddress &&
+        [
+          "SHIPPING_ADDRESS_INVALID",
+          "SHIPPING_ADDRESS_SUGGESTION",
+          "SHIPPING_ADDRESS_UNAVAILABLE",
+        ].includes(data?.code)
+      ) {
+        const suggestion = checkoutShippingAddressSchema.safeParse(
+          data?.suggestedAddress,
+        );
+        throw new ShippingAddressValidationError(
+          data.error || "Check your shipping address before continuing.",
+          selectedShippingAddress,
+          suggestion.success ? suggestion.data : undefined,
+        );
+      }
       if (response.status === 409) {
         clearIdempotencyKeyFromStorage();
         setQuoteRevision((value) => value + 1);
@@ -334,6 +398,7 @@ export function CheckoutClient({ initialData }: { initialData: CheckoutPageData 
               quoteWalletShippingDestination={quoteWalletShippingDestination}
               resolveWalletShippingContact={resolveWalletShippingContact}
               prepare={prepare}
+              onAcceptShippingAddress={acceptShippingAddress}
               clearCart={() => {
                 setIsRedirecting(true);
                 clearIdempotencyKeyFromStorage();

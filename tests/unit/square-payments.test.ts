@@ -57,6 +57,13 @@ describe("SquarePaymentsGateway", () => {
         orderId: "square-order-1",
         locationId: "square-location-1",
         referenceId: "4a57e953-80dd-4609-970f-31984acfe810",
+        shippingAddress: {
+          addressLine1: "1 Main Street",
+          locality: "Charleston",
+          administrativeDistrictLevel1: "SC",
+          postalCode: "29401",
+          country: "US",
+        },
         billingAddress: {
           addressLine1: "2 Billing Street",
           locality: "Charleston",
