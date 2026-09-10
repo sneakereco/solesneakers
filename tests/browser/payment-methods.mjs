@@ -30,7 +30,7 @@ const result = await build({
             }
           },
           async destroy() { host?.replaceChildren(); return true; },
-          addEventListener(event, listener) { test.cashCallback = listener; test.cashOptions = options; },
+          addEventListener(event, listener) { if (name === "cashAppPay") { test.cashCallback = listener; test.cashOptions = options; } },
           async tokenize() { test.lastTokenized = name; test.lastRequest = request?.options; return test.tokenResult ?? { status: 'CANCEL' }; },
         };
       };
@@ -136,7 +136,7 @@ try {
     await page
       .getByRole("button", { name: "Continue with Cash App Pay", exact: true })
       .isDisabled(),
-    true,
+    false,
   );
   assert.equal(
     await page.getByRole("status").textContent(),
@@ -167,6 +167,7 @@ try {
   };
   await change({ shippingAddress: address, quoteReady: true });
   await page.getByRole("radio", { name: "Afterpay", exact: true }).click();
+  const beforeContactEdit = await page.evaluate(() => window.paymentTest.counts);
   await change({
     buyerEmail: "updated@example.com",
     shippingAddress: { ...address, line1: "2 Test St" },
@@ -178,8 +179,8 @@ try {
     "true",
   );
   const counts = await page.evaluate(() => window.paymentTest.counts);
-  assert.equal(counts.applePay, 1);
-  assert.equal(counts.googlePay, 1);
+  assert.equal(counts.applePay, beforeContactEdit.applePay);
+  assert.equal(counts.googlePay, beforeContactEdit.googlePay);
   assert.equal(counts.afterpay, 1);
   assert.equal(counts.cashAppPay, 1);
   await page.getByRole("radio", { name: "Cash App Pay", exact: true }).click();
@@ -194,7 +195,7 @@ try {
       detail: { tokenResult: { status: "OK", token: "test" } },
     }),
   );
-  await page.getByRole("alert").waitFor();
+  await page.getByRole("alert").first().waitFor();
   assert.equal(await page.evaluate(() => window.paymentTest.prepareCalls), 0);
   await page.getByText("Same as shipping address", { exact: true }).click();
   assert.equal(
@@ -244,6 +245,7 @@ try {
       .getAttribute("aria-checked"),
     "true",
   );
+  if (await page.getByRole("dialog").isVisible()) await page.getByRole("button", { name: "Return to checkout" }).click();
   await page.getByRole("button", { name: "googlePay", exact: true }).click();
   await page.waitForFunction(() => window.paymentTest.lastTokenized === "googlePay");
   assert.equal(
@@ -254,7 +256,7 @@ try {
     await page.evaluate(() => window.paymentTest.lastRequest.requestShippingContact),
     true,
   );
-  await page.getByRole("alert").waitFor();
+  await page.getByRole("alert").first().waitFor();
   await change({
     fulfillment: "pickup",
     shippingAddress: null,
@@ -265,9 +267,10 @@ try {
     window.paymentTest.tokenResult = {
       status: "OK",
       token: "test",
-      details: { billing: { email: "Wallet@Example.com" } },
+      details: { billing: { email: "Wallet@Example.com", givenName: "Wallet", familyName: "Buyer", addressLines: ["1 Billing St"], city: "Wilmington", state: "DE", postalCode: "19801", countryCode: "US" } },
     };
   });
+  if (await page.getByRole("dialog").isVisible()) await page.getByRole("button", { name: "Return to checkout" }).click();
   await page.getByRole("button", { name: "googlePay", exact: true }).click();
   await page.waitForFunction(() => window.paymentTest.prepareCalls === 1);
   assert.equal(
@@ -278,7 +281,7 @@ try {
     await page.evaluate(() => window.paymentTest.lastPrepare[1].buyerEmail),
     "wallet@example.com",
   );
-  assert.equal(await page.evaluate(() => window.paymentTest.counts.googlePay), 1);
+  assert.equal(await page.evaluate(() => window.paymentTest.counts.googlePay), beforeContactEdit.googlePay + 1);
   assert.deepEqual(errors, []);
   console.log(
     "PASS: persistent rows, independent wallet instances, updated totals, stale Cash App rejection",

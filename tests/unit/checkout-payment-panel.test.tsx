@@ -28,7 +28,7 @@ describe("CheckoutPaymentPanel", () => {
     );
     expect(html.match(/<button[^>]*role="radio"[^>]*disabled=""/g)).toHaveLength(3);
   });
-  it("renders Card first without fabricated card-brand artwork", () => {
+  it("renders Card first with accepted brand badges and shared billing", () => {
     const html = renderToStaticMarkup(
       <CheckoutPaymentPanel {...baseProps} selectedMethod="card" />,
     );
@@ -36,11 +36,12 @@ describe("CheckoutPaymentPanel", () => {
     expect(html).toContain('role="radiogroup"');
     expect(html).toContain('role="radio" aria-checked="true"');
     expect(html).toContain('id="square-card-container"');
-    expect(html).toContain("Use shipping address as billing address");
+    expect(html).toContain("Same as shipping address");
     expect(html).toContain('id="square-afterpay-container"');
     expect(html).toContain('alt="Afterpay"');
     expect(html).toContain('src="/images/payments/afterpay.svg"');
-    expect(html).not.toMatch(/aria-label="(?:Visa|Mastercard|American Express)"/);
+    expect(html).toContain('alt="Visa"');
+    expect(html).toContain("Show 4 more accepted card brands");
     expect(html).not.toContain("+5");
   });
 
@@ -53,10 +54,8 @@ describe("CheckoutPaymentPanel", () => {
       />,
     );
 
-    expect(html).toMatch(
-      /<div hidden="" class="hidden [^"]*"><div id="square-card-container"/,
-    );
-    expect(html).toContain("billing details, then continue with");
+    expect(html).toMatch(/id="payment-card-content"[^>]*data-open="false"[^>]*inert=""/);
+    expect(html).toContain("to approve your payment.");
     expect(html).not.toContain("Afterpay popup");
     expect(html).toMatch(/<div id="square-afterpay-container" hidden/);
     expect(html).toContain("Same as shipping address");
@@ -82,7 +81,7 @@ describe("CheckoutPaymentPanel", () => {
     expect(html.indexOf("Cash App Pay")).toBeLessThan(html.indexOf(">Afterpay"));
     expect(html).toContain('id="square-cash-app-pay-container"');
     expect(html).toContain('src="/images/payments/cash-app-pay.svg"');
-    expect(html).toContain("billing details, then continue with");
+    expect(html).toContain("to approve your payment.");
     expect(html).toContain('role="status"');
     expect(html).toContain("Enter your delivery details");
     expect(html).toContain("Retry");
@@ -103,7 +102,7 @@ describe("CheckoutPaymentPanel", () => {
         />,
       );
 
-      expect(html).not.toContain("Use shipping address as billing address");
+      expect(html).not.toContain("Same as shipping address");
       expect(html).toContain("Billing address");
       expect(html).toContain('autoComplete="billing given-name"');
       expect(html).toContain('<option value="DE">Delaware</option>');

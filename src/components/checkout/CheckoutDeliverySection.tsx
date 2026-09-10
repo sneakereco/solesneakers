@@ -1,5 +1,7 @@
+import { useLayoutEffect, useRef, useState } from "react";
 import { ChevronDown, MapPin, Package, PackageCheck, Search } from "lucide-react";
 
+import { CheckoutField } from "@/components/checkout/CheckoutField";
 import { CHECKOUT_INPUT_CLASS } from "@/components/checkout/checkout-field-styles";
 import { CheckoutHelpTooltip } from "@/components/checkout/CheckoutHelpTooltip";
 import { PICKUP_HOURS, PICKUP_LOCATION_SUMMARY } from "@/config/pickup";
@@ -28,7 +30,38 @@ export function CheckoutDeliverySection({
   onFulfillmentChange(value: Fulfillment): void;
   onAddressChange(field: keyof CheckoutAddressForm, value: string): void;
 }) {
-  const { firstName, lastName } = splitName(address.name);
+  const [names, setNames] = useState(() => ({
+    source: address.name,
+    ...splitName(address.name),
+  }));
+  if (names.source !== address.name) {
+    setNames({ source: address.name, ...splitName(address.name) });
+  }
+  const { firstName, lastName } = names;
+  const fields = useRef<HTMLDivElement>(null);
+  const previousHeight = useRef<number | null>(null);
+  useLayoutEffect(() => {
+    const element = fields.current;
+    if (
+      element &&
+      previousHeight.current !== null &&
+      !window.matchMedia("(prefers-reduced-motion: reduce)").matches
+    ) {
+      element.animate(
+        [
+          { height: `${previousHeight.current}px` },
+          { height: `${element.scrollHeight}px` },
+        ],
+        { duration: 200, easing: "ease" },
+      );
+    }
+    previousHeight.current = null;
+  }, [fulfillment]);
+  function updateName(first: string, last: string) {
+    const source = fullName(first, last);
+    setNames({ source, firstName: first, lastName: last });
+    onAddressChange("name", source);
+  }
 
   return (
     <fieldset className="order-3 mt-8">
@@ -39,8 +72,12 @@ export function CheckoutDeliverySection({
             key={method}
             type="button"
             aria-pressed={fulfillment === method}
-            onClick={() => onFulfillmentChange(method)}
-            className={`flex items-center justify-center gap-2 rounded-lg px-3 py-3 text-base font-medium ${
+            onClick={() => {
+              previousHeight.current =
+                fields.current?.getBoundingClientRect().height ?? null;
+              onFulfillmentChange(method);
+            }}
+            className={`flex items-center justify-center gap-2 rounded-lg px-3 py-3 text-base font-medium transition-colors duration-200 motion-reduce:transition-none ${
               fulfillment === method ? "bg-white text-black shadow-sm" : "text-zinc-600"
             }`}
           >
@@ -54,7 +91,11 @@ export function CheckoutDeliverySection({
         ))}
       </div>
 
-      <div className="mt-5 grid gap-[10px]">
+      <div
+        ref={fields}
+        key={fulfillment}
+        className="checkout-reveal mt-5 grid gap-[10px]"
+      >
         {fulfillment === "ship" ? (
           <label className="relative flex h-12 flex-col justify-center rounded-xl border border-[#dedede] bg-white px-3">
             <span className="text-xs leading-3 text-[#737373]">Country/Region</span>
@@ -75,80 +116,91 @@ export function CheckoutDeliverySection({
         ) : null}
 
         <div className="grid gap-[10px] sm:grid-cols-2">
-          <label>
+          <div>
             <span className="sr-only">First name</span>
-            <input
-              required
-              aria-label="First name"
-              placeholder="First name"
-              autoComplete="shipping given-name"
-              value={firstName}
-              onChange={(event) =>
-                onAddressChange("name", fullName(event.target.value, lastName))
-              }
-              className={CHECKOUT_INPUT_CLASS}
-            />
-          </label>
-          <label>
+            <CheckoutField errorMessage="Enter a first name">
+              <input
+                required
+                maxLength={50}
+                aria-label="First name"
+                placeholder="First name"
+                autoComplete="shipping given-name"
+                value={firstName}
+                onChange={(event) => updateName(event.target.value, lastName)}
+                className={CHECKOUT_INPUT_CLASS}
+              />
+            </CheckoutField>
+          </div>
+          <div>
             <span className="sr-only">Last name</span>
-            <input
-              required
-              aria-label="Last name"
-              placeholder="Last name"
-              autoComplete="shipping family-name"
-              value={lastName}
-              onChange={(event) =>
-                onAddressChange("name", fullName(firstName, event.target.value))
-              }
-              className={CHECKOUT_INPUT_CLASS}
-            />
-          </label>
+            <CheckoutField errorMessage="Enter a last name">
+              <input
+                required
+                maxLength={50}
+                aria-label="Last name"
+                placeholder="Last name"
+                autoComplete="shipping family-name"
+                value={lastName}
+                onChange={(event) => updateName(firstName, event.target.value)}
+                className={CHECKOUT_INPUT_CLASS}
+              />
+            </CheckoutField>
+          </div>
         </div>
 
         {fulfillment === "ship" ? (
           <>
-            <label className="relative">
+            <div className="relative">
               <span className="sr-only">Address</span>
-              <input
-                required
-                aria-label="Address"
-                placeholder="Address"
-                autoComplete="shipping street-address"
-                value={address.line1}
-                onChange={(event) => onAddressChange("line1", event.target.value)}
-                className={`${CHECKOUT_INPUT_CLASS} pr-10`}
-              />
-              <Search
-                role="img"
-                aria-label="Search address"
-                className="pointer-events-none absolute right-3 top-1/2 h-5 w-5 -translate-y-1/2 text-[#737373]"
-              />
-            </label>
-            <label>
-              <span className="sr-only">Apartment, suite, etc. (optional)</span>
-              <input
-                aria-label="Apartment, suite, etc. (optional)"
-                placeholder="Apartment, suite, etc. (optional)"
-                autoComplete="shipping address-line2"
-                value={address.line2}
-                onChange={(event) => onAddressChange("line2", event.target.value)}
-                className={CHECKOUT_INPUT_CLASS}
-              />
-            </label>
-            <div className="grid gap-[10px] sm:grid-cols-3">
-              <label>
-                <span className="sr-only">City</span>
+              <CheckoutField errorMessage="Enter an address">
                 <input
                   required
-                  aria-label="City"
-                  placeholder="City"
-                  autoComplete="shipping address-level2"
-                  value={address.city}
-                  onChange={(event) => onAddressChange("city", event.target.value)}
+                  maxLength={120}
+                  aria-label="Address"
+                  placeholder="Address"
+                  autoComplete="shipping street-address"
+                  value={address.line1}
+                  onChange={(event) => onAddressChange("line1", event.target.value)}
+                  className={`${CHECKOUT_INPUT_CLASS} pr-10`}
+                />
+                <Search
+                  role="img"
+                  aria-label="Search address"
+                  className="pointer-events-none absolute right-3 top-1/2 h-5 w-5 -translate-y-1/2 text-[#737373]"
+                />
+              </CheckoutField>
+            </div>
+            <div>
+              <span className="sr-only">Apartment, suite, etc. (optional)</span>
+              <CheckoutField errorMessage="Check the apartment or suite">
+                <input
+                  maxLength={120}
+                  aria-label="Apartment, suite, etc. (optional)"
+                  placeholder="Apartment, suite, etc. (optional)"
+                  autoComplete="shipping address-line2"
+                  value={address.line2}
+                  onChange={(event) => onAddressChange("line2", event.target.value)}
                   className={CHECKOUT_INPUT_CLASS}
                 />
-              </label>
-              <label className="relative">
+              </CheckoutField>
+            </div>
+            <div className="grid gap-[10px] sm:grid-cols-3">
+              <div>
+                <span className="sr-only">City</span>
+                <CheckoutField errorMessage="Enter a city">
+                  <input
+                    required
+                    maxLength={80}
+                    aria-label="City"
+                    placeholder="City"
+                    autoComplete="shipping address-level2"
+                    value={address.city}
+                    onChange={(event) => onAddressChange("city", event.target.value)}
+                    className={CHECKOUT_INPUT_CLASS}
+                  />
+                </CheckoutField>
+              </div>
+              <div className="relative">
                 {address.state ? (
                   <span className="pointer-events-none absolute left-3 top-1.5 z-10 text-xs leading-3 text-[#737373]">
                     State
@@ -156,40 +208,49 @@ export function CheckoutDeliverySection({
                 ) : (
                   <span className="sr-only">State</span>
                 )}
-                <select
-                  required
-                  aria-label="State"
-                  autoComplete="shipping address-level1"
-                  value={address.state}
-                  onChange={(event) => onAddressChange("state", event.target.value)}
-                  className={`${CHECKOUT_INPUT_CLASS} appearance-none pr-8 ${address.state ? "pt-3" : "text-[#737373]"}`}
-                >
-                  <option value="" disabled>
-                    State
-                  </option>
-                  {US_STATE_OPTIONS.map(([code, name]) => (
-                    <option key={code} value={code}>
-                      {name}
+                <CheckoutField errorMessage="Select a state">
+                  <select
+                    required
+                    aria-label="State"
+                    autoComplete="shipping address-level1"
+                    value={address.state}
+                    onChange={(event) => onAddressChange("state", event.target.value)}
+                    className={`${CHECKOUT_INPUT_CLASS} appearance-none pr-8 ${address.state ? "pt-3" : "text-[#737373]"}`}
+                  >
+                    <option value="" disabled>
+                      State
                     </option>
-                  ))}
-                </select>
-                <ChevronDown
-                  aria-hidden="true"
-                  className="pointer-events-none absolute right-3 top-1/2 h-4 w-4 -translate-y-1/2 text-[#737373]"
-                />
-              </label>
-              <label>
+                    {US_STATE_OPTIONS.map(([code, name]) => (
+                      <option key={code} value={code}>
+                        {name}
+                      </option>
+                    ))}
+                  </select>
+                  <ChevronDown
+                    aria-hidden="true"
+                    className="pointer-events-none absolute right-3 top-1/2 h-4 w-4 -translate-y-1/2 text-[#737373]"
+                  />
+                </CheckoutField>
+              </div>
+              <div>
                 <span className="sr-only">ZIP code</span>
-                <input
-                  required
-                  aria-label="ZIP code"
-                  placeholder="ZIP code"
-                  autoComplete="shipping postal-code"
-                  value={address.postalCode}
-                  onChange={(event) => onAddressChange("postalCode", event.target.value)}
-                  className={CHECKOUT_INPUT_CLASS}
-                />
-              </label>
+                <CheckoutField errorMessage="Enter a valid ZIP / postal code">
+                  <input
+                    required
+                    pattern="\d{5}(-\d{4})?"
+                    inputMode="numeric"
+                    maxLength={10}
+                    aria-label="ZIP code"
+                    placeholder="ZIP code"
+                    autoComplete="shipping postal-code"
+                    value={address.postalCode}
+                    onChange={(event) =>
+                      onAddressChange("postalCode", event.target.value)
+                    }
+                    className={CHECKOUT_INPUT_CLASS}
+                  />
+                </CheckoutField>
+              </div>
             </div>
           </>
         ) : (
@@ -206,19 +267,22 @@ export function CheckoutDeliverySection({
         )}
 
         <div className="relative">
-          <input
-            required
-            type="tel"
-            aria-label="Phone"
-            placeholder="Phone"
-            autoComplete="tel"
-            value={address.phone}
-            onChange={(event) => onAddressChange("phone", event.target.value)}
-            className={`${CHECKOUT_INPUT_CLASS} pr-10`}
-          />
-          <CheckoutHelpTooltip label="Phone help">
-            In case we need to contact you about your order
-          </CheckoutHelpTooltip>
+          <CheckoutField errorMessage="Enter a valid phone number">
+            <input
+              required
+              type="tel"
+              maxLength={30}
+              aria-label="Phone"
+              placeholder="Phone"
+              autoComplete="tel"
+              value={address.phone}
+              onChange={(event) => onAddressChange("phone", event.target.value)}
+              className={`${CHECKOUT_INPUT_CLASS} pr-10`}
+            />
+            <CheckoutHelpTooltip label="Phone help">
+              In case we need to contact you about your order
+            </CheckoutHelpTooltip>
+          </CheckoutField>
         </div>
       </div>
     </fieldset>

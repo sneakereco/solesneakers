@@ -1179,8 +1179,82 @@ body[data-route="admin"] main {
 }
 
 [data-checkout] *:focus-visible {
-  outline: none;
-  outline-offset: 0;
+  outline: 2px solid #1773b0;
+  outline-offset: 2px;
+}
+
+[data-checkout] [data-checkout-error][aria-invalid="true"] {
+  border: 2px solid #d92d39;
+  box-shadow: none;
+}
+
+.checkout-method {
+  position: relative;
+  margin-top: -1px;
+  border: 1px solid #dedede;
+  background: white;
+  transition:
+    background-color 200ms ease,
+    border-color 200ms ease;
+}
+.checkout-method:first-child {
+  margin-top: 0;
+  border-radius: 14px 14px 0 0;
+}
+.checkout-method:last-child {
+  border-radius: 0 0 14px 14px;
+}
+.checkout-method[data-selected="true"] {
+  z-index: 1;
+  border-color: #1773b0;
+  background: #f5faff;
+  box-shadow: inset 0 0 0 1px #1773b0;
+}
+.checkout-method:focus-within {
+  z-index: 2;
+}
+.checkout-collapse {
+  display: grid;
+  grid-template-rows: 0fr;
+  opacity: 0;
+  visibility: hidden;
+  transition:
+    grid-template-rows 200ms ease,
+    opacity 200ms ease,
+    visibility 200ms;
+}
+.checkout-collapse > div {
+  overflow: hidden;
+}
+.checkout-collapse[data-open="true"] {
+  grid-template-rows: 1fr;
+  opacity: 1;
+  visibility: visible;
+}
+.checkout-collapse[data-open="true"] > div {
+  overflow: visible;
+}
+.checkout-reveal {
+  animation: checkout-reveal 200ms ease;
+}
+@keyframes checkout-reveal {
+  from {
+    opacity: 0;
+    transform: translateY(-4px);
+  }
+  to {
+    opacity: 1;
+    transform: translateY(0);
+  }
+}
+@media (prefers-reduced-motion: reduce) {
+  .checkout-collapse,
+  .checkout-method {
+    transition: none;
+  }
+  .checkout-reveal {
+    animation: none;
+  }
 }
 
 [data-checkout] .checkout-checkbox {

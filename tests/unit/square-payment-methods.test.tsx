@@ -142,12 +142,12 @@ describe("SquarePaymentMethods", () => {
       borderWidth: "1px",
     });
     expect(squareCardStyle[".input-container.is-focus"]).toEqual({
-      borderColor: "#1878b9",
+      borderColor: "#1773b0",
       borderWidth: "1px",
     });
     expect(squareCardStyle[".input-container.is-error"]).toEqual({
-      borderColor: "#b45309",
-      borderWidth: "1px",
+      borderColor: "#d92d39",
+      borderWidth: "2px",
     });
     expect(JSON.stringify(squareCardStyle)).not.toContain("boxShadow");
     expect(squareCardStyle.input).toEqual(expect.objectContaining({ fontSize: "16px" }));
@@ -379,7 +379,7 @@ describe("SquarePaymentMethods", () => {
     expect(html).toContain('role="radiogroup"');
     expect(html).not.toMatch(/aria-label="(?:Visa|Mastercard|American Express)"/);
     expect(html).not.toContain("+5");
-    expect(html).toContain("Use shipping address as billing address");
+    expect(html).toContain("Same as shipping address");
     expect(html.indexOf("Credit card")).toBeLessThan(html.indexOf("Afterpay"));
     expect(html).not.toContain("Shipping and tax are calculated in your wallet.");
     expect(html).toContain("Pay now");

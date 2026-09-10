@@ -322,7 +322,7 @@ export function CheckoutClient({ initialData }: { initialData: CheckoutPageData 
 
         <section className="order-2 px-5 py-10 sm:px-8 lg:order-1 lg:ml-auto lg:w-full lg:max-w-[36.25rem] lg:px-10 lg:py-16">
           <h1 className="sr-only">Checkout</h1>
-          <form className="flex flex-col" onSubmit={(event) => event.preventDefault()}>
+          <div className="flex flex-col">
             <SquarePaymentMethods
               paymentConfig={initialData.paymentConfig}
               quote={currentQuote}
@@ -353,7 +353,7 @@ export function CheckoutClient({ initialData }: { initialData: CheckoutPageData 
                 onAddressChange={updateAddress}
               />
             </SquarePaymentMethods>
-          </form>
+          </div>
         </section>
       </main>
     </div>

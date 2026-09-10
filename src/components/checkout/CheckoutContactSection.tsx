@@ -1,5 +1,6 @@
 import Link from "next/link";
 
+import { CheckoutField } from "@/components/checkout/CheckoutField";
 import { CHECKOUT_INPUT_CLASS } from "@/components/checkout/checkout-field-styles";
 import { CheckoutHelpTooltip } from "@/components/checkout/CheckoutHelpTooltip";
 
@@ -28,20 +29,23 @@ export function CheckoutContactSection({
         ) : null}
       </div>
       <div className="relative mt-3">
-        <input
-          type="email"
-          required
-          aria-label="Email"
-          placeholder="Email"
-          autoComplete="email"
-          value={email}
-          disabled={!isGuest}
-          onChange={(event) => onEmailChange(event.target.value)}
-          className={`${CHECKOUT_INPUT_CLASS} pr-10`}
-        />
-        <CheckoutHelpTooltip label="Email help">
-          Used for your order confirmation and cart reminders
-        </CheckoutHelpTooltip>
+        <CheckoutField errorMessage="Enter a valid email address">
+          <input
+            type="email"
+            required
+            maxLength={254}
+            aria-label="Email"
+            placeholder="Email"
+            autoComplete="email"
+            value={email}
+            disabled={!isGuest}
+            onChange={(event) => onEmailChange(event.target.value)}
+            className={`${CHECKOUT_INPUT_CLASS} pr-10`}
+          />
+          <CheckoutHelpTooltip label="Email help">
+            Used for your order confirmation and cart reminders
+          </CheckoutHelpTooltip>
+        </CheckoutField>
       </div>
     </section>
   );

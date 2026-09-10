@@ -11,6 +11,8 @@ import {
 import { CheckoutPaymentPanel } from "@/components/checkout/CheckoutPaymentPanel";
 import { CheckoutPaymentDialog } from "@/components/checkout/CheckoutPaymentDialog";
 import { ExpressCheckoutMethods } from "@/components/checkout/ExpressCheckoutMethods";
+import { validateCheckoutFields } from "@/components/checkout/CheckoutField";
+import { useSquareCardState } from "@/components/checkout/useSquareCardState";
 import { initializeSquareCard } from "@/components/checkout/square-card-initialization";
 import {
   squarePaymentDiagnostic,
@@ -448,6 +450,8 @@ export function SquarePaymentMethods({
   const turnstileContainer = useRef<HTMLDivElement>(null);
   const cardholderNameInput = useRef<HTMLInputElement>(null);
   const billingFields = useRef<HTMLDivElement>(null);
+  const regularForm = useRef<HTMLFormElement>(null);
+  const cardInputError = useRef(false);
   const turnstileTokenRef = useRef<string | null>(null);
   const turnstileTerminalError = useRef(false);
   const walletQuote = useRef<ExactCheckoutQuote | null>(null);
@@ -515,6 +519,15 @@ export function SquarePaymentMethods({
     setTurnstileToken(token);
   }
 
+  const cardState = useSquareCardState(card, submitRegularPayment);
+  useEffect(() => {
+    if (selectedMethod !== "card") {
+      return;
+    }
+    const frame = requestAnimationFrame(() => card?.recalculateSize?.());
+    return () => cancelAnimationFrame(frame);
+  }, [card, selectedMethod]);
+
   useEffect(() => {
     let active = true;
     let nextCard: SquarePaymentMethod | null = null;
@@ -535,6 +548,8 @@ export function SquarePaymentMethods({
         );
         if (active) {
           setCard(nextCard);
+        } else {
+          void nextCard.destroy?.();
         }
       } catch (caughtError) {
         reportUnavailable("card", phase, caughtError);
@@ -730,7 +745,8 @@ export function SquarePaymentMethods({
               Boolean(latest.current.resolvedBillingAddress) &&
               (latest.current.fulfillment === "pickup" ||
                 Boolean(latest.current.shippingAddress)) &&
-              (!latest.current.isGuest || Boolean(turnstileTokenRef.current)),
+              (!latest.current.isGuest || Boolean(turnstileTokenRef.current)) &&
+              validateCheckoutFields(regularForm.current),
           });
         },
         async (method) => {
@@ -869,6 +885,7 @@ export function SquarePaymentMethods({
       return;
     }
     paymentInFlight.current = true;
+    cardInputError.current = false;
     setIsPaying(true);
     setPaymentDialogOpen(requireVisibleExactQuote);
     setError(null);
@@ -876,7 +893,7 @@ export function SquarePaymentMethods({
       assertPayable(requireVisibleExactQuote);
       await action();
     } catch (paymentError) {
-      setPaymentDialogOpen(true);
+      setPaymentDialogOpen(!cardInputError.current);
       setError(
         paymentError instanceof Error
           ? paymentError.message
@@ -893,6 +910,10 @@ export function SquarePaymentMethods({
   }
 
   async function submitTokenizedWallet(method: PaymentMethod, result: SquareTokenResult) {
+    if (!validateCheckoutFields(regularForm.current)) {
+      setError("Check the highlighted fields before continuing.");
+      return;
+    }
     await runPayment(async () => {
       const sourceId = checkedToken(result);
       if (!resolvedBillingAddress) {
@@ -1039,9 +1060,14 @@ export function SquarePaymentMethods({
               // Let Square own focus while its verification or wallet UI is open.
               flushSync(() => setPaymentDialogOpen(false));
               try {
-                return await payment.tokenize(details);
+                const result = await payment.tokenize(details);
+                if (method === "card" && result.status === "INVALID") {
+                  cardInputError.current = true;
+                  cardState.showTokenErrors(result.errors);
+                }
+                return result;
               } finally {
-                setPaymentDialogOpen(true);
+                setPaymentDialogOpen(!cardInputError.current);
               }
             },
           },
@@ -1072,6 +1098,32 @@ export function SquarePaymentMethods({
   const payLabel = exactQuote
     ? `Pay $${money(exactQuote.totals.totalCents)} now`
     : "Pay now";
+
+  function submitRegularPayment() {
+    if (paymentInFlight.current) {
+      return;
+    }
+    setError(null);
+    const fieldsValid = validateCheckoutFields(regularForm.current);
+    if (!fieldsValid) {
+      return;
+    }
+    if (!exactQuote) {
+      setError("Wait for your total to update before continuing.");
+      return;
+    }
+    if (isGuest && !turnstileTokenRef.current) {
+      setError("Complete the security check before paying.");
+      return;
+    }
+    if (selectedMethod === "cashAppPay") {
+      setError("Continue using the Cash App Pay button once it is ready.");
+    } else if (selectedPayment) {
+      submitPreparedMethod(selectedMethod, selectedPayment);
+    } else {
+      setError("Your payment method is still loading. Please try again.");
+    }
+  }
 
   return (
     <>
@@ -1110,74 +1162,81 @@ export function SquarePaymentMethods({
         </div>
       )}
 
-      <div className="contents" inert={isPaying}>
-        {children}
-      </div>
+      <form
+        ref={regularForm}
+        noValidate
+        className="contents"
+        onSubmit={(event) => {
+          event.preventDefault();
+          submitRegularPayment();
+        }}
+      >
+        <div className="contents" inert={isPaying}>
+          {children}
+        </div>
 
-      <CheckoutPaymentPanel
-        selectedMethod={selectedMethod}
-        afterpayReady={Boolean(afterpay)}
-        cashAppPayReady={Boolean(cashAppPay) && !disabled}
-        methodMessage={
-          selectedMethod === "card"
-            ? null
-            : fulfillment === "ship" && !shippingAddress
-              ? "Enter your shipping address to continue."
-              : !buyerEmail.trim()
-                ? "Enter your email to continue."
-                : !resolvedBillingAddress
-                  ? "Enter your billing address to continue."
-                  : !exactQuote
-                    ? "Updating your total�"
-                    : (methodErrors[selectedMethod] ??
-                      ((selectedMethod === "cashAppPay" ? !cashAppPay : !afterpay)
-                        ? "Loading payment method�"
-                        : isGuest && !turnstileToken
-                          ? "Complete the security check to continue."
-                          : null))
-        }
-        onRetryMethod={
-          selectedMethod !== "card" && methodErrors[selectedMethod]
-            ? () =>
-                setMethodRetries((value) => ({
-                  ...value,
-                  [selectedMethod]: value[selectedMethod] + 1,
-                }))
-            : undefined
-        }
-        fulfillment={fulfillment}
-        sameAsShipping={sameAsShipping}
-        cardholderName={cardholderName}
-        billingAddress={billingAddress}
-        isPaying={isPaying}
-        payDisabled={
-          selectedMethod === "cashAppPay" ? cashAppDisabled : !selectedPayment || disabled
-        }
-        payLabel={selectedMethod === "afterpay" ? "Continue with Afterpay" : payLabel}
-        error={error}
-        cardholderNameInput={cardholderNameInput}
-        billingFields={billingFields}
-        securityChallenge={
-          isGuest ? (
-            <div
-              id="checkout-turnstile-container"
-              ref={turnstileContainer}
-              className="mt-4"
-            />
-          ) : null
-        }
-        onSelectMethod={setSelectedMethod}
-        onSameAsShippingChange={setSameAsShipping}
-        onCardholderNameChange={setCardholderName}
-        onBillingAddressChange={(field, value) =>
-          setBillingAddress((current) => ({ ...current, [field]: value }))
-        }
-        onPay={() =>
-          selectedMethod !== "cashAppPay" &&
-          selectedPayment &&
-          submitPreparedMethod(selectedMethod, selectedPayment)
-        }
-      />
+        <CheckoutPaymentPanel
+          selectedMethod={selectedMethod}
+          cardBrand={cardState.brand}
+          cardErrors={cardState.errors}
+          afterpayReady={Boolean(afterpay)}
+          cashAppPayReady={Boolean(cashAppPay) && !disabled}
+          methodMessage={
+            selectedMethod === "card"
+              ? null
+              : fulfillment === "ship" && !shippingAddress
+                ? "Enter your shipping address to continue."
+                : !buyerEmail.trim()
+                  ? "Enter your email to continue."
+                  : !resolvedBillingAddress
+                    ? "Enter your billing address to continue."
+                    : !exactQuote
+                      ? "Updating your total�"
+                      : (methodErrors[selectedMethod] ??
+                        ((selectedMethod === "cashAppPay" ? !cashAppPay : !afterpay)
+                          ? "Loading payment method�"
+                          : isGuest && !turnstileToken
+                            ? "Complete the security check to continue."
+                            : null))
+          }
+          onRetryMethod={
+            selectedMethod !== "card" && methodErrors[selectedMethod]
+              ? () =>
+                  setMethodRetries((value) => ({
+                    ...value,
+                    [selectedMethod]: value[selectedMethod] + 1,
+                  }))
+              : undefined
+          }
+          fulfillment={fulfillment}
+          sameAsShipping={sameAsShipping}
+          cardholderName={cardholderName}
+          billingAddress={billingAddress}
+          isPaying={isPaying}
+          payDisabled={isPaying}
+          cashAppCanPay={!cashAppDisabled}
+          payLabel={selectedMethod === "afterpay" ? "Continue with Afterpay" : payLabel}
+          error={error}
+          cardholderNameInput={cardholderNameInput}
+          billingFields={billingFields}
+          securityChallenge={
+            isGuest ? (
+              <div
+                id="checkout-turnstile-container"
+                ref={turnstileContainer}
+                className="mt-4"
+              />
+            ) : null
+          }
+          onSelectMethod={setSelectedMethod}
+          onSameAsShippingChange={setSameAsShipping}
+          onCardholderNameChange={setCardholderName}
+          onBillingAddressChange={(field, value) =>
+            setBillingAddress((current) => ({ ...current, [field]: value }))
+          }
+          onPay={submitRegularPayment}
+        />
+      </form>
     </>
   );
 }

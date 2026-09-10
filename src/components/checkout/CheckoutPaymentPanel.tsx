@@ -7,12 +7,18 @@ import {
   BillingAddressFields,
   type CheckoutBillingAddressForm,
 } from "@/components/checkout/BillingAddressFields";
+import { CheckoutField } from "@/components/checkout/CheckoutField";
+import { CheckoutCollapse } from "@/components/checkout/CheckoutCollapse";
+import { PaymentCardBrands } from "@/components/checkout/PaymentCardBrands";
 import { CHECKOUT_INPUT_CLASS } from "@/components/checkout/checkout-field-styles";
 
 type SelectedPaymentMethod = "card" | "cashAppPay" | "afterpay";
 
 export function CheckoutPaymentPanel({
   selectedMethod,
+  cardBrand,
+  cardErrors,
+  cashAppCanPay,
   afterpayReady,
   cashAppPayReady,
   methodMessage,
@@ -35,6 +41,9 @@ export function CheckoutPaymentPanel({
   onPay,
 }: {
   selectedMethod: SelectedPaymentMethod;
+  cardBrand?: string | null;
+  cardErrors?: Record<string, string>;
+  cashAppCanPay?: boolean;
   afterpayReady: boolean;
   cashAppPayReady: boolean;
   methodMessage?: string | null;
@@ -67,224 +76,206 @@ export function CheckoutPaymentPanel({
         All transactions are secure and encrypted.
       </p>
       <div
-        className="mt-3 overflow-hidden rounded-xl border border-[#dedede] bg-[#f4f4f4]"
+        className="mt-4"
         role="radiogroup"
         aria-label="Payment method"
+        onKeyDown={(event) => {
+          if (
+            !(event.target instanceof HTMLButtonElement) ||
+            event.target.getAttribute("role") !== "radio"
+          ) {
+            return;
+          }
+          const methods = ["card", "cashAppPay", "afterpay"] as const;
+          const direction =
+            event.key === "ArrowDown" || event.key === "ArrowRight"
+              ? 1
+              : event.key === "ArrowUp" || event.key === "ArrowLeft"
+                ? -1
+                : 0;
+          if (!direction || isPaying) {
+            return;
+          }
+          event.preventDefault();
+          const next =
+            methods[
+              (methods.indexOf(selectedMethod) + direction + methods.length) %
+                methods.length
+            ];
+          onSelectMethod(next);
+          event.currentTarget
+            .querySelector<HTMLButtonElement>(
+              `[data-payment-method="${next}"] [role="radio"]`,
+            )
+            ?.focus();
+        }}
       >
-        <button
-          type="button"
-          role="radio"
-          disabled={isPaying}
-          aria-checked={selectedMethod === "card"}
-          onClick={() => onSelectMethod("card")}
-          className={`flex w-full items-center gap-3 border-b px-4 py-3 text-left ${
-            selectedMethod === "card"
-              ? "border-[#1878b9] bg-[#f2f7ff] ring-1 ring-inset ring-[#1878b9]"
-              : "border-[#dedede] bg-white"
-          }`}
-        >
-          <span
-            aria-hidden="true"
-            className={`h-4 w-4 rounded-full ${
-              selectedMethod === "card"
-                ? "border-[5px] border-[#1878b9] bg-white"
-                : "border border-[#dedede] bg-white"
-            }`}
-          />
-          <span className="font-semibold">Credit card</span>
-        </button>
-
-        <div
-          hidden={selectedMethod !== "card"}
-          className={`${selectedMethod === "card" ? "grid" : "hidden"} gap-[10px] bg-[#f4f4f4] p-3`}
-        >
-          <div id="square-card-container" className="min-h-24 rounded-xl bg-white" />
-          <input
-            required
-            aria-label="Name on card"
-            placeholder="Name on card"
-            autoComplete="cc-name"
-            ref={cardholderNameInput}
-            value={cardholderName}
-            onChange={(event) => onCardholderNameChange(event.target.value)}
-            className={CHECKOUT_INPUT_CLASS}
-          />
-          {fulfillment === "ship" ? (
-            <label className="flex items-center gap-3 py-1 text-sm font-medium">
-              <input
-                type="checkbox"
-                checked={sameAsShipping}
-                onChange={(event) => onSameAsShippingChange(event.target.checked)}
-                className="checkout-checkbox h-5 w-5 focus-visible:outline-none"
-              />
-              Use shipping address as billing address
-            </label>
-          ) : null}
-          {showSeparateBilling && selectedMethod === "card" ? (
-            <div ref={billingFields} className="grid gap-3 pt-2">
-              <h3 className="text-lg font-semibold">Billing address</h3>
-              <BillingAddressFields
-                value={billingAddress}
-                onChange={onBillingAddressChange}
-                disabled={isPaying}
-              />
+        {(["card", "cashAppPay", "afterpay"] as const).map((method) => {
+          const selected = selectedMethod === method;
+          const name =
+            method === "card"
+              ? "Credit card"
+              : method === "cashAppPay"
+                ? "Cash App Pay"
+                : "Afterpay";
+          return (
+            <div
+              key={method}
+              data-payment-method={method}
+              data-selected={selected}
+              className="checkout-method"
+            >
+              <div className="flex min-h-[60px] items-center gap-3 px-4">
+                <button
+                  type="button"
+                  role="radio"
+                  disabled={isPaying}
+                  aria-checked={selected}
+                  aria-label={name}
+                  aria-controls={`payment-${method}-content`}
+                  tabIndex={selected ? 0 : -1}
+                  onClick={() => onSelectMethod(method)}
+                  className="min-w-0 flex-1 self-stretch text-left text-base font-semibold"
+                >
+                  {name}
+                </button>
+                {method === "card" ? (
+                  <PaymentCardBrands brand={cardBrand} />
+                ) : (
+                  <Image
+                    src={`/images/payments/${method === "cashAppPay" ? "cash-app-pay" : "afterpay"}.svg`}
+                    alt={name}
+                    width={48}
+                    height={30}
+                    className="h-[30px] w-auto"
+                    unoptimized
+                  />
+                )}
+              </div>
+              <CheckoutCollapse open={selected} id={`payment-${method}-content`}>
+                {method === "card" ? (
+                  <div className="grid gap-3 px-4 pb-4">
+                    <div>
+                      <div id="square-card-container" className="min-w-0" />
+                      {cardErrors &&
+                        Object.entries(cardErrors).map(([field, message]) => (
+                          <p
+                            key={field}
+                            className="mt-1.5 text-sm leading-5 text-[#d92d39]"
+                            aria-live="polite"
+                          >
+                            {message}
+                          </p>
+                        ))}
+                    </div>
+                    <CheckoutField errorMessage="Enter your name exactly as it is written on your card">
+                      <input
+                        required
+                        disabled={!selected || isPaying}
+                        aria-label="Name on card"
+                        placeholder="Name on card"
+                        autoComplete="cc-name"
+                        maxLength={100}
+                        ref={cardholderNameInput}
+                        value={cardholderName}
+                        onChange={(event) => onCardholderNameChange(event.target.value)}
+                        className={CHECKOUT_INPUT_CLASS}
+                      />
+                    </CheckoutField>
+                  </div>
+                ) : (
+                  <div className="px-4 pb-4">
+                    <p className="text-sm leading-6">
+                      Continue with {name} to approve your payment.
+                    </p>
+                    {selected && methodMessage && (
+                      <p role="status" className="mt-2 text-sm text-zinc-600">
+                        {methodMessage}
+                      </p>
+                    )}
+                    {selected && onRetryMethod && (
+                      <button
+                        type="button"
+                        onClick={onRetryMethod}
+                        disabled={isPaying}
+                        className="mt-2 text-sm underline"
+                      >
+                        Retry
+                      </button>
+                    )}
+                  </div>
+                )}
+              </CheckoutCollapse>
             </div>
-          ) : null}
-        </div>
-
-        <button
-          type="button"
-          role="radio"
-          disabled={isPaying}
-          aria-checked={selectedMethod === "cashAppPay"}
-          onClick={() => onSelectMethod("cashAppPay")}
-          className={`flex w-full items-center gap-3 border-t border-[#dedede] px-4 py-3 text-left ${
-            selectedMethod === "cashAppPay"
-              ? "bg-[#f2f7ff] ring-1 ring-inset ring-[#1878b9]"
-              : "bg-white"
-          }`}
-        >
-          <span
-            aria-hidden="true"
-            className={`h-4 w-4 rounded-full ${
-              selectedMethod === "cashAppPay"
-                ? "border-[5px] border-[#1878b9] bg-white"
-                : "border border-[#dedede] bg-white"
-            }`}
-          />
-          <span className="font-semibold">Cash App Pay</span>
-          <Image
-            src="/images/payments/cash-app-pay.svg"
-            alt=""
-            width={48}
-            height={30}
-            className="ml-auto h-6 w-auto"
-            unoptimized
-          />
-        </button>
-
-        <button
-          type="button"
-          role="radio"
-          disabled={isPaying}
-          aria-checked={selectedMethod === "afterpay"}
-          aria-label="Afterpay"
-          onClick={() => onSelectMethod("afterpay")}
-          className={`flex w-full items-center justify-between gap-3 border-t border-[#dedede] px-4 py-3 text-left ${
-            selectedMethod === "afterpay"
-              ? "bg-[#f2f7ff] ring-1 ring-inset ring-[#1878b9]"
-              : "bg-white"
-          }`}
-        >
-          <span className="flex items-center gap-3 font-semibold">
-            <span
-              aria-hidden="true"
-              className={`h-4 w-4 rounded-full ${
-                selectedMethod === "afterpay"
-                  ? "border-[5px] border-[#1878b9] bg-white"
-                  : "border border-[#dedede] bg-white"
-              }`}
-            />
-            Afterpay
-          </span>
-          <Image
-            src="/images/payments/afterpay.svg"
-            alt="Afterpay"
-            width={48}
-            height={30}
-            className="h-6 w-auto"
-            unoptimized
-          />
-        </button>
-
-        <div id="square-afterpay-container" hidden />
-
-        {selectedMethod !== "card" ? (
-          <div className="border-t border-[#dedede] bg-[#f4f4f4]">
-            <p className="px-4 py-4 text-center text-sm">
-              Enter your contact, {fulfillment === "ship" ? "shipping, and " : ""}billing
-              details, then continue with{" "}
-              {selectedMethod === "cashAppPay" ? "Cash App Pay" : "Afterpay"} to approve
-              your payment.
-            </p>
+          );
+        })}
+      </div>
+      <div id="square-afterpay-container" hidden />
+      <div ref={billingFields} className="mt-8 grid gap-3">
+        <h3 className="text-xl font-semibold">Billing address</h3>
+        {fulfillment === "ship" && (
+          <div className="rounded-xl border border-[#dedede]">
+            {([true, false] as const).map((same) => (
+              <label
+                key={String(same)}
+                className={`flex cursor-pointer items-center gap-3 px-4 py-4 text-sm transition-colors duration-200 motion-reduce:transition-none first:rounded-t-xl first:border-b first:border-[#dedede] last:rounded-b-xl ${sameAsShipping === same ? "bg-[#f5faff]" : "bg-white"}`}
+              >
+                <input
+                  type="radio"
+                  name="payment-billing"
+                  checked={sameAsShipping === same}
+                  disabled={isPaying}
+                  onChange={() => onSameAsShippingChange(same)}
+                  className="h-4 w-4 accent-[#1773b0]"
+                />
+                {same ? "Same as shipping address" : "Use a different billing address"}
+              </label>
+            ))}
           </div>
-        ) : null}
+        )}
+        <CheckoutCollapse open={showSeparateBilling}>
+          <BillingAddressFields
+            value={billingAddress}
+            onChange={onBillingAddressChange}
+            disabled={isPaying || !showSeparateBilling}
+          />
+        </CheckoutCollapse>
       </div>
 
-      {selectedMethod !== "card" ? (
-        <div ref={billingFields} className="mt-8 grid gap-3">
-          <h3 className="text-lg font-semibold">Billing address</h3>
-          {fulfillment === "ship" ? (
-            <div className="overflow-hidden rounded-xl border border-[#dedede]">
-              <label className="flex items-center gap-3 border-b border-[#dedede] bg-[#f2f7ff] px-4 py-3 font-medium">
-                <input
-                  type="radio"
-                  name="payment-billing"
-                  checked={sameAsShipping}
-                  onChange={() => onSameAsShippingChange(true)}
-                  className="h-4 w-4 accent-[#1878b9] focus-visible:outline-none"
-                />
-                Same as shipping address
-              </label>
-              <label className="flex items-center gap-3 bg-white px-4 py-3 font-medium">
-                <input
-                  type="radio"
-                  name="payment-billing"
-                  checked={!sameAsShipping}
-                  onChange={() => onSameAsShippingChange(false)}
-                  className="h-4 w-4 accent-[#1878b9] focus-visible:outline-none"
-                />
-                Use a different billing address
-              </label>
-            </div>
-          ) : null}
-          {showSeparateBilling ? (
-            <BillingAddressFields
-              value={billingAddress}
-              onChange={onBillingAddressChange}
-              disabled={isPaying}
-            />
-          ) : null}
-        </div>
-      ) : null}
-
       {securityChallenge}
-      {methodMessage ? (
-        <p role="status" className="mt-4 text-sm text-zinc-600">
-          {methodMessage}
-        </p>
-      ) : null}
-      {onRetryMethod ? (
-        <button
-          type="button"
-          onClick={onRetryMethod}
-          disabled={isPaying}
-          className="mt-3 text-sm underline"
-        >
-          Retry
-        </button>
-      ) : null}
       <div
-        hidden={selectedMethod !== "cashAppPay" || !cashAppPayReady || payDisabled}
+        hidden={
+          selectedMethod !== "cashAppPay" ||
+          !cashAppPayReady ||
+          !(cashAppCanPay ?? !payDisabled)
+        }
         className="mt-5"
       >
         <div
           id="square-cash-app-pay-container"
-          inert={selectedMethod !== "cashAppPay" || !cashAppPayReady || payDisabled}
+          inert={
+            selectedMethod !== "cashAppPay" ||
+            !cashAppPayReady ||
+            !(cashAppCanPay ?? !payDisabled)
+          }
           aria-disabled={
-            selectedMethod !== "cashAppPay" || !cashAppPayReady || payDisabled
+            selectedMethod !== "cashAppPay" ||
+            !cashAppPayReady ||
+            !(cashAppCanPay ?? !payDisabled)
           }
         />
       </div>
-      {selectedMethod !== "cashAppPay" || !cashAppPayReady || payDisabled ? (
+      {selectedMethod !== "cashAppPay" ||
+      !cashAppPayReady ||
+      !(cashAppCanPay ?? !payDisabled) ? (
         <button
-          type="button"
-          disabled={
-            selectedMethod === "cashAppPay" ||
-            payDisabled ||
-            (selectedMethod === "afterpay" && !afterpayReady)
-          }
-          onClick={onPay}
+          type="submit"
+          disabled={payDisabled}
+          onClick={(event) => {
+            event.preventDefault();
+            onPay();
+          }}
+          aria-busy={selectedMethod === "afterpay" && !afterpayReady}
           className="mt-5 flex h-12 w-full items-center justify-center rounded-xl bg-zinc-950 px-6 text-sm font-semibold text-white disabled:cursor-not-allowed disabled:bg-zinc-400"
         >
           {isPaying ? (

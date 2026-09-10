@@ -15,7 +15,7 @@ type SquareWalletContact = {
 export type SquareTokenResult = {
   status: string;
   token?: string;
-  errors?: Array<{ message?: string }>;
+  errors?: Array<{ message?: string; field?: string }>;
   details?: {
     billing?: SquareWalletContact;
     shipping?: {
@@ -31,6 +31,25 @@ export type SquarePaymentMethod = {
   ): Promise<void>;
   tokenize(details?: Record<string, unknown>): Promise<SquareTokenResult>;
   destroy?(): Promise<boolean>;
+  addEventListener?(event: string, listener: (event: SquareCardInputEvent) => void): void;
+  removeEventListener?(
+    event: string,
+    listener: (event: SquareCardInputEvent) => void,
+  ): void;
+  focus?(field: string): Promise<boolean>;
+  recalculateSize?(): void;
+};
+
+export type SquareCardInputEvent = {
+  detail: {
+    field?: string;
+    cardBrand?: string;
+    currentState?: {
+      isEmpty: boolean;
+      isCompletelyValid: boolean;
+      hasErrorClass?: boolean;
+    };
+  };
 };
 
 export type SquareCashAppPayMethod = {
