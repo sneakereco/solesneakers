@@ -39,7 +39,6 @@ import type {
 } from "@/lib/checkout/checkout-page-data";
 import {
   ShippingAddressValidationError,
-  shippingAddressKey,
   type ShippingAddress,
 } from "@/lib/checkout/shipping-address-validation";
 import { clearIdempotencyKeyFromStorage } from "@/lib/checkout/idempotency";
@@ -101,18 +100,11 @@ export function CheckoutClient({ initialData }: { initialData: CheckoutPageData 
   const [resolvedQuoteKey, setResolvedQuoteKey] = useState<string | null>(null);
   const [quoteRevision, setQuoteRevision] = useState(0);
   const requestSequence = useRef(0);
-  const acceptedShippingCorrection = useRef<{
-    entered: ShippingAddress;
-    suggested: ShippingAddress;
-  } | null>(null);
 
-  function acceptShippingAddress(entered: ShippingAddress, suggested: ShippingAddress) {
-    acceptedShippingCorrection.current = { entered, suggested };
+  function acceptShippingAddress(_entered: ShippingAddress, suggested: ShippingAddress) {
     setAddress({ ...suggested, line2: suggested.line2 ?? "" });
     setQuoteRevision((value) => value + 1);
   }
-
-  const walletQuote = useRef<{ key: string; quote: CheckoutQuoteResponse } | null>(null);
 
   const checkoutItems = useMemo(
     () =>
@@ -136,10 +128,6 @@ export function CheckoutClient({ initialData }: { initialData: CheckoutPageData 
 
   useEffect(() => {
     if (!isReady || checkoutItems.length === 0) {
-      return;
-    }
-    if (walletQuote.current?.key === quoteKey) {
-      walletQuote.current = null;
       return;
     }
     const requestId = ++requestSequence.current;
@@ -191,24 +179,10 @@ export function CheckoutClient({ initialData }: { initialData: CheckoutPageData 
   const currentQuote = quoteState.quote ?? null;
 
   function updateAddress(field: keyof CheckoutAddressForm, value: string) {
-    acceptedShippingCorrection.current = null;
     setAddress((current) => ({ ...current, [field]: value }));
   }
 
   async function quoteWalletShippingDestination(nextAddress: WalletShippingDestination) {
-    const correction = acceptedShippingCorrection.current;
-    if (
-      correction &&
-      nextAddress.country === correction.entered.country &&
-      nextAddress.state === correction.entered.state &&
-      nextAddress.postalCode === correction.entered.postalCode
-    ) {
-      nextAddress = {
-        country: correction.suggested.country,
-        state: correction.suggested.state,
-        postalCode: correction.suggested.postalCode,
-      };
-    }
     const nextQuote = await requestCheckoutQuote({
       items: checkoutItems,
       fulfillment: "ship",
@@ -224,23 +198,6 @@ export function CheckoutClient({ initialData }: { initialData: CheckoutPageData 
     nextAddress: CheckoutPaymentAddress,
     walletEmail?: string,
   ): Promise<WalletCheckoutContext> {
-    const correction = acceptedShippingCorrection.current;
-    if (
-      correction &&
-      shippingAddressKey(nextAddress) === shippingAddressKey(correction.entered)
-    ) {
-      nextAddress = {
-        ...correction.suggested,
-        name: nextAddress.name,
-        phone: nextAddress.phone,
-        line2: correction.suggested.line2 ?? null,
-      };
-    } else if (
-      correction &&
-      shippingAddressKey(nextAddress) !== shippingAddressKey(correction.suggested)
-    ) {
-      acceptedShippingCorrection.current = null;
-    }
     const nextQuote = await requestCheckoutQuote({
       items: checkoutItems,
       fulfillment: "ship",
@@ -249,23 +206,6 @@ export function CheckoutClient({ initialData }: { initialData: CheckoutPageData 
     if (nextQuote.completeness !== "exact") {
       throw new Error("Unable to calculate an exact total for this address.");
     }
-    const nextAddressForm = {
-      ...nextAddress,
-      line2: nextAddress.line2 ?? "",
-    };
-    const nextQuoteKey = JSON.stringify({
-      items: checkoutItems,
-      fulfillment: "ship",
-      shippingAddress: nextAddress,
-      quoteRevision,
-    });
-    walletQuote.current = { key: nextQuoteKey, quote: nextQuote };
-    setAddress(nextAddressForm);
-    if (walletEmail) {
-      setEmail(walletEmail);
-    }
-    setResolvedQuoteKey(nextQuoteKey);
-    setQuoteState({ status: "ready", quote: nextQuote });
     return {
       quote: nextQuote,
       shippingAddress: nextAddress,

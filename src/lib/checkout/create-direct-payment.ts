@@ -79,8 +79,8 @@ export async function createDirectPaymentHandler(
       return json({ error: "Checkout details changed; start again" }, 409);
     }
 
-    // Recheck the persisted destination, including orders/permits issued before this
-    // validation gate existed. No browser-provided "verified" flag is trusted.
+    // Require a complete stored address for every shipment. Express wallets supply
+    // their destination directly; only other methods require Shippo deliverability.
     if (order.fulfillment === "ship") {
       const address = checkoutShippingAddressSchema.safeParse(order.shippingAddress);
       if (!address.success) {
@@ -92,28 +92,30 @@ export async function createDirectPaymentHandler(
           409,
         );
       }
-      let validation: ShippingValidationResult;
-      try {
-        validation = await deps.validateShippingAddress(address.data);
-      } catch {
-        return json(
-          {
-            error:
-              "Address verification is temporarily unavailable. Please retry. You have not been charged.",
-          },
-          503,
-        );
-      }
-      if (validation.status !== "valid") {
-        return json(
-          {
-            error:
-              validation.status === "unavailable"
-                ? "Address verification is temporarily unavailable. Please retry. You have not been charged."
-                : "Shipping address needs verification. Return to checkout and review it. You have not been charged.",
-          },
-          validation.status === "unavailable" ? 503 : 409,
-        );
+      if (permit.method !== "applePay" && permit.method !== "googlePay") {
+        let validation: ShippingValidationResult;
+        try {
+          validation = await deps.validateShippingAddress(address.data);
+        } catch {
+          return json(
+            {
+              error:
+                "Address verification is temporarily unavailable. Please retry. You have not been charged.",
+            },
+            503,
+          );
+        }
+        if (validation.status !== "valid") {
+          return json(
+            {
+              error:
+                validation.status === "unavailable"
+                  ? "Address verification is temporarily unavailable. Please retry. You have not been charged."
+                  : "Shipping address needs verification. Return to checkout and review it. You have not been charged.",
+            },
+            validation.status === "unavailable" ? 503 : 409,
+          );
+        }
       }
     }
 

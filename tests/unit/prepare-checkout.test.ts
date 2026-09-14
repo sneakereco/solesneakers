@@ -203,7 +203,32 @@ describe("prepareCheckoutHandler", () => {
 });
 
 describe("shipping deliverability gate", () => {
-  it.each(["card", "afterpay", "cashAppPay", "applePay", "googlePay"])(
+  it.each(["applePay", "googlePay"])(
+    "prepares %s without Shippo or its quota",
+    async (paymentMethod) => {
+      const deps = dependencies();
+      deps.validateShippingAddress.mockRejectedValue(new Error("Shippo unavailable"));
+      deps.checkAddressValidationAttempt.mockResolvedValue({
+        allowed: false,
+        retryAfterSeconds: 60,
+      });
+      const body = await (request() as Request).json();
+      const response = await prepareCheckoutHandler(
+        new Request("https://shop.example.com/api/checkout/prepare", {
+          method: "POST",
+          body: JSON.stringify({ ...body, paymentMethod }),
+        }) as never,
+        deps,
+      );
+      expect(response.status).toBe(201);
+      expect(deps.validateShippingAddress).not.toHaveBeenCalled();
+      expect(deps.checkAddressValidationAttempt).not.toHaveBeenCalled();
+      expect(deps.reserve).toHaveBeenCalledWith(
+        expect.objectContaining({ shippingAddress: body.shippingAddress, paymentMethod }),
+      );
+    },
+  );
+  it.each(["card", "afterpay", "cashAppPay"])(
     "blocks invalid %s destinations before reservation or Square",
     async (paymentMethod) => {
       const deps = dependencies();

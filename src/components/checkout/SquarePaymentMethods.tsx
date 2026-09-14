@@ -993,6 +993,7 @@ export function SquarePaymentMethods({
     walletQuote.current = null;
     void runPayment(async () => {
       const result = await wallet.tokenize();
+      setPaymentStage("processing");
       setPaymentDialogOpen(true);
       const sourceId = checkedToken(result);
       const walletBilling = walletBillingAddress(

@@ -3,6 +3,7 @@
 import assert from "node:assert/strict";
 import { build } from "esbuild";
 import { chromium } from "playwright";
+import { expect } from "@playwright/test";
 import { readFile, mkdir } from "node:fs/promises";
 import postcss from "postcss";
 import tailwindcss from "tailwindcss";
@@ -85,6 +86,8 @@ try {
   const quotes = [];
   let payCalls = 0;
   let formattingOnly = false;
+  let releasePrepare;
+  let releasePay;
   const totals = {
     subtotalCents: 10000,
     shippingCents: 1000,
@@ -116,6 +119,12 @@ try {
     if (path === "/api/checkout/prepare") {
       const body = route.request().postDataJSON();
       prepares.push(body);
+      if (body.paymentMethod === "googlePay" || body.paymentMethod === "applePay") {
+        await new Promise((resolve) => {
+          releasePrepare = resolve;
+        });
+        return route.fulfill({ json: { orderId: "test-order", totals } });
+      }
       const validation = await validateShippingAddress(
         body.shippingAddress,
         "test",
@@ -153,6 +162,9 @@ try {
       return route.fulfill({ json: { permit: "test" } });
     if (path === "/api/checkout/pay") {
       payCalls++;
+      await new Promise((resolve) => {
+        releasePay = resolve;
+      });
       if (formattingOnly)
         return route.fulfill({
           json: { statusUrl: "/checkout/processing?orderId=test-order" },
@@ -189,50 +201,37 @@ try {
   assert.equal(prepares.at(-1).shippingAddress.postalCode, "20500-0005");
   assert.equal(prepares.at(-1).billingAddress.postalCode, "20500-0005");
   assert.ok(quotes.some((q) => q.shippingAddress?.postalCode === "20500-0005"));
-  // The wallet returns its original contact again; an explicitly accepted correction
-  // must survive that retry without rewriting the wallet's separate billing address.
+  // Wallet details remain private to this attempt while the processing overlay stays open.
   await load();
-  await page.getByRole("button", { name: "Google test" }).click();
-  await page.getByRole("heading", { name: "Your order was not placed" }).waitFor();
-  assert.equal(payCalls, 0);
-  await page.getByRole("button", { name: "Use suggested address" }).click();
-  await page
-    .getByRole("status")
-    .filter({ hasText: "Choose your payment method again" })
-    .waitFor();
-  await page.getByRole("button", { name: "Google test" }).click();
-  await page.getByText("payment test boundary", { exact: true }).first().waitFor();
-  assert.equal(prepares.at(-1).shippingAddress.postalCode, "20500-0005");
-  assert.equal(prepares.at(-1).billingAddress.postalCode, "20001");
-  assert.equal(payCalls, 1);
-  await page.getByRole("button", { name: "Return to checkout" }).click();
   await page.evaluate(() => {
-    window.test.original.line1 = "1 New St";
+    window.test.original.line1 = "9 Wallet Road";
   });
   await page.getByRole("button", { name: "Google test" }).click();
-  await page
-    .getByText("Your total changed. Review the updated checkout and retry.", {
-      exact: true,
-    })
-    .first()
-    .waitFor();
-  await page.getByRole("button", { name: "Return to checkout" }).click();
-  await page.getByRole("button", { name: "Google test" }).click();
-  await page.getByText("payment test boundary", { exact: true }).first().waitFor();
-  assert.equal(prepares.at(-1).shippingAddress.line1, "1 New St");
-  assert.equal(prepares.at(-1).shippingAddress.postalCode, "20500");
-  assert.equal(payCalls, 2);
-  // Real validation accepts formatting without sending the buyer through review.
-  formattingOnly = true;
-  await load();
-  await page.getByRole("button", { name: "Google test" }).dblclick();
-  await page.waitForURL("**/checkout/processing?orderId=test-order");
-  assert.equal(payCalls, 3);
-  assert.equal(prepares.at(-1).shippingAddress.line1, "1600 Pennsylvania Avenue NW");
-  assert.equal(prepares.at(-1).shippingAddress.postalCode, "20500");
+  await page.getByRole("heading", { name: "Processing your payment" }).waitFor();
+  await expect.poll(() => Boolean(releasePrepare)).toBe(true);
+  assert.equal(
+    await page.getByLabel("Address", { exact: true }).inputValue(),
+    "1600 Pennsylvania Avenue NW",
+  );
+  assert.equal(payCalls, 0);
+  assert.equal(
+    await page.getByRole("button", { name: "Use suggested address" }).count(),
+    0,
+  );
+  releasePrepare();
+  await expect.poll(() => Boolean(releasePay)).toBe(true);
+  await page.getByRole("heading", { name: "Processing your payment" }).waitFor();
+  assert.equal(prepares.at(-1).shippingAddress.line1, "9 Wallet Road");
   assert.equal(prepares.at(-1).billingAddress.postalCode, "20001");
+  await page
+    .getByRole("dialog")
+    .screenshot({ path: "test-results/shipping-validation/express-processing.png" });
+  formattingOnly = true;
+  releasePay();
+  await page.waitForURL("**/checkout/processing?orderId=test-order");
+  assert.equal(payCalls, 1);
   console.log(
-    "PASS: confirmed corrections are requoted and resubmitted, no early payment, express retry preserves separate billing",
+    "PASS: card correction preserved; express processes without form autofill or address review and submits one payment",
   );
 } finally {
   await browser.close();

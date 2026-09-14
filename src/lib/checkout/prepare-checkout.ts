@@ -179,7 +179,12 @@ export async function prepareCheckoutHandler(
     }
 
     const normalizedEmailHash = deps.hashEmail(buyerEmail);
-    if (parsed.data.fulfillment === "ship" && parsed.data.shippingAddress) {
+    if (
+      parsed.data.fulfillment === "ship" &&
+      parsed.data.shippingAddress &&
+      parsed.data.paymentMethod !== "applePay" &&
+      parsed.data.paymentMethod !== "googlePay"
+    ) {
       const validationAttempt = await deps.checkAddressValidationAttempt({
         tenantId,
         clientIp,

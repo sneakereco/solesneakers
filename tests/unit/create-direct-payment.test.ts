@@ -114,6 +114,40 @@ describe("createDirectPaymentHandler", () => {
 });
 
 describe("final shipping verification", () => {
+  it.each(["applePay", "googlePay"])(
+    "charges %s using the stored wallet address without Shippo",
+    async (method) => {
+      const deps = dependencies();
+      deps.consumePermit.mockResolvedValue({ ...(await deps.consumePermit()), method });
+      const shippingAddress = {
+        name: "Buyer",
+        phone: "2025550100",
+        line1: "1 Wallet St",
+        line2: "Apt 3",
+        city: "Washington",
+        state: "DC",
+        postalCode: "20500",
+        country: "US",
+      };
+      deps.loadOrder.mockResolvedValue({
+        ...(await deps.loadOrder()),
+        fulfillment: "ship",
+        shippingAddress,
+      });
+      deps.validateShippingAddress.mockRejectedValue(new Error("Shippo unavailable"));
+      const response = await createDirectPaymentHandler(request(), deps);
+      expect(response.status).toBe(202);
+      expect(await response.json()).toMatchObject({
+        paymentId: "payment-1",
+        status: "COMPLETED",
+      });
+      expect(deps.validateShippingAddress).not.toHaveBeenCalled();
+      expect(deps.createPayment).toHaveBeenCalledTimes(1);
+      expect(deps.createPayment).toHaveBeenCalledWith(
+        expect.objectContaining({ shippingAddress }),
+      );
+    },
+  );
   it("charges once when Shippo recommends only formatting at the final payment gate", async () => {
     const deps = dependencies();
     const shippingAddress = {
@@ -158,10 +192,15 @@ describe("final shipping verification", () => {
       expect.objectContaining({ shippingAddress }),
     );
   });
-  it.each(["invalid", "suggestion", "unavailable"])(
-    "blocks %s stored destinations even with a previously issued permit",
-    async (status) => {
+  it.each(
+    ["card", "afterpay", "cashAppPay"].flatMap((method) =>
+      ["invalid", "suggestion", "unavailable"].map((status) => [method, status]),
+    ),
+  )(
+    "blocks %s payments with %s stored destinations even with a previously issued permit",
+    async (method, status) => {
       const deps = dependencies();
+      deps.consumePermit.mockResolvedValue({ ...(await deps.consumePermit()), method });
       deps.loadOrder.mockResolvedValue({
         ...(await deps.loadOrder()),
         fulfillment: "ship",
