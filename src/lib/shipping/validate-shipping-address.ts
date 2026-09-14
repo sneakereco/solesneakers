@@ -23,43 +23,6 @@ const shippoResponse = z.object({
     .optional(),
 });
 
-function sameDestination(address: ShippingAddress, suggested: ShippingAddress): boolean {
-  // Only normalize street suffixes, not street names, directionals or unit numbers.
-  const suffixes: Record<string, string> = {
-    AVENUE: "AVE",
-    STREET: "ST",
-    ROAD: "RD",
-    BOULEVARD: "BLVD",
-    DRIVE: "DR",
-    LANE: "LN",
-    COURT: "CT",
-    PLACE: "PL",
-    TERRACE: "TER",
-    PARKWAY: "PKWY",
-    CIRCLE: "CIR",
-    HIGHWAY: "HWY",
-  };
-  const street = (value: string) =>
-    value
-      .trim()
-      .replace(/\s+/g, " ")
-      .toUpperCase()
-      .replace(
-        /\b(AVENUE|STREET|ROAD|BOULEVARD|DRIVE|LANE|COURT|PLACE|TERRACE|PARKWAY|CIRCLE|HIGHWAY|AVE|ST|RD|BLVD|DR|LN|CT|PL|TER|PKWY|CIR|HWY)\.?(?= (?:N|S|E|W|NE|NW|SE|SW)$|$)/,
-        (suffix) => suffixes[suffix.replace(/\.$/, "")] ?? suffix.replace(/\.$/, ""),
-      );
-  // Adding ZIP+4 is formatting; replacing an existing extension needs review.
-  const postalCode =
-    /^\d{5}$/.test(address.postalCode) &&
-    suggested.postalCode.startsWith(`${address.postalCode}-`)
-      ? address.postalCode
-      : suggested.postalCode;
-  return (
-    shippingAddressKey({ ...address, line1: street(address.line1) }) ===
-    shippingAddressKey({ ...suggested, line1: street(suggested.line1), postalCode })
-  );
-}
-
 export async function validateShippingAddress(
   address: ShippingAddress,
   token: string,
@@ -123,10 +86,6 @@ export async function validateShippingAddress(
     }
     if (recommended.confidence_result?.score !== "high") {
       return { status: "invalid" };
-    }
-    if (sameDestination(address, suggestion.data)) {
-      // Keep the entered address, including the apartment and quoted ZIP.
-      return { status: "valid" };
     }
     return { status: "suggestion", address: suggestion.data };
   } catch {

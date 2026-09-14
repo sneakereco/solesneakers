@@ -148,7 +148,7 @@ describe("final shipping verification", () => {
       );
     },
   );
-  it("charges once when Shippo recommends only formatting at the final payment gate", async () => {
+  it("blocks an unconfirmed card address formatting suggestion at the final payment gate", async () => {
     const deps = dependencies();
     const shippingAddress = {
       name: "Buyer",
@@ -186,11 +186,8 @@ describe("final shipping verification", () => {
       ),
     );
     const response = await createDirectPaymentHandler(request(), deps);
-    expect(response.status).toBe(202);
-    expect(deps.createPayment).toHaveBeenCalledTimes(1);
-    expect(deps.createPayment).toHaveBeenCalledWith(
-      expect.objectContaining({ shippingAddress }),
-    );
+    expect(response.status).toBe(409);
+    expect(deps.createPayment).not.toHaveBeenCalled();
   });
   it.each(
     ["card", "afterpay", "cashAppPay"].flatMap((method) =>

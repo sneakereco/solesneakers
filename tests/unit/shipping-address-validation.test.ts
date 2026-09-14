@@ -52,7 +52,7 @@ describe("Shippo shipping validation", () => {
     });
   });
   it.each(["valid", "partially_valid"])(
-    "continues through harmless formatting for a high-confidence %s address",
+    "suggests formatting for a high-confidence %s address",
     async (value) => {
       await expect(
         validateShippingAddress(
@@ -63,7 +63,14 @@ describe("Shippo shipping validation", () => {
             recommended_address: recommended,
           }),
         ),
-      ).resolves.toEqual({ status: "valid" });
+      ).resolves.toEqual({
+        status: "suggestion",
+        address: {
+          ...address,
+          line1: recommended.address_line_1,
+          postalCode: recommended.postal_code,
+        },
+      });
       expect(address.line1).toBe("1600 Pennsylvania Avenue NW");
       expect(address.postalCode).toBe("20500");
     },
