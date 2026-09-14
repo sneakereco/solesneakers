@@ -7,6 +7,17 @@ import { readFile, mkdir } from "node:fs/promises";
 import postcss from "postcss";
 import tailwindcss from "tailwindcss";
 
+const validationBundle = await build({
+  entryPoints: ["src/lib/shipping/validate-shipping-address.ts"],
+  bundle: true,
+  write: false,
+  platform: "node",
+  format: "esm",
+});
+const { validateShippingAddress } = await import(
+  `data:text/javascript;base64,${Buffer.from(validationBundle.outputFiles[0].text).toString("base64")}`
+);
+
 const bundle = await build({
   stdin: {
     resolveDir: process.cwd(),
@@ -73,6 +84,7 @@ try {
   const prepares = [];
   const quotes = [];
   let payCalls = 0;
+  let formattingOnly = false;
   const totals = {
     subtotalCents: 10000,
     shippingCents: 1000,
@@ -104,18 +116,35 @@ try {
     if (path === "/api/checkout/prepare") {
       const body = route.request().postDataJSON();
       prepares.push(body);
-      if (body.shippingAddress.line1.includes("Avenue"))
+      const validation = await validateShippingAddress(
+        body.shippingAddress,
+        "test",
+        async () =>
+          new Response(
+            JSON.stringify({
+              analysis: { validation_result: { value: "valid" } },
+              recommended_address: {
+                address_line_1: body.shippingAddress.line1.includes("Avenue")
+                  ? `${formattingOnly ? "1600" : "1602"} Pennsylvania Ave NW`
+                  : body.shippingAddress.line1,
+                address_line_2: body.shippingAddress.line2,
+                city_locality: body.shippingAddress.city,
+                state_province: body.shippingAddress.state,
+                postal_code: "20500-0005",
+                country_code: "US",
+                confidence_result: { score: "high" },
+              },
+            }),
+          ),
+      );
+      if (validation.status === "suggestion")
         return route.fulfill({
           status: 422,
           json: {
             code: "SHIPPING_ADDRESS_SUGGESTION",
             error:
               "Please confirm the suggested shipping address. You have not been charged.",
-            suggestedAddress: {
-              ...body.shippingAddress,
-              line1: "1600 Pennsylvania Ave NW",
-              postalCode: "20500-0005",
-            },
+            suggestedAddress: validation.address,
           },
         });
       return route.fulfill({ json: { orderId: "test-order", totals } });
@@ -124,6 +153,10 @@ try {
       return route.fulfill({ json: { permit: "test" } });
     if (path === "/api/checkout/pay") {
       payCalls++;
+      if (formattingOnly)
+        return route.fulfill({
+          json: { statusUrl: "/checkout/processing?orderId=test-order" },
+        });
       return route.fulfill({ status: 400, json: { error: "payment test boundary" } });
     }
     return route.fulfill({ contentType: "text/html", body: '<div id="root"></div>' });
@@ -147,7 +180,7 @@ try {
   await page.getByRole("button", { name: "Use suggested address" }).click();
   assert.equal(
     await page.getByLabel("Address", { exact: true }).inputValue(),
-    "1600 Pennsylvania Ave NW",
+    "1602 Pennsylvania Ave NW",
   );
   await page.waitForFunction(() => !document.querySelector("dialog[open]"));
   await page.getByRole("button", { name: "Pay $111.00 now" }).waitFor();
@@ -160,7 +193,13 @@ try {
   // must survive that retry without rewriting the wallet's separate billing address.
   await load();
   await page.getByRole("button", { name: "Google test" }).click();
+  await page.getByRole("heading", { name: "Your order was not placed" }).waitFor();
+  assert.equal(payCalls, 0);
   await page.getByRole("button", { name: "Use suggested address" }).click();
+  await page
+    .getByRole("status")
+    .filter({ hasText: "Choose your payment method again" })
+    .waitFor();
   await page.getByRole("button", { name: "Google test" }).click();
   await page.getByText("payment test boundary", { exact: true }).first().waitFor();
   assert.equal(prepares.at(-1).shippingAddress.postalCode, "20500-0005");
@@ -183,6 +222,15 @@ try {
   assert.equal(prepares.at(-1).shippingAddress.line1, "1 New St");
   assert.equal(prepares.at(-1).shippingAddress.postalCode, "20500");
   assert.equal(payCalls, 2);
+  // Real validation accepts formatting without sending the buyer through review.
+  formattingOnly = true;
+  await load();
+  await page.getByRole("button", { name: "Google test" }).dblclick();
+  await page.waitForURL("**/checkout/processing?orderId=test-order");
+  assert.equal(payCalls, 3);
+  assert.equal(prepares.at(-1).shippingAddress.line1, "1600 Pennsylvania Avenue NW");
+  assert.equal(prepares.at(-1).shippingAddress.postalCode, "20500");
+  assert.equal(prepares.at(-1).billingAddress.postalCode, "20001");
   console.log(
     "PASS: confirmed corrections are requoted and resubmitted, no early payment, express retry preserves separate billing",
   );

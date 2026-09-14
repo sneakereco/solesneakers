@@ -38,7 +38,7 @@ describe("Shippo shipping validation", () => {
   it("requires confirmation of high-confidence corrections without changing recipient identity", async () => {
     const fetcher = fetchResponse({
       analysis: { validation_result: { value: "partially_valid" } },
-      recommended_address: recommended,
+      recommended_address: { ...recommended, address_line_1: "1602 Pennsylvania Ave NW" },
     });
     await expect(
       validateShippingAddress(address, "test-token", fetcher),
@@ -46,10 +46,67 @@ describe("Shippo shipping validation", () => {
       status: "suggestion",
       address: {
         ...address,
-        line1: recommended.address_line_1,
+        line1: "1602 Pennsylvania Ave NW",
         postalCode: recommended.postal_code,
       },
     });
+  });
+  it.each(["valid", "partially_valid"])(
+    "continues through harmless formatting for a high-confidence %s address",
+    async (value) => {
+      await expect(
+        validateShippingAddress(
+          address,
+          "test-token",
+          fetchResponse({
+            analysis: { validation_result: { value } },
+            recommended_address: recommended,
+          }),
+        ),
+      ).resolves.toEqual({ status: "valid" });
+      expect(address.line1).toBe("1600 Pennsylvania Avenue NW");
+      expect(address.postalCode).toBe("20500");
+    },
+  );
+  it.each([
+    { address_line_1: "1602 Pennsylvania Ave NW" },
+    { address_line_1: "1600 Pennsylvania Ave NE" },
+    { city_locality: "Arlington" },
+    { postal_code: "20501" },
+    { address_line_2: "Apt 2" },
+  ])("requires review when the destination changes: %j", async (change) => {
+    const result = await validateShippingAddress(
+      address,
+      "test-token",
+      fetchResponse({
+        analysis: { validation_result: { value: "valid" } },
+        recommended_address: { ...recommended, ...change },
+      }),
+    );
+    expect(result.status).toBe("suggestion");
+  });
+  it("does not ignore a changed ZIP extension", async () => {
+    const result = await validateShippingAddress(
+      { ...address, postalCode: "20500-9999" },
+      "test-token",
+      fetchResponse({
+        analysis: { validation_result: { value: "valid" } },
+        recommended_address: recommended,
+      }),
+    );
+    expect(result.status).toBe("suggestion");
+  });
+  it("does not accept low-confidence formatting suggestions", async () => {
+    await expect(
+      validateShippingAddress(
+        address,
+        "test-token",
+        fetchResponse({
+          analysis: { validation_result: { value: "partially_valid" } },
+          recommended_address: { ...recommended, confidence_result: { score: "low" } },
+        }),
+      ),
+    ).resolves.toEqual({ status: "invalid" });
   });
   it.each(["invalid", "partially_valid", "unknown"])(
     "does not accept %s without a verified correction",

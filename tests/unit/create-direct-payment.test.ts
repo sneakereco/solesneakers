@@ -1,4 +1,5 @@
 import { createDirectPaymentHandler } from "@/lib/checkout/create-direct-payment";
+import { validateShippingAddress } from "@/lib/shipping/validate-shipping-address";
 
 function request() {
   return new Request("https://shop.example.com/api/checkout/pay", {
@@ -113,6 +114,50 @@ describe("createDirectPaymentHandler", () => {
 });
 
 describe("final shipping verification", () => {
+  it("charges once when Shippo recommends only formatting at the final payment gate", async () => {
+    const deps = dependencies();
+    const shippingAddress = {
+      name: "Buyer",
+      phone: "2025550100",
+      line1: "1600 Pennsylvania Avenue NW",
+      line2: "Apt 2",
+      city: "Washington",
+      state: "DC",
+      postalCode: "20500",
+      country: "US",
+    };
+    deps.loadOrder.mockResolvedValue({
+      ...(await deps.loadOrder()),
+      fulfillment: "ship",
+      shippingAddress,
+    });
+    deps.validateShippingAddress.mockImplementation((address) =>
+      validateShippingAddress(address, "test", () =>
+        Promise.resolve(
+          new Response(
+            JSON.stringify({
+              analysis: { validation_result: { value: "partially_valid" } },
+              recommended_address: {
+                address_line_1: "1600 Pennsylvania Ave NW",
+                address_line_2: "Apt 2",
+                city_locality: "Washington",
+                state_province: "DC",
+                postal_code: "20500-0005",
+                country_code: "US",
+                confidence_result: { score: "high" },
+              },
+            }),
+          ),
+        ),
+      ),
+    );
+    const response = await createDirectPaymentHandler(request(), deps);
+    expect(response.status).toBe(202);
+    expect(deps.createPayment).toHaveBeenCalledTimes(1);
+    expect(deps.createPayment).toHaveBeenCalledWith(
+      expect.objectContaining({ shippingAddress }),
+    );
+  });
   it.each(["invalid", "suggestion", "unavailable"])(
     "blocks %s stored destinations even with a previously issued permit",
     async (status) => {

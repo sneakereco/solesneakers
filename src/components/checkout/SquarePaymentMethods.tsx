@@ -457,6 +457,7 @@ export function SquarePaymentMethods({
   const [error, setError] = useState<string | null>(null);
   const [addressReview, setAddressReview] =
     useState<ShippingAddressValidationError | null>(null);
+  const [addressRetryNotice, setAddressRetryNotice] = useState(false);
   const [expressLoading, setExpressLoading] = useState(true);
   const turnstileContainer = useRef<HTMLDivElement>(null);
   const cardholderNameInput = useRef<HTMLInputElement>(null);
@@ -905,6 +906,7 @@ export function SquarePaymentMethods({
     paymentInFlight.current = true;
     cardInputError.current = false;
     setAddressReview(null);
+    setAddressRetryNotice(false);
     setIsPaying(true);
     setPaymentStage("preparing");
     setPaymentDialogOpen(requireVisibleExactQuote);
@@ -1163,6 +1165,7 @@ export function SquarePaymentMethods({
                   addressReview.suggestedAddress!,
                 );
                 setAddressReview(null);
+                setAddressRetryNotice(true);
                 setError(null);
                 setPaymentDialogOpen(false);
               }
@@ -1171,6 +1174,16 @@ export function SquarePaymentMethods({
         error={error}
         onDismiss={() => setPaymentDialogOpen(false)}
       />
+      {addressRetryNotice && (
+        <p
+          role="status"
+          className="mb-4 rounded-lg bg-zinc-100 p-4 text-sm text-zinc-900"
+        >
+          Shipping address updated. Your order was not placed and you have not been
+          charged. Choose your payment method again to review the total and complete your
+          order.
+        </p>
+      )}
       <ExpressCheckoutMethods
         applePayReady={Boolean(applePay)}
         googlePayReady={Boolean(googlePay)}

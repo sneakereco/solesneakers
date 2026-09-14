@@ -52,7 +52,7 @@ export function CheckoutPaymentDialog({
       <h2 id="checkout-payment-title" className="text-xl font-semibold">
         {error
           ? addressReview
-            ? "Check your shipping address"
+            ? "Your order was not placed"
             : "Payment could not be completed"
           : stage === "afterpay"
             ? "Opening Afterpay"
@@ -60,6 +60,11 @@ export function CheckoutPaymentDialog({
               ? "Preparing checkout"
               : "Processing your payment"}
       </h2>
+      {addressReview && (
+        <p className="mt-3 text-sm font-semibold">
+          You have not been charged. Check your shipping address to continue.
+        </p>
+      )}
       <p
         id="checkout-payment-description"
         role={error ? "alert" : "status"}
@@ -83,6 +88,12 @@ export function CheckoutPaymentDialog({
             {addressReview.suggestedAddress.city}, {addressReview.suggestedAddress.state}{" "}
             {addressReview.suggestedAddress.postalCode}
           </p>
+          {onAcceptAddress && (
+            <p className="mt-3 text-zinc-600">
+              Accept this address, then choose your payment method again to review the
+              total and complete your order.
+            </p>
+          )}
           {onAcceptAddress && (
             <button
               type="button"
