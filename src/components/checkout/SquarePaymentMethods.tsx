@@ -52,6 +52,7 @@ import {
 import { log } from "@/lib/utils/log";
 
 export type PaymentMethod = PaymentPermitRequest["method"];
+class CheckoutCancelled extends Error {}
 
 export type CheckoutPaymentAddress = {
   name: string;
@@ -78,6 +79,7 @@ export type WalletCheckoutContext = {
 };
 
 export type CheckoutPreparationContext = {
+  shippingConfirmation?: string;
   quote?: ExactCheckoutQuote;
   shippingAddress?: CheckoutPaymentAddress;
   buyerEmail?: string;
@@ -404,7 +406,6 @@ export function SquarePaymentMethods({
   resolveWalletShippingContact,
   prepare,
   clearCart,
-  onAcceptShippingAddress,
   children,
 }: {
   paymentConfig: CheckoutPageData["paymentConfig"];
@@ -425,7 +426,6 @@ export function SquarePaymentMethods({
     method: PaymentMethod,
     context?: CheckoutPreparationContext,
   ): Promise<PreparedCheckout>;
-  onAcceptShippingAddress?(entered: ShippingAddress, suggested: ShippingAddress): void;
   clearCart(): void;
   children?: ReactNode;
 }) {
@@ -457,7 +457,21 @@ export function SquarePaymentMethods({
   const [error, setError] = useState<string | null>(null);
   const [addressReview, setAddressReview] =
     useState<ShippingAddressValidationError | null>(null);
-  const [addressRetryNotice, setAddressRetryNotice] = useState(false);
+  const [totalReview, setTotalReview] = useState<number | null>(null);
+  const [cashAppReapproval, setCashAppReapproval] = useState(false);
+  const addressContinuation = useRef<
+    ((value: { address: ShippingAddress; confirmation?: string } | null) => void) | null
+  >(null);
+  const totalContinuation = useRef<((accepted: boolean) => void) | null>(null);
+  const cashAppCancellation = useRef<(() => void) | null>(null);
+  useEffect(
+    () => () => {
+      addressContinuation.current?.(null);
+      totalContinuation.current?.(false);
+      cashAppCancellation.current?.();
+    },
+    [],
+  );
   const [expressLoading, setExpressLoading] = useState(true);
   const turnstileContainer = useRef<HTMLDivElement>(null);
   const cardholderNameInput = useRef<HTMLInputElement>(null);
@@ -906,7 +920,6 @@ export function SquarePaymentMethods({
     paymentInFlight.current = true;
     cardInputError.current = false;
     setAddressReview(null);
-    setAddressRetryNotice(false);
     setIsPaying(true);
     setPaymentStage("preparing");
     setPaymentDialogOpen(requireVisibleExactQuote);
@@ -915,8 +928,13 @@ export function SquarePaymentMethods({
       assertPayable(requireVisibleExactQuote);
       await action();
     } catch (paymentError) {
-      if (paymentError instanceof ShippingAddressValidationError) {
-        setAddressReview(paymentError);
+      if (paymentError instanceof CheckoutCancelled) {
+        setAddressReview(null);
+        setTotalReview(null);
+        setPaymentDialogOpen(false);
+        setError(null);
+        setIsPaying(false);
+        return;
       }
       setPaymentDialogOpen(!cardInputError.current);
       setError(
@@ -934,17 +952,150 @@ export function SquarePaymentMethods({
     }
   }
 
+  function dismissPaymentDialog() {
+    const addressChoice = addressContinuation.current;
+    addressContinuation.current = null;
+    addressChoice?.(null);
+    const totalChoice = totalContinuation.current;
+    totalContinuation.current = null;
+    totalChoice?.(false);
+    cashAppCancellation.current?.();
+    if (!paymentInFlight.current) {
+      setPaymentDialogOpen(false);
+    }
+  }
+
+  async function prepareWithAddressReview(method: PaymentMethod) {
+    let currentQuote = exactQuote!;
+    let currentAddress = shippingAddress;
+    let currentBilling = resolvedBillingAddress!;
+    let shippingConfirmation: string | undefined;
+    for (;;) {
+      try {
+        const checkout = await prepare(method, {
+          quote: currentQuote,
+          shippingAddress: currentAddress ?? undefined,
+          billingAddress: currentBilling,
+          shippingConfirmation,
+        });
+        return {
+          checkout,
+          quote: currentQuote,
+          address: currentAddress,
+          billing: currentBilling,
+        };
+      } catch (failure) {
+        if (
+          !(failure instanceof ShippingAddressValidationError) ||
+          failure.code === "SHIPPING_ADDRESS_UNAVAILABLE"
+        ) {
+          throw failure;
+        }
+        setAddressReview(failure);
+        setPaymentDialogOpen(true);
+        const choice = await new Promise<{
+          address: ShippingAddress;
+          confirmation?: string;
+        } | null>((resolve) => {
+          addressContinuation.current = resolve;
+        });
+        if (!choice) {
+          throw new CheckoutCancelled();
+        }
+        const previousTotal = currentQuote.totals.totalCents;
+        const context = await resolveWalletShippingContactRef.current(
+          { ...choice.address, line2: choice.address.line2 ?? null },
+          buyerEmail,
+        );
+        currentQuote = context.quote;
+        currentAddress = context.shippingAddress;
+        shippingConfirmation = choice.confirmation;
+        if (sameAsShipping) {
+          currentBilling = resolveBillingAddress({
+            fulfillment,
+            sameAsShipping: true,
+            shippingAddress: currentAddress,
+            billingAddress,
+          })!;
+        }
+        if (currentQuote.totals.totalCents !== previousTotal) {
+          setTotalReview(currentQuote.totals.totalCents);
+          const accepted = await new Promise<boolean>((resolve) => {
+            totalContinuation.current = resolve;
+          });
+          if (!accepted) {
+            throw new CheckoutCancelled();
+          }
+        }
+      }
+    }
+  }
+
+  async function reauthorizeCashApp(updatedQuote: ExactCheckoutQuote): Promise<string> {
+    if (!payments) {
+      throw new Error("Cash App Pay is unavailable. Please try again.");
+    }
+    flushSync(() => setCashAppReapproval(true));
+    let method: SquareCashAppPayMethod | null = null;
+    let cancelled = false;
+    cashAppCancellation.current = () => {
+      cancelled = true;
+    };
+    try {
+      method = await payments.cashAppPay(
+        payments.paymentRequest({
+          countryCode: "US",
+          currencyCode: "USD",
+          total: walletPaymentTotal(updatedQuote),
+        }),
+        {
+          redirectURL: window.location.href,
+          referenceId: updatedQuote.quoteFingerprint.slice(0, 40),
+        },
+      );
+      if (cancelled) {
+        throw new CheckoutCancelled();
+      }
+      const attachedMethod = method;
+      return await new Promise<string>((resolve, reject) => {
+        cashAppCancellation.current = () => reject(new CheckoutCancelled());
+        attachedMethod.addEventListener("ontokenization", (event) => {
+          const detail = (event as { detail?: { tokenResult?: SquareTokenResult } })
+            .detail;
+          try {
+            resolve(checkedToken(detail?.tokenResult ?? { status: "ERROR" }));
+          } catch (failure) {
+            reject(failure);
+          }
+        });
+        void attachedMethod
+          .attach("#cash-app-address-confirmation", { width: "full", theme: "dark" })
+          .catch(reject);
+      });
+    } finally {
+      cashAppCancellation.current = null;
+      setCashAppReapproval(false);
+      await method
+        ?.destroy?.()
+        .catch((failure) => reportUnavailable("cashAppPay", "create", failure));
+    }
+  }
+
   async function submitTokenizedWallet(method: PaymentMethod, result: SquareTokenResult) {
     if (!validateCheckoutFields(regularForm.current)) {
       setError("Check the highlighted fields before continuing.");
       return;
     }
     await runPayment(async () => {
-      const sourceId = checkedToken(result);
+      let sourceId = checkedToken(result);
       if (!resolvedBillingAddress) {
         throw new Error("Enter your billing address to continue.");
       }
-      const checkout = await prepare(method, { billingAddress: resolvedBillingAddress });
+      const prepared = await prepareWithAddressReview(method);
+      const { checkout } = prepared;
+      if (prepared.quote.totals.totalCents !== exactQuote?.totals.totalCents) {
+        sourceId = await reauthorizeCashApp(prepared.quote);
+      }
       await pay(
         await authorizeTokenizedSource({
           permitRequest: permitRequest(checkout, method),
@@ -1054,30 +1205,34 @@ export function SquarePaymentMethods({
           ?.reportValidity();
         throw new Error("Enter a complete US billing address.");
       }
+      const prepared = await prepareWithAddressReview(method);
+      const { checkout } = prepared;
+      const paymentBilling = prepared.billing;
       if (method === "afterpay") {
         const request = walletRequests.current.afterpay;
-        if (!request || !exactQuote) {
+        if (!request) {
           throw new Error("Afterpay is still loading. Please try again.");
         }
-        afterpayContext.current = { quote: exactQuote, shippingAddress };
+        afterpayContext.current = {
+          quote: prepared.quote,
+          shippingAddress: prepared.address,
+        };
         updateSquarePaymentRequest(request, {
-          total: walletPaymentTotal(exactQuote),
+          total: walletPaymentTotal(prepared.quote),
           requestShippingContact: fulfillment === "ship",
-          shippingContact: shippingAddress
-            ? contact(shippingAddress.name, buyerEmail, shippingAddress)
+          shippingContact: prepared.address
+            ? contact(prepared.address.name, buyerEmail, prepared.address)
             : undefined,
         });
+        setPaymentStage("afterpay");
       }
-      const checkout = await prepare(method, {
-        billingAddress: resolvedBillingAddress,
-      });
       const buyer = squareBillingContact({
         cardholderName:
           method === "card"
             ? cardholderName
-            : `${resolvedBillingAddress.givenName} ${resolvedBillingAddress.familyName}`,
+            : `${paymentBilling.givenName} ${paymentBilling.familyName}`,
         buyerEmail,
-        billingAddress: resolvedBillingAddress,
+        billingAddress: paymentBilling,
       });
       await pay(
         await authorizeAndTokenize({
@@ -1158,33 +1313,28 @@ export function SquarePaymentMethods({
         open={paymentDialogOpen}
         stage={paymentStage}
         addressReview={addressReview}
-        onAcceptAddress={
-          addressReview?.suggestedAddress && onAcceptShippingAddress
-            ? () => {
-                onAcceptShippingAddress(
-                  addressReview.enteredAddress,
-                  addressReview.suggestedAddress!,
-                );
-                setAddressReview(null);
-                setAddressRetryNotice(true);
-                setError(null);
-                setPaymentDialogOpen(false);
-              }
-            : undefined
-        }
+        onAcceptAddress={(address, confirmation) => {
+          const continuation = addressContinuation.current;
+          if (!continuation) {
+            return;
+          }
+          addressContinuation.current = null;
+          setAddressReview(null);
+          setPaymentStage("preparing");
+          setError(null);
+          continuation({ address, confirmation });
+        }}
+        totalReview={totalReview}
+        onConfirmTotal={() => {
+          const continuation = totalContinuation.current;
+          totalContinuation.current = null;
+          setTotalReview(null);
+          continuation?.(true);
+        }}
+        cashAppReapproval={cashAppReapproval}
         error={error}
-        onDismiss={() => setPaymentDialogOpen(false)}
+        onDismiss={dismissPaymentDialog}
       />
-      {addressRetryNotice && (
-        <p
-          role="status"
-          className="mb-4 rounded-lg bg-zinc-100 p-4 text-sm text-zinc-900"
-        >
-          Shipping address updated. Your order was not placed and you have not been
-          charged. Choose your payment method again to review the total and complete your
-          order.
-        </p>
-      )}
       <ExpressCheckoutMethods
         applePayReady={Boolean(applePay)}
         googlePayReady={Boolean(googlePay)}

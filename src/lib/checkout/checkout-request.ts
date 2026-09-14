@@ -116,6 +116,7 @@ export const prepareCheckoutRequestSchema = z
     idempotencyKey: z.string().uuid(),
     deviceSessionId: z.string().uuid(),
     paymentMethod: paymentMethodSchema,
+    shippingConfirmation: z.string().max(100).optional(),
     quoteFingerprint: z.string().regex(/^[a-f0-9]{64}$/),
     buyerEmail: z.string().trim().toLowerCase().email().max(254).nullable().optional(),
     shippingAddress: checkoutShippingAddressSchema.nullable(),

@@ -23,6 +23,8 @@ export class ShippingAddressValidationError extends Error {
     message: string,
     readonly enteredAddress: ShippingAddress,
     readonly suggestedAddress?: ShippingAddress,
+    readonly shippingConfirmation?: string,
+    readonly code?: string,
   ) {
     super(message);
     this.name = "ShippingAddressValidationError";

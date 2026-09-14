@@ -37,6 +37,7 @@ export function createPrepareCheckoutDependencies(
   const getSquareOrders = () => (squareOrders ??= createSquareCheckoutOrdersGateway());
 
   return {
+    shippingConfirmationSecret: getCheckoutIdentitySecret,
     validateShippingAddress: (address) =>
       validateShippingAddress(address, env.SHIPPO_API_TOKEN),
     findTenantId: () => tenants.getFirstTenantId(),

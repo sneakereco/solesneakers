@@ -2,6 +2,10 @@ import { timingSafeEqual } from "node:crypto";
 
 import type { NextRequest } from "next/server";
 
+import {
+  issueShippingConfirmation,
+  verifyShippingConfirmation,
+} from "@/lib/checkout/shipping-address-confirmation";
 import type {
   ShippingAddress,
   ShippingValidationResult,
@@ -39,6 +43,7 @@ import type {
 type CheckoutSession = { user: { id: string; email: string } } | null;
 
 export type PrepareCheckoutDependencies = {
+  shippingConfirmationSecret(): string;
   validateShippingAddress(address: ShippingAddress): Promise<ShippingValidationResult>;
   findTenantId(): Promise<string | null>;
   getAccess(tenantId: string): Promise<CheckoutAccessDecision>;
@@ -179,11 +184,31 @@ export async function prepareCheckoutHandler(
     }
 
     const normalizedEmailHash = deps.hashEmail(buyerEmail);
+    const confirmationScope = parsed.data.shippingAddress
+      ? {
+          tenantId,
+          deviceSessionId: parsed.data.deviceSessionId,
+          normalizedEmailHash,
+          paymentMethod: parsed.data.paymentMethod,
+          address: parsed.data.shippingAddress,
+        }
+      : null;
+    const confirmed = Boolean(
+      parsed.data.shippingConfirmation &&
+        confirmationScope &&
+        verifyShippingConfirmation(
+          parsed.data.shippingConfirmation,
+          confirmationScope,
+          deps.shippingConfirmationSecret(),
+          deps.now(),
+        ),
+    );
     if (
       parsed.data.fulfillment === "ship" &&
       parsed.data.shippingAddress &&
       parsed.data.paymentMethod !== "applePay" &&
-      parsed.data.paymentMethod !== "googlePay"
+      parsed.data.paymentMethod !== "googlePay" &&
+      !confirmed
     ) {
       const validationAttempt = await deps.checkAddressValidationAttempt({
         tenantId,
@@ -217,7 +242,14 @@ export async function prepareCheckoutHandler(
                 ? "Please confirm the suggested shipping address before continuing. You have not been charged."
                 : "We could not verify this shipping address as deliverable. Check the street, apartment, city, state, and ZIP code. You have not been charged.",
             ...(validation.status === "suggestion"
-              ? { suggestedAddress: validation.address }
+              ? {
+                  suggestedAddress: validation.address,
+                  shippingConfirmation: issueShippingConfirmation(
+                    { ...confirmationScope!, address: validation.address },
+                    deps.shippingConfirmationSecret(),
+                    deps.now(),
+                  ),
+                }
               : {}),
           },
           unavailable ? 503 : 422,

@@ -37,10 +37,7 @@ import type {
   CheckoutAddressForm,
   CheckoutPageData,
 } from "@/lib/checkout/checkout-page-data";
-import {
-  ShippingAddressValidationError,
-  type ShippingAddress,
-} from "@/lib/checkout/shipping-address-validation";
+import { ShippingAddressValidationError } from "@/lib/checkout/shipping-address-validation";
 import { clearIdempotencyKeyFromStorage } from "@/lib/checkout/idempotency";
 
 type Fulfillment = "ship" | "pickup";
@@ -78,6 +75,7 @@ type CheckoutPreparePayload = {
   shippingAddress: CheckoutPaymentAddress | null;
   billingAddress: CheckoutBillingAddress | null;
   quoteFingerprint: string;
+  shippingConfirmation?: string;
   idempotencyKey: string;
   deviceSessionId: string;
 };
@@ -100,11 +98,6 @@ export function CheckoutClient({ initialData }: { initialData: CheckoutPageData 
   const [resolvedQuoteKey, setResolvedQuoteKey] = useState<string | null>(null);
   const [quoteRevision, setQuoteRevision] = useState(0);
   const requestSequence = useRef(0);
-
-  function acceptShippingAddress(_entered: ShippingAddress, suggested: ShippingAddress) {
-    setAddress({ ...suggested, line2: suggested.line2 ?? "" });
-    setQuoteRevision((value) => value + 1);
-  }
 
   const checkoutItems = useMemo(
     () =>
@@ -250,6 +243,7 @@ export function CheckoutClient({ initialData }: { initialData: CheckoutPageData 
           shippingAddress: selectedShippingAddress,
           billingAddress: selectedBillingAddress,
           quoteFingerprint: selectedQuote.quoteFingerprint,
+          shippingConfirmation: context?.shippingConfirmation,
           idempotencyKey: getOrCreateCheckoutIdempotencyKey(cartFingerprint),
           deviceSessionId,
         }),
@@ -272,6 +266,10 @@ export function CheckoutClient({ initialData }: { initialData: CheckoutPageData 
           data.error || "Check your shipping address before continuing.",
           selectedShippingAddress,
           suggestion.success ? suggestion.data : undefined,
+          typeof data?.shippingConfirmation === "string"
+            ? data.shippingConfirmation
+            : undefined,
+          data.code,
         );
       }
       if (response.status === 409) {
@@ -338,7 +336,6 @@ export function CheckoutClient({ initialData }: { initialData: CheckoutPageData 
               quoteWalletShippingDestination={quoteWalletShippingDestination}
               resolveWalletShippingContact={resolveWalletShippingContact}
               prepare={prepare}
-              onAcceptShippingAddress={acceptShippingAddress}
               clearCart={() => {
                 setIsRedirecting(true);
                 clearIdempotencyKeyFromStorage();

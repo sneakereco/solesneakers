@@ -1,4 +1,5 @@
 import { prepareCheckoutHandler } from "@/lib/checkout/prepare-checkout";
+import { createCheckoutQuoteFingerprint } from "@/lib/checkout/checkout-quote-fingerprint";
 
 const PRODUCT_ID = "11111111-1111-4111-8111-111111111111";
 const VARIANT_ID = "22222222-2222-4222-8222-222222222222";
@@ -60,6 +61,7 @@ function dependencies() {
     sizeLabel: "10",
   };
   return {
+    shippingConfirmationSecret: () => "test-secret-for-shipping-confirmations",
     checkAddressValidationAttempt: jest
       .fn()
       .mockResolvedValue({ allowed: true, retryAfterSeconds: null }),
@@ -203,6 +205,44 @@ describe("prepareCheckoutHandler", () => {
 });
 
 describe("shipping deliverability gate", () => {
+  it("continues an accepted suggestion without another address check or quota", async () => {
+    const deps = dependencies();
+    const body = await (request() as Request).json();
+    const suggestedAddress = { ...body.shippingAddress, line1: "1 Main St" };
+    deps.validateShippingAddress.mockResolvedValue({
+      status: "suggestion",
+      address: suggestedAddress,
+    });
+    const first = await prepareCheckoutHandler(request(), deps);
+    const review = await first.json();
+    expect(typeof review.shippingConfirmation).toBe("string");
+    const response = await prepareCheckoutHandler(
+      new Request("https://shop.example.com/api/checkout/prepare", {
+        method: "POST",
+        body: JSON.stringify({
+          ...body,
+          shippingAddress: suggestedAddress,
+          shippingConfirmation: review.shippingConfirmation,
+          quoteFingerprint: createCheckoutQuoteFingerprint({
+            items: [{ variantId: VARIANT_ID, quantity: 1, unitPriceCents: 10000 }],
+            fulfillment: "ship",
+            shippingAddress: suggestedAddress,
+            totals: {
+              subtotalCents: 10000,
+              shippingCents: 1000,
+              taxCents: 800,
+              totalCents: 11800,
+            },
+          }),
+        }),
+      }) as never,
+      deps,
+    );
+    expect(response.status).toBe(201);
+    expect(deps.validateShippingAddress).toHaveBeenCalledTimes(1);
+    expect(deps.checkAddressValidationAttempt).toHaveBeenCalledTimes(1);
+    expect(deps.checkAttempt).toHaveBeenCalledTimes(1);
+  });
   it.each(["applePay", "googlePay"])(
     "prepares %s without Shippo or its quota",
     async (paymentMethod) => {
