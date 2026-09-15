@@ -42,9 +42,7 @@ export function CartProvider({
   const [isReady, setIsReady] = useState(false);
   const didInitialValidation = useRef(false);
   const isValidatingRef = useRef(false);
-  const [resolvedUserId, setResolvedUserId] = useState<string | null>(
-    userId ?? user?.id ?? null,
-  );
+  const resolvedUserId = userId ?? user?.id ?? null;
 
   const refreshCart = useCallback(async () => {
     const current = cart.getCart();
@@ -77,16 +75,17 @@ export function CartProvider({
     }
   }, [cart]);
 
-  // OPTIMIZATION: Use session from context instead of fetching independently
   useEffect(() => {
-    setResolvedUserId(userId ?? user?.id ?? null);
-  }, [userId, user?.id]);
-
-  useEffect(() => {
+    const handleCartUpdate = (event: Event) => {
+      const customEvent = event as CustomEvent<{ count: number; items: CartItem[] }>;
+      if (customEvent.detail?.items) {
+        setItems(customEvent.detail.items);
+        setIsReady(true);
+      }
+    };
+    window.addEventListener("cartUpdated", handleCartUpdate);
     cart.setUserId(resolvedUserId ?? null);
     const storedItems = cart.getCart();
-    setItems(storedItems);
-    setIsReady(true);
     didInitialValidation.current = false;
     try {
       const count = storedItems.reduce((sum, item) => sum + item.quantity, 0);
@@ -97,15 +96,6 @@ export function CartProvider({
       // ignore storage/event errors
     }
 
-    const handleCartUpdate = (event: Event) => {
-      const customEvent = event as CustomEvent<{ count: number; items: CartItem[] }>;
-      // Update items from the event detail
-      if (customEvent.detail?.items) {
-        setItems(customEvent.detail.items);
-      }
-    };
-
-    window.addEventListener("cartUpdated", handleCartUpdate);
     return () => window.removeEventListener("cartUpdated", handleCartUpdate);
   }, [cart, resolvedUserId]);
 
@@ -115,13 +105,13 @@ export function CartProvider({
     }
     didInitialValidation.current = true;
     if (items.length > 0) {
-      refreshCart();
+      void refreshCart();
     }
   }, [isReady, items.length, refreshCart]);
 
   useEffect(() => {
     const handleOpenCart = () => {
-      refreshCart();
+      void refreshCart();
     };
 
     window.addEventListener("openCart", handleOpenCart);
@@ -131,7 +121,7 @@ export function CartProvider({
   useEffect(() => {
     const handleVisibility = () => {
       if (document.visibilityState === "visible") {
-        refreshCart();
+        void refreshCart();
       }
     };
 

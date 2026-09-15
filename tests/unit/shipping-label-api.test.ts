@@ -37,7 +37,7 @@ import { OrdersRepository } from "@/repositories/orders-repo";
 import { ShippingCarriersRepository } from "@/repositories/shipping-carriers-repo";
 import { ShippoService } from "@/services/shipping-label-service";
 
-import { POST } from "../../app/api/admin/shipping/labels/route";
+import { POST } from "../../src/app/api/admin/shipping/labels/route";
 
 const mockRequireAdminApi = jest.mocked(requireAdminApi);
 const mockCreateSupabaseServerClient = jest.mocked(createSupabaseServerClient);

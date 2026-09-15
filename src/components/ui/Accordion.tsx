@@ -22,11 +22,11 @@ export function AccordionItem({
     <div className="border-b border-zinc-800/70">
       <button
         onClick={() => setIsOpen(!isOpen)}
-        className="flex items-center justify-between w-full py-4 text-white hover:text-gray-300 transition"
+        className="flex w-full items-center justify-between py-4 text-white transition hover:text-gray-300"
       >
         <span className="font-semibold">{title}</span>
         <ChevronDown
-          className={`w-5 h-5 transition-transform ${isOpen ? "rotate-180" : ""}`}
+          className={`h-5 w-5 transition-transform ${isOpen ? "rotate-180" : ""}`}
         />
       </button>
       {isOpen && <div className="pb-4 text-gray-400">{children}</div>}

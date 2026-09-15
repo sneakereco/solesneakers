@@ -30,7 +30,7 @@ import { AuthError, requireAdminApi } from "@/lib/auth/session";
 import { createSupabaseAdminClient } from "@/lib/supabase/service-role";
 import { FeaturedItemsService } from "@/services/featured-items-service";
 
-import { GET } from "../../app/api/admin/featured-items/route";
+import { GET } from "../../src/app/api/admin/featured-items/route";
 
 const mockRequireAdminApi = jest.mocked(requireAdminApi);
 const mockCreateSupabaseAdminClient = jest.mocked(createSupabaseAdminClient);

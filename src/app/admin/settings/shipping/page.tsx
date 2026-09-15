@@ -1,0 +1,906 @@
+// app/admin/settings/shipping/page.tsx
+"use client";
+
+import { useEffect, useMemo, useState } from "react";
+
+import { AdminPage, AdminPageHeader } from "@/components/admin/AdminPage";
+import { CarrierSelector } from "@/components/admin/shipping/CarrierSelector";
+import {
+  parseStoredCarrierSelection,
+  toggleCarrierSelection,
+  type CarrierKey,
+} from "@/lib/shipping/carriers";
+import { logError } from "@/lib/utils/log";
+import { ModalPortal } from "@/components/ui/ModalPortal";
+
+const SHIPPING_CATEGORIES = [
+  { key: "sneakers", label: "Sneakers" },
+  { key: "clothing", label: "Clothing" },
+  { key: "accessories", label: "Accessories" },
+  { key: "electronics", label: "Electronics" },
+];
+
+type ShippingDefaultValues = {
+  shipping_cost_cents: number;
+  default_weight_oz: number;
+  default_length_in: number;
+  default_width_in: number;
+  default_height_in: number;
+};
+
+const defaultPackage: ShippingDefaultValues = {
+  shipping_cost_cents: 0,
+  default_weight_oz: 16,
+  default_length_in: 12,
+  default_width_in: 12,
+  default_height_in: 12,
+};
+
+const initialOrigin = {
+  name: "",
+  company: "",
+  phone: "",
+  line1: "",
+  line2: "",
+  city: "",
+  state: "",
+  postal_code: "",
+  country: "US",
+};
+
+type ShippingOriginAddress = typeof initialOrigin;
+
+type OriginField = keyof ShippingOriginAddress;
+type OriginErrors = Partial<Record<OriginField, string>>;
+
+const moneyToCents = (raw: string) => {
+  const cleaned = raw.replace(/[^\d.]/g, "");
+  if (!cleaned || cleaned === ".") {
+    return 0;
+  }
+
+  const firstDot = cleaned.indexOf(".");
+  let normalized = cleaned;
+
+  if (firstDot !== -1) {
+    const before = cleaned.slice(0, firstDot + 1);
+    const after = cleaned.slice(firstDot + 1).replace(/\./g, "");
+    normalized = before + after;
+  }
+
+  const [whole, frac = ""] = normalized.split(".");
+  const wholeNum = Number(whole || "0");
+  if (!Number.isFinite(wholeNum)) {
+    return 0;
+  }
+
+  const centsStr = `${frac}00`.slice(0, 2);
+  const centsNum = Number(centsStr || "0");
+  if (!Number.isFinite(centsNum)) {
+    return 0;
+  }
+
+  return wholeNum * 100 + centsNum;
+};
+
+const centsToMoneyString = (cents: number) => {
+  const safe = Number.isFinite(cents) ? cents : 0;
+  return (safe / 100).toFixed(2);
+};
+
+export default function ShippingSettingsPage() {
+  const [shippingDefaults, setShippingDefaults] = useState<
+    Record<string, ShippingDefaultValues>
+  >({});
+  const [originAddress, setOriginAddress] =
+    useState<ShippingOriginAddress>(initialOrigin);
+  const [enabledCarriers, setEnabledCarriers] = useState<CarrierKey[]>([]);
+  const [isSavingDefaults, setIsSavingDefaults] = useState(false);
+  const [isSavingOrigin, setIsSavingOrigin] = useState(false);
+  const [isSavingCarriers, setIsSavingCarriers] = useState(false);
+  const [message, setMessage] = useState("");
+  const [originMessage, setOriginMessage] = useState("");
+  const [originError, setOriginError] = useState("");
+  const [originErrors, setOriginErrors] = useState<OriginErrors>({});
+  const [carriersMessage, setCarriersMessage] = useState("");
+  const [isDefaultsModalOpen, setIsDefaultsModalOpen] = useState(false);
+  const [activeCategory, setActiveCategory] = useState<string | null>(null);
+  const [defaultsDraft, setDefaultsDraft] = useState<ShippingDefaultValues | null>(null);
+
+  // String versions for controlled inputs
+  const [shippingCostInput, setShippingCostInput] = useState<string>("0.00");
+  const [weightInput, setWeightInput] = useState<string>("16");
+  const [lengthInput, setLengthInput] = useState<string>("12");
+  const [widthInput, setWidthInput] = useState<string>("12");
+  const [heightInput, setHeightInput] = useState<string>("12");
+
+  const [isOriginModalOpen, setIsOriginModalOpen] = useState(false);
+  const [originDraft, setOriginDraft] = useState<ShippingOriginAddress>(initialOrigin);
+
+  const categoryMap = useMemo(
+    () => new Map(SHIPPING_CATEGORIES.map((category) => [category.key, category.label])),
+    [],
+  );
+
+  const extractOriginErrors = (
+    issues: Record<string, { _errors?: string[] }> | undefined,
+  ): OriginErrors => {
+    const next: OriginErrors = {};
+    if (!issues || typeof issues !== "object") {
+      return next;
+    }
+    const fields: OriginField[] = [
+      "name",
+      "company",
+      "phone",
+      "line1",
+      "line2",
+      "city",
+      "state",
+      "postal_code",
+      "country",
+    ];
+    fields.forEach((field) => {
+      const entry = issues[field];
+      if (entry?._errors?.length) {
+        next[field] = entry._errors[0];
+      }
+    });
+    return next;
+  };
+
+  const validateOriginDraft = (draft: ShippingOriginAddress): OriginErrors => {
+    const errors: OriginErrors = {};
+    const name = draft.name.trim();
+    const company = (draft.company ?? "").trim();
+
+    if (!name && !company) {
+      errors.name = message;
+      errors.company = message;
+    }
+    if (!draft.line1.trim()) {
+      errors.line1 = "Street address is required.";
+    }
+    if (!draft.city.trim()) {
+      errors.city = "City is required.";
+    }
+    if (!draft.state.trim()) {
+      errors.state = "State is required.";
+    }
+    if (!draft.postal_code.trim()) {
+      errors.postal_code = "ZIP / postal code is required.";
+    }
+    if (!draft.country.trim()) {
+      errors.country = "Country is required.";
+    }
+
+    return errors;
+  };
+
+  useEffect(() => {
+    const loadData = async () => {
+      try {
+        const [defaultsResponse, originResponse, carriersResponse] = await Promise.all([
+          fetch("/api/admin/shipping/defaults", { cache: "no-store" }),
+          fetch("/api/admin/shipping/origin", { cache: "no-store" }),
+          fetch("/api/admin/shipping/carriers", { cache: "no-store" }),
+        ]);
+
+        const defaultsData = await defaultsResponse.json();
+        const map: Record<string, ShippingDefaultValues> = {};
+        for (const entry of defaultsData.defaults || []) {
+          map[entry.category] = {
+            shipping_cost_cents: entry.shipping_cost_cents ?? 0,
+            default_weight_oz:
+              entry.default_weight_oz ?? defaultPackage.default_weight_oz,
+            default_length_in:
+              entry.default_length_in ?? defaultPackage.default_length_in,
+            default_width_in: entry.default_width_in ?? defaultPackage.default_width_in,
+            default_height_in:
+              entry.default_height_in ?? defaultPackage.default_height_in,
+          };
+        }
+        setShippingDefaults(map);
+
+        const originData = await originResponse.json();
+        if (originData.origin) {
+          setOriginAddress(originData.origin);
+        }
+
+        const carriersData = await carriersResponse.json();
+        setEnabledCarriers(parseStoredCarrierSelection(carriersData.carriers));
+      } catch (error) {
+        logError(error, { layer: "frontend", event: "admin_load_settings_shipping" });
+      }
+    };
+
+    void loadData();
+  }, []);
+
+  const openDefaultsModal = (categoryKey: string) => {
+    const current = shippingDefaults[categoryKey] ?? defaultPackage;
+    setActiveCategory(categoryKey);
+    setDefaultsDraft({ ...current });
+    setShippingCostInput(centsToMoneyString(current.shipping_cost_cents));
+    setWeightInput(String(current.default_weight_oz));
+    setLengthInput(String(current.default_length_in));
+    setWidthInput(String(current.default_width_in));
+    setHeightInput(String(current.default_height_in));
+    setIsDefaultsModalOpen(true);
+    setMessage("");
+  };
+
+  const closeDefaultsModal = () => {
+    setIsDefaultsModalOpen(false);
+    setActiveCategory(null);
+    setDefaultsDraft(null);
+    setShippingCostInput("0.00");
+    setWeightInput("16");
+    setLengthInput("12");
+    setWidthInput("12");
+    setHeightInput("12");
+  };
+
+  const openOriginModal = () => {
+    setOriginDraft({ ...originAddress });
+    setIsOriginModalOpen(true);
+    setOriginMessage("");
+    setOriginError("");
+    setOriginErrors({});
+  };
+
+  const handleDimensionInput = (
+    field: "weight" | "length" | "width" | "height",
+    value: string,
+  ) => {
+    const cleaned = value.replace(/[^\d.]/g, "");
+
+    switch (field) {
+      case "weight":
+        setWeightInput(cleaned);
+        break;
+      case "length":
+        setLengthInput(cleaned);
+        break;
+      case "width":
+        setWidthInput(cleaned);
+        break;
+      case "height":
+        setHeightInput(cleaned);
+        break;
+    }
+
+    const numericValue = Number(cleaned);
+    if (!Number.isFinite(numericValue) || numericValue < 0) {
+      return;
+    }
+
+    setDefaultsDraft((prev) => {
+      if (!prev) {
+        return prev;
+      }
+      const fieldMap = {
+        weight: "default_weight_oz" as const,
+        length: "default_length_in" as const,
+        width: "default_width_in" as const,
+        height: "default_height_in" as const,
+      };
+      return { ...prev, [fieldMap[field]]: numericValue };
+    });
+  };
+
+  const handleShippingCostChange = (value: string) => {
+    setShippingCostInput(value);
+    const cents = moneyToCents(value);
+    setDefaultsDraft((prev) => {
+      if (!prev) {
+        return prev;
+      }
+      return { ...prev, shipping_cost_cents: cents };
+    });
+  };
+
+  const handleOriginDraftChange = (field: keyof ShippingOriginAddress, value: string) => {
+    setOriginDraft((prev) => ({ ...prev, [field]: value }));
+    if (originErrors[field]) {
+      setOriginErrors((prev) => {
+        const next = { ...prev };
+        delete next[field];
+        return next;
+      });
+    }
+    if (originError) {
+      setOriginError("");
+    }
+  };
+
+  const toggleCarrier = (carrierKey: CarrierKey) => {
+    setEnabledCarriers((previous) => toggleCarrierSelection(previous, carrierKey));
+  };
+
+  const saveDefaults = async () => {
+    if (!activeCategory || !defaultsDraft) {
+      return;
+    }
+    setIsSavingDefaults(true);
+    setMessage("");
+
+    const nextDefaults: Record<string, ShippingDefaultValues> = {
+      ...shippingDefaults,
+      [activeCategory]: defaultsDraft,
+    };
+
+    try {
+      const defaults = SHIPPING_CATEGORIES.map((category) => ({
+        category: category.key,
+        shipping_cost_cents: Math.round(
+          nextDefaults[category.key]?.shipping_cost_cents ?? 0,
+        ),
+        default_weight_oz:
+          nextDefaults[category.key]?.default_weight_oz ??
+          defaultPackage.default_weight_oz,
+        default_length_in:
+          nextDefaults[category.key]?.default_length_in ??
+          defaultPackage.default_length_in,
+        default_width_in:
+          nextDefaults[category.key]?.default_width_in ?? defaultPackage.default_width_in,
+        default_height_in:
+          nextDefaults[category.key]?.default_height_in ??
+          defaultPackage.default_height_in,
+      }));
+
+      const response = await fetch("/api/admin/shipping/defaults", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ defaults }),
+      });
+
+      if (response.ok) {
+        setShippingDefaults(nextDefaults);
+        closeDefaultsModal();
+        setMessage("Shipping defaults updated.");
+      } else {
+        const errorData = await response.json();
+        setMessage(`Failed to update defaults: ${errorData.error}`);
+      }
+    } catch {
+      setMessage("An unexpected error occurred.");
+    } finally {
+      setIsSavingDefaults(false);
+    }
+  };
+
+  const saveOrigin = async () => {
+    setIsSavingOrigin(true);
+    setOriginMessage("");
+    setOriginError("");
+    setOriginErrors({});
+
+    const draftErrors = validateOriginDraft(originDraft);
+    if (Object.keys(draftErrors).length > 0) {
+      setOriginErrors(draftErrors);
+      setOriginError("Please fix the highlighted fields.");
+      setIsSavingOrigin(false);
+      return;
+    }
+
+    try {
+      const response = await fetch("/api/admin/shipping/origin", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify(originDraft),
+      });
+      const errorData = await response.json().catch(() => ({}));
+      if (response.ok) {
+        setOriginAddress(errorData.origin ?? originDraft);
+        setIsOriginModalOpen(false);
+        setOriginMessage("Shipping origin address saved.");
+      } else {
+        const fieldErrors = extractOriginErrors(errorData?.issues);
+        if (Object.keys(fieldErrors).length > 0) {
+          setOriginErrors(fieldErrors);
+          setOriginError("Please fix the highlighted fields.");
+          return;
+        }
+        setOriginError(errorData?.error || "Failed to save address.");
+      }
+    } catch {
+      setOriginError("An unexpected error occurred.");
+    } finally {
+      setIsSavingOrigin(false);
+    }
+  };
+
+  const saveCarriers = async () => {
+    setIsSavingCarriers(true);
+    setCarriersMessage("");
+    try {
+      const response = await fetch("/api/admin/shipping/carriers", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ carriers: enabledCarriers }),
+      });
+
+      const data = await response.json().catch(() => ({}));
+
+      if (response.ok) {
+        setEnabledCarriers(parseStoredCarrierSelection(data.carriers));
+        setCarriersMessage("Enabled carriers updated.");
+        setTimeout(() => setCarriersMessage(""), 3000);
+      } else {
+        setCarriersMessage(`Failed to save carriers: ${data.error}`);
+      }
+    } catch {
+      setCarriersMessage("An unexpected error occurred.");
+    } finally {
+      setIsSavingCarriers(false);
+    }
+  };
+
+  const getPackageSummary = (categoryKey: string) => {
+    const data = shippingDefaults[categoryKey] ?? defaultPackage;
+    const cost = (data.shipping_cost_cents / 100).toFixed(2);
+    return {
+      cost,
+      weight: data.default_weight_oz,
+      length: data.default_length_in,
+      width: data.default_width_in,
+      height: data.default_height_in,
+    };
+  };
+
+  const originLine = useMemo(() => {
+    const parts = [
+      originAddress.line1,
+      originAddress.city,
+      originAddress.state,
+      originAddress.postal_code,
+    ].filter(Boolean);
+    return parts.join(", ");
+  }, [originAddress]);
+
+  const activeCategoryLabel = activeCategory
+    ? (categoryMap.get(activeCategory) ?? "")
+    : "";
+
+  return (
+    <AdminPage width="content">
+      <AdminPageHeader
+        eyebrow="Settings"
+        title="Shipping settings"
+        description="Configure shipping defaults, origin addresses, and carrier options."
+      />
+
+      <div className="grid grid-cols-1 gap-4 lg:grid-cols-2">
+        <div className="space-y-3 rounded border border-zinc-800/70 bg-zinc-900 p-5">
+          <div className="flex items-start justify-between gap-4">
+            <div>
+              <h2 className="text-base font-semibold text-white sm:text-lg">
+                Origin address
+              </h2>
+              <p className="text-xs text-gray-400 sm:text-sm">
+                Used for labels and rate estimates.
+              </p>
+            </div>
+            <button
+              type="button"
+              onClick={openOriginModal}
+              className="border border-zinc-800/70 bg-zinc-900 px-3 py-1.5 text-[12px] text-white hover:border-zinc-700 sm:px-4 sm:py-2 sm:text-sm"
+            >
+              Edit origin
+            </button>
+          </div>
+          <div className="text-[12px] text-gray-400 sm:text-sm">
+            {originLine ? originLine : "No origin address saved yet."}
+          </div>
+        </div>
+
+        <div className="space-y-3 rounded border border-zinc-800/70 bg-zinc-900 p-5">
+          <div>
+            <h2 className="mb-2 text-base font-semibold text-white sm:text-lg">
+              Enabled Carriers
+            </h2>
+            <p className="mb-4 text-xs text-gray-400 sm:text-sm">
+              Select which carriers to offer for label creation.
+            </p>
+          </div>
+          <CarrierSelector enabled={enabledCarriers} onToggle={toggleCarrier} />
+          <div className="pt-2">
+            <button
+              type="button"
+              onClick={() => {
+                void saveCarriers();
+              }}
+              disabled={isSavingCarriers}
+              className="w-full rounded bg-red-600 px-4 py-2 text-[12px] text-white hover:bg-red-700 disabled:bg-gray-600 sm:text-sm"
+            >
+              {isSavingCarriers ? "Saving..." : "Save carriers"}
+            </button>
+            {carriersMessage && (
+              <div className="mt-2 text-[12px] text-gray-400 sm:text-sm">
+                {carriersMessage}
+              </div>
+            )}
+          </div>
+        </div>
+
+        <div className="space-y-4 rounded border border-zinc-800/70 bg-zinc-900 p-5 lg:col-span-2">
+          <div className="flex items-start justify-between gap-4">
+            <div>
+              <h2 className="text-base font-semibold text-white sm:text-lg">
+                Default packages
+              </h2>
+              <p className="text-xs text-gray-400 sm:text-sm">
+                Configure default cost, weight, and dimensions per category.
+              </p>
+            </div>
+            {message && (
+              <span className="text-[12px] text-gray-400 sm:text-sm">{message}</span>
+            )}
+          </div>
+
+          <div className="grid grid-cols-1 gap-4">
+            {SHIPPING_CATEGORIES.map((category) => {
+              const summary = getPackageSummary(category.key);
+              return (
+                <div
+                  key={category.key}
+                  className="rounded border border-zinc-800/70 bg-zinc-950/40 p-4"
+                >
+                  <div className="flex items-start justify-between gap-3">
+                    <div>
+                      <div className="text-[10px] uppercase tracking-wide text-gray-500 sm:text-xs">
+                        {category.label}
+                      </div>
+                      <div className="mt-1 text-[12px] font-semibold text-white sm:text-base">
+                        ${summary.cost} shipping
+                      </div>
+                      <div className="mt-2 text-[11px] text-gray-400 sm:text-xs">
+                        {summary.length} x {summary.width} x {summary.height} in ·{" "}
+                        {summary.weight} oz
+                      </div>
+                    </div>
+                    <button
+                      type="button"
+                      onClick={() => openDefaultsModal(category.key)}
+                      className="border border-zinc-800/70 bg-zinc-900 px-3 py-1.5 text-[11px] font-semibold text-white hover:border-zinc-700 sm:py-2 sm:text-xs"
+                    >
+                      Edit
+                    </button>
+                  </div>
+                </div>
+              );
+            })}
+          </div>
+        </div>
+      </div>
+
+      {isDefaultsModalOpen && defaultsDraft && (
+        <div
+          className="fixed inset-0 z-50 flex items-center justify-center bg-black/70 px-4"
+          onClick={closeDefaultsModal}
+        >
+          <div
+            className="w-full max-w-2xl space-y-5 rounded-lg border border-zinc-800/70 bg-zinc-900 p-6"
+            onClick={(event) => event.stopPropagation()}
+          >
+            <div className="flex items-start justify-between">
+              <div>
+                <h3 className="text-lg font-semibold text-white">
+                  Edit package defaults
+                </h3>
+                <p className="text-xs text-gray-500">{activeCategoryLabel} defaults</p>
+              </div>
+              <button
+                type="button"
+                onClick={closeDefaultsModal}
+                className="text-gray-400 hover:text-white"
+              >
+                Close
+              </button>
+            </div>
+
+            <div className="space-y-4">
+              <div>
+                <div className="mb-2 text-xs uppercase tracking-wide text-gray-500">
+                  Package size
+                </div>
+                <div className="grid grid-cols-1 gap-3 sm:grid-cols-3">
+                  <div>
+                    <label className="mb-1 block text-xs text-gray-400">
+                      Length (in)
+                    </label>
+                    <input
+                      type="text"
+                      inputMode="numeric"
+                      value={lengthInput}
+                      onChange={(e) => handleDimensionInput("length", e.target.value)}
+                      className="w-full border border-zinc-800/70 bg-zinc-900 px-3 py-2 text-white"
+                    />
+                  </div>
+                  <div>
+                    <label className="mb-1 block text-xs text-gray-400">Width (in)</label>
+                    <input
+                      type="text"
+                      inputMode="numeric"
+                      value={widthInput}
+                      onChange={(e) => handleDimensionInput("width", e.target.value)}
+                      className="w-full border border-zinc-800/70 bg-zinc-900 px-3 py-2 text-white"
+                    />
+                  </div>
+                  <div>
+                    <label className="mb-1 block text-xs text-gray-400">
+                      Height (in)
+                    </label>
+                    <input
+                      type="text"
+                      inputMode="numeric"
+                      value={heightInput}
+                      onChange={(e) => handleDimensionInput("height", e.target.value)}
+                      className="w-full border border-zinc-800/70 bg-zinc-900 px-3 py-2 text-white"
+                    />
+                  </div>
+                </div>
+              </div>
+
+              <div className="grid grid-cols-1 gap-3 sm:grid-cols-2">
+                <div>
+                  <label className="mb-1 block text-xs text-gray-400">Weight (oz)</label>
+                  <input
+                    type="text"
+                    inputMode="numeric"
+                    value={weightInput}
+                    onChange={(e) => handleDimensionInput("weight", e.target.value)}
+                    className="w-full border border-zinc-800/70 bg-zinc-900 px-3 py-2 text-white"
+                  />
+                </div>
+                <div>
+                  <label className="mb-1 block text-xs text-gray-400">
+                    Shipping cost ($)
+                  </label>
+                  <input
+                    type="text"
+                    inputMode="decimal"
+                    placeholder="0.00"
+                    value={shippingCostInput}
+                    onChange={(e) => handleShippingCostChange(e.target.value)}
+                    onBlur={() =>
+                      setShippingCostInput(
+                        centsToMoneyString(defaultsDraft.shipping_cost_cents),
+                      )
+                    }
+                    className="w-full border border-zinc-800/70 bg-zinc-900 px-3 py-2 text-white"
+                  />
+                </div>
+              </div>
+            </div>
+
+            <div className="flex items-center justify-end gap-3 pt-2">
+              <button
+                type="button"
+                onClick={closeDefaultsModal}
+                className="rounded bg-zinc-800 px-4 py-2 text-white hover:bg-zinc-700"
+              >
+                Cancel
+              </button>
+              <button
+                type="button"
+                onClick={() => {
+                  void saveDefaults();
+                }}
+                disabled={isSavingDefaults}
+                className="rounded bg-red-600 px-4 py-2 text-white hover:bg-red-700 disabled:bg-gray-600"
+              >
+                {isSavingDefaults ? "Saving..." : "Save"}
+              </button>
+            </div>
+          </div>
+        </div>
+      )}
+
+      {isOriginModalOpen && (
+        <ModalPortal open={isOriginModalOpen} onClose={() => setIsOriginModalOpen(false)}>
+          <div className="w-full max-w-3xl rounded-sm border border-zinc-800/70 bg-zinc-950 p-3 sm:p-6">
+            <div className="mb-2 flex items-center justify-between gap-3 sm:mb-4">
+              <div>
+                <h2 className="text-sm font-semibold text-white sm:text-lg">
+                  Edit origin
+                </h2>
+                <p className="hidden text-[12px] text-zinc-400 sm:block sm:text-sm">
+                  Shipping origin address
+                </p>
+              </div>
+              <button
+                type="button"
+                onClick={() => setIsOriginModalOpen(false)}
+                className="text-[11px] text-zinc-400 hover:text-white sm:text-sm"
+              >
+                Close
+              </button>
+            </div>
+
+            <div className="grid grid-cols-2 gap-2 text-[11px] sm:gap-4 sm:text-sm md:grid-cols-2">
+              <div className="col-span-2 text-[10px] text-zinc-400 sm:text-xs">
+                Provide a contact name or company name. Phone number is optional.
+              </div>
+              <div>
+                <label className="mb-0.5 block text-gray-400">Contact name</label>
+                <input
+                  type="text"
+                  value={originDraft.name}
+                  onChange={(e) => handleOriginDraftChange("name", e.target.value)}
+                  className={`w-full border bg-zinc-900 px-2 py-1.5 text-white ${
+                    originErrors.name ? "border-red-500" : "border-zinc-800/70"
+                  }`}
+                />
+                {originErrors.name && (
+                  <div className="mt-1 text-[10px] text-red-400">{originErrors.name}</div>
+                )}
+              </div>
+              <div>
+                <label className="mb-0.5 block text-gray-400">Company</label>
+                <input
+                  type="text"
+                  value={originDraft.company ?? ""}
+                  onChange={(e) => handleOriginDraftChange("company", e.target.value)}
+                  className={`w-full border bg-zinc-900 px-2 py-1.5 text-white ${
+                    originErrors.company ? "border-red-500" : "border-zinc-800/70"
+                  }`}
+                />
+                {originErrors.company && (
+                  <div className="mt-1 text-[10px] text-red-400">
+                    {originErrors.company}
+                  </div>
+                )}
+              </div>
+              <div>
+                <label className="mb-0.5 block text-gray-400">
+                  Phone number (optional)
+                </label>
+                <input
+                  type="text"
+                  value={originDraft.phone ?? ""}
+                  onChange={(e) => handleOriginDraftChange("phone", e.target.value)}
+                  className={`w-full border bg-zinc-900 px-2 py-1.5 text-white ${
+                    originErrors.phone ? "border-red-500" : "border-zinc-800/70"
+                  }`}
+                />
+                {originErrors.phone && (
+                  <div className="mt-1 text-[10px] text-red-400">
+                    {originErrors.phone}
+                  </div>
+                )}
+              </div>
+              <div>
+                <label className="mb-0.5 block text-gray-400">Street address</label>
+                <input
+                  type="text"
+                  value={originDraft.line1}
+                  onChange={(e) => handleOriginDraftChange("line1", e.target.value)}
+                  className={`w-full border bg-zinc-900 px-2 py-1.5 text-white ${
+                    originErrors.line1 ? "border-red-500" : "border-zinc-800/70"
+                  }`}
+                />
+                {originErrors.line1 && (
+                  <div className="mt-1 text-[10px] text-red-400">
+                    {originErrors.line1}
+                  </div>
+                )}
+              </div>
+              <div>
+                <label className="mb-0.5 block text-gray-400">
+                  Apartment, suite, etc.
+                </label>
+                <input
+                  type="text"
+                  value={originDraft.line2 ?? ""}
+                  onChange={(e) => handleOriginDraftChange("line2", e.target.value)}
+                  className={`w-full border bg-zinc-900 px-2 py-1.5 text-white ${
+                    originErrors.line2 ? "border-red-500" : "border-zinc-800/70"
+                  }`}
+                />
+                {originErrors.line2 && (
+                  <div className="mt-1 text-[10px] text-red-400">
+                    {originErrors.line2}
+                  </div>
+                )}
+              </div>
+              <div>
+                <label className="mb-0.5 block text-gray-400">City</label>
+                <input
+                  type="text"
+                  value={originDraft.city}
+                  onChange={(e) => handleOriginDraftChange("city", e.target.value)}
+                  className={`w-full border bg-zinc-900 px-2 py-1.5 text-white ${
+                    originErrors.city ? "border-red-500" : "border-zinc-800/70"
+                  }`}
+                />
+                {originErrors.city && (
+                  <div className="mt-1 text-[10px] text-red-400">{originErrors.city}</div>
+                )}
+              </div>
+              <div>
+                <label className="mb-0.5 block text-gray-400">State</label>
+                <input
+                  type="text"
+                  value={originDraft.state}
+                  onChange={(e) => handleOriginDraftChange("state", e.target.value)}
+                  className={`w-full border bg-zinc-900 px-2 py-1.5 text-white ${
+                    originErrors.state ? "border-red-500" : "border-zinc-800/70"
+                  }`}
+                />
+                {originErrors.state && (
+                  <div className="mt-1 text-[10px] text-red-400">
+                    {originErrors.state}
+                  </div>
+                )}
+              </div>
+              <div>
+                <label className="mb-0.5 block text-gray-400">ZIP / Postal code</label>
+                <input
+                  type="text"
+                  value={originDraft.postal_code}
+                  onChange={(e) => handleOriginDraftChange("postal_code", e.target.value)}
+                  className={`w-full border bg-zinc-900 px-2 py-1.5 text-white ${
+                    originErrors.postal_code ? "border-red-500" : "border-zinc-800/70"
+                  }`}
+                />
+                {originErrors.postal_code && (
+                  <div className="mt-1 text-[10px] text-red-400">
+                    {originErrors.postal_code}
+                  </div>
+                )}
+              </div>
+              <div>
+                <label className="mb-0.5 block text-gray-400">Country</label>
+                <input
+                  type="text"
+                  value={originDraft.country}
+                  onChange={(e) => handleOriginDraftChange("country", e.target.value)}
+                  className={`w-full border bg-zinc-900 px-2 py-1.5 text-white ${
+                    originErrors.country ? "border-red-500" : "border-zinc-800/70"
+                  }`}
+                />
+                {originErrors.country && (
+                  <div className="mt-1 text-[10px] text-red-400">
+                    {originErrors.country}
+                  </div>
+                )}
+              </div>
+            </div>
+
+            {(originError || originMessage) && (
+              <div
+                className={`mt-4 text-sm ${
+                  originError ? "text-red-400" : "text-gray-400"
+                }`}
+              >
+                {originError || originMessage}
+              </div>
+            )}
+
+            <div className="mt-3 flex items-center justify-end gap-2 sm:mt-6 sm:gap-3">
+              <button
+                type="button"
+                onClick={() => setIsOriginModalOpen(false)}
+                className="border border-zinc-800/70 px-3 py-1.5 text-[11px] text-gray-300 sm:px-4 sm:py-2 sm:text-sm"
+              >
+                Cancel
+              </button>
+              <button
+                type="button"
+                onClick={() => {
+                  void saveOrigin();
+                }}
+                disabled={isSavingOrigin}
+                className="bg-red-600 px-3 py-1.5 text-[11px] text-white hover:bg-red-500 disabled:bg-zinc-700 sm:px-4 sm:py-2 sm:text-sm"
+              >
+                {isSavingOrigin ? "Saving..." : "Save origin"}
+              </button>
+            </div>
+          </div>
+        </ModalPortal>
+      )}
+    </AdminPage>
+  );
+}

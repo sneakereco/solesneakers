@@ -1,6 +1,7 @@
 "use client";
 
 import { useEffect, useEffectEvent, useRef, useState } from "react";
+import { useHydrated } from "@/components/ui/useHydrated";
 import { createPortal } from "react-dom";
 import Link from "next/link";
 import { ChevronLeft, ChevronRight, Minus, Plus, X } from "lucide-react";
@@ -169,7 +170,8 @@ export function StoreMenuDrawer({
   onClose,
   showAdminDashboardLink = false,
 }: StoreMenuDrawerProps) {
-  const [isMounted, setIsMounted] = useState(false);
+  const isMounted = useHydrated();
+  const [previousOpen, setPreviousOpen] = useState(isOpen);
   const [shouldRender, setShouldRender] = useState(isOpen);
   const [isVisible, setIsVisible] = useState(false);
   const [activePanel, setActivePanel] = useState<MenuPanel | null>(null);
@@ -185,7 +187,6 @@ export function StoreMenuDrawer({
   const closeFromEffect = useEffectEvent(onClose);
 
   useEffect(() => {
-    setIsMounted(true);
     return () => {
       if (panelTimeoutRef.current !== null) {
         window.clearTimeout(panelTimeoutRef.current);
@@ -193,9 +194,14 @@ export function StoreMenuDrawer({
     };
   }, []);
 
+  if (previousOpen !== isOpen) {
+    setPreviousOpen(isOpen);
+    if (isOpen) setShouldRender(true);
+    else setIsVisible(false);
+  }
+
   useEffect(() => {
     if (isOpen) {
-      setShouldRender(true);
       let secondFrame = 0;
       const firstFrame = window.requestAnimationFrame(() => {
         secondFrame = window.requestAnimationFrame(() => setIsVisible(true));
@@ -206,7 +212,6 @@ export function StoreMenuDrawer({
       };
     }
 
-    setIsVisible(false);
     const timeout = window.setTimeout(() => {
       setShouldRender(false);
       setActivePanel(null);

@@ -65,7 +65,7 @@ export function SplitCodeInputWithResend({
           disabled={resendDisabled}
           className="flex items-center gap-1.5 text-zinc-700 transition-colors hover:text-black disabled:cursor-not-allowed disabled:text-zinc-400"
         >
-          <RotateCw className={`w-3 h-3 ${isSending ? "animate-spin" : ""}`} />
+          <RotateCw className={`h-3 w-3 ${isSending ? "animate-spin" : ""}`} />
           <span>
             {isSending
               ? "Sending..."

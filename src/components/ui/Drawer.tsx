@@ -70,17 +70,17 @@ export function Drawer({
         onClick={onClose}
       />
       <div className={panelClasses} role="dialog" aria-modal="true">
-        <div className="flex items-start justify-between gap-4 p-6 border-b border-zinc-800/70">
+        <div className="flex items-start justify-between gap-4 border-b border-zinc-800/70 p-6">
           <div>
             <h2 className="text-xl font-semibold text-white">{title}</h2>
-            {subtitle ? <p className="text-sm text-zinc-400 mt-1">{subtitle}</p> : null}
+            {subtitle ? <p className="mt-1 text-sm text-zinc-400">{subtitle}</p> : null}
           </div>
           <button
             onClick={onClose}
             className="text-gray-400 hover:text-white"
             aria-label="Close"
           >
-            <X className="w-5 h-5" />
+            <X className="h-5 w-5" />
           </button>
         </div>
 

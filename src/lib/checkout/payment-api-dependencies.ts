@@ -1,3 +1,4 @@
+import { validateShippingAddress } from "@/lib/shipping/validate-shipping-address";
 import { env } from "@/config/env";
 import { getServerSession } from "@/lib/auth/session";
 import { assertCheckoutOpen } from "@/lib/checkout/checkout-access";
@@ -83,6 +84,8 @@ export function createDirectPaymentDependencies(
   const getPayments = () => (payments ??= createSquarePaymentsGateway());
 
   return {
+    validateShippingAddress: (address) =>
+      validateShippingAddress(address, env.SHIPPO_API_TOKEN),
     consumePermit: (token) => permits.consume(token),
     loadOrder: (orderId) => reservations.findPaymentCheckout(orderId),
     createPayment: (input) => getPayments().create(input),

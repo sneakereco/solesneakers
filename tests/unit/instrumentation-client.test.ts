@@ -4,7 +4,7 @@ jest.mock("botid/client/core", () => ({
 
 import { initBotId } from "botid/client/core";
 
-import "../../instrumentation-client";
+import "../../src/instrumentation-client";
 
 describe("checkout BotID client protection", () => {
   it("protects quote requests that the server verifies", () => {

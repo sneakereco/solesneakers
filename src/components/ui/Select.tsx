@@ -131,21 +131,21 @@ export function RdkSelect({
     };
   }, [open, activeIndex, onChange, filteredOptions]);
 
-  useEffect(() => {
-    if (!open) {
-      return;
-    }
-    const idx = filteredOptions.findIndex((o) => o.value === value);
-    if (idx >= 0) {
-      setActiveIndex(idx);
-    } else if (filteredOptions.length > 0) {
-      setActiveIndex(0);
-    }
-  }, [filteredOptions, value, open]);
+  const [previousOptions, setPreviousOptions] = useState(filteredOptions);
+  const [previousValue, setPreviousValue] = useState(value);
+  if (previousOptions !== filteredOptions || previousValue !== value) {
+    setPreviousOptions(filteredOptions);
+    setPreviousValue(value);
+    setActiveIndex(
+      Math.max(
+        0,
+        filteredOptions.findIndex((o) => o.value === value),
+      ),
+    );
+  }
 
   useEffect(() => {
     if (!open) {
-      setSearchQuery("");
       return;
     }
     if (searchable) {
@@ -162,7 +162,16 @@ export function RdkSelect({
         disabled={disabled}
         aria-haspopup="listbox"
         aria-expanded={open}
-        onClick={() => setOpen((v) => !v)}
+        onClick={() => {
+          setSearchQuery("");
+          setActiveIndex(
+            Math.max(
+              0,
+              options.findIndex((o) => o.value === value),
+            ),
+          );
+          setOpen((v) => !v);
+        }}
         className={[
           "flex w-full items-center justify-between gap-2",
           "border border-zinc-300 bg-white",

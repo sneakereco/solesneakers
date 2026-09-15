@@ -284,6 +284,7 @@ export type Database = {
       };
       email_audit_log: {
         Row: {
+          notification_id: string | null;
           delivered_at: string | null;
           delivery_status: string;
           email_type: string;
@@ -299,6 +300,7 @@ export type Database = {
           tenant_id: string;
         };
         Insert: {
+          notification_id?: string | null;
           delivered_at?: string | null;
           delivery_status?: string;
           email_type: string;
@@ -314,6 +316,7 @@ export type Database = {
           tenant_id: string;
         };
         Update: {
+          notification_id?: string | null;
           delivered_at?: string | null;
           delivery_status?: string;
           email_type?: string;
@@ -2284,6 +2287,15 @@ export type Database = {
           p_total_cents: number;
         };
         Returns: boolean;
+      };
+      record_shippo_tracking_update: {
+        Args: {
+          p_tracking_number: string;
+          p_status: string;
+          p_carrier: string | null;
+          p_tracking_url: string | null;
+        };
+        Returns: Json;
       };
       claim_checkout_notifications: {
         Args: { p_limit: number };

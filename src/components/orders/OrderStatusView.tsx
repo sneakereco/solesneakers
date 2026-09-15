@@ -21,19 +21,19 @@ export function OrderStatusView({ status }: { status: OrderStatusResponse }) {
     : [];
 
   return (
-    <div className="max-w-4xl mx-auto px-4 py-10">
+    <div className="mx-auto max-w-4xl px-4 py-10">
       <div className="mb-8">
-        <h1 className="text-3xl font-bold text-white mb-2">Order status</h1>
+        <h1 className="mb-2 text-3xl font-bold text-white">Order status</h1>
         <p className="text-gray-400">Order ID: {status.id}</p>
       </div>
 
-      <div className="grid grid-cols-1 lg:grid-cols-3 gap-6">
-        <div className="lg:col-span-2 space-y-6">
-          <div className="bg-zinc-900 border border-zinc-800/70 rounded p-6">
-            <h2 className="text-xl font-semibold text-white mb-4">Status</h2>
+      <div className="grid grid-cols-1 gap-6 lg:grid-cols-3">
+        <div className="space-y-6 lg:col-span-2">
+          <div className="rounded border border-zinc-800/70 bg-zinc-900 p-6">
+            <h2 className="mb-4 text-xl font-semibold text-white">Status</h2>
             <div className="flex items-center justify-between text-gray-400">
               <span>Current</span>
-              <span className="text-white font-semibold capitalize">{status.status}</span>
+              <span className="font-semibold capitalize text-white">{status.status}</span>
             </div>
             <div className="mt-4 space-y-3">
               {status.events.length === 0 ? (
@@ -44,9 +44,9 @@ export function OrderStatusView({ status }: { status: OrderStatusResponse }) {
                 status.events.map((event) => (
                   <div
                     key={`${event.type}-${event.createdAt}`}
-                    className="border border-zinc-800/70 rounded p-4"
+                    className="rounded border border-zinc-800/70 p-4"
                   >
-                    <div className="flex items-center justify-between mb-1">
+                    <div className="mb-1 flex items-center justify-between">
                       <span className="text-sm font-semibold text-white">
                         {formatEventType(event.type)}
                       </span>
@@ -64,8 +64,8 @@ export function OrderStatusView({ status }: { status: OrderStatusResponse }) {
           </div>
 
           {status.fulfillment === "pickup" && instructions.length > 0 && (
-            <div className="bg-zinc-900 border border-zinc-800/70 rounded p-6">
-              <h2 className="text-xl font-semibold text-white mb-3">
+            <div className="rounded border border-zinc-800/70 bg-zinc-900 p-6">
+              <h2 className="mb-3 text-xl font-semibold text-white">
                 Pickup instructions
               </h2>
               <ul className="space-y-2 text-sm text-zinc-400">
@@ -76,9 +76,9 @@ export function OrderStatusView({ status }: { status: OrderStatusResponse }) {
             </div>
           )}
 
-          <div className="bg-zinc-900 border border-zinc-800/70 rounded p-6">
-            <h2 className="text-xl font-semibold text-white mb-3">Need help?</h2>
-            <p className="text-sm text-zinc-400 mb-3">
+          <div className="rounded border border-zinc-800/70 bg-zinc-900 p-6">
+            <h2 className="mb-3 text-xl font-semibold text-white">Need help?</h2>
+            <p className="mb-3 text-sm text-zinc-400">
               Email us at{" "}
               <a
                 className="text-red-400 hover:text-red-300"
@@ -91,20 +91,20 @@ export function OrderStatusView({ status }: { status: OrderStatusResponse }) {
             <p className="text-xs text-zinc-500">
               Prefer socials? DM us on{" "}
               <a
-                href="https://instagram.com/realdealkickzsc"
+                href="https://instagram.com/soles.neakers"
                 className="text-red-400 hover:text-red-300"
                 target="_blank"
                 rel="noreferrer"
               >
-                Instagram @realdealkickzsc
+                Instagram @soles.neakers
               </a>
               .
             </p>
           </div>
         </div>
 
-        <div className="bg-zinc-900 border border-zinc-800/70 rounded p-6 h-fit">
-          <h2 className="text-lg font-semibold text-white mb-4">Order summary</h2>
+        <div className="h-fit rounded border border-zinc-800/70 bg-zinc-900 p-6">
+          <h2 className="mb-4 text-lg font-semibold text-white">Order summary</h2>
           <div className="space-y-2 text-sm text-zinc-400">
             <div className="flex justify-between">
               <span>Subtotal</span>
@@ -122,8 +122,8 @@ export function OrderStatusView({ status }: { status: OrderStatusResponse }) {
               <span>Tax</span>
               <span>${status.tax.toFixed(2)}</span>
             </div>
-            <div className="border-t border-zinc-800/70 pt-2 mt-2">
-              <div className="flex justify-between text-white font-semibold">
+            <div className="mt-2 border-t border-zinc-800/70 pt-2">
+              <div className="flex justify-between font-semibold text-white">
                 <span>Total</span>
                 <span>${status.total.toFixed(2)}</span>
               </div>

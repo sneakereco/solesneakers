@@ -3,14 +3,17 @@ import { renderToStaticMarkup } from "react-dom/server";
 import {
   assertWalletTotalUnchanged,
   bindWalletShippingContact,
+  initializePaymentMethodsConcurrently,
   resolveBillingAddress,
   squareBillingContact,
-  squareCardStyle,
   SquarePaymentMethods,
   turnstileErrorMessage,
+  walletBillingAddress,
   walletPaymentTotal,
   walletShippingAddress,
 } from "@/components/checkout/SquarePaymentMethods";
+import { squareCardStyle } from "@/components/checkout/square-card-style";
+import { initializeSquareCard } from "@/components/checkout/square-card-initialization";
 
 const paymentConfig = {
   applicationId: "sandbox-app",
@@ -19,6 +22,30 @@ const paymentConfig = {
 };
 
 describe("SquarePaymentMethods", () => {
+  it("does not register shipping callbacks for pickup wallets", () => {
+    const request = { addEventListener: jest.fn() };
+    bindWalletShippingContact(request, jest.fn(), undefined, "pickup");
+    expect(request.addEventListener).not.toHaveBeenCalled();
+  });
+  it("uses only a complete, explicitly entered fallback for missing wallet billing", () => {
+    const fallback = {
+      givenName: "Ada",
+      familyName: "Lovelace",
+      phone: "",
+      line1: "1 Billing St",
+      line2: "",
+      city: "Charleston",
+      state: "SC",
+      postalCode: "29401",
+      country: "US",
+    };
+    expect(walletBillingAddress(undefined, fallback)).toMatchObject({
+      line1: "1 Billing St",
+      phone: null,
+      line2: null,
+    });
+    expect(walletBillingAddress(undefined, { ...fallback, postalCode: "" })).toBeNull();
+  });
   it("builds Square verification contact from cardholder and billing data", () => {
     expect(
       squareBillingContact({
@@ -109,12 +136,58 @@ describe("SquarePaymentMethods", () => {
   });
 
   it("uses supported Square selectors for the checkout card style", () => {
-    expect(squareCardStyle[".input-container.is-focus"]).toEqual(
-      expect.objectContaining({ borderColor: "#18181b" }),
+    expect(squareCardStyle[".input-container"]).toEqual({
+      borderColor: "#dedede",
+      borderRadius: "12px",
+      borderWidth: "1px",
+    });
+    expect(squareCardStyle[".input-container.is-focus"]).toEqual({
+      borderColor: "#1773b0",
+      borderWidth: "1px",
+    });
+    expect(squareCardStyle[".input-container.is-error"]).toEqual({
+      borderColor: "#d92d39",
+      borderWidth: "2px",
+    });
+    expect(JSON.stringify(squareCardStyle)).not.toContain("boxShadow");
+    expect(squareCardStyle.input).toEqual(expect.objectContaining({ fontSize: "16px" }));
+    expect(squareCardStyle["input::placeholder"]).toEqual({ color: "#737373" });
+  });
+
+  it("publishes Square Payments before a card attachment failure", async () => {
+    const attachError = new Error("card attach failed");
+    const payments = {
+      card: jest.fn().mockResolvedValue({
+        attach: jest.fn().mockRejectedValue(attachError),
+        tokenize: jest.fn(),
+      }),
+    };
+    const onPaymentsReady = jest.fn();
+
+    await expect(initializeSquareCard(payments, onPaymentsReady)).rejects.toBe(
+      attachError,
     );
-    expect(squareCardStyle[".input-container.is-error"]).toEqual(
-      expect.objectContaining({ borderColor: "#b45309" }),
-    );
+    expect(onPaymentsReady).toHaveBeenCalledWith(payments);
+  });
+
+  it("starts optional payment methods independently", async () => {
+    const started: string[] = [];
+    let finishApplePay: (() => void) | undefined;
+    const pending = initializePaymentMethodsConcurrently([
+      () =>
+        new Promise<void>((resolve) => {
+          started.push("applePay");
+          finishApplePay = resolve;
+        }),
+      () => {
+        started.push("googlePay");
+        return Promise.resolve();
+      },
+    ]);
+
+    expect(started).toEqual(["applePay", "googlePay"]);
+    finishApplePay?.();
+    await pending;
   });
 
   it("blocks prepare when the final address changes the wallet-approved total", () => {
@@ -248,6 +321,32 @@ describe("SquarePaymentMethods", () => {
     });
   });
 
+  it("normalizes a complete wallet billing contact for the order snapshot", () => {
+    expect(
+      walletBillingAddress({
+        givenName: "Ada",
+        familyName: "Lovelace",
+        phone: "3025550100",
+        addressLines: ["1 Billing St", "Suite 2"],
+        city: "Wilmington",
+        state: "de",
+        postalCode: "19801",
+        countryCode: "US",
+      }),
+    ).toEqual({
+      givenName: "Ada",
+      familyName: "Lovelace",
+      phone: "3025550100",
+      line1: "1 Billing St",
+      line2: "Suite 2",
+      city: "Wilmington",
+      state: "DE",
+      postalCode: "19801",
+      country: "US",
+    });
+    expect(walletBillingAddress({ postalCode: "19801", countryCode: "US" })).toBeNull();
+  });
+
   it("identifies an unauthorized Turnstile hostname as terminal configuration", () => {
     expect(turnstileErrorMessage("110200")).toBe(
       "Guest verification is not configured for this checkout hostname.",
@@ -276,14 +375,13 @@ describe("SquarePaymentMethods", () => {
     expect(html).toContain('id="square-cash-app-pay-container"');
     expect(html).toContain('id="square-card-container"');
     expect(html).toContain('id="square-afterpay-container"');
+    expect(html).toContain('id="checkout-turnstile-container"');
     expect(html).toContain('role="radiogroup"');
-    expect(html).toContain('aria-label="Visa"');
-    expect(html).toContain('aria-label="Mastercard"');
-    expect(html).toContain('aria-label="American Express"');
-    expect(html).toContain("+5");
-    expect(html).toContain("Use shipping address as billing address");
+    expect(html).not.toMatch(/aria-label="(?:Visa|Mastercard|American Express)"/);
+    expect(html).not.toContain("+5");
+    expect(html).toContain("Same as shipping address");
     expect(html.indexOf("Credit card")).toBeLessThan(html.indexOf("Afterpay"));
-    expect(html).toContain("Calculated after address");
+    expect(html).not.toContain("Shipping and tax are calculated in your wallet.");
     expect(html).toContain("Pay now");
   });
 
@@ -318,5 +416,6 @@ describe("SquarePaymentMethods", () => {
     expect(html).not.toContain("PayPal");
     expect(html).not.toContain("Klarna");
     expect(html).not.toContain("Venmo");
+    expect(html).not.toContain('id="checkout-turnstile-container"');
   });
 });

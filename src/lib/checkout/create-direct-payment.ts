@@ -1,12 +1,20 @@
 import type { NextRequest } from "next/server";
 
-import { directPaymentRequestSchema } from "@/lib/checkout/checkout-request";
+import {
+  checkoutShippingAddressSchema,
+  directPaymentRequestSchema,
+} from "@/lib/checkout/checkout-request";
 import type { PaymentPermitPayload } from "@/lib/checkout/payment-permit";
 import type { CheckoutAttemptDecision } from "@/lib/checkout/checkout-attempt-limit";
 import type { DirectPaymentInput, DirectPaymentResult } from "@/lib/square/payments";
+import type {
+  ShippingAddress,
+  ShippingValidationResult,
+} from "@/lib/checkout/shipping-address-validation";
 import type { PaymentCheckout } from "@/repositories/checkout-reservation-repo";
 
 export type CreateDirectPaymentDependencies = {
+  validateShippingAddress(address: ShippingAddress): Promise<ShippingValidationResult>;
   consumePermit(token: string): Promise<PaymentPermitPayload | null>;
   loadOrder(orderId: string): Promise<PaymentCheckout | null>;
   createPayment(input: DirectPaymentInput): Promise<DirectPaymentResult>;
@@ -37,6 +45,7 @@ function matches(order: PaymentCheckout, permit: PaymentPermitPayload, now: Date
     order.deviceSessionId === permit.deviceSessionId &&
     order.status === "pending" &&
     Boolean(order.squareOrderId) &&
+    Boolean(order.billingAddress) &&
     Number.isFinite(expiresAt) &&
     expiresAt > now.getTime()
   );
@@ -70,6 +79,46 @@ export async function createDirectPaymentHandler(
       return json({ error: "Checkout details changed; start again" }, 409);
     }
 
+    // Require a complete stored address for every shipment. Express wallets supply
+    // their destination directly; only other methods require Shippo deliverability.
+    if (order.fulfillment === "ship") {
+      const address = checkoutShippingAddressSchema.safeParse(order.shippingAddress);
+      if (!address.success) {
+        return json(
+          {
+            error:
+              "Shipping address needs verification. Return to checkout and review it. You have not been charged.",
+          },
+          409,
+        );
+      }
+      if (permit.method !== "applePay" && permit.method !== "googlePay") {
+        let validation: ShippingValidationResult;
+        try {
+          validation = await deps.validateShippingAddress(address.data);
+        } catch {
+          return json(
+            {
+              error:
+                "Address verification is temporarily unavailable. Please retry. You have not been charged.",
+            },
+            503,
+          );
+        }
+        if (validation.status !== "valid") {
+          return json(
+            {
+              error:
+                validation.status === "unavailable"
+                  ? "Address verification is temporarily unavailable. Please retry. You have not been charged."
+                  : "Shipping address needs verification. Return to checkout and review it. You have not been charged.",
+            },
+            validation.status === "unavailable" ? 503 : 409,
+          );
+        }
+      }
+    }
+
     const payment = await deps.createPayment({
       localOrderId: order.orderId,
       squareOrderId: order.squareOrderId!,
@@ -77,6 +126,7 @@ export async function createDirectPaymentHandler(
       idempotencyKey: permit.squareIdempotencyKey,
       totalCents: permit.totalCents,
       shippingAddress: order.shippingAddress,
+      billingAddress: order.billingAddress,
     });
     if (payment.status === "CANCELED" || payment.status === "FAILED") {
       await deps.recordDecline({

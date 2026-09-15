@@ -8,7 +8,7 @@ jest.mock("@/repositories/product-repo", () => ({
   ProductRepository: jest.fn().mockImplementation(() => ({ getVariantsForCart })),
 }));
 
-import { POST } from "../../app/api/cart/validate/route";
+import { POST } from "../../src/app/api/cart/validate/route";
 
 describe("POST /api/cart/validate", () => {
   it("reports an upstream outage without logging the provider response body", async () => {

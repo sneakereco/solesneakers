@@ -12,6 +12,7 @@ jest.mock("@/components/cart/CartProvider", () => ({
         imageUrl: "https://images.example.com/air-runner.jpg",
       },
     ],
+    itemCount: 1,
     total: 10000,
     isReady: true,
   }),
@@ -93,10 +94,14 @@ describe("CheckoutClient", () => {
     );
 
     expect(html).toContain("Contact");
+    expect(html).toContain("data-checkout");
+    expect(html).toContain('aria-label="Go to cart, 1 item"');
+    expect(html).toContain('href="/cart"');
     expect(html).toContain("Delivery");
     expect(html).toContain("Payment");
-    expect(html).toContain("Shipping");
-    expect(html).toContain("Local pickup");
+    expect(html).toContain("Ship");
+    expect(html).toContain("Pickup");
+    expect(html).not.toContain('href="/auth/login?next=%2Fcheckout"');
     expect(html).toContain('type="email"');
     expect(html).toContain('value="buyer@example.com"');
     expect(html).toContain('value="1 Market St"');
@@ -107,10 +112,24 @@ describe("CheckoutClient", () => {
     expect(html).toContain("Tax");
     expect(html).toContain("Estimated total");
     expect(html).toContain("air-runner.jpg");
+    expect(html).toContain('<h1 class="sr-only">Checkout</h1>');
+    expect(html.indexOf("Order summary")).toBeLessThan(html.indexOf("Contact"));
     expect(html).not.toContain("Continue to secure payment");
     expect(html).not.toContain("Update order");
     expect(html).not.toContain("news and offers");
     expect(html).not.toContain("Shipping method");
     expect(html).not.toContain("Save my information");
+    for (const excluded of [
+      "Other Also Bought",
+      "unlocked free",
+      "Shipping Insurance",
+      "Protection Coverage",
+      "Discount code",
+      "Email me with news",
+      "Text me with news",
+      "5-Star Reviews",
+    ]) {
+      expect(html).not.toContain(excluded);
+    }
   });
 });

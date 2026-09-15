@@ -1,4 +1,5 @@
 import { prepareCheckoutHandler } from "@/lib/checkout/prepare-checkout";
+import { createCheckoutQuoteFingerprint } from "@/lib/checkout/checkout-quote-fingerprint";
 
 const PRODUCT_ID = "11111111-1111-4111-8111-111111111111";
 const VARIANT_ID = "22222222-2222-4222-8222-222222222222";
@@ -60,6 +61,11 @@ function dependencies() {
     sizeLabel: "10",
   };
   return {
+    shippingConfirmationSecret: () => "test-secret-for-shipping-confirmations",
+    checkAddressValidationAttempt: jest
+      .fn()
+      .mockResolvedValue({ allowed: true, retryAfterSeconds: null }),
+    validateShippingAddress: jest.fn().mockResolvedValue({ status: "valid" }),
     findTenantId: jest.fn().mockResolvedValue("tenant-1"),
     getAccess: jest.fn().mockResolvedValue({ open: true }),
     verifyBrowser: jest.fn().mockResolvedValue({ allowed: true, reason: "passed" }),
@@ -195,5 +201,147 @@ describe("prepareCheckoutHandler", () => {
       "order-1",
       "square_order_totals_changed",
     );
+  });
+});
+
+describe("shipping deliverability gate", () => {
+  it("continues an accepted suggestion without another address check or quota", async () => {
+    const deps = dependencies();
+    const body = await (request() as Request).json();
+    const suggestedAddress = { ...body.shippingAddress, line1: "1 Main St" };
+    deps.validateShippingAddress.mockResolvedValue({
+      status: "suggestion",
+      address: suggestedAddress,
+    });
+    const first = await prepareCheckoutHandler(request(), deps);
+    const review = await first.json();
+    expect(typeof review.shippingConfirmation).toBe("string");
+    const response = await prepareCheckoutHandler(
+      new Request("https://shop.example.com/api/checkout/prepare", {
+        method: "POST",
+        body: JSON.stringify({
+          ...body,
+          shippingAddress: suggestedAddress,
+          shippingConfirmation: review.shippingConfirmation,
+          quoteFingerprint: createCheckoutQuoteFingerprint({
+            items: [{ variantId: VARIANT_ID, quantity: 1, unitPriceCents: 10000 }],
+            fulfillment: "ship",
+            shippingAddress: suggestedAddress,
+            totals: {
+              subtotalCents: 10000,
+              shippingCents: 1000,
+              taxCents: 800,
+              totalCents: 11800,
+            },
+          }),
+        }),
+      }) as never,
+      deps,
+    );
+    expect(response.status).toBe(201);
+    expect(deps.validateShippingAddress).toHaveBeenCalledTimes(1);
+    expect(deps.checkAddressValidationAttempt).toHaveBeenCalledTimes(1);
+    expect(deps.checkAttempt).toHaveBeenCalledTimes(1);
+  });
+  it.each(["applePay", "googlePay"])(
+    "prepares %s without Shippo or its quota",
+    async (paymentMethod) => {
+      const deps = dependencies();
+      deps.validateShippingAddress.mockRejectedValue(new Error("Shippo unavailable"));
+      deps.checkAddressValidationAttempt.mockResolvedValue({
+        allowed: false,
+        retryAfterSeconds: 60,
+      });
+      const body = await (request() as Request).json();
+      const response = await prepareCheckoutHandler(
+        new Request("https://shop.example.com/api/checkout/prepare", {
+          method: "POST",
+          body: JSON.stringify({ ...body, paymentMethod }),
+        }) as never,
+        deps,
+      );
+      expect(response.status).toBe(201);
+      expect(deps.validateShippingAddress).not.toHaveBeenCalled();
+      expect(deps.checkAddressValidationAttempt).not.toHaveBeenCalled();
+      expect(deps.reserve).toHaveBeenCalledWith(
+        expect.objectContaining({ shippingAddress: body.shippingAddress, paymentMethod }),
+      );
+    },
+  );
+  it.each(["card", "afterpay", "cashAppPay"])(
+    "blocks invalid %s destinations before reservation or Square",
+    async (paymentMethod) => {
+      const deps = dependencies();
+      deps.validateShippingAddress.mockResolvedValue({ status: "invalid" });
+      const body = await (request() as Request).json();
+      const response = await prepareCheckoutHandler(
+        new Request("https://shop.example.com/api/checkout/prepare", {
+          method: "POST",
+          body: JSON.stringify({ ...body, paymentMethod }),
+        }) as never,
+        deps,
+      );
+      expect(response.status).toBe(422);
+      expect(await response.json()).toMatchObject({ code: "SHIPPING_ADDRESS_INVALID" });
+      expect(deps.reserve).not.toHaveBeenCalled();
+      expect(deps.calculateSquareOrder).not.toHaveBeenCalled();
+      expect(deps.createSquareOrder).not.toHaveBeenCalled();
+    },
+  );
+  it("returns a suggested address without reserving inventory", async () => {
+    const deps = dependencies();
+    const body = await (request() as Request).json();
+    const suggestedAddress = { ...body.shippingAddress, line1: "1 Main St" };
+    deps.validateShippingAddress.mockResolvedValue({
+      status: "suggestion",
+      address: suggestedAddress,
+    });
+    const response = await prepareCheckoutHandler(request(), deps);
+    expect(response.status).toBe(422);
+    expect(await response.json()).toMatchObject({
+      code: "SHIPPING_ADDRESS_SUGGESTION",
+      suggestedAddress,
+    });
+    expect(deps.reserve).not.toHaveBeenCalled();
+    expect(deps.checkAttempt).not.toHaveBeenCalled();
+  });
+  it("fails closed when Shippo is unavailable", async () => {
+    const deps = dependencies();
+    deps.validateShippingAddress.mockResolvedValue({ status: "unavailable" });
+    const response = await prepareCheckoutHandler(request(), deps);
+    expect(response.status).toBe(503);
+    expect(await response.json()).toMatchObject({ code: "SHIPPING_ADDRESS_UNAVAILABLE" });
+    expect(deps.reserve).not.toHaveBeenCalled();
+  });
+  it("checks shipping even when an existing order could be reused", async () => {
+    const deps = dependencies();
+    deps.findExisting.mockResolvedValue({ squareOrderId: "existing" });
+    deps.validateShippingAddress.mockResolvedValue({ status: "invalid" });
+    const response = await prepareCheckoutHandler(request(), deps);
+    expect(response.status).toBe(422);
+  });
+  it("stops rate-limited address checks before contacting Shippo", async () => {
+    const deps = dependencies();
+    deps.checkAddressValidationAttempt.mockResolvedValue({
+      allowed: false,
+      retryAfterSeconds: 60,
+    });
+    const response = await prepareCheckoutHandler(request(), deps);
+    expect(response.status).toBe(429);
+    expect(response.headers.get("Retry-After")).toBe("60");
+    expect(deps.validateShippingAddress).not.toHaveBeenCalled();
+    expect(deps.checkAttempt).not.toHaveBeenCalled();
+  });
+  it("skips Shippo for pickup", async () => {
+    const deps = dependencies();
+    const body = await (request() as Request).json();
+    await prepareCheckoutHandler(
+      new Request("https://shop.example.com/api/checkout/prepare", {
+        method: "POST",
+        body: JSON.stringify({ ...body, fulfillment: "pickup", shippingAddress: null }),
+      }) as never,
+      deps,
+    );
+    expect(deps.validateShippingAddress).not.toHaveBeenCalled();
   });
 });

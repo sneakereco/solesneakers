@@ -79,7 +79,9 @@ export function AdminSidebar({
     settings: false,
   });
 
-  useEffect(() => {
+  const [previousPathname, setPreviousPathname] = useState<string | null>(null);
+  if (previousPathname !== pathname) {
+    setPreviousPathname(pathname);
     setOpenGroups((current) => ({
       commerce:
         current.commerce ||
@@ -89,7 +91,7 @@ export function AdminSidebar({
       settings: current.settings || pathname.startsWith("/admin/settings"),
     }));
     setIsOpen(false);
-  }, [pathname]);
+  }
 
   useEffect(() => {
     if (!isOpen) {
@@ -117,7 +119,7 @@ export function AdminSidebar({
           <span className="block text-[0.58rem] font-semibold uppercase tracking-[0.38em] text-zinc-500">
             Management
           </span>
-          <span className="mt-2 block text-xl font-bold italic uppercase tracking-[-0.045em] text-white">
+          <span className="mt-2 block text-xl font-bold uppercase italic tracking-[-0.045em] text-white">
             Solesneakers
           </span>
         </Link>

@@ -14,7 +14,7 @@ import { requireAdminApi } from "@/lib/auth/session";
 import { createSupabaseAdminClient } from "@/lib/supabase/service-role";
 import { ShippingCarriersRepository } from "@/repositories/shipping-carriers-repo";
 
-import { GET, POST } from "../../app/api/admin/shipping/carriers/route";
+import { GET, POST } from "../../src/app/api/admin/shipping/carriers/route";
 
 const mockRequireAdminApi = jest.mocked(requireAdminApi);
 const mockCreateSupabaseAdminClient = jest.mocked(createSupabaseAdminClient);

@@ -116,6 +116,7 @@ export const prepareCheckoutRequestSchema = z
     idempotencyKey: z.string().uuid(),
     deviceSessionId: z.string().uuid(),
     paymentMethod: paymentMethodSchema,
+    shippingConfirmation: z.string().max(100).optional(),
     quoteFingerprint: z.string().regex(/^[a-f0-9]{64}$/),
     buyerEmail: z.string().trim().toLowerCase().email().max(254).nullable().optional(),
     shippingAddress: checkoutShippingAddressSchema.nullable(),
@@ -139,14 +140,11 @@ export const prepareCheckoutRequestSchema = z
         message: "Pickup checkout must not include a shipping address",
       });
     }
-    if (
-      (value.paymentMethod === "card" || value.paymentMethod === "afterpay") &&
-      !value.billingAddress
-    ) {
+    if (!value.billingAddress) {
       context.addIssue({
         code: "custom",
         path: ["billingAddress"],
-        message: "Card and Afterpay checkout require a billing address",
+        message: "Checkout requires a billing address",
       });
     }
   });

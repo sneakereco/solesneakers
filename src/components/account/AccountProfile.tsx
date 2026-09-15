@@ -2,6 +2,7 @@
 "use client";
 
 import { useState, useEffect } from "react";
+import { useRouter } from "next/navigation";
 import { Eye, EyeOff } from "lucide-react";
 
 import type { Tables } from "@/types/db/database.types";
@@ -59,6 +60,7 @@ const textButtonClassName =
   "text-xs font-medium uppercase tracking-[0.1em] text-zinc-500 transition-colors hover:text-black disabled:cursor-not-allowed disabled:opacity-50";
 
 export function AccountProfile({ userEmail }: { userEmail: string }) {
+  const router = useRouter();
   const [profile, setProfile] = useState<Partial<ShippingProfile>>({});
   const [isLoading, setIsLoading] = useState(false);
   const [message, setMessage] = useState("");
@@ -71,10 +73,10 @@ export function AccountProfile({ userEmail }: { userEmail: string }) {
     tone: "success" | "error" | "info";
   } | null>(null);
   const [orders, setOrders] = useState<AccountOrder[]>([]);
-  const [isOrdersLoading, setIsOrdersLoading] = useState(false);
+  const [isOrdersLoading, setIsOrdersLoading] = useState(true);
   const [isSigningOut, setIsSigningOut] = useState(false);
   const [addresses, setAddresses] = useState<AccountAddress[]>([]);
-  const [isAddressesLoading, setIsAddressesLoading] = useState(false);
+  const [isAddressesLoading, setIsAddressesLoading] = useState(true);
   const [isAddressSaving, setIsAddressSaving] = useState(false);
   const [isDefaultSaving, setIsDefaultSaving] = useState(false);
   const [setAsDefault, setSetAsDefault] = useState(false);
@@ -90,33 +92,44 @@ export function AccountProfile({ userEmail }: { userEmail: string }) {
   });
 
   useEffect(() => {
-    loadProfile();
-    loadOrders();
-    loadAddresses();
+    const loadProfile = async () => {
+      try {
+        const response = await fetch("/api/account/shipping");
+        const data = await response.json();
+        setProfile(data);
+      } catch (error) {
+        logError(error, { layer: "frontend", event: "account_load_profile" });
+      }
+    };
+
+    const loadOrders = async () => {
+      try {
+        const response = await fetch("/api/account/orders");
+        const data = await response.json();
+        setOrders(data.orders || []);
+      } catch (error) {
+        logError(error, { layer: "frontend", event: "account_load_orders" });
+      } finally {
+        setIsOrdersLoading(false);
+      }
+    };
+
+    const loadAddresses = async () => {
+      try {
+        const response = await fetch("/api/account/addresses");
+        const data = await response.json();
+        setAddresses(data.addresses || []);
+      } catch (error) {
+        logError(error, { layer: "frontend", event: "account_load_addresses" });
+      } finally {
+        setIsAddressesLoading(false);
+      }
+    };
+
+    void loadProfile();
+    void loadOrders();
+    void loadAddresses();
   }, []);
-
-  const loadProfile = async () => {
-    try {
-      const response = await fetch("/api/account/shipping");
-      const data = await response.json();
-      setProfile(data);
-    } catch (error) {
-      logError(error, { layer: "frontend", event: "account_load_profile" });
-    }
-  };
-
-  const loadOrders = async () => {
-    setIsOrdersLoading(true);
-    try {
-      const response = await fetch("/api/account/orders");
-      const data = await response.json();
-      setOrders(data.orders || []);
-    } catch (error) {
-      logError(error, { layer: "frontend", event: "account_load_orders" });
-    } finally {
-      setIsOrdersLoading(false);
-    }
-  };
 
   const formatField = (value?: string | null) => (value ?? "").trim().toLowerCase();
 
@@ -264,19 +277,6 @@ export function AccountProfile({ userEmail }: { userEmail: string }) {
     }
   };
 
-  const loadAddresses = async () => {
-    setIsAddressesLoading(true);
-    try {
-      const response = await fetch("/api/account/addresses");
-      const data = await response.json();
-      setAddresses(data.addresses || []);
-    } catch (error) {
-      logError(error, { layer: "frontend", event: "account_load_addresses" });
-    } finally {
-      setIsAddressesLoading(false);
-    }
-  };
-
   const handleSaveAddress = async (e: React.FormEvent) => {
     e.preventDefault();
     setIsAddressSaving(true);
@@ -385,7 +385,8 @@ export function AccountProfile({ userEmail }: { userEmail: string }) {
     setIsSigningOut(true);
     try {
       await fetch("/api/auth/logout", { method: "POST" });
-      window.location.href = "/";
+      router.replace("/");
+      router.refresh();
     } catch {
       setMessage("Failed to log out. Please try again.");
     } finally {
@@ -472,7 +473,7 @@ export function AccountProfile({ userEmail }: { userEmail: string }) {
                       Default shipping address
                     </p>
                     {profile.address_line1 ? (
-                      <address className="mt-4 space-y-1 not-italic text-sm leading-6 text-zinc-700">
+                      <address className="mt-4 space-y-1 text-sm not-italic leading-6 text-zinc-700">
                         {profile.full_name ? (
                           <div className="font-semibold text-black">
                             {profile.full_name}
@@ -529,7 +530,7 @@ export function AccountProfile({ userEmail }: { userEmail: string }) {
                         }`}
                       >
                         <div className="flex items-start justify-between gap-5">
-                          <address className="space-y-1 not-italic text-sm leading-6 text-zinc-700">
+                          <address className="space-y-1 text-sm not-italic leading-6 text-zinc-700">
                             <div className="flex flex-wrap items-center gap-3 font-semibold text-black">
                               <span>{address.name || "Saved Address"}</span>
                               {isDefaultAddress(address) ? (

@@ -1,7 +1,7 @@
 // src/components/admin/shipping/CreateLabelForm.tsx
 "use client";
 
-import { useEffect, useMemo, useState } from "react";
+import { useMemo, useState } from "react";
 import { X, AlertCircle, CheckCircle2 } from "lucide-react";
 
 import { ModalPortal } from "@/components/ui/ModalPortal";
@@ -195,10 +195,10 @@ export function CreateLabelForm({
   const [validationStatus, setValidationStatus] =
     useState<AddressValidationStatus>("idle");
 
-  const [weightInput, setWeightInput] = useState<string>("16");
-  const [lengthInput, setLengthInput] = useState<string>("12");
-  const [widthInput, setWidthInput] = useState<string>("12");
-  const [heightInput, setHeightInput] = useState<string>("12");
+  const [weightInput, setWeightInput] = useState<string>(String(initialParcel.weight));
+  const [lengthInput, setLengthInput] = useState<string>(String(initialParcel.length));
+  const [widthInput, setWidthInput] = useState<string>(String(initialParcel.width));
+  const [heightInput, setHeightInput] = useState<string>(String(initialParcel.height));
 
   const [shipmentId, setShipmentId] = useState<string | null>(null);
   const [rates, setRates] = useState<EasyPostRate[]>([]);
@@ -210,10 +210,17 @@ export function CreateLabelForm({
   const [error, setError] = useState<string>("");
   const [success, setSuccess] = useState<string>("");
 
-  useEffect(() => {
-    if (!open) {
-      return;
-    }
+  const [previousInputs, setPreviousInputs] = useState({
+    open,
+    initialRecipient,
+    initialParcel,
+  });
+  if (
+    previousInputs.open !== open ||
+    previousInputs.initialRecipient !== initialRecipient ||
+    previousInputs.initialParcel !== initialParcel
+  ) {
+    setPreviousInputs({ open, initialRecipient, initialParcel });
     setRecipient(initialRecipient);
     setParcel(initialParcel);
     setAddressErrors({});
@@ -231,23 +238,7 @@ export function CreateLabelForm({
     setIsPurchasing(false);
     setError("");
     setSuccess("");
-  }, [open, initialRecipient, initialParcel]);
-
-  // Validate address on change
-  useEffect(() => {
-    if (validationStatus === "idle") {
-      return;
-    }
-
-    const errors = validateAddress(recipient);
-    setAddressErrors(errors);
-
-    if (Object.keys(errors).length === 0) {
-      setValidationStatus("valid");
-    } else {
-      setValidationStatus("invalid");
-    }
-  }, [recipient, validationStatus]);
+  }
 
   if (!open || !order || !orderId) {
     return null;
@@ -287,8 +278,8 @@ export function CreateLabelForm({
 
     const errors = validateAddress(recipient);
     setAddressErrors(errors);
+    setValidationStatus(Object.keys(errors).length > 0 ? "invalid" : "valid");
     if (Object.keys(errors).length > 0) {
-      setValidationStatus("invalid");
       return "Please fix the address errors before continuing.";
     }
 
@@ -420,13 +411,13 @@ export function CreateLabelForm({
   return (
     <ModalPortal open={open} onClose={onClose}>
       <div
-        className="w-full max-w-6xl rounded-lg border border-zinc-800/70 bg-zinc-950 max-h-[90vh] overflow-y-auto"
+        className="max-h-[90vh] w-full max-w-6xl overflow-y-auto rounded-lg border border-zinc-800/70 bg-zinc-950"
         onMouseDown={(e) => e.stopPropagation()}
       >
-        <div className="flex items-start justify-between gap-4 border-b border-zinc-800/70 p-5 sticky top-0 bg-zinc-950 z-10">
+        <div className="sticky top-0 z-10 flex items-start justify-between gap-4 border-b border-zinc-800/70 bg-zinc-950 p-5">
           <div>
-            <div className="text-white text-lg font-semibold">Create shipping label</div>
-            <div className="text-xs text-zinc-500 mt-1">
+            <div className="text-lg font-semibold text-white">Create shipping label</div>
+            <div className="mt-1 text-xs text-zinc-500">
               Order #{String(orderId).slice(0, 8)}
             </div>
           </div>
@@ -439,16 +430,16 @@ export function CreateLabelForm({
           </button>
         </div>
 
-        <div className="grid grid-cols-1 lg:grid-cols-2 gap-0">
+        <div className="grid grid-cols-1 gap-0 lg:grid-cols-2">
           {/* LEFT: details */}
-          <div className="p-5 space-y-6 border-b lg:border-b-0 lg:border-r border-zinc-800/70">
+          <div className="space-y-6 border-b border-zinc-800/70 p-5 lg:border-b-0 lg:border-r">
             <div className="space-y-1">
               <div className="text-xs uppercase tracking-wide text-zinc-500">
                 Shipping from
               </div>
               <div className="text-sm text-zinc-200">{originLine ?? "Not set"}</div>
               {!originLine && (
-                <div className="text-xs text-red-400 mt-1">
+                <div className="mt-1 text-xs text-red-400">
                   ⚠ Set origin in Shipping Settings
                 </div>
               )}
@@ -461,128 +452,128 @@ export function CreateLabelForm({
                 </div>
                 {validationStatus === "valid" && (
                   <div className="flex items-center gap-1 text-xs text-green-400">
-                    <CheckCircle2 className="w-3 h-3" />
+                    <CheckCircle2 className="h-3 w-3" />
                     Valid address
                   </div>
                 )}
                 {validationStatus === "invalid" && hasAddressErrors && (
                   <div className="flex items-center gap-1 text-xs text-red-400">
-                    <AlertCircle className="w-3 h-3" />
+                    <AlertCircle className="h-3 w-3" />
                     Fix errors below
                   </div>
                 )}
               </div>
 
-              <div className="grid grid-cols-2 md:grid-cols-2 gap-2 sm:gap-3 text-[11px] sm:text-sm">
+              <div className="grid grid-cols-2 gap-2 text-[11px] sm:gap-3 sm:text-sm md:grid-cols-2">
                 <div>
-                  <label className="block text-gray-400 mb-0.5">Name</label>
+                  <label className="mb-0.5 block text-gray-400">Name</label>
                   <input
                     type="text"
                     value={recipient.name}
                     readOnly
-                    className="w-full bg-zinc-900 border border-zinc-800/70 text-white px-2 py-1.5 text-[12px] sm:text-sm"
+                    className="w-full border border-zinc-800/70 bg-zinc-900 px-2 py-1.5 text-[12px] text-white sm:text-sm"
                   />
                 </div>
                 <div>
-                  <label className="block text-gray-400 mb-0.5">Phone *</label>
+                  <label className="mb-0.5 block text-gray-400">Phone *</label>
                   <input
                     type="text"
                     value={recipient.phone}
                     readOnly
-                    className={`w-full bg-zinc-900 border text-white px-2 py-1.5 text-[12px] sm:text-sm ${
+                    className={`w-full border bg-zinc-900 px-2 py-1.5 text-[12px] text-white sm:text-sm ${
                       addressErrors.phone ? "border-red-500" : "border-zinc-800/70"
                     }`}
                   />
                   {addressErrors.phone && (
-                    <div className="text-xs text-red-400 mt-1">{addressErrors.phone}</div>
+                    <div className="mt-1 text-xs text-red-400">{addressErrors.phone}</div>
                   )}
                 </div>
 
                 <div className="md:col-span-2">
-                  <label className="block text-gray-400 mb-0.5">Address line 1 *</label>
+                  <label className="mb-0.5 block text-gray-400">Address line 1 *</label>
                   <input
                     type="text"
                     value={recipient.line1}
                     readOnly
-                    className={`w-full bg-zinc-900 border text-white px-2 py-1.5 text-[12px] sm:text-sm ${
+                    className={`w-full border bg-zinc-900 px-2 py-1.5 text-[12px] text-white sm:text-sm ${
                       addressErrors.line1 ? "border-red-500" : "border-zinc-800/70"
                     }`}
                   />
                   {addressErrors.line1 && (
-                    <div className="text-xs text-red-400 mt-1">{addressErrors.line1}</div>
+                    <div className="mt-1 text-xs text-red-400">{addressErrors.line1}</div>
                   )}
                 </div>
                 <div className="md:col-span-2">
-                  <label className="block text-gray-400 mb-0.5">Address line 2</label>
+                  <label className="mb-0.5 block text-gray-400">Address line 2</label>
                   <input
                     type="text"
                     value={recipient.line2}
                     readOnly
-                    className="w-full bg-zinc-900 border border-zinc-800/70 text-white px-2 py-1.5 text-[12px] sm:text-sm"
+                    className="w-full border border-zinc-800/70 bg-zinc-900 px-2 py-1.5 text-[12px] text-white sm:text-sm"
                   />
                 </div>
 
                 <div>
-                  <label className="block text-gray-400 mb-0.5">City *</label>
+                  <label className="mb-0.5 block text-gray-400">City *</label>
                   <input
                     type="text"
                     value={recipient.city}
                     readOnly
-                    className={`w-full bg-zinc-900 border text-white px-2 py-1.5 text-[12px] sm:text-sm ${
+                    className={`w-full border bg-zinc-900 px-2 py-1.5 text-[12px] text-white sm:text-sm ${
                       addressErrors.city ? "border-red-500" : "border-zinc-800/70"
                     }`}
                   />
                   {addressErrors.city && (
-                    <div className="text-xs text-red-400 mt-1">{addressErrors.city}</div>
+                    <div className="mt-1 text-xs text-red-400">{addressErrors.city}</div>
                   )}
                 </div>
                 <div>
-                  <label className="block text-gray-400 mb-0.5">State *</label>
+                  <label className="mb-0.5 block text-gray-400">State *</label>
                   <input
                     type="text"
                     value={recipient.state}
                     readOnly
                     maxLength={2}
                     placeholder="CA"
-                    className={`w-full bg-zinc-900 border text-white px-2 py-1.5 text-[12px] sm:text-sm ${
+                    className={`w-full border bg-zinc-900 px-2 py-1.5 text-[12px] text-white sm:text-sm ${
                       addressErrors.state ? "border-red-500" : "border-zinc-800/70"
                     }`}
                   />
                   {addressErrors.state && (
-                    <div className="text-xs text-red-400 mt-1">{addressErrors.state}</div>
+                    <div className="mt-1 text-xs text-red-400">{addressErrors.state}</div>
                   )}
                 </div>
                 <div>
-                  <label className="block text-gray-400 mb-0.5">ZIP Code *</label>
+                  <label className="mb-0.5 block text-gray-400">ZIP Code *</label>
                   <input
                     type="text"
                     value={recipient.postal_code}
                     readOnly
                     placeholder="12345"
-                    className={`w-full bg-zinc-900 border text-white px-2 py-1.5 text-[12px] sm:text-sm ${
+                    className={`w-full border bg-zinc-900 px-2 py-1.5 text-[12px] text-white sm:text-sm ${
                       addressErrors.postal_code ? "border-red-500" : "border-zinc-800/70"
                     }`}
                   />
                   {addressErrors.postal_code && (
-                    <div className="text-xs text-red-400 mt-1">
+                    <div className="mt-1 text-xs text-red-400">
                       {addressErrors.postal_code}
                     </div>
                   )}
                 </div>
                 <div>
-                  <label className="block text-gray-400 mb-0.5">Country *</label>
+                  <label className="mb-0.5 block text-gray-400">Country *</label>
                   <input
                     type="text"
                     value={recipient.country}
                     readOnly
                     maxLength={2}
                     placeholder="US"
-                    className={`w-full bg-zinc-900 border text-white px-2 py-1.5 text-[12px] sm:text-sm ${
+                    className={`w-full border bg-zinc-900 px-2 py-1.5 text-[12px] text-white sm:text-sm ${
                       addressErrors.country ? "border-red-500" : "border-zinc-800/70"
                     }`}
                   />
                   {addressErrors.country && (
-                    <div className="text-xs text-red-400 mt-1">
+                    <div className="mt-1 text-xs text-red-400">
                       {addressErrors.country}
                     </div>
                   )}
@@ -594,45 +585,45 @@ export function CreateLabelForm({
               <div className="text-xs uppercase tracking-wide text-zinc-500">
                 Package dimensions
               </div>
-              <div className="grid grid-cols-2 md:grid-cols-4 gap-3">
+              <div className="grid grid-cols-2 gap-3 md:grid-cols-4">
                 <div>
-                  <label className="block text-xs text-zinc-400 mb-1">Weight (oz)</label>
+                  <label className="mb-1 block text-xs text-zinc-400">Weight (oz)</label>
                   <input
                     type="text"
                     inputMode="numeric"
                     value={weightInput}
                     onChange={(e) => handleParcelInput("weight", e.target.value)}
-                    className="w-full bg-zinc-900 border border-zinc-800/70 text-white px-3 py-2 text-sm"
+                    className="w-full border border-zinc-800/70 bg-zinc-900 px-3 py-2 text-sm text-white"
                   />
                 </div>
                 <div>
-                  <label className="block text-xs text-zinc-400 mb-1">Length (in)</label>
+                  <label className="mb-1 block text-xs text-zinc-400">Length (in)</label>
                   <input
                     type="text"
                     inputMode="numeric"
                     value={lengthInput}
                     onChange={(e) => handleParcelInput("length", e.target.value)}
-                    className="w-full bg-zinc-900 border border-zinc-800/70 text-white px-3 py-2 text-sm"
+                    className="w-full border border-zinc-800/70 bg-zinc-900 px-3 py-2 text-sm text-white"
                   />
                 </div>
                 <div>
-                  <label className="block text-xs text-zinc-400 mb-1">Width (in)</label>
+                  <label className="mb-1 block text-xs text-zinc-400">Width (in)</label>
                   <input
                     type="text"
                     inputMode="numeric"
                     value={widthInput}
                     onChange={(e) => handleParcelInput("width", e.target.value)}
-                    className="w-full bg-zinc-900 border border-zinc-800/70 text-white px-3 py-2 text-sm"
+                    className="w-full border border-zinc-800/70 bg-zinc-900 px-3 py-2 text-sm text-white"
                   />
                 </div>
                 <div>
-                  <label className="block text-xs text-zinc-400 mb-1">Height (in)</label>
+                  <label className="mb-1 block text-xs text-zinc-400">Height (in)</label>
                   <input
                     type="text"
                     inputMode="numeric"
                     value={heightInput}
                     onChange={(e) => handleParcelInput("height", e.target.value)}
-                    className="w-full bg-zinc-900 border border-zinc-800/70 text-white px-3 py-2 text-sm"
+                    className="w-full border border-zinc-800/70 bg-zinc-900 px-3 py-2 text-sm text-white"
                   />
                 </div>
               </div>
@@ -643,20 +634,20 @@ export function CreateLabelForm({
                   void getRates();
                 }}
                 disabled={isGettingRates || hasAddressErrors}
-                className="w-full md:w-auto px-4 py-2 bg-zinc-100 text-black text-sm font-semibold rounded hover:bg-white disabled:opacity-50 disabled:cursor-not-allowed"
+                className="w-full rounded bg-zinc-100 px-4 py-2 text-sm font-semibold text-black hover:bg-white disabled:cursor-not-allowed disabled:opacity-50 md:w-auto"
               >
                 {isGettingRates ? "Getting rates..." : "Get shipping rates"}
               </button>
 
               {error && (
-                <div className="flex items-start gap-2 text-sm text-red-400 bg-red-400/10 border border-red-400/20 rounded p-3">
-                  <AlertCircle className="w-4 h-4 mt-0.5 flex-shrink-0" />
+                <div className="flex items-start gap-2 rounded border border-red-400/20 bg-red-400/10 p-3 text-sm text-red-400">
+                  <AlertCircle className="mt-0.5 h-4 w-4 flex-shrink-0" />
                   <div>{error}</div>
                 </div>
               )}
               {success && (
-                <div className="flex items-start gap-2 text-sm text-green-400 bg-green-400/10 border border-green-400/20 rounded p-3">
-                  <CheckCircle2 className="w-4 h-4 mt-0.5 flex-shrink-0" />
+                <div className="flex items-start gap-2 rounded border border-green-400/20 bg-green-400/10 p-3 text-sm text-green-400">
+                  <CheckCircle2 className="mt-0.5 h-4 w-4 flex-shrink-0" />
                   <div>{success}</div>
                 </div>
               )}
@@ -664,12 +655,12 @@ export function CreateLabelForm({
           </div>
 
           {/* RIGHT: rates + purchase */}
-          <div className="p-5 space-y-4">
+          <div className="space-y-4 p-5">
             <div>
               <div className="text-xs uppercase tracking-wide text-zinc-500">
                 Available rates
               </div>
-              <div className="text-sm text-zinc-400 mt-1">
+              <div className="mt-1 text-sm text-zinc-400">
                 Select a carrier and service, then purchase the label.
               </div>
             </div>
@@ -680,7 +671,7 @@ export function CreateLabelForm({
                 <span className="text-zinc-200">Get shipping rates</span>.
               </div>
             ) : (
-              <div className="space-y-2 max-h-[400px] overflow-y-auto">
+              <div className="max-h-[400px] space-y-2 overflow-y-auto">
                 {rates.map((r) => {
                   const selected = selectedRateId === r.id;
                   const days = r.estimated_delivery_days ?? r.delivery_days ?? null;
@@ -689,7 +680,7 @@ export function CreateLabelForm({
                   return (
                     <label
                       key={r.id}
-                      className={`flex items-start gap-3 p-3 rounded border cursor-pointer transition-colors ${
+                      className={`flex cursor-pointer items-start gap-3 rounded border p-3 transition-colors ${
                         selected
                           ? "border-zinc-400 bg-zinc-800 ring-1 ring-zinc-500"
                           : "border-zinc-800/70 bg-zinc-900 hover:border-zinc-700"
@@ -704,15 +695,15 @@ export function CreateLabelForm({
                       />
                       <div className="flex-1">
                         <div className="flex items-center justify-between gap-3">
-                          <div className="text-sm text-white font-semibold">
+                          <div className="text-sm font-semibold text-white">
                             {String(r.carrier ?? "Carrier")} —{" "}
                             {String(r.service ?? "Service")}
                           </div>
-                          <div className="text-sm text-white font-bold">
+                          <div className="text-sm font-bold text-white">
                             {money(r.rate, r.currency)}
                           </div>
                         </div>
-                        <div className="text-xs text-zinc-500 mt-1">
+                        <div className="mt-1 text-xs text-zinc-500">
                           {deliveryText
                             ? `Est. delivery: ${deliveryText}`
                             : "Delivery estimate unavailable"}
@@ -724,7 +715,7 @@ export function CreateLabelForm({
               </div>
             )}
 
-            <div className="pt-2 space-y-3">
+            <div className="space-y-3 pt-2">
               <button
                 type="button"
                 onClick={() => {
@@ -742,7 +733,7 @@ export function CreateLabelForm({
                 {isPurchasing ? "Purchasing label..." : "Purchase shipping label"}
               </button>
 
-              <div className="text-xs text-zinc-500 bg-zinc-900 border border-zinc-800/70 rounded p-3">
+              <div className="rounded border border-zinc-800/70 bg-zinc-900 p-3 text-xs text-zinc-500">
                 <strong className="text-zinc-400">Note:</strong> After purchase, the label
                 will be emailed to the customer and stored in the order. You can reprint
                 it anytime from the order details.

@@ -255,7 +255,7 @@ export function ProductForm({
 
   // UPDATED: Use server data if provided
   const [brandOptions, setBrandOptions] = useState<CatalogOption[]>(initialBrands || []);
-  const [modelOptions, setModelOptions] = useState<CatalogOption[]>(initialModels ?? []);
+  const [loadedModels, setModelOptions] = useState<CatalogOption[]>(initialModels ?? []);
   const [sizeOptions] = useState(initialSizes);
 
   const [category, setCategory] = useState<Category>(initialData?.category || "sneakers");
@@ -288,8 +288,6 @@ export function ProductForm({
     failed: 0,
     isUploading: false,
   });
-
-  const previousSizeType = useRef<SizeType | null>(null);
 
   const [variants, setVariants] = useState<VariantDraft[]>(() => {
     const sizeType = getSizeTypeForCategory(initialData?.category || "sneakers");
@@ -362,48 +360,48 @@ export function ProductForm({
     return typeof record.error === "string" || typeof record.message === "string";
   };
 
-  // OPTIMIZATION: Memoize brand catalog loader
-  const loadBrands = useCallback(async () => {
-    try {
-      const response = await fetch("/api/admin/tags/brands");
-      const data = await response.json();
-      if (response.ok) {
-        const options = (data.brands || []).map((brand: BrandCatalogEntry) => ({
-          id: brand.id,
-          label: brand.canonical_label,
-        }));
-        setBrandOptions(options);
-      }
-    } catch (error) {
-      logError(error, { layer: "frontend", event: "inventory_load_brand_catalog" });
-    }
-  }, []);
-
-  // UPDATED: Skip loading if data already provided from server
   useEffect(() => {
-    if (initialBrands) {
-      // Data already loaded from server
-      return;
-    }
-    loadBrands();
-  }, [initialBrands, loadBrands]);
+    if (initialBrands) return;
+    const controller = new AbortController();
+    const loadBrands = async () => {
+      try {
+        const response = await fetch("/api/admin/tags/brands", {
+          signal: controller.signal,
+        });
+        const data = await response.json();
+        if (response.ok && !controller.signal.aborted) {
+          const options = (data.brands || []).map((brand: BrandCatalogEntry) => ({
+            id: brand.id,
+            label: brand.canonical_label,
+          }));
+          setBrandOptions(options);
+        }
+      } catch (error) {
+        if (controller.signal.aborted) return;
+        logError(error, { layer: "frontend", event: "inventory_load_brand_catalog" });
+      }
+    };
+    void loadBrands();
+    return () => controller.abort();
+  }, [initialBrands]);
 
   const effectiveBrandId = brandOverrideId ?? parseResult?.brand?.id ?? null;
   const effectiveModelId = modelOverrideId ?? parseResult?.model?.id ?? null;
+  const modelOptions = effectiveBrandId ? loadedModels : [];
 
   useEffect(() => {
     if (!effectiveBrandId) {
-      setModelOptions([]);
       return;
     }
-
+    const controller = new AbortController();
     const loadModels = async () => {
       try {
         const response = await fetch(
           `/api/admin/tags/models?brandId=${effectiveBrandId}`,
+          { signal: controller.signal },
         );
         const data = await response.json();
-        if (response.ok) {
+        if (response.ok && !controller.signal.aborted) {
           const options = (data.models || []).map((model: ModelCatalogEntry) => ({
             id: model.id,
             label: model.canonical_label,
@@ -411,43 +409,30 @@ export function ProductForm({
           const selectedInitial = initialModels?.find(
             (model) => model.id === effectiveModelId,
           );
-          setModelOptions(
+          const nextOptions: CatalogOption[] =
             selectedInitial &&
-              !options.some((option: CatalogOption) => option.id === selectedInitial.id)
+            !options.some((option: CatalogOption) => option.id === selectedInitial.id)
               ? [...options, selectedInitial]
-              : options,
-          );
+              : options;
+          setModelOptions(nextOptions);
+          if (modelOverrideId && nextOptions.length > 0) {
+            const selected = nextOptions.find((option) => option.id === modelOverrideId);
+            if (!selected) setModelOverrideId(null);
+            setModelOverrideInput(selected?.label ?? "");
+          }
         }
       } catch (error) {
+        if (controller.signal.aborted) return;
         logError(error, { layer: "frontend", event: "inventory_load_model_catalog" });
       }
     };
 
-    loadModels();
-  }, [effectiveBrandId, effectiveModelId, initialModels]);
-
-  useEffect(() => {
-    if (!modelOverrideId) {
-      return;
-    }
-    if (modelOptions.length === 0) {
-      return;
-    }
-    const stillValid = modelOptions.some((option) => option.id === modelOverrideId);
-    if (!stillValid) {
-      setModelOverrideId(null);
-      setModelOverrideInput("");
-      return;
-    }
-    setModelOverrideInput(
-      modelOptions.find((option) => option.id === modelOverrideId)?.label ?? "",
-    );
-  }, [modelOptions, modelOverrideId]);
+    void loadModels();
+    return () => controller.abort();
+  }, [effectiveBrandId, effectiveModelId, initialModels, modelOverrideId]);
 
   useEffect(() => {
     if (!titleRaw.trim()) {
-      setParseResult(null);
-      setParseStatus("idle");
       return;
     }
 
@@ -467,6 +452,7 @@ export function ProductForm({
           signal: controller.signal,
         });
         const data = await response.json();
+        if (controller.signal.aborted) return;
         if (!response.ok) {
           throw new Error(data?.error || "Failed to parse title.");
         }
@@ -497,21 +483,15 @@ export function ProductForm({
     };
   }, [titleRaw, category, brandOverrideId, modelOverrideId]);
 
-  useEffect(() => {
-    if (previousSizeType.current === null) {
-      previousSizeType.current = sizeType;
+  const changeCategory = (nextCategory: Category) => {
+    setCategory(nextCategory);
+    const nextSizeType = getSizeTypeForCategory(nextCategory);
+    if (nextSizeType === sizeType) {
       return;
     }
-
-    if (previousSizeType.current === sizeType) {
-      return;
-    }
-
-    previousSizeType.current = sizeType;
-
     setVariants((current) =>
       current.map((variant) => {
-        if (sizeType === "none") {
+        if (nextSizeType === "none") {
           const oneSize = sizeOptions.find((size) => size.sizeType === "none");
           return {
             ...variant,
@@ -522,7 +502,7 @@ export function ProductForm({
         return { ...variant, size_id: "", size_label: "" };
       }),
     );
-  }, [sizeOptions, sizeType]);
+  };
 
   const addVariant = () => {
     setVariants((current) => [
@@ -907,7 +887,7 @@ export function ProductForm({
   const handleDrop = (event: React.DragEvent<HTMLDivElement>) => {
     event.preventDefault();
     setIsDragging(false);
-    handleUploadFiles(event.dataTransfer.files);
+    void handleUploadFiles(event.dataTransfer.files);
   };
 
   const applyBrandOverride = (option: CatalogOption | null) => {
@@ -1101,38 +1081,44 @@ export function ProductForm({
       className="space-y-4 md:space-y-6"
     >
       {/* MOBILE OPTIMIZATION: Improved mobile layout */}
-      <div className="bg-zinc-900 border border-zinc-800/70 rounded p-4 md:p-6">
-        <h2 className="text-lg md:text-xl font-semibold text-white mb-3 md:mb-4">
+      <div className="rounded border border-zinc-800/70 bg-zinc-900 p-4 md:p-6">
+        <h2 className="mb-3 text-lg font-semibold text-white md:mb-4 md:text-xl">
           Basic Information
         </h2>
 
         <div className="space-y-4">
           {/* Full width title on mobile */}
           <div>
-            <label className="block text-gray-400 text-sm mb-1">
+            <label className="mb-1 block text-sm text-gray-400">
               Full Title <RequiredMark />
             </label>
             <input
               type="text"
               value={titleRaw}
-              onChange={(e) => setTitleRaw(e.target.value)}
+              onChange={(e) => {
+                setTitleRaw(e.target.value);
+                if (!e.target.value.trim()) {
+                  setParseResult(null);
+                  setParseStatus("idle");
+                }
+              }}
               required
-              className="w-full bg-zinc-800 text-white px-3 md:px-4 py-2 rounded border border-zinc-800/70 focus:outline-none focus:ring-2 focus:ring-red-600 text-sm md:text-base"
+              className="w-full rounded border border-zinc-800/70 bg-zinc-800 px-3 py-2 text-sm text-white focus:outline-none focus:ring-2 focus:ring-red-600 md:px-4 md:text-base"
             />
-            <p className="text-xs text-gray-500 mt-2">
+            <p className="mt-2 text-xs text-gray-500">
               One input only. We parse brand, model (sneakers), and name automatically.
             </p>
           </div>
 
           {/* Stack category/condition on mobile */}
-          <div className="grid grid-cols-1 sm:grid-cols-2 gap-4">
+          <div className="grid grid-cols-1 gap-4 sm:grid-cols-2">
             <div>
-              <label className="block text-gray-400 text-sm mb-1">
+              <label className="mb-1 block text-sm text-gray-400">
                 Category <RequiredMark />
               </label>
               <RdkSelect
                 value={category}
-                onChange={(v) => setCategory(v as Category)}
+                onChange={(v) => changeCategory(v as Category)}
                 options={[
                   { value: "sneakers", label: "Sneakers" },
                   { value: "clothing", label: "Clothing" },
@@ -1144,7 +1130,7 @@ export function ProductForm({
             </div>
 
             <div>
-              <label className="block text-gray-400 text-sm mb-1">
+              <label className="mb-1 block text-sm text-gray-400">
                 Condition <RequiredMark />
               </label>
               <RdkSelect
@@ -1161,9 +1147,9 @@ export function ProductForm({
         </div>
 
         {/* Parsed Preview - Collapsible on mobile */}
-        <div className="mt-4 bg-zinc-950/40 border border-zinc-800/70 rounded p-3 md:p-4 space-y-3">
+        <div className="mt-4 space-y-3 rounded border border-zinc-800/70 bg-zinc-950/40 p-3 md:p-4">
           <div className="flex items-center justify-between">
-            <h3 className="text-sm text-gray-300 font-semibold">Parsed Preview</h3>
+            <h3 className="text-sm font-semibold text-gray-300">Parsed Preview</h3>
             {parseStatus === "loading" && (
               <span className="text-xs text-gray-500">Parsing...</span>
             )}
@@ -1172,7 +1158,7 @@ export function ProductForm({
             )}
           </div>
 
-          <div className="grid grid-cols-1 sm:grid-cols-3 gap-2 md:gap-3 text-sm">
+          <div className="grid grid-cols-1 gap-2 text-sm sm:grid-cols-3 md:gap-3">
             <div className="text-gray-400">
               <span className="block text-xs uppercase text-gray-500">Brand</span>
               <span className="text-white">{parseResult?.brand?.label || "-"}</span>
@@ -1201,7 +1187,7 @@ export function ProductForm({
                 <button
                   type="button"
                   onClick={applyBrandSuggestion}
-                  className="text-xs px-3 py-1 rounded-full border border-zinc-700/70 text-red-200 hover:bg-red-900/30"
+                  className="rounded-full border border-zinc-700/70 px-3 py-1 text-xs text-red-200 hover:bg-red-900/30"
                 >
                   Did you mean {brandSuggestion.label}?
                 </button>
@@ -1210,7 +1196,7 @@ export function ProductForm({
                 <button
                   type="button"
                   onClick={applyModelSuggestion}
-                  className="text-xs px-3 py-1 rounded-full border border-zinc-700/70 text-red-200 hover:bg-red-900/30"
+                  className="rounded-full border border-zinc-700/70 px-3 py-1 text-xs text-red-200 hover:bg-red-900/30"
                 >
                   Did you mean {modelSuggestion.label}?
                 </button>
@@ -1220,16 +1206,16 @@ export function ProductForm({
         </div>
 
         {/* Stack overrides on mobile */}
-        <div className="mt-4 grid grid-cols-1 sm:grid-cols-2 gap-4">
+        <div className="mt-4 grid grid-cols-1 gap-4 sm:grid-cols-2">
           <div>
-            <label className="block text-gray-400 text-sm mb-1">Override Brand</label>
+            <label className="mb-1 block text-sm text-gray-400">Override Brand</label>
             <input
               type="text"
               list="brand-options"
               value={brandOverrideInput}
               onChange={(e) => handleBrandOverrideChange(e.target.value)}
               placeholder="Search brands..."
-              className="w-full rounded border border-zinc-300 bg-white px-3 py-2 text-zinc-900 focus:border-black focus:outline-none focus:ring-2 focus:ring-black/10 md:px-4 text-sm md:text-base"
+              className="w-full rounded border border-zinc-300 bg-white px-3 py-2 text-sm text-zinc-900 focus:border-black focus:outline-none focus:ring-2 focus:ring-black/10 md:px-4 md:text-base"
             />
             <datalist id="brand-options">
               {brandOptions.map((brand) => (
@@ -1240,7 +1226,7 @@ export function ProductForm({
               <button
                 type="button"
                 onClick={() => applyBrandOverride(null)}
-                className="text-xs text-gray-500 mt-2 hover:text-white"
+                className="mt-2 text-xs text-gray-500 hover:text-white"
               >
                 Clear override
               </button>
@@ -1249,7 +1235,7 @@ export function ProductForm({
 
           {category === "sneakers" && (
             <div>
-              <label className="block text-gray-400 text-sm mb-1">Override Model</label>
+              <label className="mb-1 block text-sm text-gray-400">Override Model</label>
               <input
                 type="text"
                 list="model-options"
@@ -1259,7 +1245,7 @@ export function ProductForm({
                   effectiveBrandId ? "Search models..." : "Select a brand first"
                 }
                 disabled={!effectiveBrandId}
-                className="w-full rounded border border-zinc-300 bg-white px-3 py-2 text-zinc-900 disabled:bg-zinc-100 disabled:text-zinc-400 focus:border-black focus:outline-none focus:ring-2 focus:ring-black/10 md:px-4 text-sm md:text-base"
+                className="w-full rounded border border-zinc-300 bg-white px-3 py-2 text-sm text-zinc-900 focus:border-black focus:outline-none focus:ring-2 focus:ring-black/10 disabled:bg-zinc-100 disabled:text-zinc-400 md:px-4 md:text-base"
               />
               <datalist id="model-options">
                 {modelOptions.map((model) => (
@@ -1270,7 +1256,7 @@ export function ProductForm({
                 <button
                   type="button"
                   onClick={() => applyModelOverride(null)}
-                  className="text-xs text-gray-500 mt-2 hover:text-white"
+                  className="mt-2 text-xs text-gray-500 hover:text-white"
                 >
                   Clear override
                 </button>
@@ -1280,26 +1266,26 @@ export function ProductForm({
         </div>
 
         <div className="mt-4">
-          <label className="block text-gray-400 text-sm mb-1">Description</label>
+          <label className="mb-1 block text-sm text-gray-400">Description</label>
           <textarea
             value={description}
             onChange={(e) => setDescription(e.target.value)}
             rows={4}
-            className="w-full bg-zinc-800 text-white px-3 md:px-4 py-2 rounded border border-zinc-800/70 focus:outline-none focus:ring-2 focus:ring-red-600 text-sm md:text-base"
+            className="w-full rounded border border-zinc-800/70 bg-zinc-800 px-3 py-2 text-sm text-white focus:outline-none focus:ring-2 focus:ring-red-600 md:px-4 md:text-base"
           />
         </div>
       </div>
 
       {/* Variants - Better mobile layout */}
-      <div className="bg-zinc-900 border border-zinc-800/70 rounded p-4 md:p-6">
-        <div className="flex items-center justify-between mb-3 md:mb-4">
-          <h2 className="text-lg md:text-xl font-semibold text-white">Variants</h2>
+      <div className="rounded border border-zinc-800/70 bg-zinc-900 p-4 md:p-6">
+        <div className="mb-3 flex items-center justify-between md:mb-4">
+          <h2 className="text-lg font-semibold text-white md:text-xl">Variants</h2>
           <button
             type="button"
             onClick={addVariant}
-            className="flex items-center gap-1 md:gap-2 bg-red-600 hover:bg-red-700 text-white px-2 md:px-3 py-1.5 md:py-2 rounded text-xs md:text-sm transition"
+            className="flex items-center gap-1 rounded bg-red-600 px-2 py-1.5 text-xs text-white transition hover:bg-red-700 md:gap-2 md:px-3 md:py-2 md:text-sm"
           >
-            <Plus className="w-3 h-3 md:w-4 md:h-4" />
+            <Plus className="h-3 w-3 md:h-4 md:w-4" />
             <span className="hidden sm:inline">Add Variant</span>
             <span className="sm:hidden">Add</span>
           </button>
@@ -1327,15 +1313,15 @@ export function ProductForm({
                   }) => (
                     <div
                       className={[
-                        "relative bg-zinc-800 p-3 md:p-4 rounded flex flex-col md:flex-row md:items-end gap-3 md:gap-4 transition-[box-shadow,opacity] duration-150",
+                        "relative flex flex-col gap-3 rounded bg-zinc-800 p-3 transition-[box-shadow,opacity] duration-150 md:flex-row md:items-end md:gap-4 md:p-4",
                         isVariantDragging ? "opacity-65 shadow-2xl" : "",
                         isVariantOver ? "ring-2 ring-red-500/50" : "",
                       ].join(" ")}
                     >
                       {/* Fields: wrap-flow of fixed-width inputs so nothing stretches */}
-                      <div className="flex-1 flex flex-col md:flex-row md:flex-wrap gap-3 md:gap-4">
+                      <div className="flex flex-1 flex-col gap-3 md:flex-row md:flex-wrap md:gap-4">
                         <div className="w-full md:w-32">
-                          <label className="block text-gray-400 text-xs mb-1">SKU</label>
+                          <label className="mb-1 block text-xs text-gray-400">SKU</label>
                           <input
                             type="text"
                             value={variant.sku}
@@ -1343,12 +1329,12 @@ export function ProductForm({
                             aria-readonly="true"
                             tabIndex={-1}
                             title="SKU is generated automatically and cannot be edited"
-                            className="w-full cursor-not-allowed select-none bg-zinc-900 text-zinc-400 px-2 md:px-3 py-2 rounded text-xs md:text-sm border border-zinc-800/70 font-mono focus:outline-none focus:ring-0"
+                            className="w-full cursor-not-allowed select-none rounded border border-zinc-800/70 bg-zinc-900 px-2 py-2 font-mono text-xs text-zinc-400 focus:outline-none focus:ring-0 md:px-3 md:text-sm"
                           />
                         </div>
 
                         <div className="w-full md:w-40">
-                          <label className="block text-gray-400 text-xs mb-1">
+                          <label className="mb-1 block text-xs text-gray-400">
                             Size <RequiredMark />
                           </label>
 
@@ -1364,7 +1350,7 @@ export function ProductForm({
                         </div>
 
                         <div className="w-full md:w-32">
-                          <label className="block text-gray-400 text-xs mb-1">
+                          <label className="mb-1 block text-xs text-gray-400">
                             Sale Price ($) <RequiredMark />
                           </label>
                           <input
@@ -1375,12 +1361,12 @@ export function ProductForm({
                               updateVariant(index, "salePrice", e.target.value)
                             }
                             required
-                            className="w-full bg-zinc-900 text-white px-2 md:px-3 py-2 rounded text-xs md:text-sm border border-zinc-800/70 focus:outline-none focus:ring-2 focus:ring-red-600"
+                            className="w-full rounded border border-zinc-800/70 bg-zinc-900 px-2 py-2 text-xs text-white focus:outline-none focus:ring-2 focus:ring-red-600 md:px-3 md:text-sm"
                           />
                         </div>
 
                         <div className="w-full md:w-32">
-                          <label className="block text-gray-400 text-xs mb-1">
+                          <label className="mb-1 block text-xs text-gray-400">
                             Unit Cost ($){" "}
                             <span className="text-zinc-500">(Optional)</span>
                           </label>
@@ -1392,12 +1378,12 @@ export function ProductForm({
                               updateVariant(index, "unitCost", e.target.value)
                             }
                             placeholder="Optional"
-                            className="w-full bg-zinc-900 text-white px-2 md:px-3 py-2 rounded text-xs md:text-sm border border-zinc-800/70 focus:outline-none focus:ring-2 focus:ring-red-600"
+                            className="w-full rounded border border-zinc-800/70 bg-zinc-900 px-2 py-2 text-xs text-white focus:outline-none focus:ring-2 focus:ring-red-600 md:px-3 md:text-sm"
                           />
                         </div>
 
                         <div className="w-full md:w-24">
-                          <label className="block text-gray-400 text-xs mb-1">
+                          <label className="mb-1 block text-xs text-gray-400">
                             Stock <RequiredMark />
                           </label>
                           <input
@@ -1408,31 +1394,31 @@ export function ProductForm({
                               updateVariant(index, "stock", e.target.value)
                             }
                             required
-                            className="w-full bg-zinc-900 text-white px-2 md:px-3 py-2 rounded text-xs md:text-sm border border-zinc-800/70 focus:outline-none focus:ring-2 focus:ring-red-600"
+                            className="w-full rounded border border-zinc-800/70 bg-zinc-900 px-2 py-2 text-xs text-white focus:outline-none focus:ring-2 focus:ring-red-600 md:px-3 md:text-sm"
                           />
                         </div>
                       </div>
 
-                      <div className="flex items-center gap-1 self-end md:h-[42px] shrink-0">
+                      <div className="flex shrink-0 items-center gap-1 self-end md:h-[42px]">
                         <button
                           ref={setActivatorNodeRef}
                           type="button"
                           {...attributes}
                           {...listeners}
-                          className="text-zinc-300 hover:text-white p-2 rounded hover:bg-zinc-900 cursor-grab active:cursor-grabbing touch-none"
+                          className="cursor-grab touch-none rounded p-2 text-zinc-300 hover:bg-zinc-900 hover:text-white active:cursor-grabbing"
                           aria-label="Drag to reorder variant"
                           title="Drag to reorder"
                         >
-                          <GripVertical className="w-4 h-4" />
+                          <GripVertical className="h-4 w-4" />
                         </button>
                         {variants.length > 1 && (
                           <button
                             type="button"
                             onClick={() => removeVariant(index)}
-                            className="text-red-500 hover:text-red-400 p-2 rounded hover:bg-zinc-900"
+                            className="rounded p-2 text-red-500 hover:bg-zinc-900 hover:text-red-400"
                             aria-label="Remove variant"
                           >
-                            <Trash2 className="w-4 h-4" />
+                            <Trash2 className="h-4 w-4" />
                           </button>
                         )}
                       </div>
@@ -1446,34 +1432,34 @@ export function ProductForm({
       </div>
 
       {/* Images - Mobile optimized */}
-      <div className="bg-zinc-900 border border-zinc-800/70 rounded p-4 md:p-6">
-        <div className="flex items-center justify-between mb-3 md:mb-4">
-          <h2 className="text-lg md:text-xl font-semibold text-white">
+      <div className="rounded border border-zinc-800/70 bg-zinc-900 p-4 md:p-6">
+        <div className="mb-3 flex items-center justify-between md:mb-4">
+          <h2 className="text-lg font-semibold text-white md:text-xl">
             Images <RequiredMark />
           </h2>
           <span className="text-xs text-gray-500">{images.length} total</span>
         </div>
 
         {uploadQueue.isUploading && (
-          <div className="mb-4 bg-blue-900/20 border border-blue-800/50 rounded p-3 md:p-4">
-            <div className="flex items-center justify-between mb-2">
-              <span className="text-xs md:text-sm text-blue-200 font-semibold">
+          <div className="mb-4 rounded border border-blue-800/50 bg-blue-900/20 p-3 md:p-4">
+            <div className="mb-2 flex items-center justify-between">
+              <span className="text-xs font-semibold text-blue-200 md:text-sm">
                 {uploadQueue.currentStatus || "Uploading images..."}
               </span>
               <span className="text-xs text-blue-300">
                 {uploadQueue.completed} / {uploadQueue.total}
               </span>
             </div>
-            <div className="w-full bg-zinc-800 rounded-full h-2 overflow-hidden">
+            <div className="h-2 w-full overflow-hidden rounded-full bg-zinc-800">
               <div
-                className="bg-blue-600 h-full transition-all duration-300"
+                className="h-full bg-blue-600 transition-all duration-300"
                 style={{
                   width: `${(uploadQueue.completed / uploadQueue.total) * 100}%`,
                 }}
               />
             </div>
             {uploadQueue.failed > 0 && (
-              <p className="text-xs text-red-400 mt-2">
+              <p className="mt-2 text-xs text-red-400">
                 {uploadQueue.failed} upload(s) failed
               </p>
             )}
@@ -1512,31 +1498,31 @@ export function ProductForm({
           onDragLeave={handleDragLeave}
           onDrop={handleDrop}
           className={[
-            "w-full h-32 md:h-44 border border-dashed cursor-pointer transition",
-            "rounded px-3 md:px-4 py-3 flex flex-col sm:flex-row items-center gap-2 md:gap-3",
+            "h-32 w-full cursor-pointer border border-dashed transition md:h-44",
+            "flex flex-col items-center gap-2 rounded px-3 py-3 sm:flex-row md:gap-3 md:px-4",
             isDragging
               ? "border-red-500 bg-red-900/10"
               : "border-zinc-800/70 bg-zinc-950/30 hover:bg-zinc-950/50",
           ].join(" ")}
         >
-          <div className="h-8 w-8 md:h-10 md:w-10 bg-zinc-900 border border-zinc-800/70 flex items-center justify-center shrink-0 rounded">
-            <ImagePlus className="w-4 h-4 md:w-5 md:h-5 text-gray-400" />
+          <div className="flex h-8 w-8 shrink-0 items-center justify-center rounded border border-zinc-800/70 bg-zinc-900 md:h-10 md:w-10">
+            <ImagePlus className="h-4 w-4 text-gray-400 md:h-5 md:w-5" />
           </div>
 
           <div className="min-w-0 flex-1 text-center sm:text-left">
-            <p className="text-xs md:text-sm text-white font-semibold">
+            <p className="text-xs font-semibold text-white md:text-sm">
               Tap to add images
             </p>
-            <p className="text-xs text-gray-500 mt-1">PNG, JPG, WEBP. Max 10MB each.</p>
+            <p className="mt-1 text-xs text-gray-500">PNG, JPG, WEBP. Max 10MB each.</p>
           </div>
         </div>
 
         {/* Mobile-friendly image grid */}
         <div className="mt-3 md:mt-4">
           {images.length === 0 ? (
-            <div className="text-gray-500 text-xs md:text-sm">No images yet.</div>
+            <div className="text-xs text-gray-500 md:text-sm">No images yet.</div>
           ) : (
-            <div className="grid grid-cols-3 sm:grid-cols-4 md:grid-cols-6 gap-2 md:gap-3">
+            <div className="grid grid-cols-3 gap-2 sm:grid-cols-4 md:grid-cols-6 md:gap-3">
               {images.map((image, index) => (
                 <div
                   key={index}
@@ -1550,52 +1536,52 @@ export function ProductForm({
                     }
                   }}
                   className={[
-                    "group relative text-left border overflow-hidden transition",
-                    "rounded cursor-pointer select-none",
+                    "group relative overflow-hidden border text-left transition",
+                    "cursor-pointer select-none rounded",
                     image.is_primary
                       ? "border-red-500"
                       : "border-zinc-800/70 hover:border-zinc-700",
                   ].join(" ")}
                   title="Tap to set primary"
                 >
-                  <div className="aspect-square bg-zinc-900 overflow-hidden">
+                  <div className="aspect-square overflow-hidden bg-zinc-900">
                     {image.url ? (
                       <img
                         src={image.url}
                         alt="Preview"
-                        className="w-full h-full object-cover"
+                        className="h-full w-full object-cover"
                       />
                     ) : (
-                      <div className="w-full h-full flex items-center justify-center text-gray-500 text-xs">
+                      <div className="flex h-full w-full items-center justify-center text-xs text-gray-500">
                         Missing
                       </div>
                     )}
                   </div>
 
-                  <div className="absolute top-1 left-1">
+                  <div className="absolute left-1 top-1">
                     <span
                       className={[
-                        "text-[9px] md:text-[10px] px-1.5 md:px-2 py-0.5 border rounded",
+                        "rounded border px-1.5 py-0.5 text-[9px] md:px-2 md:text-[10px]",
                         image.is_primary
-                          ? "bg-red-600 border-red-500 text-white"
-                          : "bg-black/50 border-white/10 text-gray-200",
+                          ? "border-red-500 bg-red-600 text-white"
+                          : "border-white/10 bg-black/50 text-gray-200",
                       ].join(" ")}
                     >
                       {image.is_primary ? "Primary" : "Thumb"}
                     </span>
                   </div>
 
-                  <div className="absolute top-1 right-1 opacity-100 sm:opacity-0 sm:group-hover:opacity-100 transition">
+                  <div className="absolute right-1 top-1 opacity-100 transition sm:opacity-0 sm:group-hover:opacity-100">
                     <button
                       type="button"
                       onClick={(e) => {
                         e.stopPropagation();
                         removeImage(index);
                       }}
-                      className="bg-black/60 hover:bg-black/80 text-white p-1 md:p-1.5 rounded"
+                      className="rounded bg-black/60 p-1 text-white hover:bg-black/80 md:p-1.5"
                       aria-label="Remove image"
                     >
-                      <X className="w-3 h-3 md:w-3.5 md:h-3.5" />
+                      <X className="h-3 w-3 md:h-3.5 md:w-3.5" />
                     </button>
                   </div>
                 </div>
@@ -1604,22 +1590,22 @@ export function ProductForm({
           )}
         </div>
 
-        <div className="mt-2 md:mt-3 text-xs text-gray-500">
+        <div className="mt-2 text-xs text-gray-500 md:mt-3">
           Images are optional. Tap any thumbnail to set as primary.
         </div>
       </div>
 
-      <div className="bg-zinc-900 border border-zinc-800/70 rounded p-4 md:p-6">
-        <h2 className="text-lg md:text-xl font-semibold text-white mb-2">
+      <div className="rounded border border-zinc-800/70 bg-zinc-900 p-4 md:p-6">
+        <h2 className="mb-2 text-lg font-semibold text-white md:text-xl">
           Posting Schedule
         </h2>
-        <p className="text-xs md:text-sm text-gray-400">
+        <p className="text-xs text-gray-400 md:text-sm">
           Products post immediately by default. Switch to scheduled posting to pick a
           future go-live date and time.
         </p>
 
         <div className="mt-4 space-y-3">
-          <label className="flex items-center gap-3 text-sm text-white cursor-pointer select-none">
+          <label className="flex cursor-pointer select-none items-center gap-3 text-sm text-white">
             <input
               type="radio"
               name="publish-mode"
@@ -1629,7 +1615,7 @@ export function ProductForm({
             />
             <span>Post immediately</span>
           </label>
-          <label className="flex items-center gap-3 text-sm text-white cursor-pointer select-none">
+          <label className="flex cursor-pointer select-none items-center gap-3 text-sm text-white">
             <input
               type="radio"
               name="publish-mode"
@@ -1645,7 +1631,7 @@ export function ProductForm({
         </div>
 
         <div className="mt-4">
-          <label className="block text-gray-400 text-sm mb-1">
+          <label className="mb-1 block text-sm text-gray-400">
             Go Live Date & Time
             {publishMode === "scheduled" && (
               <>
@@ -1660,9 +1646,9 @@ export function ProductForm({
             min={scheduleMin}
             disabled={publishMode !== "scheduled"}
             onChange={(event) => setScheduledGoLiveAt(event.target.value)}
-            className="w-full sm:w-auto bg-zinc-800 text-white px-3 md:px-4 py-2 rounded border border-zinc-800/70 focus:outline-none focus:ring-2 focus:ring-red-600 disabled:opacity-50 disabled:cursor-not-allowed text-sm md:text-base"
+            className="w-full rounded border border-zinc-800/70 bg-zinc-800 px-3 py-2 text-sm text-white focus:outline-none focus:ring-2 focus:ring-red-600 disabled:cursor-not-allowed disabled:opacity-50 sm:w-auto md:px-4 md:text-base"
           />
-          <p className="text-xs text-gray-500 mt-2">
+          <p className="mt-2 text-xs text-gray-500">
             {publishMode === "scheduled"
               ? "This uses your local timezone and converts to UTC when saved."
               : "Posting immediately. Choose 'Schedule date and time' to enable this field."}
@@ -1678,7 +1664,7 @@ export function ProductForm({
         <button
           type="submit"
           disabled={isLoading}
-          className="flex-1 bg-red-600 hover:bg-red-700 disabled:bg-gray-600 text-white font-semibold py-3 rounded transition text-sm md:text-base"
+          className="flex-1 rounded bg-red-600 py-3 text-sm font-semibold text-white transition hover:bg-red-700 disabled:bg-gray-600 md:text-base"
         >
           {isLoading
             ? "Saving..."
@@ -1689,7 +1675,7 @@ export function ProductForm({
         <button
           type="button"
           onClick={onCancel}
-          className="px-6 bg-zinc-700 hover:bg-zinc-600 text-white font-semibold py-3 rounded transition text-sm md:text-base"
+          className="rounded bg-zinc-700 px-6 py-3 text-sm font-semibold text-white transition hover:bg-zinc-600 md:text-base"
         >
           Cancel
         </button>

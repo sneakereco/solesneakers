@@ -33,6 +33,7 @@
 ### Task 1: Add Tenant Store Access Persistence
 
 **Files:**
+
 - Create: `supabase/migrations/20260515120000_store_access_settings.sql`
 - Create: `src/repositories/store-access-settings-repo.ts`
 - Create: `src/services/store-access-settings-service.ts`
@@ -255,6 +256,7 @@ git commit -m "feat: add tenant store access settings"
 ### Task 2: Add Admin Settings API And UI
 
 **Files:**
+
 - Create: `app/api/admin/store-access/route.ts`
 - Create: `app/admin/settings/store-access/page.tsx`
 - Create: `src/components/admin/settings/StoreAccessSettingsPanel.tsx`
@@ -318,7 +320,10 @@ export async function GET(request: Request) {
   const service = new StoreAccessSettingsService(supabase);
 
   const settings = await service.getSettings(tenantId);
-  return NextResponse.json({ settings, requestId }, { headers: { "Cache-Control": "no-store" } });
+  return NextResponse.json(
+    { settings, requestId },
+    { headers: { "Cache-Control": "no-store" } },
+  );
 }
 
 export async function POST(request: Request) {
@@ -344,7 +349,10 @@ export async function POST(request: Request) {
     checkoutLockMessage: parsed.data.checkoutLockMessage?.trim() || undefined,
   });
 
-  return NextResponse.json({ settings, requestId }, { headers: { "Cache-Control": "no-store" } });
+  return NextResponse.json(
+    { settings, requestId },
+    { headers: { "Cache-Control": "no-store" } },
+  );
 }
 ```
 
@@ -360,8 +368,8 @@ export default function StoreAccessSettingsPage() {
   return (
     <div className="space-y-8">
       <div>
-        <h1 className="text-2xl sm:text-3xl font-bold text-white mb-2">Store Access</h1>
-        <p className="text-sm sm:text-base text-gray-400">
+        <h1 className="mb-2 text-2xl font-bold text-white sm:text-3xl">Store Access</h1>
+        <p className="text-sm text-gray-400 sm:text-base">
           Control the storefront lock screen and checkout availability.
         </p>
       </div>
@@ -404,7 +412,9 @@ export function StoreAccessSettingsPanel() {
       const data = await response.json();
       if (data.settings) {
         setSiteLockEnabled(Boolean(data.settings.siteLockEnabled));
-        setSiteUnlockAt(data.settings.siteUnlockAt ? data.settings.siteUnlockAt.slice(0, 16) : "");
+        setSiteUnlockAt(
+          data.settings.siteUnlockAt ? data.settings.siteUnlockAt.slice(0, 16) : "",
+        );
         setCheckoutLockEnabled(Boolean(data.settings.checkoutLockEnabled));
         setCheckoutLockMessage(data.settings.checkoutLockMessage ?? "");
       }
@@ -428,7 +438,11 @@ export function StoreAccessSettingsPanel() {
       }),
     });
     const data = await response.json();
-    setMessage(response.ok ? "Store access settings updated." : data.error ?? "Failed to save settings.");
+    setMessage(
+      response.ok
+        ? "Store access settings updated."
+        : (data.error ?? "Failed to save settings."),
+    );
     setIsSaving(false);
   };
 
@@ -438,7 +452,7 @@ export function StoreAccessSettingsPanel() {
 
   return (
     <div className="grid gap-4 lg:grid-cols-2">
-      <section className="rounded border border-zinc-800/70 bg-zinc-900 p-5 space-y-4">
+      <section className="space-y-4 rounded border border-zinc-800/70 bg-zinc-900 p-5">
         <div>
           <h2 className="text-lg font-semibold text-white">Site Lock</h2>
           <p className="text-sm text-zinc-400">
@@ -455,19 +469,19 @@ export function StoreAccessSettingsPanel() {
           Enable site lock
         </label>
         <div>
-          <label className="block text-xs uppercase tracking-wide text-zinc-500 mb-2">
+          <label className="mb-2 block text-xs uppercase tracking-wide text-zinc-500">
             Unlock At
           </label>
           <input
             type="datetime-local"
             value={siteUnlockAt}
             onChange={(event) => setSiteUnlockAt(event.target.value)}
-            className="w-full bg-zinc-950 border border-zinc-800/70 px-3 py-2 text-white"
+            className="w-full border border-zinc-800/70 bg-zinc-950 px-3 py-2 text-white"
           />
         </div>
       </section>
 
-      <section className="rounded border border-zinc-800/70 bg-zinc-900 p-5 space-y-4">
+      <section className="space-y-4 rounded border border-zinc-800/70 bg-zinc-900 p-5">
         <div>
           <h2 className="text-lg font-semibold text-white">Checkout Lock</h2>
           <p className="text-sm text-zinc-400">
@@ -484,19 +498,19 @@ export function StoreAccessSettingsPanel() {
           Enable checkout lock
         </label>
         <div>
-          <label className="block text-xs uppercase tracking-wide text-zinc-500 mb-2">
+          <label className="mb-2 block text-xs uppercase tracking-wide text-zinc-500">
             Checkout Message
           </label>
           <textarea
             value={checkoutLockMessage}
             onChange={(event) => setCheckoutLockMessage(event.target.value)}
             rows={5}
-            className="w-full bg-zinc-950 border border-zinc-800/70 px-3 py-2 text-white"
+            className="w-full border border-zinc-800/70 bg-zinc-950 px-3 py-2 text-white"
           />
         </div>
       </section>
 
-      <div className="lg:col-span-2 flex items-center justify-between gap-3">
+      <div className="flex items-center justify-between gap-3 lg:col-span-2">
         <span className="text-sm text-zinc-400">{message}</span>
         <button
           type="button"
@@ -530,6 +544,7 @@ git commit -m "feat: add store access admin settings"
 ### Task 3: Wire Proxy And Checkout Enforcement
 
 **Files:**
+
 - Create: `src/lib/store-access/get-store-access-settings.ts`
 - Create: `src/components/checkout/CheckoutLockedNotice.tsx`
 - Modify: `src/proxy/site-lock.ts`
@@ -633,13 +648,13 @@ export default async function LockedPage(...) {
 // src/components/checkout/CheckoutLockedNotice.tsx
 export function CheckoutLockedNotice({ message }: { message: string }) {
   return (
-    <div className="max-w-3xl mx-auto px-4 py-10">
+    <div className="mx-auto max-w-3xl px-4 py-10">
       <div className="rounded-2xl border border-zinc-800/70 bg-zinc-900 p-6 sm:p-8">
         <p className="text-xs uppercase tracking-[0.2em] text-red-400">Checkout Locked</p>
-        <h1 className="mt-3 text-2xl sm:text-3xl font-semibold text-white">
+        <h1 className="mt-3 text-2xl font-semibold text-white sm:text-3xl">
           Payments are temporarily unavailable
         </h1>
-        <p className="mt-4 text-sm sm:text-base text-zinc-300">{message}</p>
+        <p className="mt-4 text-sm text-zinc-300 sm:text-base">{message}</p>
       </div>
     </div>
   );
@@ -659,9 +674,7 @@ export default async function CheckoutGatePage() {
 
   if (checkoutLock) {
     return (
-      <CheckoutLockedNotice
-        message={storeAccess?.settings.checkoutLockMessage ?? ""}
-      />
+      <CheckoutLockedNotice message={storeAccess?.settings.checkoutLockMessage ?? ""} />
     );
   }
 
@@ -678,11 +691,7 @@ import { CheckoutStart } from "@/components/checkout/CheckoutStart";
 export default async function CheckoutStartPage() {
   const storeAccess = await getStoreAccessSettings();
   if (storeAccess?.settings.checkoutLockEnabled) {
-    return (
-      <CheckoutLockedNotice
-        message={storeAccess.settings.checkoutLockMessage}
-      />
-    );
+    return <CheckoutLockedNotice message={storeAccess.settings.checkoutLockMessage} />;
   }
 
   return <CheckoutStart />;

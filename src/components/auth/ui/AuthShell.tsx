@@ -48,7 +48,7 @@ export default function AuthShell({ children, isSiteLocked = false }: AuthShellP
         data-auth-content
         className="mx-auto flex min-h-screen justify-center px-6 pb-20 pt-40 sm:px-8 sm:pt-[min(20.05vw,24.1rem)] lg:px-12"
       >
-        <div className="w-full sm:min-w-[24rem] sm:w-[min(28.7vw,34.375rem)]">
+        <div className="w-full sm:w-[min(28.7vw,34.375rem)] sm:min-w-[24rem]">
           {children}
         </div>
       </main>

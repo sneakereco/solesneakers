@@ -1,39 +1,73 @@
 export type SquareEnvironment = "sandbox" | "production";
 
+type SquareWalletContact = {
+  givenName?: string;
+  familyName?: string;
+  email?: string;
+  phone?: string;
+  addressLines?: string[];
+  city?: string;
+  state?: string;
+  postalCode?: string;
+  countryCode?: string;
+};
+
 export type SquareTokenResult = {
   status: string;
   token?: string;
-  errors?: Array<{ message?: string }>;
+  errors?: Array<{ message?: string; field?: string }>;
   details?: {
+    billing?: SquareWalletContact;
     shipping?: {
-      contact?: {
-        givenName?: string;
-        familyName?: string;
-        email?: string;
-        phone?: string;
-        addressLines?: string[];
-        city?: string;
-        state?: string;
-        postalCode?: string;
-        countryCode?: string;
-      };
+      contact?: SquareWalletContact;
     };
   };
 };
 
 export type SquarePaymentMethod = {
-  attach?(selector: string, options?: { useCustomButton?: boolean }): Promise<void>;
+  attach?(
+    selector: string,
+    options?: { useCustomButton?: boolean; buttonSizeMode?: "static" | "fill" },
+  ): Promise<void>;
   tokenize(details?: Record<string, unknown>): Promise<SquareTokenResult>;
   destroy?(): Promise<boolean>;
+  addEventListener?(event: string, listener: (event: SquareCardInputEvent) => void): void;
+  removeEventListener?(
+    event: string,
+    listener: (event: SquareCardInputEvent) => void,
+  ): void;
+  focus?(field: string): Promise<boolean>;
+  recalculateSize?(): void;
+};
+
+export type SquareCardInputEvent = {
+  detail: {
+    field?: string;
+    cardBrand?: string;
+    currentState?: {
+      isEmpty: boolean;
+      isCompletelyValid: boolean;
+      hasErrorClass?: boolean;
+    };
+  };
 };
 
 export type SquareCashAppPayMethod = {
-  attach(selector: string): Promise<void>;
+  attach(
+    selector: string,
+    options?: {
+      shape?: "round" | "semiround";
+      size?: "medium" | "small";
+      theme?: "dark" | "light";
+      width?: "full" | "static";
+    },
+  ): Promise<void>;
   addEventListener(event: "ontokenization", listener: (event: unknown) => void): void;
   destroy?(): Promise<boolean>;
 };
 
 export type SquarePaymentRequest = {
+  update(options: Record<string, unknown>): boolean;
   addEventListener(
     event: string,
     listener: (

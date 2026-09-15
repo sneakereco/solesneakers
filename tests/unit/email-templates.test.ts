@@ -1,6 +1,11 @@
 import fs from "node:fs";
 import path from "node:path";
 
+// Keep template fixtures independent of the host or CI build environment.
+jest.mock("@/config/env", () => ({
+  env: { NEXT_PUBLIC_SITE_URL: "https://example.com" },
+}));
+
 import { buildPasswordUpdatedEmail } from "@/lib/email/account/password-updated";
 import {
   buildOrderConfirmationEmail,

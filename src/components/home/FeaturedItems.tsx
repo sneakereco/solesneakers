@@ -62,7 +62,21 @@ export function FeaturedItems({ embedded = false }: FeaturedItemsProps) {
   }, []);
 
   useEffect(() => {
-    loadFeaturedItems();
+    const loadFeaturedItems = async () => {
+      try {
+        const response = await fetch("/api/featured-items");
+        const data = await response.json();
+        if (response.ok) {
+          setFeatured(data.featured || []);
+        }
+      } catch (error) {
+        logError(error, { layer: "frontend", event: "load_featured_items_home" });
+      } finally {
+        setIsLoading(false);
+      }
+    };
+
+    void loadFeaturedItems();
   }, []);
 
   useEffect(() => {
@@ -85,20 +99,6 @@ export function FeaturedItems({ embedded = false }: FeaturedItemsProps) {
       window.removeEventListener("resize", onResize);
     };
   }, [featured, checkScrollButtons]);
-
-  const loadFeaturedItems = async () => {
-    try {
-      const response = await fetch("/api/featured-items");
-      const data = await response.json();
-      if (response.ok) {
-        setFeatured(data.featured || []);
-      }
-    } catch (error) {
-      logError(error, { layer: "frontend", event: "load_featured_items_home" });
-    } finally {
-      setIsLoading(false);
-    }
-  };
 
   const scroll = (direction: "left" | "right") => {
     const container = scrollRef.current;
@@ -134,7 +134,7 @@ export function FeaturedItems({ embedded = false }: FeaturedItemsProps) {
       >
         <h2
           className={[
-            "text-xl sm:text-2xl md:text-3xl font-bold text-white flex items-center gap-2",
+            "flex items-center gap-2 text-xl font-bold text-white sm:text-2xl md:text-3xl",
             headerShadow,
           ].join(" ")}
         >
@@ -144,7 +144,7 @@ export function FeaturedItems({ embedded = false }: FeaturedItemsProps) {
         <Link
           href="/store"
           className={[
-            "text-[10px] sm:text-xs md:text-sm text-gray-200 hover:text-white transition font-medium whitespace-nowrap",
+            "whitespace-nowrap text-[10px] font-medium text-gray-200 transition hover:text-white sm:text-xs md:text-sm",
             headerShadow,
           ].join(" ")}
         >
@@ -163,14 +163,14 @@ export function FeaturedItems({ embedded = false }: FeaturedItemsProps) {
           className={[
             "shrink-0 self-center rounded-full shadow-lg transition",
             "p-1 sm:p-1.5 md:p-2 lg:p-3",
-            "bg-zinc-900/80 border border-zinc-800/70",
+            "border border-zinc-800/70 bg-zinc-900/80",
             "hover:bg-zinc-800/80",
             !canScrollLeft
-              ? "opacity-35 cursor-not-allowed hover:bg-zinc-900/80"
+              ? "cursor-not-allowed opacity-35 hover:bg-zinc-900/80"
               : "opacity-100",
           ].join(" ")}
         >
-          <ChevronLeft className="w-3 h-3 sm:w-4 sm:h-4 md:w-5 md:h-5 lg:w-6 lg:h-6 text-white" />
+          <ChevronLeft className="h-3 w-3 text-white sm:h-4 sm:w-4 md:h-5 md:w-5 lg:h-6 lg:w-6" />
         </button>
 
         {/* Wrapper to hide partial cards */}
@@ -179,7 +179,7 @@ export function FeaturedItems({ embedded = false }: FeaturedItemsProps) {
           <div
             ref={scrollRef}
             className={[
-              "flex gap-3 sm:gap-4 md:gap-5 overflow-x-auto scroll-smooth",
+              "flex gap-3 overflow-x-auto scroll-smooth sm:gap-4 md:gap-5",
               embedded ? "pb-0" : "pb-2",
               "snap-x snap-mandatory",
               // Hide scrollbar
@@ -207,49 +207,49 @@ export function FeaturedItems({ embedded = false }: FeaturedItemsProps) {
                 <Link
                   key={product.id}
                   href={`/store/${product.id}`}
-                  className="flex-shrink-0 w-40 sm:w-48 md:w-52 lg:w-56 group snap-start"
+                  className="group w-40 flex-shrink-0 snap-start sm:w-48 md:w-52 lg:w-56"
                   style={{ scrollSnapAlign: "start", scrollSnapStop: "always" }}
                 >
-                  <div className="bg-zinc-900 border border-zinc-800/70 rounded overflow-hidden hover:border-zinc-600/70 transition flex h-full flex-col">
-                    <div className="aspect-square relative bg-zinc-800">
+                  <div className="flex h-full flex-col overflow-hidden rounded border border-zinc-800/70 bg-zinc-900 transition hover:border-zinc-600/70">
+                    <div className="relative aspect-square bg-zinc-800">
                       {product.primaryImage ? (
                         <Image
                           src={product.primaryImage}
                           alt={product.titleDisplay}
                           fill
                           sizes="(min-width: 1024px) 18vw, (min-width: 640px) 30vw, 45vw"
-                          className="object-cover group-hover:scale-105 transition-transform duration-300"
+                          className="object-cover transition-transform duration-300 group-hover:scale-105"
                           quality={75}
                         />
                       ) : (
-                        <div className="w-full h-full flex items-center justify-center text-gray-400 text-sm">
+                        <div className="flex h-full w-full items-center justify-center text-sm text-gray-400">
                           No Image
                         </div>
                       )}
                     </div>
 
-                    <div className="p-2 sm:p-3 flex flex-col flex-1">
-                      <div className="text-[9px] sm:text-[10px] uppercase tracking-[0.2em] text-gray-400 mb-1">
+                    <div className="flex flex-1 flex-col p-2 sm:p-3">
+                      <div className="mb-1 text-[9px] uppercase tracking-[0.2em] text-gray-400 sm:text-[10px]">
                         {product.brand.label}
                       </div>
 
-                      <h3 className="text-white font-bold text-[11px] sm:text-xs line-clamp-2 min-h-[1.75rem] sm:min-h-[2rem] leading-tight">
+                      <h3 className="line-clamp-2 min-h-[1.75rem] text-[11px] font-bold leading-tight text-white sm:min-h-[2rem] sm:text-xs">
                         {product.titleDisplay}
                       </h3>
 
                       {sizes && sizes.length > 0 && (
-                        <div className="mt-1.5 sm:mt-2 flex flex-wrap gap-1">
+                        <div className="mt-1.5 flex flex-wrap gap-1 sm:mt-2">
                           {sizes.map((size, idx) => (
                             <span
                               key={idx}
-                              className="text-[9px] sm:text-[10px] px-1 sm:px-1.5 py-0.5 bg-zinc-800 text-gray-300 rounded"
+                              className="rounded bg-zinc-800 px-1 py-0.5 text-[9px] text-gray-300 sm:px-1.5 sm:text-[10px]"
                             >
                               {size}
                             </span>
                           ))}
 
                           {availableCount > 3 && (
-                            <span className="text-[9px] sm:text-[10px] px-1 sm:px-1.5 py-0.5 text-gray-400">
+                            <span className="px-1 py-0.5 text-[9px] text-gray-400 sm:px-1.5 sm:text-[10px]">
                               +{availableCount - 3}
                             </span>
                           )}
@@ -257,7 +257,7 @@ export function FeaturedItems({ embedded = false }: FeaturedItemsProps) {
                       )}
 
                       <div className="mt-auto pt-2 sm:pt-3">
-                        <span className="text-white font-extrabold text-sm sm:text-base whitespace-nowrap tabular-nums">
+                        <span className="whitespace-nowrap text-sm font-extrabold tabular-nums text-white sm:text-base">
                           From {formatPrice(product.minPrice)}
                         </span>
                       </div>
@@ -278,14 +278,14 @@ export function FeaturedItems({ embedded = false }: FeaturedItemsProps) {
           className={[
             "shrink-0 self-center rounded-full shadow-lg transition",
             "p-1 sm:p-1.5 md:p-2 lg:p-3",
-            "bg-zinc-900/80 border border-zinc-800/70",
+            "border border-zinc-800/70 bg-zinc-900/80",
             "hover:bg-zinc-800/80",
             !canScrollRight
-              ? "opacity-35 cursor-not-allowed hover:bg-zinc-900/80"
+              ? "cursor-not-allowed opacity-35 hover:bg-zinc-900/80"
               : "opacity-100",
           ].join(" ")}
         >
-          <ChevronRight className="w-3 h-3 sm:w-4 sm:h-4 md:w-5 md:h-5 lg:w-6 lg:h-6 text-white" />
+          <ChevronRight className="h-3 w-3 text-white sm:h-4 sm:w-4 md:h-5 md:w-5 lg:h-6 lg:w-6" />
         </button>
       </div>
     </>
@@ -303,8 +303,8 @@ export function FeaturedItems({ embedded = false }: FeaturedItemsProps) {
     }
 
     return (
-      <section className="bg-black py-8 md:py-12 border-t border-zinc-900">
-        <div className="max-w-7xl mx-auto px-4">
+      <section className="border-t border-zinc-900 bg-black py-8 md:py-12">
+        <div className="mx-auto max-w-7xl px-4">
           <div className="flex items-center justify-center py-12">
             <div className="text-gray-400">Loading featured items...</div>
           </div>
@@ -318,8 +318,8 @@ export function FeaturedItems({ embedded = false }: FeaturedItemsProps) {
   }
 
   return (
-    <section className="bg-black py-8 md:py-12 border-t border-zinc-900">
-      <div className="max-w-7xl mx-auto px-4">{Content}</div>
+    <section className="border-t border-zinc-900 bg-black py-8 md:py-12">
+      <div className="mx-auto max-w-7xl px-4">{Content}</div>
     </section>
   );
 }

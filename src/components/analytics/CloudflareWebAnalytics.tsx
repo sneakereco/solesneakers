@@ -6,6 +6,11 @@ export function CloudflareWebAnalytics({ token }: { token?: string }) {
   }
 
   return (
-    <script type="module" src={BEACON_URL} data-cf-beacon={JSON.stringify({ token })} />
+    <script
+      async
+      type="module"
+      src={BEACON_URL}
+      data-cf-beacon={JSON.stringify({ token })}
+    />
   );
 }

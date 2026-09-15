@@ -1,6 +1,8 @@
 // src/components/contact/ContactForm.tsx
 "use client";
 
+import Image from "next/image";
+
 import { useEffect, useMemo, useRef, useState } from "react";
 
 import { security } from "@/config/security";
@@ -26,8 +28,8 @@ export function ContactForm({
   const [formData, setFormData] = useState({
     name: "",
     email: "",
-    subject: "",
-    message: "",
+    subject: initialSubject,
+    message: initialMessage,
   });
   const [attachments, setAttachments] = useState<File[]>([]);
   const [status, setStatus] = useState<"idle" | "sending" | "success" | "error">("idle");
@@ -54,14 +56,6 @@ export function ContactForm({
   );
 
   useEffect(() => {
-    setFormData((prev) => ({
-      ...prev,
-      subject: prev.subject || initialSubject,
-      message: prev.message || initialMessage,
-    }));
-  }, [initialSubject, initialMessage]);
-
-  useEffect(() => {
     if (typeof window === "undefined") {
       return;
     }
@@ -72,6 +66,8 @@ export function ContactForm({
     sessionStorage.removeItem(storageKey);
     try {
       const parsed = JSON.parse(stored) as Partial<typeof formData>;
+      // Restore the consumed browser-only draft after hydration.
+      // eslint-disable-next-line react-hooks/set-state-in-effect
       setFormData((prev) => ({
         name: parsed.name ?? prev.name,
         email: parsed.email ?? prev.email,
@@ -343,23 +339,26 @@ export function ContactForm({
                   : "block w-full cursor-pointer text-sm text-zinc-300 file:mr-4 file:cursor-pointer file:rounded file:border-0 file:bg-red-600 file:px-4 file:py-2 file:text-sm file:font-semibold file:text-white hover:file:bg-red-700"
               }
             />
-            <p className="text-xs text-zinc-500 mt-2">{attachmentsHint}</p>
+            <p className="mt-2 text-xs text-zinc-500">{attachmentsHint}</p>
             {attachmentError && (
-              <p className="text-xs text-red-400 mt-2">{attachmentError}</p>
+              <p className="mt-2 text-xs text-red-400">{attachmentError}</p>
             )}
             {attachments.length > 0 && (
-              <div className="mt-4 grid grid-cols-2 sm:grid-cols-3 gap-3">
+              <div className="mt-4 grid grid-cols-2 gap-3 sm:grid-cols-3">
                 {previews.map((preview, index) => (
                   <div key={`${preview.file.name}-${index}`} className="relative">
-                    <img
+                    <Image
+                      unoptimized
+                      width={240}
+                      height={80}
                       src={preview.url}
                       alt={preview.file.name}
-                      className="h-20 w-full object-cover rounded border border-zinc-800"
+                      className="h-20 w-full rounded border border-zinc-800 object-cover"
                     />
                     <button
                       type="button"
                       onClick={() => removeAttachment(index)}
-                      className="absolute top-2 right-2 rounded bg-black/70 px-2 py-1 text-[11px] text-white hover:bg-black"
+                      className="absolute right-2 top-2 rounded bg-black/70 px-2 py-1 text-[11px] text-white hover:bg-black"
                     >
                       Remove
                     </button>

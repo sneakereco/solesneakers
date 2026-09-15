@@ -1,5 +1,7 @@
 "use client";
 
+import Image from "next/image";
+
 import { X, Package, Layers, Hash } from "lucide-react";
 import { useEffect, useMemo, useState } from "react";
 
@@ -121,7 +123,7 @@ const DetailRow = ({
       {Icon && <Icon className="h-3 w-3" />}
       {label}
     </div>
-    <div className="text-sm font-medium text-zinc-200 truncate">{value}</div>
+    <div className="truncate text-sm font-medium text-zinc-200">{value}</div>
   </div>
 );
 
@@ -142,7 +144,7 @@ const StatCard = ({
 
   return (
     <div className="flex flex-col rounded border border-zinc-800 bg-zinc-900/40 p-2.5">
-      <span className="text-[10px] uppercase tracking-wider text-zinc-500 font-bold mb-1">
+      <span className="mb-1 text-[10px] font-bold uppercase tracking-wider text-zinc-500">
         {label}
       </span>
       <span className={`text-base font-semibold ${colorStyles[color]}`}>{value}</span>
@@ -165,11 +167,16 @@ export function AdminOrderItemDetailsModal({
 }: AdminOrderItemDetailsModalProps) {
   const [selectedImageIndex, setSelectedImageIndex] = useState(0);
 
+  const [previousSelection, setPreviousSelection] = useState({ open, item });
+  if (previousSelection.open !== open || previousSelection.item !== item) {
+    setPreviousSelection({ open, item });
+    setSelectedImageIndex(0);
+  }
+
   useEffect(() => {
     if (!open) {
       return;
     }
-    setSelectedImageIndex(0);
     const onKeyDown = (event: KeyboardEvent) => {
       if (event.key === "Escape") {
         onClose();
@@ -213,10 +220,10 @@ export function AdminOrderItemDetailsModal({
         role="dialog"
         aria-modal="true"
         onClick={(e) => e.stopPropagation()}
-        className="flex w-full max-w-4xl flex-col overflow-hidden border border-zinc-800 bg-zinc-950 shadow-2xl rounded-lg max-h-[80vh]"
+        className="flex max-h-[80vh] w-full max-w-4xl flex-col overflow-hidden rounded-lg border border-zinc-800 bg-zinc-950 shadow-2xl"
       >
         {/* --- Header (Fixed) --- */}
-        <div className="flex-shrink-0 flex items-start justify-between border-b border-zinc-800 bg-zinc-950 px-5 py-4">
+        <div className="flex flex-shrink-0 items-start justify-between border-b border-zinc-800 bg-zinc-950 px-5 py-4">
           <div className="min-w-0 pr-4">
             <h2 className="truncate text-lg font-bold text-white">{productTitle}</h2>
             <div className="mt-1.5 flex flex-wrap items-center gap-x-4 gap-y-1 text-xs">
@@ -238,19 +245,22 @@ export function AdminOrderItemDetailsModal({
           </div>
           <button
             onClick={onClose}
-            className="flex-shrink-0 rounded p-1.5 text-zinc-500 hover:bg-zinc-900 hover:text-white transition-colors"
+            className="flex-shrink-0 rounded p-1.5 text-zinc-500 transition-colors hover:bg-zinc-900 hover:text-white"
           >
             <X className="h-5 w-5" />
           </button>
         </div>
 
         {/* --- Content Scroll Area --- */}
-        <div className="flex-1 overflow-y-auto p-5 scrollbar-thin scrollbar-thumb-zinc-800">
+        <div className="scrollbar-thin scrollbar-thumb-zinc-800 flex-1 overflow-y-auto p-5">
           <div className="grid grid-cols-1 gap-6 md:grid-cols-2">
             {/* --- Left Side: Gallery --- */}
             <div className="flex flex-col gap-3">
-              <div className="relative w-full overflow-hidden rounded border border-zinc-800 bg-zinc-900/50 flex items-center justify-center">
-                <img
+              <div className="relative flex w-full items-center justify-center overflow-hidden rounded border border-zinc-800 bg-zinc-900/50">
+                <Image
+                  unoptimized
+                  width={400}
+                  height={400}
                   src={selectedImage}
                   alt="Product Main"
                   className="h-48 w-full object-contain p-2 md:h-[300px]"
@@ -259,7 +269,7 @@ export function AdminOrderItemDetailsModal({
 
               {/* Thumbnails */}
               {images.length > 1 && (
-                <div className="flex gap-2 overflow-x-auto pb-1 scrollbar-thin scrollbar-thumb-zinc-800">
+                <div className="scrollbar-thin scrollbar-thumb-zinc-800 flex gap-2 overflow-x-auto pb-1">
                   {images.map((img, idx) => (
                     <button
                       key={idx}
@@ -270,7 +280,10 @@ export function AdminOrderItemDetailsModal({
                           : "border-zinc-800 opacity-60 hover:opacity-100"
                       }`}
                     >
-                      <img
+                      <Image
+                        unoptimized
+                        width={400}
+                        height={400}
                         src={img.url || ""}
                         className="h-full w-full object-cover"
                         alt="thumb"
@@ -299,7 +312,7 @@ export function AdminOrderItemDetailsModal({
 
               {/* Attributes */}
               <div className="rounded border border-zinc-800 bg-zinc-900/20 p-4">
-                <div className="grid grid-cols-2 gap-y-4 gap-x-2">
+                <div className="grid grid-cols-2 gap-x-2 gap-y-4">
                   <DetailRow
                     label="Brand"
                     value={item.brand || item.product?.brand || "-"}
@@ -320,7 +333,7 @@ export function AdminOrderItemDetailsModal({
 
               {/* Description */}
               <div>
-                <h4 className="text-[10px] font-bold uppercase tracking-wider text-zinc-500 mb-1.5">
+                <h4 className="mb-1.5 text-[10px] font-bold uppercase tracking-wider text-zinc-500">
                   Description
                 </h4>
                 <div className="max-h-32 overflow-y-auto rounded border border-zinc-800 bg-zinc-900/20 p-3 text-xs leading-relaxed text-zinc-400">

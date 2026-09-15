@@ -83,10 +83,8 @@ export class PaymentPermitStore {
       if (value === null) {
         return null;
       }
-      if (typeof value !== "string") {
-        throw new Error("payment_permit_invalid");
-      }
-      const parsed = permitSchema.safeParse(JSON.parse(value));
+      const decoded = typeof value === "string" ? JSON.parse(value) : value;
+      const parsed = permitSchema.safeParse(decoded);
       if (!parsed.success) {
         throw new Error("payment_permit_invalid");
       }

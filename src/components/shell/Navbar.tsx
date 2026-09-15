@@ -126,7 +126,7 @@ export function Navbar({
           </div>
         </Link>
 
-        <div className="absolute right-6 top-1/2 hidden -translate-y-1/2 md:flex sm:right-8 lg:right-14">
+        <div className="absolute right-6 top-1/2 hidden -translate-y-1/2 sm:right-8 md:flex lg:right-14">
           <div className="flex items-center" style={{ gap: "1.75rem" }}>
             {effectiveIsAuthenticated ? (
               <div className="group relative inline-flex">

@@ -1,6 +1,6 @@
 "use client";
 
-import { useState, useEffect } from "react";
+import { useState, useMemo } from "react";
 
 export interface AddressValue {
   name: string;
@@ -33,13 +33,12 @@ export function AddressInput({
   disabled = false,
   showErrors = false,
 }: AddressInputProps) {
-  const [errors, setErrors] = useState<Partial<Record<keyof AddressValue, string>>>({});
   const [touched, setTouched] = useState<Partial<Record<keyof AddressValue, boolean>>>(
     {},
   );
 
   // Client-side validation
-  useEffect(() => {
+  const errors = useMemo(() => {
     const newErrors: Partial<Record<keyof AddressValue, string>> = {};
 
     if (!value.name?.trim()) {
@@ -73,14 +72,14 @@ export function AddressInput({
       newErrors.postal_code = "Valid ZIP code required";
     }
 
-    setErrors(newErrors);
+    return newErrors;
   }, [value, requirePhone, requireEmail]);
 
   return (
     <div className="space-y-4">
       {/* Name */}
       <div>
-        <label className="block text-sm font-medium text-gray-300 mb-1">
+        <label className="mb-1 block text-sm font-medium text-gray-300">
           Full Name *
         </label>
         <input
@@ -89,20 +88,20 @@ export function AddressInput({
           onChange={(e) => onChange({ ...value, name: e.target.value })}
           onBlur={() => setTouched({ ...touched, name: true })}
           disabled={disabled}
-          className={`w-full px-3 py-2.5 bg-zinc-950 border rounded text-white focus:outline-none focus:ring-2 focus:ring-red-600 ${
+          className={`w-full rounded border bg-zinc-950 px-3 py-2.5 text-white focus:outline-none focus:ring-2 focus:ring-red-600 ${
             (showErrors || touched.name) && errors.name
               ? "border-red-500"
               : "border-zinc-800"
           }`}
         />
         {(showErrors || touched.name) && errors.name && (
-          <div className="text-xs text-red-400 mt-1">{errors.name}</div>
+          <div className="mt-1 text-xs text-red-400">{errors.name}</div>
         )}
       </div>
 
       {/* Phone */}
       <div>
-        <label className="block text-sm font-medium text-gray-300 mb-1">
+        <label className="mb-1 block text-sm font-medium text-gray-300">
           Phone Number {requirePhone ? "*" : "(optional)"}
         </label>
         <input
@@ -112,20 +111,20 @@ export function AddressInput({
           onBlur={() => setTouched({ ...touched, phone: true })}
           disabled={disabled}
           placeholder="(555) 123-4567"
-          className={`w-full px-3 py-2.5 bg-zinc-950 border rounded text-white focus:outline-none focus:ring-2 focus:ring-red-600 ${
+          className={`w-full rounded border bg-zinc-950 px-3 py-2.5 text-white focus:outline-none focus:ring-2 focus:ring-red-600 ${
             (showErrors || touched.phone) && errors.phone
               ? "border-red-500"
               : "border-zinc-800"
           }`}
         />
         {(showErrors || touched.phone) && errors.phone && (
-          <div className="text-xs text-red-400 mt-1">{errors.phone}</div>
+          <div className="mt-1 text-xs text-red-400">{errors.phone}</div>
         )}
       </div>
 
       {/* Email */}
       <div>
-        <label className="block text-sm font-medium text-gray-300 mb-1">
+        <label className="mb-1 block text-sm font-medium text-gray-300">
           Email {requireEmail ? "*" : "(optional)"}
         </label>
         <input
@@ -135,20 +134,20 @@ export function AddressInput({
           onBlur={() => setTouched({ ...touched, email: true })}
           disabled={disabled}
           placeholder="email@example.com"
-          className={`w-full px-3 py-2.5 bg-zinc-950 border rounded text-white focus:outline-none focus:ring-2 focus:ring-red-600 ${
+          className={`w-full rounded border bg-zinc-950 px-3 py-2.5 text-white focus:outline-none focus:ring-2 focus:ring-red-600 ${
             (showErrors || touched.email) && errors.email
               ? "border-red-500"
               : "border-zinc-800"
           }`}
         />
         {(showErrors || touched.email) && errors.email && (
-          <div className="text-xs text-red-400 mt-1">{errors.email}</div>
+          <div className="mt-1 text-xs text-red-400">{errors.email}</div>
         )}
       </div>
 
       {/* Address Line 1 */}
       <div>
-        <label className="block text-sm font-medium text-gray-300 mb-1">
+        <label className="mb-1 block text-sm font-medium text-gray-300">
           Street Address *
         </label>
         <input
@@ -158,20 +157,20 @@ export function AddressInput({
           onBlur={() => setTouched({ ...touched, line1: true })}
           disabled={disabled}
           placeholder="123 Main St"
-          className={`w-full px-3 py-2.5 bg-zinc-950 border rounded text-white focus:outline-none focus:ring-2 focus:ring-red-600 ${
+          className={`w-full rounded border bg-zinc-950 px-3 py-2.5 text-white focus:outline-none focus:ring-2 focus:ring-red-600 ${
             (showErrors || touched.line1) && errors.line1
               ? "border-red-500"
               : "border-zinc-800"
           }`}
         />
         {(showErrors || touched.line1) && errors.line1 && (
-          <div className="text-xs text-red-400 mt-1">{errors.line1}</div>
+          <div className="mt-1 text-xs text-red-400">{errors.line1}</div>
         )}
       </div>
 
       {/* Address Line 2 */}
       <div>
-        <label className="block text-sm font-medium text-gray-300 mb-1">
+        <label className="mb-1 block text-sm font-medium text-gray-300">
           Apartment, suite, etc. (optional)
         </label>
         <input
@@ -180,33 +179,33 @@ export function AddressInput({
           onChange={(e) => onChange({ ...value, line2: e.target.value })}
           disabled={disabled}
           placeholder="Apt 4B"
-          className="w-full px-3 py-2.5 bg-zinc-950 border border-zinc-800 rounded text-white focus:outline-none focus:ring-2 focus:ring-red-600"
+          className="w-full rounded border border-zinc-800 bg-zinc-950 px-3 py-2.5 text-white focus:outline-none focus:ring-2 focus:ring-red-600"
         />
       </div>
 
       {/* City, State, ZIP */}
       <div className="grid grid-cols-6 gap-4">
         <div className="col-span-3">
-          <label className="block text-sm font-medium text-gray-300 mb-1">City *</label>
+          <label className="mb-1 block text-sm font-medium text-gray-300">City *</label>
           <input
             type="text"
             value={value.city}
             onChange={(e) => onChange({ ...value, city: e.target.value })}
             onBlur={() => setTouched({ ...touched, city: true })}
             disabled={disabled}
-            className={`w-full px-3 py-2.5 bg-zinc-950 border rounded text-white focus:outline-none focus:ring-2 focus:ring-red-600 ${
+            className={`w-full rounded border bg-zinc-950 px-3 py-2.5 text-white focus:outline-none focus:ring-2 focus:ring-red-600 ${
               (showErrors || touched.city) && errors.city
                 ? "border-red-500"
                 : "border-zinc-800"
             }`}
           />
           {(showErrors || touched.city) && errors.city && (
-            <div className="text-xs text-red-400 mt-1">{errors.city}</div>
+            <div className="mt-1 text-xs text-red-400">{errors.city}</div>
           )}
         </div>
 
         <div className="col-span-1">
-          <label className="block text-sm font-medium text-gray-300 mb-1">State *</label>
+          <label className="mb-1 block text-sm font-medium text-gray-300">State *</label>
           <input
             type="text"
             value={value.state}
@@ -215,19 +214,19 @@ export function AddressInput({
             maxLength={2}
             disabled={disabled}
             placeholder="CA"
-            className={`w-full px-3 py-2.5 bg-zinc-950 border rounded text-white focus:outline-none focus:ring-2 focus:ring-red-600 uppercase ${
+            className={`w-full rounded border bg-zinc-950 px-3 py-2.5 uppercase text-white focus:outline-none focus:ring-2 focus:ring-red-600 ${
               (showErrors || touched.state) && errors.state
                 ? "border-red-500"
                 : "border-zinc-800"
             }`}
           />
           {(showErrors || touched.state) && errors.state && (
-            <div className="text-xs text-red-400 mt-1">{errors.state}</div>
+            <div className="mt-1 text-xs text-red-400">{errors.state}</div>
           )}
         </div>
 
         <div className="col-span-2">
-          <label className="block text-sm font-medium text-gray-300 mb-1">
+          <label className="mb-1 block text-sm font-medium text-gray-300">
             ZIP Code *
           </label>
           <input
@@ -237,14 +236,14 @@ export function AddressInput({
             onBlur={() => setTouched({ ...touched, postal_code: true })}
             disabled={disabled}
             placeholder="12345"
-            className={`w-full px-3 py-2.5 bg-zinc-950 border rounded text-white focus:outline-none focus:ring-2 focus:ring-red-600 ${
+            className={`w-full rounded border bg-zinc-950 px-3 py-2.5 text-white focus:outline-none focus:ring-2 focus:ring-red-600 ${
               (showErrors || touched.postal_code) && errors.postal_code
                 ? "border-red-500"
                 : "border-zinc-800"
             }`}
           />
           {(showErrors || touched.postal_code) && errors.postal_code && (
-            <div className="text-xs text-red-400 mt-1">{errors.postal_code}</div>
+            <div className="mt-1 text-xs text-red-400">{errors.postal_code}</div>
           )}
         </div>
       </div>

@@ -101,25 +101,23 @@ export function buildSquareCheckoutOrder(
           ]
         : undefined,
     fulfillments:
-      input.fulfillment === "ship" && shippingAddress
-        ? [
-            {
-              type: "SHIPMENT",
-              state: "PROPOSED",
-              shipmentDetails: {
-                recipient: {
-                  displayName:
-                    "name" in shippingAddress ? shippingAddress.name : undefined,
-                  emailAddress: input.buyerEmail,
-                  phoneNumber:
-                    "phone" in shippingAddress
-                      ? (shippingAddress.phone ?? undefined)
-                      : undefined,
-                  address: squareAddress(shippingAddress),
+      input.fulfillment === "ship"
+        ? shippingAddress && "name" in shippingAddress
+          ? [
+              {
+                type: "SHIPMENT",
+                state: "PROPOSED",
+                shipmentDetails: {
+                  recipient: {
+                    displayName: shippingAddress.name,
+                    emailAddress: input.buyerEmail,
+                    phoneNumber: shippingAddress.phone ?? undefined,
+                    address: squareAddress(shippingAddress),
+                  },
                 },
               },
-            },
-          ]
+            ]
+          : undefined
         : [
             {
               type: "PICKUP",
