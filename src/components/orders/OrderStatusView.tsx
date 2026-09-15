@@ -91,12 +91,12 @@ export function OrderStatusView({ status }: { status: OrderStatusResponse }) {
             <p className="text-xs text-zinc-500">
               Prefer socials? DM us on{" "}
               <a
-                href="https://instagram.com/realdealkickzsc"
+                href="https://instagram.com/soles.neakers"
                 className="text-red-400 hover:text-red-300"
                 target="_blank"
                 rel="noreferrer"
               >
-                Instagram @realdealkickzsc
+                Instagram @soles.neakers
               </a>
               .
             </p>
