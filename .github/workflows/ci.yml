@@ -17,18 +17,18 @@ jobs:
     runs-on: ubuntu-latest
     timeout-minutes: 20
     env:
-      
       NEXT_PUBLIC_SITE_URL: http://localhost:3000
       NEXT_PUBLIC_SUPABASE_URL: https://example.supabase.co
       NEXT_PUBLIC_SUPABASE_PUBLISHABLE_KEY: ci-public-key
       SUPABASE_SECRET_KEY: ci-secret-key
+      SUPABASE_DB_URL: postgresql://postgres:postgres@127.0.0.1:5432/ci
       UPSTASH_REDIS_REST_URL: https://example.invalid
       UPSTASH_REDIS_REST_TOKEN: ci-redis-token
       ADMIN_SESSION_SECRET: ci-admin-session-secret
       LIGHTSPEED_ACCESS_TOKEN: ci-lightspeed-token
       LIGHTSPEED_DOMAIN_PREFIX: ci-store
-      CHECKOUT_IDENTITY_HMAC_SECRET: ci-identity-hmac
-      CRON_SECRET: ci-cron
+      CHECKOUT_IDENTITY_HMAC_SECRET: ci-identity-hmac-secret-at-least-32-characters
+      CRON_SECRET: ci-cron-secret-at-least-32-characters
       NEXT_PUBLIC_CLOUDFLARE_WEB_ANALYTICS_TOKEN: ci-analytics-token
       NEXT_PUBLIC_TURNSTILE_SITE_KEY: ci-turnstile-key
       ORDER_ACCESS_TOKEN_SECRET: ci-order-access-token
@@ -39,9 +39,9 @@ jobs:
       SHIPPO_WEBHOOK_TOKEN: ci-shippo-webhook-token
       SQUARE_ACCESS_TOKEN: ci-square-access-token
       SQUARE_APPLICATION_ID: ci-square-app-id
-      SQUARE_ENVIRONMENT: ci-square-env
+      SQUARE_ENVIRONMENT: sandbox
       SQUARE_LOCATION_ID: ci-square-location-id
-      SQUARE_WEBHOOK_NOTIFICATION_URL: ci-square-webhook-url
+      SQUARE_WEBHOOK_NOTIFICATION_URL: https://example.invalid/api/webhooks/square
       SQUARE_WEBHOOK_SIGNATURE_KEY: ci-square-webhook-signature
       TURNSTILE_SECRET_KEY: ci-tunrstil-secret
 
@@ -69,6 +69,9 @@ jobs:
 
       - name: Unit tests
         run: npm run test:jest:unit -- --runInBand
+
+      - name: Integration tests
+        run: npm run test:jest:integration -- --runInBand
 
       - name: Build without deployment credentials
         run: npx next build

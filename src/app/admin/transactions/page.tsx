@@ -91,6 +91,87 @@ type TransactionOrder = {
   items?: OrderItemSummary[] | null;
 };
 
+const resolveShipping = (value: unknown): OrderShipping | null => {
+  if (!value) {
+    return null;
+  }
+  if (Array.isArray(value)) {
+    return (value[0] ?? null) as OrderShipping | null;
+  }
+  return value as OrderShipping;
+};
+
+const resolvePayment = (value: unknown): PaymentSummary | null => {
+  if (!value) {
+    return null;
+  }
+  if (Array.isArray(value)) {
+    return (value[0] ?? null) as PaymentSummary | null;
+  }
+  return value as PaymentSummary;
+};
+
+const getCustomerName = (order: TransactionOrder) => {
+  const address = resolveShipping(order.shipping);
+  return address?.name?.trim() || (order.shipping_profile_name ?? "").trim() || "—";
+};
+
+const getCustomerEmail = (order: TransactionOrder) => {
+  return (order.profiles?.email ?? order.guest_email ?? "").trim() || "—";
+};
+
+const getPaymentDisplay = (order: TransactionOrder) => {
+  const payment = resolvePayment(order.payment);
+  if (!payment?.card_type && !payment?.card_last4) {
+    return "—";
+  }
+  const type = payment.card_type ?? "";
+  const last4 = payment.card_last4 ? `···· ${payment.card_last4}` : "";
+  return [type, last4].filter(Boolean).join(" ");
+};
+
+const getProfit = (order: TransactionOrder): number | null => {
+  if (!shouldShowOrderProfit(order.status)) {
+    return null;
+  }
+  const items = order.items;
+  if (!items || items.length === 0) {
+    return null;
+  }
+  return getOrderNetProfitDollars({
+    subtotal: order.subtotal ?? order.total ?? 0,
+    total: order.total ?? 0,
+    refundAmountRaw: order.refund_amount ?? 0,
+    items,
+    resolveUnitCost: (item) => Number(item.unit_cost ?? 0),
+  });
+};
+
+const PAGE_SIZE = 20;
+
+const buildParams = (
+  page: number,
+  tab: (typeof TRANSACTION_TABS)[number],
+  extra?: Record<string, string>,
+) => {
+  const params = new URLSearchParams();
+  if (tab.statuses) {
+    tab.statuses.forEach((s) => params.append("status", s));
+  }
+  if (tab.incomplete) {
+    params.set("incomplete", "true");
+  }
+  if (tab.includeAll) {
+    params.set("includeAll", "true");
+  }
+  params.set("limit", String(PAGE_SIZE));
+  params.set("page", String(page));
+  if (extra) {
+    Object.entries(extra).forEach(([k, v]) => params.set(k, v));
+  }
+  return params;
+};
+
 export default function TransactionsPage() {
   const router = useRouter();
   const [orders, setOrders] = useState<TransactionOrder[]>([]);
@@ -109,41 +190,14 @@ export default function TransactionsPage() {
   });
   const [refreshToken] = useState(0);
 
-  const PAGE_SIZE = 20;
   const totalPages = Math.max(1, Math.ceil(totalCount / PAGE_SIZE));
-
-  const buildParams = (
-    tab: (typeof TRANSACTION_TABS)[number],
-    extra?: Record<string, string>,
-  ) => {
-    const params = new URLSearchParams();
-    if (tab.statuses) {
-      tab.statuses.forEach((s) => params.append("status", s));
-    }
-    if (tab.incomplete) {
-      params.set("incomplete", "true");
-    }
-    if (tab.includeAll) {
-      params.set("includeAll", "true");
-    }
-    params.set("limit", String(PAGE_SIZE));
-    params.set("page", String(page));
-    if (extra) {
-      Object.entries(extra).forEach(([k, v]) => params.set(k, v));
-    }
-    return params;
-  };
-
-  useEffect(() => {
-    setPage(1);
-  }, [activeTab]);
 
   useEffect(() => {
     const tab = TRANSACTION_TABS.find((t) => t.key === activeTab) ?? TRANSACTION_TABS[0];
     const loadOrders = async () => {
       setIsLoading(true);
       try {
-        const params = buildParams(tab);
+        const params = buildParams(page, tab);
         const response = await fetch(`/api/admin/orders?${params.toString()}`);
         const data = await response.json();
         setOrders(data.orders ?? []);
@@ -154,7 +208,7 @@ export default function TransactionsPage() {
         setIsLoading(false);
       }
     };
-    loadOrders();
+    void loadOrders();
   }, [activeTab, refreshToken, page]);
 
   useEffect(() => {
@@ -162,7 +216,7 @@ export default function TransactionsPage() {
       try {
         const results = await Promise.all(
           TRANSACTION_TABS.map(async (tab) => {
-            const params = buildParams(tab, { limit: "1", page: "1" });
+            const params = buildParams(1, tab, { limit: "1", page: "1" });
             const response = await fetch(`/api/admin/orders?${params.toString()}`);
             const data = await response.json();
             return { key: tab.key, count: Number(data.count ?? 0) };
@@ -184,70 +238,12 @@ export default function TransactionsPage() {
         logError(error, { layer: "frontend", event: "admin_load_transaction_counts" });
       }
     };
-    loadCounts();
+    void loadCounts();
   }, [refreshToken]);
 
-  useEffect(() => {
-    if (page > totalPages) {
-      setPage(totalPages);
-    }
-  }, [page, totalPages]);
-
-  const resolveShipping = (value: unknown): OrderShipping | null => {
-    if (!value) {
-      return null;
-    }
-    if (Array.isArray(value)) {
-      return (value[0] ?? null) as OrderShipping | null;
-    }
-    return value as OrderShipping;
-  };
-
-  const resolvePayment = (value: unknown): PaymentSummary | null => {
-    if (!value) {
-      return null;
-    }
-    if (Array.isArray(value)) {
-      return (value[0] ?? null) as PaymentSummary | null;
-    }
-    return value as PaymentSummary;
-  };
-
-  const getCustomerName = (order: TransactionOrder) => {
-    const address = resolveShipping(order.shipping);
-    return address?.name?.trim() || (order.shipping_profile_name ?? "").trim() || "—";
-  };
-
-  const getCustomerEmail = (order: TransactionOrder) => {
-    return (order.profiles?.email ?? order.guest_email ?? "").trim() || "—";
-  };
-
-  const getPaymentDisplay = (order: TransactionOrder) => {
-    const payment = resolvePayment(order.payment);
-    if (!payment?.card_type && !payment?.card_last4) {
-      return "—";
-    }
-    const type = payment.card_type ?? "";
-    const last4 = payment.card_last4 ? `···· ${payment.card_last4}` : "";
-    return [type, last4].filter(Boolean).join(" ");
-  };
-
-  const getProfit = (order: TransactionOrder): number | null => {
-    if (!shouldShowOrderProfit(order.status)) {
-      return null;
-    }
-    const items = order.items;
-    if (!items || items.length === 0) {
-      return null;
-    }
-    return getOrderNetProfitDollars({
-      subtotal: order.subtotal ?? order.total ?? 0,
-      total: order.total ?? 0,
-      refundAmountRaw: order.refund_amount ?? 0,
-      items,
-      resolveUnitCost: (item) => Number(item.unit_cost ?? 0),
-    });
-  };
+  if (page > totalPages) {
+    setPage(totalPages);
+  }
 
   const filteredOrders = useMemo(() => {
     const query = searchQuery.trim().toLowerCase();
@@ -289,7 +285,7 @@ export default function TransactionsPage() {
           type="button"
           onClick={() => setPage(Math.max(1, page - 1))}
           disabled={page === 1}
-          className="px-3 py-2 rounded-sm border border-zinc-800/70 text-sm text-gray-300 disabled:text-zinc-600 disabled:border-zinc-900"
+          className="rounded-sm border border-zinc-800/70 px-3 py-2 text-sm text-gray-300 disabled:border-zinc-900 disabled:text-zinc-600"
         >
           Previous
         </button>
@@ -297,7 +293,7 @@ export default function TransactionsPage() {
           <button
             type="button"
             onClick={() => setPage(1)}
-            className="px-3 py-2 rounded-sm border border-zinc-800/70 text-sm text-gray-300"
+            className="rounded-sm border border-zinc-800/70 px-3 py-2 text-sm text-gray-300"
           >
             1
           </button>
@@ -308,7 +304,7 @@ export default function TransactionsPage() {
             key={p}
             type="button"
             onClick={() => setPage(p)}
-            className={`px-3 py-2 rounded-sm border text-sm ${p === page ? "border-red-600 text-white" : "border-zinc-800/70 text-gray-300"}`}
+            className={`rounded-sm border px-3 py-2 text-sm ${p === page ? "border-red-600 text-white" : "border-zinc-800/70 text-gray-300"}`}
           >
             {p}
           </button>
@@ -318,7 +314,7 @@ export default function TransactionsPage() {
           <button
             type="button"
             onClick={() => setPage(totalPages)}
-            className="px-3 py-2 rounded-sm border border-zinc-800/70 text-sm text-gray-300"
+            className="rounded-sm border border-zinc-800/70 px-3 py-2 text-sm text-gray-300"
           >
             {totalPages}
           </button>
@@ -327,7 +323,7 @@ export default function TransactionsPage() {
           type="button"
           onClick={() => setPage(Math.min(totalPages, page + 1))}
           disabled={page === totalPages}
-          className="px-3 py-2 rounded-sm border border-zinc-800/70 text-sm text-gray-300 disabled:text-zinc-600 disabled:border-zinc-900"
+          className="rounded-sm border border-zinc-800/70 px-3 py-2 text-sm text-gray-300 disabled:border-zinc-900 disabled:text-zinc-600"
         >
           Next
         </button>
@@ -349,16 +345,19 @@ export default function TransactionsPage() {
           <button
             type="button"
             key={tab.key}
-            onClick={() => setActiveTab(tab.key)}
+            onClick={() => {
+              setActiveTab(tab.key);
+              setPage(1);
+            }}
             aria-pressed={activeTab === tab.key}
-            className={`py-3 text-sm font-medium transition-colors flex items-center gap-2 ${
+            className={`flex items-center gap-2 py-3 text-sm font-medium transition-colors ${
               activeTab === tab.key
-                ? "text-white border-b-2 border-red-600"
-                : "text-gray-400 hover:text-white border-b-2 border-transparent"
+                ? "border-b-2 border-red-600 text-white"
+                : "border-b-2 border-transparent text-gray-400 hover:text-white"
             }`}
           >
             {tab.label}
-            <span className="text-[11px] px-2 py-0.5 rounded-sm bg-zinc-900 border border-zinc-800/70 text-gray-300">
+            <span className="rounded-sm border border-zinc-800/70 bg-zinc-900 px-2 py-0.5 text-[11px] text-gray-300">
               {counts[tab.key] > 99 ? "99+" : counts[tab.key]}
             </span>
           </button>
@@ -380,35 +379,35 @@ export default function TransactionsPage() {
         className="overflow-hidden rounded border border-zinc-800/70 bg-zinc-900"
       >
         {isLoading ? (
-          <div className="text-center py-12 text-gray-400">Loading...</div>
+          <div className="py-12 text-center text-gray-400">Loading...</div>
         ) : filteredOrders.length === 0 ? (
-          <div className="text-center py-12 text-gray-500">No transactions found.</div>
+          <div className="py-12 text-center text-gray-500">No transactions found.</div>
         ) : (
           <table className="w-full text-[12px] sm:text-sm">
             <thead>
               <tr className="border-b border-zinc-800/70 bg-zinc-800">
-                <th className="text-left text-gray-400 font-semibold p-3 sm:p-4">
+                <th className="p-3 text-left font-semibold text-gray-400 sm:p-4">
                   Placed At
                 </th>
-                <th className="text-left text-gray-400 font-semibold p-3 sm:p-4">
+                <th className="p-3 text-left font-semibold text-gray-400 sm:p-4">
                   Order
                 </th>
-                <th className="hidden md:table-cell text-left text-gray-400 font-semibold p-3 sm:p-4">
+                <th className="hidden p-3 text-left font-semibold text-gray-400 sm:p-4 md:table-cell">
                   Status
                 </th>
-                <th className="hidden md:table-cell text-left text-gray-400 font-semibold p-3 sm:p-4">
+                <th className="hidden p-3 text-left font-semibold text-gray-400 sm:p-4 md:table-cell">
                   Customer
                 </th>
-                <th className="hidden md:table-cell text-left text-gray-400 font-semibold p-3 sm:p-4">
+                <th className="hidden p-3 text-left font-semibold text-gray-400 sm:p-4 md:table-cell">
                   Payment
                 </th>
-                <th className="hidden md:table-cell text-left text-gray-400 font-semibold p-3 sm:p-4">
+                <th className="hidden p-3 text-left font-semibold text-gray-400 sm:p-4 md:table-cell">
                   Fulfillment
                 </th>
-                <th className="text-right text-gray-400 font-semibold p-3 sm:p-4">
+                <th className="p-3 text-right font-semibold text-gray-400 sm:p-4">
                   Amount
                 </th>
-                <th className="hidden md:table-cell text-right text-gray-400 font-semibold p-3 sm:p-4">
+                <th className="hidden p-3 text-right font-semibold text-gray-400 sm:p-4 md:table-cell">
                   Profit
                 </th>
               </tr>
@@ -436,9 +435,9 @@ export default function TransactionsPage() {
                         router.push(orderHref);
                       }
                     }}
-                    className="border-b border-zinc-800/70 cursor-pointer transition-colors hover:bg-zinc-800 focus-visible:bg-zinc-800 focus-visible:outline-none"
+                    className="cursor-pointer border-b border-zinc-800/70 transition-colors hover:bg-zinc-800 focus-visible:bg-zinc-800 focus-visible:outline-none"
                   >
-                    <td className="p-3 sm:p-4 text-gray-400">
+                    <td className="p-3 text-gray-400 sm:p-4">
                       {createdAt ? (
                         <div className="space-y-0.5">
                           <div>{createdAt.toLocaleDateString()}</div>
@@ -453,25 +452,25 @@ export default function TransactionsPage() {
                         "—"
                       )}
                     </td>
-                    <td className="p-3 sm:p-4 text-white font-mono text-xs">
+                    <td className="p-3 font-mono text-xs text-white sm:p-4">
                       #{order.id.slice(0, 8)}
                     </td>
-                    <td className="hidden md:table-cell p-3 sm:p-4">
+                    <td className="hidden p-3 sm:p-4 md:table-cell">
                       <span className={statusMeta.className}>{statusMeta.label}</span>
                     </td>
-                    <td className="hidden md:table-cell p-3 sm:p-4 text-gray-400">
+                    <td className="hidden p-3 text-gray-400 sm:p-4 md:table-cell">
                       {customerName}
                     </td>
-                    <td className="hidden md:table-cell p-3 sm:p-4 text-gray-400">
+                    <td className="hidden p-3 text-gray-400 sm:p-4 md:table-cell">
                       {paymentDisplay}
                     </td>
-                    <td className="hidden md:table-cell p-3 sm:p-4 text-gray-400">
+                    <td className="hidden p-3 text-gray-400 sm:p-4 md:table-cell">
                       {fulfillmentLabel}
                     </td>
-                    <td className="p-3 sm:p-4 text-right text-white">
+                    <td className="p-3 text-right text-white sm:p-4">
                       ${Number(order.total ?? 0).toFixed(2)}
                     </td>
-                    <td className="hidden md:table-cell p-3 sm:p-4 text-right">
+                    <td className="hidden p-3 text-right sm:p-4 md:table-cell">
                       {(() => {
                         const profit = getProfit(order);
                         if (profit === null) {

@@ -4,7 +4,7 @@ export default function PrivacyPage() {
   return (
     <PolicyPage title="Privacy Policy">
       <div className="prose prose-invert max-w-none">
-        <div className="text-zinc-400 space-y-6">
+        <div className="space-y-6 text-zinc-400">
           <p className="text-sm">Last updated: December 30, 2025</p>
 
           <p>
@@ -16,14 +16,14 @@ export default function PrivacyPage() {
           </p>
 
           <section>
-            <h2 className="text-2xl font-bold text-white mt-8 mb-4">
+            <h2 className="mb-4 mt-8 text-2xl font-bold text-white">
               1) Information We Collect
             </h2>
-            <h3 className="text-lg font-semibold text-white mt-4 mb-2">
+            <h3 className="mb-2 mt-4 text-lg font-semibold text-white">
               A) Information You Provide
             </h3>
             <p>We may collect information you provide directly, including:</p>
-            <ul className="list-disc pl-6 mt-2 space-y-1">
+            <ul className="mt-2 list-disc space-y-1 pl-6">
               <li>
                 Contact information (name, email address, phone number, shipping/billing
                 information)
@@ -37,20 +37,20 @@ export default function PrivacyPage() {
               </li>
             </ul>
 
-            <h3 className="text-lg font-semibold text-white mt-4 mb-2">
+            <h3 className="mb-2 mt-4 text-lg font-semibold text-white">
               B) Information Collected Automatically (Essential)
             </h3>
             <p>
               When you use the Services, we may automatically collect certain technical
               information, including:
             </p>
-            <ul className="list-disc pl-6 mt-2 space-y-1">
+            <ul className="mt-2 list-disc space-y-1 pl-6">
               <li>IP address, browser type, device identifiers</li>
               <li>pages viewed and basic usage activity</li>
               <li>security and fraud-prevention logs</li>
             </ul>
 
-            <h3 className="text-lg font-semibold text-white mt-4 mb-2">
+            <h3 className="mb-2 mt-4 text-lg font-semibold text-white">
               C) Information From Service Providers
             </h3>
             <p>
@@ -60,11 +60,11 @@ export default function PrivacyPage() {
           </section>
 
           <section>
-            <h2 className="text-2xl font-bold text-white mt-8 mb-4">
+            <h2 className="mb-4 mt-8 text-2xl font-bold text-white">
               2) How We Use Information
             </h2>
             <p>We use personal information to:</p>
-            <ul className="list-disc pl-6 mt-2 space-y-1">
+            <ul className="mt-2 list-disc space-y-1 pl-6">
               <li>process orders and deliver products</li>
               <li>provide customer support and communicate about purchases</li>
               <li>
@@ -78,14 +78,14 @@ export default function PrivacyPage() {
           </section>
 
           <section>
-            <h2 className="text-2xl font-bold text-white mt-8 mb-4">
+            <h2 className="mb-4 mt-8 text-2xl font-bold text-white">
               3) Cookies and Similar Technologies
             </h2>
             <p>
               We use strictly necessary cookies (and similar technologies) for essential
               site functions such as:
             </p>
-            <ul className="list-disc pl-6 mt-2 space-y-1">
+            <ul className="mt-2 list-disc space-y-1 pl-6">
               <li>keeping you logged in</li>
               <li>maintaining secure sessions</li>
               <li>preventing abuse and protecting the Services</li>
@@ -99,11 +99,11 @@ export default function PrivacyPage() {
           </section>
 
           <section>
-            <h2 className="text-2xl font-bold text-white mt-8 mb-4">
+            <h2 className="mb-4 mt-8 text-2xl font-bold text-white">
               4) How We Share Information
             </h2>
             <p>We may share personal information with:</p>
-            <ul className="list-disc pl-6 mt-2 space-y-1">
+            <ul className="mt-2 list-disc space-y-1 pl-6">
               <li>payment processors to complete transactions</li>
               <li>shipping and fulfillment providers to deliver orders</li>
               <li>
@@ -117,9 +117,9 @@ export default function PrivacyPage() {
           </section>
 
           <section>
-            <h2 className="text-2xl font-bold text-white mt-8 mb-4">5) Data Retention</h2>
+            <h2 className="mb-4 mt-8 text-2xl font-bold text-white">5) Data Retention</h2>
             <p>We retain personal information as long as necessary to:</p>
-            <ul className="list-disc pl-6 mt-2 space-y-1">
+            <ul className="mt-2 list-disc space-y-1 pl-6">
               <li>fulfill orders and provide support</li>
               <li>maintain business records</li>
               <li>enforce our policies</li>
@@ -128,7 +128,7 @@ export default function PrivacyPage() {
           </section>
 
           <section>
-            <h2 className="text-2xl font-bold text-white mt-8 mb-4">6) Security</h2>
+            <h2 className="mb-4 mt-8 text-2xl font-bold text-white">6) Security</h2>
             <p>
               We take reasonable measures designed to protect your information. However,
               no method of transmission or storage is 100% secure, and we cannot guarantee
@@ -137,8 +137,8 @@ export default function PrivacyPage() {
           </section>
 
           <section>
-            <h2 className="text-2xl font-bold text-white mt-8 mb-4">
-              7) Children's Privacy
+            <h2 className="mb-4 mt-8 text-2xl font-bold text-white">
+              7) Children&apos;s Privacy
             </h2>
             <p>
               The Services are not intended for children under 13, and we do not knowingly
@@ -147,7 +147,7 @@ export default function PrivacyPage() {
           </section>
 
           <section>
-            <h2 className="text-2xl font-bold text-white mt-8 mb-4">8) Your Rights</h2>
+            <h2 className="mb-4 mt-8 text-2xl font-bold text-white">8) Your Rights</h2>
             <p>
               Depending on your location, you may have rights to access, correct, delete,
               or obtain a copy of your personal information. To request action on your
@@ -157,7 +157,7 @@ export default function PrivacyPage() {
           </section>
 
           <section>
-            <h2 className="text-2xl font-bold text-white mt-8 mb-4">
+            <h2 className="mb-4 mt-8 text-2xl font-bold text-white">
               9) Changes to This Privacy Policy
             </h2>
             <p>
@@ -167,7 +167,7 @@ export default function PrivacyPage() {
           </section>
 
           <section>
-            <h2 className="text-2xl font-bold text-white mt-8 mb-4">10) Contact</h2>
+            <h2 className="mb-4 mt-8 text-2xl font-bold text-white">10) Contact</h2>
             <p>Email: realdealholyspill@gmail.com</p>
             <p>Location: Simpsonville, South Carolina, USA</p>
           </section>

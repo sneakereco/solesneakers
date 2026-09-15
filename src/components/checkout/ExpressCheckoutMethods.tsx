@@ -42,7 +42,7 @@ export function ExpressCheckoutMethods({
           hidden={!applePayReady}
           disabled={disabled}
           aria-label="Pay with Apple Pay"
-          className="h-12 w-full rounded bg-black [-webkit-appearance:-apple-pay-button] [-apple-pay-button-style:black] [-apple-pay-button-type:plain]"
+          className="h-12 w-full rounded bg-black [-apple-pay-button-style:black] [-apple-pay-button-type:plain] [-webkit-appearance:-apple-pay-button]"
           onClick={onApplePayClick}
         />
         <div

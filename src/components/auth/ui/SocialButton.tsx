@@ -72,7 +72,7 @@ export function SocialButton({ provider, label, nextOverride }: SocialButtonProp
         void handleClick();
       }}
       disabled={loading}
-      className="h-11 w-full flex items-center justify-center gap-3 bg-zinc-900 border border-zinc-800 text-sm font-medium text-white transition-colors hover:bg-zinc-800 disabled:opacity-50 disabled:cursor-not-allowed"
+      className="flex h-11 w-full items-center justify-center gap-3 border border-zinc-800 bg-zinc-900 text-sm font-medium text-white transition-colors hover:bg-zinc-800 disabled:cursor-not-allowed disabled:opacity-50"
     >
       <GoogleIcon />
       <span>{loading ? "Connecting..." : label}</span>

@@ -41,17 +41,17 @@ export function Toast({
   return (
     <div className="fixed bottom-6 right-4 z-50 w-fit max-w-[calc(100vw-2rem)] sm:right-6 sm:max-w-xs">
       <div
-        className={`bg-zinc-900 border border-zinc-800 ${toneStyles[tone]} px-4 py-3 shadow-lg`}
+        className={`border border-zinc-800 bg-zinc-900 ${toneStyles[tone]} px-4 py-3 shadow-lg`}
       >
         <div className="flex items-start gap-3">
           <div className="text-sm leading-snug">{message}</div>
           <button
             type="button"
             onClick={onClose}
-            className="text-white/70 hover:text-white transition cursor-pointer"
+            className="cursor-pointer text-white/70 transition hover:text-white"
             aria-label="Close notification"
           >
-            <X className="w-4 h-4" />
+            <X className="h-4 w-4" />
           </button>
         </div>
       </div>

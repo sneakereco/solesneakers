@@ -19,7 +19,7 @@ export default function CheckoutCancelPage() {
 
   return (
     <div className="mx-auto max-w-2xl px-4 py-20 text-center text-zinc-950">
-      <XCircle className="w-16 h-16 text-yellow-500 mx-auto mb-6" />
+      <XCircle className="mx-auto mb-6 h-16 w-16 text-yellow-500" />
       <h1 className="mb-4 text-3xl font-bold">Checkout Canceled</h1>
       <p className="mb-8 text-zinc-600">
         Your order has been canceled. No charges were made to your account.
@@ -34,7 +34,7 @@ export default function CheckoutCancelPage() {
         </button>
         <button
           onClick={() => router.push("/store")}
-          className="w-full bg-zinc-800 hover:bg-zinc-700 text-white font-semibold py-3 rounded transition"
+          className="w-full rounded bg-zinc-800 py-3 font-semibold text-white transition hover:bg-zinc-700"
         >
           Continue Shopping
         </button>

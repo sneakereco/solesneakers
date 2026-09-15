@@ -1,6 +1,8 @@
 // app/admin/shipping/page.tsx
 "use client";
 
+import Image from "next/image";
+
 import { Fragment, useEffect, useMemo, useState } from "react";
 import { ChevronDown, ExternalLink, AlertCircle } from "lucide-react";
 
@@ -215,6 +217,31 @@ const getPrimaryImage = (item: OrderItem) => {
   return primary?.url ?? "/images/logo.png";
 };
 
+const getPackageProfile = (
+  order: ShippingOrder,
+  shippingDefaults: Record<string, ShippingDefault>,
+) => {
+  const defaults = Object.fromEntries(
+    Object.entries(shippingDefaults).map(([category, entry]) => [
+      category,
+      {
+        weight: Number(entry.default_weight_oz ?? DEFAULT_PACKAGE.weight),
+        length: Number(entry.default_length_in ?? DEFAULT_PACKAGE.length),
+        width: Number(entry.default_width_in ?? DEFAULT_PACKAGE.width),
+        height: Number(entry.default_height_in ?? DEFAULT_PACKAGE.height),
+      },
+    ]),
+  );
+
+  return buildPackageProfile(
+    (order.items ?? []).map((item) => ({
+      quantity: item.quantity,
+      category: item.product?.category ?? null,
+    })),
+    defaults,
+  );
+};
+
 export default function ShippingPage() {
   const [activeTab, setActiveTab] = useState<TabKey>("label");
   const [orders, setOrders] = useState<ShippingOrder[]>([]);
@@ -255,35 +282,19 @@ export default function ShippingPage() {
   const activeCount = counts[activeTab] ?? 0;
   const totalPages = Math.max(1, Math.ceil(activeCount / PAGE_SIZE));
 
-  const loadShippingDefaults = async () => {
-    try {
-      const response = await fetch("/api/admin/shipping/defaults", { cache: "no-store" });
-      if (!response.ok) {
-        throw new Error("Failed to load shipping defaults");
-      }
-      const data = await response.json();
-      const defaultsMap: Record<string, ShippingDefault> = {};
-      (data.defaults ?? []).forEach((entry: ShippingDefault) => {
-        defaultsMap[entry.category] = entry;
+  const loadOriginAddress = () => {
+    return fetch("/api/admin/shipping/origin", { cache: "no-store" })
+      .then(async (response) => {
+        if (!response.ok) {
+          throw new Error("Failed to load shipping origin");
+        }
+        const data = await response.json();
+        setOriginAddress(data.origin ?? null);
+      })
+      .catch((error: unknown) => {
+        logError(error, { layer: "frontend", event: "admin_load_shipping_origin" });
+        setOriginAddress(null);
       });
-      setShippingDefaults(defaultsMap);
-    } catch (error) {
-      logError(error, { layer: "frontend", event: "admin_load_shipping_defaults" });
-    }
-  };
-
-  const loadOriginAddress = async () => {
-    try {
-      const response = await fetch("/api/admin/shipping/origin", { cache: "no-store" });
-      if (!response.ok) {
-        throw new Error("Failed to load shipping origin");
-      }
-      const data = await response.json();
-      setOriginAddress(data.origin ?? null);
-    } catch (error) {
-      logError(error, { layer: "frontend", event: "admin_load_shipping_origin" });
-      setOriginAddress(null);
-    }
   };
 
   useEffect(() => {
@@ -304,7 +315,12 @@ export default function ShippingPage() {
           }),
         );
 
-        const nextCounts = { ...counts };
+        const nextCounts: Record<TabKey, number> = {
+          label: 0,
+          ready: 0,
+          shipped: 0,
+          delivered: 0,
+        };
         results.forEach((result) => {
           nextCounts[result.key] = result.count;
         });
@@ -314,23 +330,32 @@ export default function ShippingPage() {
       }
     };
 
-    loadCounts();
+    void loadCounts();
   }, [refreshToken]);
 
   useEffect(() => {
-    loadShippingDefaults();
-    loadOriginAddress();
-  }, []);
+    const loadShippingDefaults = async () => {
+      try {
+        const response = await fetch("/api/admin/shipping/defaults", {
+          cache: "no-store",
+        });
+        if (!response.ok) {
+          throw new Error("Failed to load shipping defaults");
+        }
+        const data = await response.json();
+        const defaultsMap: Record<string, ShippingDefault> = {};
+        (data.defaults ?? []).forEach((entry: ShippingDefault) => {
+          defaultsMap[entry.category] = entry;
+        });
+        setShippingDefaults(defaultsMap);
+      } catch (error) {
+        logError(error, { layer: "frontend", event: "admin_load_shipping_defaults" });
+      }
+    };
 
-  useEffect(() => {
-    if (!originModalOpen) {
-      return;
-    }
-    setOriginError("");
-    setOriginMessage("");
-    setOriginFieldErrors({});
-    loadOriginAddress();
-  }, [originModalOpen]);
+    void loadShippingDefaults();
+    void loadOriginAddress();
+  }, []);
 
   useEffect(() => {
     const loadOrders = async () => {
@@ -364,14 +389,12 @@ export default function ShippingPage() {
       }
     };
 
-    loadOrders();
+    void loadOrders();
   }, [activeTab, currentPage, refreshToken]);
 
-  useEffect(() => {
-    if (currentPage > totalPages) {
-      setPageByTab((prev) => ({ ...prev, [activeTab]: totalPages }));
-    }
-  }, [currentPage, totalPages, activeTab]);
+  if (currentPage > totalPages) {
+    setPageByTab((prev) => ({ ...prev, [activeTab]: totalPages }));
+  }
 
   const toggleItems = (orderId: string) => {
     setExpandedItems((prev) => ({ ...prev, [orderId]: !prev[orderId] }));
@@ -392,28 +415,6 @@ export default function ShippingPage() {
 
   const openItemDetails = (item: OrderItem) => {
     setSelectedItem(item);
-  };
-
-  const getPackageProfile = (order: ShippingOrder) => {
-    const defaults = Object.fromEntries(
-      Object.entries(shippingDefaults).map(([category, entry]) => [
-        category,
-        {
-          weight: Number(entry.default_weight_oz ?? DEFAULT_PACKAGE.weight),
-          length: Number(entry.default_length_in ?? DEFAULT_PACKAGE.length),
-          width: Number(entry.default_width_in ?? DEFAULT_PACKAGE.width),
-          height: Number(entry.default_height_in ?? DEFAULT_PACKAGE.height),
-        },
-      ]),
-    );
-
-    return buildPackageProfile(
-      (order.items ?? []).map((item) => ({
-        quantity: item.quantity,
-        category: item.product?.category ?? null,
-      })),
-      defaults,
-    );
   };
 
   const handleMarkShipped = async (order: ShippingOrder) => {
@@ -534,7 +535,7 @@ export default function ShippingPage() {
             }))
           }
           disabled={currentPage === 1}
-          className="px-3 py-2 rounded-sm border border-zinc-800/70 text-sm text-gray-300 disabled:text-zinc-600 disabled:border-zinc-900"
+          className="rounded-sm border border-zinc-800/70 px-3 py-2 text-sm text-gray-300 disabled:border-zinc-900 disabled:text-zinc-600"
         >
           Previous
         </button>
@@ -543,7 +544,7 @@ export default function ShippingPage() {
           <button
             type="button"
             onClick={() => setPageByTab((prev) => ({ ...prev, [activeTab]: 1 }))}
-            className="px-3 py-2 rounded-sm border border-zinc-800/70 text-sm text-gray-300"
+            className="rounded-sm border border-zinc-800/70 px-3 py-2 text-sm text-gray-300"
           >
             1
           </button>
@@ -555,7 +556,7 @@ export default function ShippingPage() {
             key={page}
             type="button"
             onClick={() => setPageByTab((prev) => ({ ...prev, [activeTab]: page }))}
-            className={`px-3 py-2 rounded-sm border text-sm ${
+            className={`rounded-sm border px-3 py-2 text-sm ${
               page === currentPage
                 ? "border-red-600 text-white"
                 : "border-zinc-800/70 text-gray-300"
@@ -570,7 +571,7 @@ export default function ShippingPage() {
           <button
             type="button"
             onClick={() => setPageByTab((prev) => ({ ...prev, [activeTab]: totalPages }))}
-            className="px-3 py-2 rounded-sm border border-zinc-800/70 text-sm text-gray-300"
+            className="rounded-sm border border-zinc-800/70 px-3 py-2 text-sm text-gray-300"
           >
             {totalPages}
           </button>
@@ -585,7 +586,7 @@ export default function ShippingPage() {
             }))
           }
           disabled={currentPage === totalPages}
-          className="px-3 py-2 rounded-sm border border-zinc-800/70 text-sm text-gray-300 disabled:text-zinc-600 disabled:border-zinc-900"
+          className="rounded-sm border border-zinc-800/70 px-3 py-2 text-sm text-gray-300 disabled:border-zinc-900 disabled:text-zinc-600"
         >
           Next
         </button>
@@ -642,7 +643,7 @@ export default function ShippingPage() {
           onClick={() => toggleOrderExpansion(order.id)}
           className="cursor-pointer border-b border-zinc-800/70 hover:bg-zinc-800/60"
         >
-          <td className="p-3 sm:p-4 text-gray-400">
+          <td className="p-3 text-gray-400 sm:p-4">
             {placedAt.date !== "-" ? (
               <div className="space-y-1">
                 <div>{placedAt.date}</div>
@@ -654,11 +655,11 @@ export default function ShippingPage() {
               "-"
             )}
           </td>
-          <td className="p-3 sm:p-4 text-white">#{order.id.slice(0, 8)}</td>
-          <td className="hidden md:table-cell p-3 sm:p-4 text-gray-400">
+          <td className="p-3 text-white sm:p-4">#{order.id.slice(0, 8)}</td>
+          <td className="hidden p-3 text-gray-400 sm:p-4 md:table-cell">
             {customerName}
           </td>
-          <td className="hidden md:table-cell p-3 sm:p-4 text-gray-400 max-w-[320px] truncate">
+          <td className="hidden max-w-[320px] truncate p-3 text-gray-400 sm:p-4 md:table-cell">
             {addressLine ? (
               addressLine
             ) : (
@@ -667,7 +668,7 @@ export default function ShippingPage() {
           </td>
 
           {/* SWAPPED: Tracking column now comes before Label */}
-          <td className="hidden md:table-cell p-3 sm:p-4 text-gray-400">
+          <td className="hidden p-3 text-gray-400 sm:p-4 md:table-cell">
             {order.tracking_number ? (
               <div className="space-y-1">
                 {trackingUrl ? (
@@ -676,10 +677,10 @@ export default function ShippingPage() {
                     target="_blank"
                     rel="noopener noreferrer"
                     onClick={(event) => event.stopPropagation()}
-                    className="text-red-400 hover:text-red-300 flex items-center gap-1"
+                    className="flex items-center gap-1 text-red-400 hover:text-red-300"
                   >
                     {order.tracking_number}
-                    <ExternalLink className="w-3 h-3" />
+                    <ExternalLink className="h-3 w-3" />
                   </a>
                 ) : (
                   <span className="text-zinc-300">{order.tracking_number}</span>
@@ -690,7 +691,7 @@ export default function ShippingPage() {
             )}
           </td>
 
-          <td className="hidden md:table-cell p-3 sm:p-4 text-gray-400">
+          <td className="hidden p-3 text-gray-400 sm:p-4 md:table-cell">
             {labelUrl ? (
               <button
                 onClick={(event) => {
@@ -706,14 +707,14 @@ export default function ShippingPage() {
             )}
           </td>
 
-          <td className="p-3 sm:p-4 text-left md:text-right">
+          <td className="p-3 text-left sm:p-4 md:text-right">
             <button
               type="button"
               onClick={(event) => {
                 event.stopPropagation();
                 toggleItems(order.id);
               }}
-              className="hidden md:inline-flex text-sm text-red-400 hover:text-red-300 items-center gap-2"
+              className="hidden items-center gap-2 text-sm text-red-400 hover:text-red-300 md:inline-flex"
             >
               {itemsExpanded ? "Hide items" : `View items (${itemCount})`}
               <ChevronDown
@@ -726,7 +727,7 @@ export default function ShippingPage() {
                 event.stopPropagation();
                 toggleDetails(order.id);
               }}
-              className="md:hidden w-full text-[12px] text-red-400 hover:text-red-300 inline-flex items-center justify-start gap-1 leading-none whitespace-nowrap"
+              className="inline-flex w-full items-center justify-start gap-1 whitespace-nowrap text-[12px] leading-none text-red-400 hover:text-red-300 md:hidden"
             >
               {detailsExpanded ? "Hide label info" : "Label info"}
               <ChevronDown
@@ -734,12 +735,12 @@ export default function ShippingPage() {
               />
             </button>
           </td>
-          <td className="hidden md:table-cell p-3 sm:p-4 text-right">{actionNode}</td>
+          <td className="hidden p-3 text-right sm:p-4 md:table-cell">{actionNode}</td>
         </tr>
 
         {itemsExpanded && (
-          <tr className="hidden md:table-row bg-zinc-900/40">
-            <td colSpan={colSpan} className="p-0 border-b border-zinc-800/70">
+          <tr className="hidden bg-zinc-900/40 md:table-row">
+            <td colSpan={colSpan} className="border-b border-zinc-800/70 p-0">
               <div className="flex flex-col">
                 {(order.items ?? []).map((item: OrderItem) => {
                   const imageUrl = getPrimaryImage(item);
@@ -757,7 +758,7 @@ export default function ShippingPage() {
                       }}
                       className={`group relative cursor-pointer px-6 py-4 transition-colors ${
                         isRefunded
-                          ? "bg-red-950/20 border-y border-red-900/40"
+                          ? "border-y border-red-900/40 bg-red-950/20"
                           : "hover:bg-zinc-800"
                       }`}
                     >
@@ -770,7 +771,10 @@ export default function ShippingPage() {
                         }`}
                       >
                         <div className="h-12 w-12 flex-shrink-0 overflow-hidden rounded-sm border border-zinc-800 bg-black">
-                          <img
+                          <Image
+                            unoptimized
+                            width={400}
+                            height={400}
                             src={imageUrl}
                             alt={title}
                             className="h-full w-full object-cover opacity-90 transition-opacity group-hover:opacity-100"
@@ -849,7 +853,7 @@ export default function ShippingPage() {
         )}
 
         {detailsExpanded && (
-          <tr className="md:hidden border-b border-zinc-800/70 bg-zinc-900/40">
+          <tr className="border-b border-zinc-800/70 bg-zinc-900/40 md:hidden">
             <td colSpan={colSpan} className="px-3 pb-3 pt-3 sm:px-4 sm:pb-4">
               <div className="space-y-3 text-sm">
                 <div className="flex items-center justify-between gap-4">
@@ -858,7 +862,7 @@ export default function ShippingPage() {
                 </div>
                 <div className="flex flex-col gap-1">
                   <span className="text-gray-500">Destination</span>
-                  <span className="text-white break-words">
+                  <span className="break-words text-white">
                     {addressLine ? addressLine : "Missing address"}
                   </span>
                 </div>
@@ -871,10 +875,10 @@ export default function ShippingPage() {
                           href={trackingUrl}
                           target="_blank"
                           rel="noopener noreferrer"
-                          className="text-red-400 hover:text-red-300 inline-flex items-center gap-1"
+                          className="inline-flex items-center gap-1 text-red-400 hover:text-red-300"
                         >
                           {order.tracking_number}
-                          <ExternalLink className="w-3 h-3" />
+                          <ExternalLink className="h-3 w-3" />
                         </a>
                       ) : (
                         order.tracking_number
@@ -906,7 +910,7 @@ export default function ShippingPage() {
               </div>
 
               <div className="mt-4 border-t border-zinc-800/70 pt-4">
-                <div className="text-[11px] uppercase tracking-wide text-gray-500 mb-2">
+                <div className="mb-2 text-[11px] uppercase tracking-wide text-gray-500">
                   Items
                 </div>
                 <div className="space-y-2">
@@ -924,24 +928,27 @@ export default function ShippingPage() {
                         onClick={() => openItemDetails(item)}
                         className={`relative flex cursor-pointer items-start gap-3 rounded-sm p-2 text-base transition ${
                           isRefunded
-                            ? "bg-red-950/20 border border-red-900/40"
+                            ? "border border-red-900/40 bg-red-950/20"
                             : "hover:bg-zinc-800/60"
                         }`}
                       >
                         {isRefunded && (
                           <span className="absolute inset-y-0 left-0 w-1 rounded-l-sm bg-red-500/80" />
                         )}
-                        <img
+                        <Image
+                          unoptimized
+                          width={400}
+                          height={400}
                           src={imageUrl}
                           alt={title}
-                          className="h-14 w-14 flex-shrink-0 object-cover border border-zinc-800/70 bg-black"
+                          className="h-14 w-14 flex-shrink-0 border border-zinc-800/70 bg-black object-cover"
                         />
                         <div className="min-w-0">
-                          <div className="text-white truncate">{title}</div>
+                          <div className="truncate text-white">{title}</div>
                           <div className="text-sm text-zinc-500">
                             Size {item.size_label ?? "N/A"} - Qty {item.quantity}
                           </div>
-                          <div className="text-sm font-medium text-white mt-0.5">
+                          <div className="mt-0.5 text-sm font-medium text-white">
                             ${Number(item.line_total ?? 0).toFixed(2)}
                           </div>
                           <div className="mt-0.5 text-xs text-zinc-500">
@@ -989,12 +996,10 @@ export default function ShippingPage() {
   const tabBadge = (count: number) => (count > 99 ? "99+" : String(count));
   const originLine = formatOriginAddress(originAddress);
 
-  const labelModalDefaults = useMemo(() => {
-    if (!labelOrder) {
-      return null;
-    }
-    return getPackageProfile(labelOrder);
-  }, [labelOrder, shippingDefaults]);
+  const labelModalDefaults = useMemo(
+    () => (labelOrder ? getPackageProfile(labelOrder, shippingDefaults) : null),
+    [labelOrder, shippingDefaults],
+  );
 
   return (
     <AdminPage>
@@ -1007,12 +1012,12 @@ export default function ShippingPage() {
       {activeTab === "ready" && (
         <div className="rounded-sm border border-blue-400/20 bg-blue-400/10 p-3 sm:p-4">
           <div className="flex items-start gap-3">
-            <AlertCircle className="w-4 h-4 sm:w-5 sm:h-5 text-blue-400 flex-shrink-0 mt-0.5" />
-            <div className="text-[12px] sm:text-sm text-blue-300">
+            <AlertCircle className="mt-0.5 h-4 w-4 flex-shrink-0 text-blue-400 sm:h-5 sm:w-5" />
+            <div className="text-[12px] text-blue-300 sm:text-sm">
               <strong>Automatic tracking:</strong> Once you ship packages, Shippo will
-              automatically update tracking status and send customer emails. The "Mark
-              shipped" button should only be used if the carrier hasn't scanned the
-              package yet.
+              automatically update tracking status and send customer emails. The
+              &quot;Mark shipped&quot; button should only be used if the carrier
+              hasn&apos;t scanned the package yet.
             </div>
           </div>
         </div>
@@ -1028,14 +1033,14 @@ export default function ShippingPage() {
             key={tab.key}
             onClick={() => setActiveTab(tab.key)}
             aria-pressed={activeTab === tab.key}
-            className={`py-2.5 text-[10px] sm:text-sm font-medium transition-colors flex items-center gap-1 sm:gap-2 whitespace-nowrap ${
+            className={`flex items-center gap-1 whitespace-nowrap py-2.5 text-[10px] font-medium transition-colors sm:gap-2 sm:text-sm ${
               activeTab === tab.key
-                ? "text-white border-b-2 border-red-600"
-                : "text-gray-400 hover:text-white border-b-2 border-transparent"
+                ? "border-b-2 border-red-600 text-white"
+                : "border-b-2 border-transparent text-gray-400 hover:text-white"
             }`}
           >
             {tab.label}
-            <span className="text-[9px] sm:text-[11px] px-1 sm:px-2 py-0.5 rounded-sm bg-zinc-900 border border-zinc-800/70 text-gray-300">
+            <span className="rounded-sm border border-zinc-800/70 bg-zinc-900 px-1 py-0.5 text-[9px] text-gray-300 sm:px-2 sm:text-[11px]">
               {tabBadge(counts[tab.key] ?? 0)}
             </span>
           </button>
@@ -1052,15 +1057,21 @@ export default function ShippingPage() {
         </div>
         <button
           type="button"
-          onClick={() => setOriginModalOpen(true)}
-          className="px-4 py-2 bg-zinc-900 text-white text-sm border border-zinc-800/70 hover:border-zinc-700"
+          onClick={() => {
+            setOriginError("");
+            setOriginMessage("");
+            setOriginFieldErrors({});
+            setOriginModalOpen(true);
+            void loadOriginAddress();
+          }}
+          className="border border-zinc-800/70 bg-zinc-900 px-4 py-2 text-sm text-white hover:border-zinc-700"
         >
           Change origin address
         </button>
       </div>
 
       {isLoading ? (
-        <div className="text-center py-12 text-gray-400">Loading...</div>
+        <div className="py-12 text-center text-gray-400">Loading...</div>
       ) : orders.length === 0 ? (
         <div className="rounded-sm border border-zinc-800/70 bg-zinc-900 p-6 text-sm text-zinc-500">
           No orders in this queue.
@@ -1073,32 +1084,32 @@ export default function ShippingPage() {
           <table className="w-full text-[12px] sm:text-sm">
             <thead>
               <tr className="bg-zinc-800">
-                <th className="sticky top-0 z-10 bg-zinc-800 text-left text-gray-400 font-semibold p-3 sm:p-4">
+                <th className="sticky top-0 z-10 bg-zinc-800 p-3 text-left font-semibold text-gray-400 sm:p-4">
                   Placed At
                 </th>
-                <th className="sticky top-0 z-10 bg-zinc-800 text-left text-gray-400 font-semibold p-3 sm:p-4">
+                <th className="sticky top-0 z-10 bg-zinc-800 p-3 text-left font-semibold text-gray-400 sm:p-4">
                   Order
                 </th>
-                <th className="hidden md:table-cell sticky top-0 z-10 bg-zinc-800 text-left text-gray-400 font-semibold p-3 sm:p-4">
+                <th className="sticky top-0 z-10 hidden bg-zinc-800 p-3 text-left font-semibold text-gray-400 sm:p-4 md:table-cell">
                   Customer
                 </th>
-                <th className="hidden md:table-cell sticky top-0 z-10 bg-zinc-800 text-left text-gray-400 font-semibold p-3 sm:p-4">
+                <th className="sticky top-0 z-10 hidden bg-zinc-800 p-3 text-left font-semibold text-gray-400 sm:p-4 md:table-cell">
                   Destination
                 </th>
 
                 {/* SWAPPED: Tracking header now before Label */}
-                <th className="hidden md:table-cell sticky top-0 z-10 bg-zinc-800 text-left text-gray-400 font-semibold p-3 sm:p-4">
+                <th className="sticky top-0 z-10 hidden bg-zinc-800 p-3 text-left font-semibold text-gray-400 sm:p-4 md:table-cell">
                   Tracking
                 </th>
-                <th className="hidden md:table-cell sticky top-0 z-10 bg-zinc-800 text-left text-gray-400 font-semibold p-3 sm:p-4">
+                <th className="sticky top-0 z-10 hidden bg-zinc-800 p-3 text-left font-semibold text-gray-400 sm:p-4 md:table-cell">
                   Label
                 </th>
 
-                <th className="sticky top-0 z-10 bg-zinc-800 text-left md:text-right text-gray-400 font-semibold p-3 sm:p-4">
+                <th className="sticky top-0 z-10 bg-zinc-800 p-3 text-left font-semibold text-gray-400 sm:p-4 md:text-right">
                   <span className="hidden md:inline">Items</span>
                   <span className="md:hidden">Actions</span>
                 </th>
-                <th className="hidden md:table-cell sticky top-0 z-10 bg-zinc-800 text-right text-gray-400 font-semibold p-3 sm:p-4">
+                <th className="sticky top-0 z-10 hidden bg-zinc-800 p-3 text-right font-semibold text-gray-400 sm:p-4 md:table-cell">
                   Action
                 </th>
               </tr>

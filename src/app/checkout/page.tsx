@@ -8,12 +8,14 @@ import { logError } from "@/lib/utils/log";
 export default async function CheckoutPage() {
   const access = await loadCheckoutPageAccess();
   if (access.open) {
+    let initialData;
     try {
-      return <CheckoutClient initialData={await loadCheckoutPageData()} />;
+      initialData = await loadCheckoutPageData();
     } catch (error) {
       logError(error, { layer: "frontend", route: "/checkout" });
       return <CheckoutUnavailable />;
     }
+    return <CheckoutClient initialData={initialData} />;
   }
   return <CheckoutLockedNotice message={access.message} />;
 }

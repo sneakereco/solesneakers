@@ -29,7 +29,7 @@ function RequirementItem({ ok, text }: { ok: boolean; text: string }) {
           ok ? "text-emerald-600" : "text-zinc-400"
         }`}
       >
-        {ok ? <Check className="w-3 h-3" /> : <X className="w-3 h-3" />}
+        {ok ? <Check className="h-3 w-3" /> : <X className="h-3 w-3" />}
       </div>
       <span className={`text-[0.82rem] ${ok ? "text-zinc-700" : "text-zinc-500"}`}>
         {text}

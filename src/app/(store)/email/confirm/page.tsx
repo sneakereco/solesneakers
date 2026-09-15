@@ -39,12 +39,12 @@ export default async function EmailConfirmPage({
   const content = STATUS_CONTENT[status] ?? STATUS_CONTENT.success;
 
   return (
-    <div className="max-w-3xl mx-auto px-4 py-20 text-center">
-      <h1 className="text-4xl font-bold text-white mb-4">{content.title}</h1>
-      <p className="text-zinc-400 mb-8">{content.message}</p>
+    <div className="mx-auto max-w-3xl px-4 py-20 text-center">
+      <h1 className="mb-4 text-4xl font-bold text-white">{content.title}</h1>
+      <p className="mb-8 text-zinc-400">{content.message}</p>
       <Link
         href="/"
-        className="inline-flex items-center justify-center gap-2 bg-red-600 hover:bg-red-700 text-white font-bold px-6 py-3 transition-colors cursor-pointer"
+        className="inline-flex cursor-pointer items-center justify-center gap-2 bg-red-600 px-6 py-3 font-bold text-white transition-colors hover:bg-red-700"
       >
         Back to home
       </Link>

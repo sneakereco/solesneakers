@@ -26,7 +26,7 @@ export default function Error({
       <p className="mb-8 text-zinc-600">
         We hit an issue loading checkout. Try again or return to your cart.
       </p>
-      <div className="flex flex-col sm:flex-row items-center justify-center gap-3">
+      <div className="flex flex-col items-center justify-center gap-3 sm:flex-row">
         <button
           type="button"
           onClick={() => reset()}
@@ -36,7 +36,7 @@ export default function Error({
         </button>
         <Link
           href="/cart"
-          className="px-6 py-3 bg-zinc-900 border border-zinc-800 text-zinc-200 hover:text-white rounded"
+          className="rounded border border-zinc-800 bg-zinc-900 px-6 py-3 text-zinc-200 hover:text-white"
         >
           Back to cart
         </Link>

@@ -10,7 +10,7 @@ interface CheckboxProps extends Omit<InputHTMLAttributes<HTMLInputElement>, "typ
 export function Checkbox({ label, className = "", ...props }: CheckboxProps) {
   return (
     <label
-      className={`flex items-start gap-3 text-xs sm:text-sm text-zinc-400 cursor-pointer select-none ${className}`}
+      className={`flex cursor-pointer select-none items-start gap-3 text-xs text-zinc-400 sm:text-sm ${className}`}
     >
       <span className="mt-0.5 inline-flex h-5 w-5 items-center justify-center">
         <input type="checkbox" className="rdk-checkbox" {...props} />

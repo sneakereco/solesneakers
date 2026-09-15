@@ -6,7 +6,7 @@ export default function ShippingPage() {
   return (
     <PolicyPage title="Shipping Policy">
       <div className="prose prose-invert max-w-none">
-        <div className="text-zinc-400 space-y-6">
+        <div className="space-y-6 text-zinc-400">
           <p className="text-sm">Last updated: July 18, 2026</p>
           <p>
             This Shipping Policy applies to orders placed through the Solesneakers website
@@ -14,7 +14,7 @@ export default function ShippingPage() {
           </p>
 
           <section>
-            <h2 className="text-2xl font-bold text-white mt-8 mb-4">
+            <h2 className="mb-4 mt-8 text-2xl font-bold text-white">
               1) Processing Time (When We Ship)
             </h2>
             <p>
@@ -23,7 +23,7 @@ export default function ShippingPage() {
               the following day.
             </p>
             <p>Important clarifications:</p>
-            <ul className="list-disc pl-6 mt-2 space-y-1">
+            <ul className="mt-2 list-disc space-y-1 pl-6">
               <li>
                 The 3:00 PM cutoff refers to order processing and shipment, not delivery
                 time.
@@ -40,11 +40,11 @@ export default function ShippingPage() {
           </section>
 
           <section>
-            <h2 className="text-2xl font-bold text-white mt-8 mb-4">
+            <h2 className="mb-4 mt-8 text-2xl font-bold text-white">
               2) Exceptions (When Shipping May Take Longer)
             </h2>
             <p>Shipping may take longer in cases including, but not limited to:</p>
-            <ul className="list-disc pl-6 mt-2 space-y-1">
+            <ul className="mt-2 list-disc space-y-1 pl-6">
               <li>holidays or carrier closures</li>
               <li>weather events or natural disasters</li>
               <li>carrier disruptions, delays, or service outages</li>
@@ -59,7 +59,7 @@ export default function ShippingPage() {
           </section>
 
           <section>
-            <h2 className="text-2xl font-bold text-white mt-8 mb-4">
+            <h2 className="mb-4 mt-8 text-2xl font-bold text-white">
               3) Shipping Rates and Methods
             </h2>
             <p>
@@ -69,7 +69,7 @@ export default function ShippingPage() {
           </section>
 
           <section>
-            <h2 className="text-2xl font-bold text-white mt-8 mb-4">4) Tracking</h2>
+            <h2 className="mb-4 mt-8 text-2xl font-bold text-white">4) Tracking</h2>
             <p>
               When available, we will provide tracking information once your order ships.
               Tracking updates may take time to appear after carrier acceptance.
@@ -77,7 +77,7 @@ export default function ShippingPage() {
           </section>
 
           <section>
-            <h2 className="text-2xl font-bold text-white mt-8 mb-4">
+            <h2 className="mb-4 mt-8 text-2xl font-bold text-white">
               5) Delivery Times and Carrier Responsibility
             </h2>
             <p>
@@ -88,7 +88,7 @@ export default function ShippingPage() {
           </section>
 
           <section>
-            <h2 className="text-2xl font-bold text-white mt-8 mb-4">
+            <h2 className="mb-4 mt-8 text-2xl font-bold text-white">
               6) Address Accuracy
             </h2>
             <p>
@@ -99,7 +99,7 @@ export default function ShippingPage() {
           </section>
 
           <section>
-            <h2 className="text-2xl font-bold text-white mt-8 mb-4">7) Questions</h2>
+            <h2 className="mb-4 mt-8 text-2xl font-bold text-white">7) Questions</h2>
             <p>If you have any shipping questions, contact us at:</p>
             <p className="mt-2">
               Email: {SUPPORT_EMAIL}

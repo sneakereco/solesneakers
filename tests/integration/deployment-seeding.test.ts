@@ -2,70 +2,96 @@ import { readFileSync } from "node:fs";
 import { resolve } from "node:path";
 
 const seed = readFileSync(resolve("supabase/seed.sql"), "utf8");
-const stagingWorkflow = readFileSync(resolve(".github/workflows/staging.yml"), "utf8");
-const productionWorkflow = readFileSync(
-  resolve(".github/workflows/production.yml"),
-  "utf8",
-);
+const ciWorkflow = readFileSync(resolve(".github/workflows/ci.yml"), "utf8");
 
-describe("deployment reference-data seeding", () => {
-  it("renames the legacy tenant and bootstraps Solesneakers", () => {
+function job(workflow: string, name: string): string {
+  const match = workflow.match(
+    new RegExp(`^  ${name}:\\r?\\n([\\s\\S]*?)(?=^  [\\w-]+:|$(?![\\s\\S]))`, "m"),
+  );
+  expect(match).not.toBeNull();
+  return match![1];
+}
+
+describe("deployment configuration", () => {
+  it("builds remote source without requiring the local Doppler CLI", () => {
+    const config = JSON.parse(readFileSync(resolve("vercel.json"), "utf8"));
+    expect(config.buildCommand).toBe("next build");
+  });
+
+  it("keeps the local seed's legacy tenant rename and bootstrap", () => {
     expect(seed).toContain("set name = 'Solesneakers'");
     expect(seed).toContain("where name = 'Realdealkickzsc'");
     expect(seed).toContain("select 'Solesneakers'");
   });
 
-  it.each([
-    ["staging", stagingWorkflow],
-    ["production", productionWorkflow],
-  ])("seeds %s before building and fails on SQL errors", (_environment, workflow) => {
-    const seedStep = workflow.indexOf("-v ON_ERROR_STOP=1");
-    const buildStep = workflow.indexOf("- name: Build");
+  it.each(["staging", "production"])(
+    "gates %s source deployment on migrations and checks deployed readiness",
+    (environment) => {
+      const workflow = readFileSync(
+        resolve(`.github/workflows/${environment}.yml`),
+        "utf8",
+      );
+      const migrate = job(workflow, "migrate");
+      const deploy = job(workflow, "deploy");
+      const verify = job(workflow, "verify");
+      expect(migrate).toContain(
+        `needs: ${environment === "production" ? "validate-release" : "validate"}`,
+      );
+      expect(migrate).toContain('supabase db push --db-url "$SUPABASE_DB_URL" --dry-run');
+      expect(migrate).toMatch(/supabase db push --db-url "\$SUPABASE_DB_URL"\r?\n/);
+      expect(deploy).toContain("needs: migrate");
+      expect(deploy).toContain('deploy --prod --yes --token="$VERCEL_TOKEN"');
+      expect(deploy).toContain(
+        'echo "deployment_url=$deployment_url" >> "$GITHUB_OUTPUT"',
+      );
+      expect(verify).toContain("needs: deploy");
+      expect(verify).toContain("${{ needs.deploy.outputs.deployment_url }}");
+      expect(verify).toContain('"$DEPLOYMENT_URL/api/readyz"');
+      expect(verify.trim()).toMatch(/exit 1$/);
+    },
+  );
 
-    expect(seedStep).toBeGreaterThan(-1);
-    expect(buildStep).toBeGreaterThan(seedStep);
-    expect(workflow).toContain("Seed verification failed: missing taxonomy data");
+  it.each(["staging", "production"])(
+    "injects environment-scoped Doppler secrets before %s migration and deployment",
+    (environment) => {
+      const workflow = readFileSync(
+        resolve(`.github/workflows/${environment}.yml`),
+        "utf8",
+      );
+      for (const [name, command] of [
+        ["migrate", "supabase db push"],
+        ["deploy", "vercel@"],
+      ]) {
+        const section = job(workflow, name);
+        expect(section).toContain(`environment: ${environment}`);
+        expect(section).toContain("uses: dopplerhq/secrets-fetch-action@");
+        expect(section).toContain("doppler-token: ${{ secrets.DOPPLER_TOKEN }}");
+        expect(section).toContain("inject-env-vars: true");
+        expect(section.indexOf("inject-env-vars: true")).toBeLessThan(
+          section.indexOf(command),
+        );
+      }
+    },
+  );
+
+  it("builds PRs with schema-valid placeholders and no deployment credentials", () => {
+    const envBlock = ciWorkflow.split("    env:")[1].split("    steps:")[0];
+    const placeholders = Object.fromEntries(
+      [...envBlock.matchAll(/^      ([A-Z_]+): (.+)$/gm)].map(([, key, value]) => [
+        key,
+        value.trim(),
+      ]),
+    );
+    jest.replaceProperty(process, "env", { ...placeholders, NODE_ENV: "production" });
+    try {
+      jest.isolateModules(() => {
+        expect(() => jest.requireActual("../../src/config/env")).not.toThrow();
+      });
+    } finally {
+      jest.restoreAllMocks();
+    }
+    expect(ciWorkflow).toContain("run: npx next build");
+    expect(ciWorkflow).not.toContain("secrets.");
+    expect(ciWorkflow).not.toContain("doppler");
   });
-
-  it.each([
-    ["staging", stagingWorkflow],
-    ["production", productionWorkflow],
-  ])(
-    "maps and validates the public site URL before the %s build",
-    (_environment, workflow) => {
-      expect(workflow).toContain(
-        "NEXT_PUBLIC_SITE_URL: ${{ vars.NEXT_PUBLIC_SITE_URL || secrets.NEXT_PUBLIC_SITE_URL }}",
-      );
-      expect(workflow).toContain(
-        "Invalid NEXT_PUBLIC_SITE_URL: expected an absolute http(s) URL",
-      );
-      expect(workflow.indexOf("Invalid NEXT_PUBLIC_SITE_URL")).toBeLessThan(
-        workflow.indexOf("- name: Build"),
-      );
-    },
-  );
-
-  it.each([
-    ["staging", stagingWorkflow],
-    ["production", productionWorkflow],
-  ])(
-    "passes and validates browser payment configuration before the %s build",
-    (_environment, workflow) => {
-      expect(workflow).toContain(
-        "SQUARE_APPLICATION_ID: ${{ vars.SQUARE_APPLICATION_ID || secrets.SQUARE_APPLICATION_ID }}",
-      );
-      expect(workflow).toContain(
-        "NEXT_PUBLIC_TURNSTILE_SITE_KEY: ${{ vars.NEXT_PUBLIC_TURNSTILE_SITE_KEY || secrets.NEXT_PUBLIC_TURNSTILE_SITE_KEY }}",
-      );
-      expect(workflow).toContain(
-        "TURNSTILE_SECRET_KEY: ${{ secrets.TURNSTILE_SECRET_KEY }}",
-      );
-      expect(workflow).toContain('[[ -n "$SQUARE_APPLICATION_ID" ]]');
-      expect(workflow).toContain('[[ -n "$NEXT_PUBLIC_TURNSTILE_SITE_KEY" ]]');
-      expect(workflow).toContain('[[ -n "$TURNSTILE_SECRET_KEY" ]]');
-      expect(workflow.indexOf('[[ -n "$SQUARE_APPLICATION_ID" ]]')).toBeLessThan(
-        workflow.indexOf("- name: Build"),
-      );
-    },
-  );
 });

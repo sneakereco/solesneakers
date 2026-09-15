@@ -1,5 +1,7 @@
 "use client";
 
+import Image from "next/image";
+
 import { X } from "lucide-react";
 import { useEffect, useMemo, useState } from "react";
 
@@ -44,11 +46,16 @@ export function InventoryProductDetailsModal({
 }: InventoryProductDetailsModalProps) {
   const [selectedImageIndex, setSelectedImageIndex] = useState(0);
 
+  const [previousSelection, setPreviousSelection] = useState({ open, product });
+  if (previousSelection.open !== open || previousSelection.product !== product) {
+    setPreviousSelection({ open, product });
+    setSelectedImageIndex(0);
+  }
+
   useEffect(() => {
     if (!open) {
       return;
     }
-    setSelectedImageIndex(0);
     const onKeyDown = (event: KeyboardEvent) => {
       if (event.key === "Escape") {
         onClose();
@@ -119,7 +126,10 @@ export function InventoryProductDetailsModal({
           <div className="grid grid-cols-1 gap-6 md:grid-cols-2">
             <div className="flex flex-col gap-3">
               <div className="flex h-[260px] items-center justify-center overflow-hidden rounded border border-zinc-800 bg-zinc-900/50">
-                <img
+                <Image
+                  unoptimized
+                  width={400}
+                  height={400}
                   src={activeImage}
                   alt={title}
                   className="h-full w-full object-contain p-2"
@@ -138,7 +148,10 @@ export function InventoryProductDetailsModal({
                           : "border-zinc-800 opacity-70 hover:opacity-100"
                       }`}
                     >
-                      <img
+                      <Image
+                        unoptimized
+                        width={400}
+                        height={400}
                         src={image.url ?? ""}
                         alt={`Image ${index + 1}`}
                         className="h-full w-full object-cover"

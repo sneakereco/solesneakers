@@ -1,7 +1,7 @@
 // app/admin/featured-items/client.tsx
 "use client";
 
-import { useState, useEffect } from "react";
+import { useState, useEffect, useCallback } from "react";
 import { Star, GripVertical, X, Plus } from "lucide-react";
 import Image from "next/image";
 import Link from "next/link";
@@ -56,15 +56,40 @@ export function FeaturedItemsManager() {
     tone: "success" | "error" | "info";
   } | null>(null);
 
-  useEffect(() => {
-    loadFeaturedItems();
+  const loadFeaturedItems = useCallback((signal?: AbortSignal) => {
+    return fetch("/api/admin/featured-items", { signal })
+      .then(async (response) => {
+        const data = await response.json();
+        if (signal?.aborted) return;
+        if (response.ok) {
+          setFeaturedItems(data.items || []);
+        } else {
+          throw new Error(data.error || "Failed to load featured items");
+        }
+      })
+      .catch((error: unknown) => {
+        if (signal?.aborted) return;
+        logError(error, { layer: "frontend", event: "load_featured_items" });
+        setToast({
+          message:
+            error instanceof Error ? error.message : "Failed to load featured items",
+          tone: "error",
+        });
+      })
+      .finally(() => {
+        if (!signal?.aborted) setIsLoading(false);
+      });
   }, []);
+
+  useEffect(() => {
+    const controller = new AbortController();
+    void loadFeaturedItems(controller.signal);
+    return () => controller.abort();
+  }, [loadFeaturedItems]);
 
   useEffect(() => {
     const query = searchQuery.trim();
     if (query.length === 0) {
-      setSearchResults([]);
-      setIsSearching(false);
       return;
     }
 
@@ -103,7 +128,7 @@ export function FeaturedItemsManager() {
           });
         }
       } finally {
-        setIsSearching(false);
+        if (!controller.signal.aborted) setIsSearching(false);
       }
     };
 
@@ -116,27 +141,6 @@ export function FeaturedItemsManager() {
       clearTimeout(timeout);
     };
   }, [searchQuery]);
-
-  const loadFeaturedItems = async () => {
-    setIsLoading(true);
-    try {
-      const response = await fetch("/api/admin/featured-items");
-      const data = await response.json();
-      if (response.ok) {
-        setFeaturedItems(data.items || []);
-      } else {
-        throw new Error(data.error || "Failed to load featured items");
-      }
-    } catch (error) {
-      logError(error, { layer: "frontend", event: "load_featured_items" });
-      setToast({
-        message: error instanceof Error ? error.message : "Failed to load featured items",
-        tone: "error",
-      });
-    } finally {
-      setIsLoading(false);
-    }
-  };
 
   const addFeaturedItem = async (productId: string) => {
     try {
@@ -155,6 +159,8 @@ export function FeaturedItemsManager() {
       setToast({ message: "Product added to featured items", tone: "success" });
       setSearchQuery("");
       setSearchResults([]);
+      setIsSearching(false);
+      setIsLoading(true);
       await loadFeaturedItems();
     } catch (error) {
       logError(error, { layer: "frontend", event: "add_featured_item" });
@@ -177,6 +183,7 @@ export function FeaturedItemsManager() {
       }
 
       setToast({ message: "Product removed from featured items", tone: "success" });
+      setIsLoading(true);
       await loadFeaturedItems();
     } catch (error) {
       logError(error, { layer: "frontend", event: "remove_featured_item" });
@@ -232,6 +239,7 @@ export function FeaturedItemsManager() {
     } catch (error) {
       logError(error, { layer: "frontend", event: "reorder_featured_items" });
       setToast({ message: "Failed to save order", tone: "error" });
+      setIsLoading(true);
       await loadFeaturedItems();
     } finally {
       setDraggedIndex(null);
@@ -254,7 +262,7 @@ export function FeaturedItemsManager() {
 
   if (isLoading) {
     return (
-      <div className="flex items-center justify-center min-h-[400px]">
+      <div className="flex min-h-[400px] items-center justify-center">
         <div className="text-gray-400">Loading featured items...</div>
       </div>
     );
@@ -267,15 +275,21 @@ export function FeaturedItemsManager() {
         data-admin-section-card
         className="rounded border border-zinc-800/70 bg-zinc-900 p-6"
       >
-        <h2 className="text-xl font-semibold text-white mb-4 flex items-center gap-2">
-          <Plus className="w-5 h-5" />
+        <h2 className="mb-4 flex items-center gap-2 text-xl font-semibold text-white">
+          <Plus className="h-5 w-5" />
           Add Products
         </h2>
 
         <div className="relative">
           <AdminSearchField
             value={searchQuery}
-            onChange={setSearchQuery}
+            onChange={(value) => {
+              setSearchQuery(value);
+              if (!value.trim()) {
+                setSearchResults([]);
+                setIsSearching(false);
+              }
+            }}
             placeholder="Search products by name, brand, or SKU..."
             label="Search products"
           />
@@ -286,7 +300,7 @@ export function FeaturedItemsManager() {
           )}
 
           {filteredSearchResults.length > 0 && (
-            <div className="absolute z-10 w-full mt-2 bg-zinc-800 border border-zinc-700 rounded shadow-lg max-h-96 overflow-y-auto">
+            <div className="absolute z-10 mt-2 max-h-96 w-full overflow-y-auto rounded border border-zinc-700 bg-zinc-800 shadow-lg">
               {filteredSearchResults.map((product) => {
                 const minPrice = getMinPrice(product.variants);
                 const primaryImage = product.images?.[0]?.url;
@@ -295,10 +309,10 @@ export function FeaturedItemsManager() {
                   <button
                     key={product.id}
                     onClick={() => void addFeaturedItem(product.id)}
-                    className="w-full flex items-center gap-4 p-4 hover:bg-zinc-700 transition text-left"
+                    className="flex w-full items-center gap-4 p-4 text-left transition hover:bg-zinc-700"
                   >
                     {primaryImage ? (
-                      <div className="relative w-16 h-16 bg-zinc-900 rounded overflow-hidden flex-shrink-0">
+                      <div className="relative h-16 w-16 flex-shrink-0 overflow-hidden rounded bg-zinc-900">
                         <Image
                           src={primaryImage}
                           alt={product.name}
@@ -307,21 +321,21 @@ export function FeaturedItemsManager() {
                         />
                       </div>
                     ) : (
-                      <div className="w-16 h-16 bg-zinc-900 rounded flex items-center justify-center flex-shrink-0">
-                        <span className="text-gray-500 text-xs">No image</span>
+                      <div className="flex h-16 w-16 flex-shrink-0 items-center justify-center rounded bg-zinc-900">
+                        <span className="text-xs text-gray-500">No image</span>
                       </div>
                     )}
 
-                    <div className="flex-1 min-w-0">
-                      <div className="text-white font-semibold truncate">
+                    <div className="min-w-0 flex-1">
+                      <div className="truncate font-semibold text-white">
                         {product.name}
                       </div>
-                      <div className="text-sm text-gray-400 truncate">
+                      <div className="truncate text-sm text-gray-400">
                         {product.category} • {formatPrice(minPrice)}
                       </div>
                     </div>
 
-                    <Plus className="w-5 h-5 text-red-500 flex-shrink-0" />
+                    <Plus className="h-5 w-5 flex-shrink-0 text-red-500" />
                   </button>
                 );
               })}
@@ -332,8 +346,8 @@ export function FeaturedItemsManager() {
         {searchQuery.trim().length > 0 &&
           filteredSearchResults.length === 0 &&
           !isSearching && (
-            <div className="mt-4 text-center text-gray-400 text-sm">
-              No products found matching "{searchQuery}"
+            <div className="mt-4 text-center text-sm text-gray-400">
+              No products found matching &quot;{searchQuery}&quot;
             </div>
           )}
       </section>
@@ -343,25 +357,25 @@ export function FeaturedItemsManager() {
         data-admin-section-card
         className="rounded border border-zinc-800/70 bg-zinc-900 p-6"
       >
-        <div className="flex items-center justify-between mb-4">
-          <h2 className="text-xl font-semibold text-white flex items-center gap-2">
-            <Star className="w-5 h-5 text-yellow-500" />
+        <div className="mb-4 flex items-center justify-between">
+          <h2 className="flex items-center gap-2 text-xl font-semibold text-white">
+            <Star className="h-5 w-5 text-yellow-500" />
             Featured Items ({featuredItems.length})
           </h2>
           <Link
             href="/"
             target="_blank"
-            className="text-sm text-gray-400 hover:text-white transition"
+            className="text-sm text-gray-400 transition hover:text-white"
           >
             View on home page →
           </Link>
         </div>
 
         {featuredItems.length === 0 ? (
-          <div className="text-center py-12">
-            <Star className="w-12 h-12 text-gray-600 mx-auto mb-4" />
-            <p className="text-gray-400 text-lg mb-2">No featured items yet</p>
-            <p className="text-gray-500 text-sm">
+          <div className="py-12 text-center">
+            <Star className="mx-auto mb-4 h-12 w-12 text-gray-600" />
+            <p className="mb-2 text-lg text-gray-400">No featured items yet</p>
+            <p className="text-sm text-gray-500">
               Search for products above to add them to the featured section
             </p>
           </div>
@@ -386,21 +400,21 @@ export function FeaturedItemsManager() {
                     onDragOver={(e) => handleDragOver(e, index)}
                     onDragEnd={() => void handleDragEnd()}
                     className={[
-                      "flex items-center gap-4 p-4 bg-zinc-800 border border-zinc-800/70 rounded",
-                      "hover:border-zinc-700 transition cursor-move",
+                      "flex items-center gap-4 rounded border border-zinc-800/70 bg-zinc-800 p-4",
+                      "cursor-move transition hover:border-zinc-700",
                       draggedIndex === index ? "opacity-50" : "",
                     ].join(" ")}
                   >
-                    <GripVertical className="w-5 h-5 text-gray-500 flex-shrink-0" />
+                    <GripVertical className="h-5 w-5 flex-shrink-0 text-gray-500" />
 
-                    <div className="w-8 h-8 bg-zinc-700 rounded flex items-center justify-center flex-shrink-0">
+                    <div className="flex h-8 w-8 flex-shrink-0 items-center justify-center rounded bg-zinc-700">
                       <span className="text-sm font-semibold text-gray-300">
                         {index + 1}
                       </span>
                     </div>
 
                     {primaryImage ? (
-                      <div className="relative w-16 h-16 bg-zinc-900 rounded overflow-hidden flex-shrink-0">
+                      <div className="relative h-16 w-16 flex-shrink-0 overflow-hidden rounded bg-zinc-900">
                         <Image
                           src={primaryImage}
                           alt={item.product.name}
@@ -409,20 +423,20 @@ export function FeaturedItemsManager() {
                         />
                       </div>
                     ) : (
-                      <div className="w-16 h-16 bg-zinc-900 rounded flex items-center justify-center flex-shrink-0">
-                        <span className="text-gray-500 text-xs">No image</span>
+                      <div className="flex h-16 w-16 flex-shrink-0 items-center justify-center rounded bg-zinc-900">
+                        <span className="text-xs text-gray-500">No image</span>
                       </div>
                     )}
 
-                    <div className="flex-1 min-w-0">
-                      <div className="text-white font-semibold truncate">
+                    <div className="min-w-0 flex-1">
+                      <div className="truncate font-semibold text-white">
                         {item.product.name}
                       </div>
-                      <div className="text-sm text-gray-400 truncate">
+                      <div className="truncate text-sm text-gray-400">
                         {item.product.category} • {formatPrice(minPrice)}
                       </div>
                       {item.product.is_out_of_stock && (
-                        <div className="text-xs text-red-400 mt-1">
+                        <div className="mt-1 text-xs text-red-400">
                           Out of stock (hidden on home page)
                         </div>
                       )}
@@ -430,10 +444,10 @@ export function FeaturedItemsManager() {
 
                     <button
                       onClick={() => void removeFeaturedItem(item.product_id)}
-                      className="p-2 hover:bg-zinc-700 rounded transition flex-shrink-0"
+                      className="flex-shrink-0 rounded p-2 transition hover:bg-zinc-700"
                       title="Remove from featured"
                     >
-                      <X className="w-5 h-5 text-red-500" />
+                      <X className="h-5 w-5 text-red-500" />
                     </button>
                   </div>
                 );

@@ -162,7 +162,7 @@ export async function POST(request: NextRequest) {
     let body: Record<string, unknown> | null = null;
 
     // For EMAIL (CID inline)
-    let emailAttachments: {
+    const emailAttachments: {
       filename: string;
       content: Buffer;
       contentType?: string;
@@ -171,7 +171,7 @@ export async function POST(request: NextRequest) {
     }[] = [];
 
     // For STORAGE upload
-    let validatedUploads: Array<{ file: File; filename: string }> = [];
+    const validatedUploads: Array<{ file: File; filename: string }> = [];
 
     if (isMultipart) {
       const formData = await request.formData();
@@ -306,7 +306,7 @@ export async function POST(request: NextRequest) {
     });
 
     // Upload + write attachments with ADMIN (avoid RLS update failures)
-    let storedAttachments: Array<{
+    const storedAttachments: Array<{
       filename: string;
       bucket: string;
       path: string;

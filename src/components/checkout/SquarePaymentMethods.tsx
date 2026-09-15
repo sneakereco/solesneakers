@@ -454,7 +454,11 @@ export function SquarePaymentMethods({
   >("preparing");
   const [walletBillingRequired, setWalletBillingRequired] = useState(false);
   const walletBillingFields = useRef<HTMLDivElement>(null);
-  const [error, setError] = useState<string | null>(null);
+  const [paymentFailureMessage, setError] = useState<string | null>(null);
+  const error =
+    isGuest && !clientEnv.NEXT_PUBLIC_TURNSTILE_SITE_KEY
+      ? "Guest checkout verification is temporarily unavailable."
+      : paymentFailureMessage;
   const [addressReview, setAddressReview] =
     useState<ShippingAddressValidationError | null>(null);
   const [totalReview, setTotalReview] = useState<number | null>(null);
@@ -841,7 +845,6 @@ export function SquarePaymentMethods({
     }
     const sitekey = clientEnv.NEXT_PUBLIC_TURNSTILE_SITE_KEY;
     if (!sitekey) {
-      setError("Guest checkout verification is temporarily unavailable.");
       return;
     }
     let widgetId: string | null = null;

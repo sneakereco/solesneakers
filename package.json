@@ -10,14 +10,14 @@
     "test:jest": "npm run test:jest:unit && npm run test:jest:integration",
     "test:jest:unit": "jest --config jest.config.ts",
     "test:jest:integration": "jest --config jest.integration.config.ts",
-    "test:e2e": "node tests/browser/payment-methods.mjs && node tests/browser/checkout-ui.mjs && node tests/browser/shipping-validation.mjs",
+    "test:e2e": "node tests/browser/payment-methods.mjs && node tests/browser/checkout-ui.mjs && node tests/browser/shipping-validation.mjs && node tests/browser/checkout-success.mjs",
     "test:rls": "tsx ./tests/rls/rls-check.ts",
     "format": "prettier --write .",
     "format:check": "prettier --check .",
     "dev": "doppler run -- next dev",
     "build": "doppler run -- next build",
     "start": "doppler run -- next start",
-    "gen:types": "node scripts/generate-db-types.mjs"
+    "gen:types": "npx supabase gen types typescript --local --schema public > src/types/db/database.types.ts"
   },
   "dependencies": {
     "@dnd-kit/core": "^6.3.1",

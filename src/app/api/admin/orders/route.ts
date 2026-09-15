@@ -94,7 +94,7 @@ export async function GET(request: NextRequest) {
       includeAll: includeAllRaw || undefined,
     });
 
-    let shippingProfileNameByUserId = new Map<string, string | null>();
+    const shippingProfileNameByUserId = new Map<string, string | null>();
     const userIds = Array.from(
       new Set(
         (orders ?? [])

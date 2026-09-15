@@ -46,7 +46,7 @@ export default function HomePage() {
 
         <div className="relative z-10 flex h-full w-full items-end justify-center px-5 pb-20 pt-16 text-center sm:px-6 sm:pb-24 lg:px-8 lg:pb-28">
           <div className="max-w-[44rem] text-center">
-            <h1 className="max-w-4xl text-[2.5rem] font-bold italic uppercase leading-[0.9] tracking-[-0.05em] text-white sm:text-[3.5rem] lg:text-[4.55rem] xl:text-[5rem]">
+            <h1 className="max-w-4xl text-[2.5rem] font-bold uppercase italic leading-[0.9] tracking-[-0.05em] text-white sm:text-[3.5rem] lg:text-[4.55rem] xl:text-[5rem]">
               Curated heat.
               <br />
               Available now.

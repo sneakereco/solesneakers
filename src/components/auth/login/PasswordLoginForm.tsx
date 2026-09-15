@@ -154,7 +154,7 @@ export function PasswordLoginForm({
       </button>
 
       <p className="pt-2 text-center text-[0.98rem] text-zinc-600">
-        Don't have an account?{" "}
+        Don&apos;t have an account?{" "}
         <Link
           href={`/auth/register${nextUrl !== "/" ? `?next=${encodeURIComponent(nextUrl)}` : ""}`}
           className={authStyles.inlineAccentLink}

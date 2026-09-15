@@ -17,7 +17,7 @@ type AdminProfile = { id: string; email: string | null; role: ProfileRole | null
 export default function AdminProfilePage() {
   const [profile, setProfile] = useState<AdminProfile | null>(null);
   const [message, setMessage] = useState("");
-  const [inviteRole, setInviteRole] = useState<"admin" | "super_admin">("admin");
+  const [requestedInviteRole, setInviteRole] = useState<"admin" | "super_admin">("admin");
   const [inviteUrl, setInviteUrl] = useState("");
 
   useEffect(() => {
@@ -33,11 +33,7 @@ export default function AdminProfilePage() {
   const canInvite = canInviteAdmins(role);
   const canInviteSuper = isDevRole(role);
 
-  useEffect(() => {
-    if (!canInviteSuper) {
-      setInviteRole("admin");
-    }
-  }, [canInviteSuper]);
+  const inviteRole = canInviteSuper ? requestedInviteRole : "admin";
 
   const createInvite = async () => {
     setInviteUrl("");

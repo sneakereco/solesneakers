@@ -25,39 +25,39 @@ export function CartPeekDrawer({ isOpen, onClose }: CartPeekDrawerProps) {
   };
 
   return (
-    <div className="md:hidden fixed inset-0 z-50">
+    <div className="fixed inset-0 z-50 md:hidden">
       <div className="absolute inset-0 bg-black/60" onClick={onClose} />
 
-      <div className="absolute bottom-0 left-0 right-0 bg-black border-t border-zinc-800/70 rounded-t-2xl max-h-[70vh] overflow-y-auto">
+      <div className="absolute bottom-0 left-0 right-0 max-h-[70vh] overflow-y-auto rounded-t-2xl border-t border-zinc-800/70 bg-black">
         <div className="p-4 sm:p-6">
-          <div className="flex items-center justify-between mb-4">
-            <h2 className="text-lg sm:text-xl font-bold text-white">
+          <div className="mb-4 flex items-center justify-between">
+            <h2 className="text-lg font-bold text-white sm:text-xl">
               Cart ({items.length})
             </h2>
             <button onClick={onClose} className="text-gray-400 hover:text-white">
-              <X className="w-5 h-5 sm:w-6 sm:h-6" />
+              <X className="h-5 w-5 sm:h-6 sm:w-6" />
             </button>
           </div>
 
           {items.length === 0 ? (
-            <p className="text-gray-400 text-center py-8">Your cart is empty</p>
+            <p className="py-8 text-center text-gray-400">Your cart is empty</p>
           ) : (
             <>
               <div className="mb-4">
-                <div className="flex justify-between text-base sm:text-lg font-bold text-white mb-4">
+                <div className="mb-4 flex justify-between text-base font-bold text-white sm:text-lg">
                   <span>Total</span>
                   <span>${(total / 100).toFixed(2)}</span>
                 </div>
 
                 <button
                   onClick={handleExpand}
-                  className="w-full bg-zinc-800 hover:bg-zinc-700 text-white font-semibold py-2.5 sm:py-3 rounded transition flex items-center justify-center gap-2 mb-2 text-sm sm:text-base"
+                  className="mb-2 flex w-full items-center justify-center gap-2 rounded bg-zinc-800 py-2.5 text-sm font-semibold text-white transition hover:bg-zinc-700 sm:py-3 sm:text-base"
                 >
-                  <Maximize2 className="w-4 h-4" />
+                  <Maximize2 className="h-4 w-4" />
                   View Full Cart
                 </button>
 
-                <button className="w-full bg-red-600 hover:bg-red-700 text-white font-bold py-2.5 sm:py-3 rounded transition text-sm sm:text-base">
+                <button className="w-full rounded bg-red-600 py-2.5 text-sm font-bold text-white transition hover:bg-red-700 sm:py-3 sm:text-base">
                   Checkout
                 </button>
               </div>

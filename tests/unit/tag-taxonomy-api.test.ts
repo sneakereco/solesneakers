@@ -4,7 +4,9 @@ import { resolve } from "node:path";
 describe("tag taxonomy API namespace", () => {
   it("exposes the structured modules only under /api/admin/tags", () => {
     for (const moduleName of ["brands", "models", "aliases", "candidates", "sizes"]) {
-      expect(existsSync(resolve(`src/app/api/admin/tags/${moduleName}/route.ts`))).toBe(true);
+      expect(existsSync(resolve(`src/app/api/admin/tags/${moduleName}/route.ts`))).toBe(
+        true,
+      );
     }
     expect(existsSync(resolve("src/app/api/admin/catalog"))).toBe(false);
     expect(existsSync(resolve("src/app/api/admin/tags/brand-groups"))).toBe(false);

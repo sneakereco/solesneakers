@@ -1,6 +1,6 @@
 "use client";
 
-import { useEffect, useState } from "react";
+import { useEffect, useState, useCallback } from "react";
 
 import { AdminPage, AdminPageHeader } from "@/components/admin/AdminPage";
 
@@ -34,37 +34,41 @@ export default function TagsPage() {
   const [message, setMessage] = useState("");
   const [loading, setLoading] = useState(true);
 
-  const loadAll = async () => {
-    setLoading(true);
-    setMessage("");
-    try {
-      const responses = await Promise.all([
-        fetch("/api/admin/tags/brands?includeInactive=1"),
-        fetch("/api/admin/tags/models?includeInactive=1"),
-        fetch("/api/admin/tags/aliases?includeInactive=1"),
-        fetch("/api/admin/tags/candidates?status=new"),
-        fetch("/api/admin/tags/sizes?includeInactive=1"),
-      ]);
-      if (responses.some((response) => !response.ok)) {
-        throw new Error("Request failed");
-      }
-      const [brandData, modelData, aliasData, candidateData, sizeData] =
-        await Promise.all(responses.map((response) => response.json()));
-      setBrands(brandData.brands ?? []);
-      setModels(modelData.models ?? []);
-      setAliases(aliasData.aliases ?? []);
-      setCandidates(candidateData.candidates ?? []);
-      setSizes(sizeData.sizes ?? []);
-    } catch {
-      setMessage("Unable to load tag vocabulary.");
-    } finally {
-      setLoading(false);
-    }
-  };
+  const loadAll = useCallback((signal?: AbortSignal) => {
+    return Promise.all([
+      fetch("/api/admin/tags/brands?includeInactive=1", { signal }),
+      fetch("/api/admin/tags/models?includeInactive=1", { signal }),
+      fetch("/api/admin/tags/aliases?includeInactive=1", { signal }),
+      fetch("/api/admin/tags/candidates?status=new", { signal }),
+      fetch("/api/admin/tags/sizes?includeInactive=1", { signal }),
+    ])
+      .then(async (responses) => {
+        if (responses.some((response) => !response.ok)) {
+          throw new Error("Request failed");
+        }
+        const [brandData, modelData, aliasData, candidateData, sizeData] =
+          await Promise.all(responses.map((response) => response.json()));
+        if (signal?.aborted) return;
+        setBrands(brandData.brands ?? []);
+        setModels(modelData.models ?? []);
+        setAliases(aliasData.aliases ?? []);
+        setCandidates(candidateData.candidates ?? []);
+        setSizes(sizeData.sizes ?? []);
+      })
+      .catch(() => {
+        if (signal?.aborted) return;
+        setMessage("Unable to load tag vocabulary.");
+      })
+      .finally(() => {
+        if (!signal?.aborted) setLoading(false);
+      });
+  }, []);
 
   useEffect(() => {
-    void loadAll();
-  }, []);
+    const controller = new AbortController();
+    void loadAll(controller.signal);
+    return () => controller.abort();
+  }, [loadAll]);
 
   const post = async (path: string, body: unknown) => {
     const response = await fetch(path, {
@@ -76,6 +80,8 @@ export default function TagsPage() {
       throw new Error("Save failed");
     }
     setLabel("");
+    setLoading(true);
+    setMessage("");
     await loadAll();
   };
 
@@ -88,6 +94,8 @@ export default function TagsPage() {
     if (!response.ok) {
       throw new Error("Update failed");
     }
+    setLoading(true);
+    setMessage("");
     await loadAll();
   };
 
@@ -135,6 +143,8 @@ export default function TagsPage() {
     if (!response.ok) {
       throw new Error("Reject failed");
     }
+    setLoading(true);
+    setMessage("");
     await loadAll();
   };
 

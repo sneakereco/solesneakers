@@ -93,8 +93,15 @@ export const checkoutBillingAddressSchema = z
     line1: z.string().trim().min(1).max(120),
     line2: z.string().trim().max(120).nullable().optional(),
     city: z.string().trim().min(1).max(80),
-    state: z.string().trim().toUpperCase().regex(/^[A-Z]{2}$/),
-    postalCode: z.string().trim().regex(/^\d{5}(?:-\d{4})?$/),
+    state: z
+      .string()
+      .trim()
+      .toUpperCase()
+      .regex(/^[A-Z]{2}$/),
+    postalCode: z
+      .string()
+      .trim()
+      .regex(/^\d{5}(?:-\d{4})?$/),
     country: z.string().trim().toUpperCase().pipe(z.literal("US")),
   })
   .strict();

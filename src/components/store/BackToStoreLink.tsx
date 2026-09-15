@@ -41,9 +41,9 @@ export function BackToStoreLink() {
     <Link
       href={backHref}
       onClick={handleClick}
-      className="inline-flex items-center gap-2 text-gray-400 hover:text-white transition text-sm"
+      className="inline-flex items-center gap-2 text-sm text-gray-400 transition hover:text-white"
     >
-      <ArrowLeft className="w-4 h-4" />
+      <ArrowLeft className="h-4 w-4" />
       Back to Store
     </Link>
   );

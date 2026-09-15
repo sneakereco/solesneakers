@@ -16,14 +16,16 @@ function OrderStatusContent() {
   const orderId = params?.orderId;
 
   const [status, setStatus] = useState<OrderStatusResponse | null>(null);
-  const [error, setError] = useState<string | null>(null);
+  const [loadError, setError] = useState<string | null>(null);
+  const error = !token
+    ? "Missing secure order link. Please check your email."
+    : loadError;
 
   useEffect(() => {
     if (!orderId) {
       return;
     }
     if (!token) {
-      setError("Missing secure order link. Please check your email.");
       return;
     }
 
@@ -45,7 +47,7 @@ function OrderStatusContent() {
       }
     };
 
-    loadStatus();
+    void loadStatus();
   }, [orderId, token]);
 
   if (!orderId) {
@@ -54,13 +56,13 @@ function OrderStatusContent() {
 
   if (error) {
     return (
-      <div className="max-w-2xl mx-auto px-4 py-20 text-center">
-        <div className="bg-red-900/20 border border-red-500 text-red-400 p-6 rounded">
-          <p className="text-lg font-semibold mb-2">Order status unavailable</p>
+      <div className="mx-auto max-w-2xl px-4 py-20 text-center">
+        <div className="rounded border border-red-500 bg-red-900/20 p-6 text-red-400">
+          <p className="mb-2 text-lg font-semibold">Order status unavailable</p>
           <p>{error}</p>
           <button
             onClick={() => router.push("/")}
-            className="mt-4 px-6 py-2 bg-red-600 hover:bg-red-700 text-white rounded transition"
+            className="mt-4 rounded bg-red-600 px-6 py-2 text-white transition hover:bg-red-700"
           >
             Back to Home
           </button>
@@ -71,8 +73,8 @@ function OrderStatusContent() {
 
   if (!status) {
     return (
-      <div className="max-w-2xl mx-auto px-4 py-20 text-center">
-        <Loader2 className="w-16 h-16 text-red-600 mx-auto animate-spin" />
+      <div className="mx-auto max-w-2xl px-4 py-20 text-center">
+        <Loader2 className="mx-auto h-16 w-16 animate-spin text-red-600" />
       </div>
     );
   }
@@ -84,8 +86,8 @@ export default function OrderStatusPage() {
   return (
     <Suspense
       fallback={
-        <div className="max-w-2xl mx-auto px-4 py-20 text-center">
-          <Loader2 className="w-16 h-16 text-red-600 mx-auto animate-spin" />
+        <div className="mx-auto max-w-2xl px-4 py-20 text-center">
+          <Loader2 className="mx-auto h-16 w-16 animate-spin text-red-600" />
         </div>
       }
     >

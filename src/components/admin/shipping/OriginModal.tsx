@@ -37,152 +37,152 @@ export function OriginModal({
   return (
     <ModalPortal open={open} onClose={onClose}>
       <div className="w-full max-w-3xl rounded-sm border border-zinc-800/70 bg-zinc-950 p-3 sm:p-6">
-        <div className="flex items-center justify-between gap-3 mb-2 sm:mb-4">
+        <div className="mb-2 flex items-center justify-between gap-3 sm:mb-4">
           <div>
-            <h2 className="text-sm sm:text-lg font-semibold text-white">
+            <h2 className="text-sm font-semibold text-white sm:text-lg">
               Change origin address
             </h2>
-            <p className="hidden sm:block text-[12px] sm:text-sm text-zinc-400">
+            <p className="hidden text-[12px] text-zinc-400 sm:block sm:text-sm">
               Update the address used to create shipping labels.
             </p>
           </div>
           <button
             type="button"
             onClick={onClose}
-            className="text-zinc-400 hover:text-white text-[11px] sm:text-sm"
+            className="text-[11px] text-zinc-400 hover:text-white sm:text-sm"
           >
             Close
           </button>
         </div>
 
-        <div className="grid grid-cols-2 md:grid-cols-2 gap-2 sm:gap-4 text-[11px] sm:text-sm">
-          <div className="col-span-2 text-[10px] sm:text-xs text-zinc-400">
+        <div className="grid grid-cols-2 gap-2 text-[11px] sm:gap-4 sm:text-sm md:grid-cols-2">
+          <div className="col-span-2 text-[10px] text-zinc-400 sm:text-xs">
             Provide a contact name or company name. Phone number is optional.
           </div>
           <div>
-            <label className="block text-gray-400 mb-0.5">Contact name</label>
+            <label className="mb-0.5 block text-gray-400">Contact name</label>
             <input
               type="text"
               value={value.name ?? ""}
               onChange={(e) => onChange("name", e.target.value)}
-              className={`w-full bg-zinc-900 text-white px-2 py-1.5 border ${
+              className={`w-full border bg-zinc-900 px-2 py-1.5 text-white ${
                 errors.name ? "border-red-500" : "border-zinc-800/70"
               }`}
             />
             {errors.name && (
-              <div className="text-[10px] text-red-400 mt-1">{errors.name}</div>
+              <div className="mt-1 text-[10px] text-red-400">{errors.name}</div>
             )}
           </div>
           <div>
-            <label className="block text-gray-400 mb-0.5">Company</label>
+            <label className="mb-0.5 block text-gray-400">Company</label>
             <input
               type="text"
               value={value.company ?? ""}
               onChange={(e) => onChange("company", e.target.value)}
-              className={`w-full bg-zinc-900 text-white px-2 py-1.5 border ${
+              className={`w-full border bg-zinc-900 px-2 py-1.5 text-white ${
                 errors.company ? "border-red-500" : "border-zinc-800/70"
               }`}
             />
             {errors.company && (
-              <div className="text-[10px] text-red-400 mt-1">{errors.company}</div>
+              <div className="mt-1 text-[10px] text-red-400">{errors.company}</div>
             )}
           </div>
           <div>
-            <label className="block text-gray-400 mb-0.5">Phone (optional)</label>
+            <label className="mb-0.5 block text-gray-400">Phone (optional)</label>
             <input
               type="text"
               value={value.phone ?? ""}
               onChange={(e) => onChange("phone", e.target.value)}
-              className={`w-full bg-zinc-900 text-white px-2 py-1.5 border ${
+              className={`w-full border bg-zinc-900 px-2 py-1.5 text-white ${
                 errors.phone ? "border-red-500" : "border-zinc-800/70"
               }`}
             />
             {errors.phone && (
-              <div className="text-[10px] text-red-400 mt-1">{errors.phone}</div>
+              <div className="mt-1 text-[10px] text-red-400">{errors.phone}</div>
             )}
           </div>
           <div>
-            <label className="block text-gray-400 mb-0.5">Line 1</label>
+            <label className="mb-0.5 block text-gray-400">Line 1</label>
             <input
               type="text"
               value={value.line1}
               onChange={(e) => onChange("line1", e.target.value)}
-              className={`w-full bg-zinc-900 text-white px-2 py-1.5 border ${
+              className={`w-full border bg-zinc-900 px-2 py-1.5 text-white ${
                 errors.line1 ? "border-red-500" : "border-zinc-800/70"
               }`}
             />
             {errors.line1 && (
-              <div className="text-[10px] text-red-400 mt-1">{errors.line1}</div>
+              <div className="mt-1 text-[10px] text-red-400">{errors.line1}</div>
             )}
           </div>
           <div>
-            <label className="block text-gray-400 mb-0.5">Line 2</label>
+            <label className="mb-0.5 block text-gray-400">Line 2</label>
             <input
               type="text"
               value={value.line2 ?? ""}
               onChange={(e) => onChange("line2", e.target.value)}
-              className={`w-full bg-zinc-900 text-white px-2 py-1.5 border ${
+              className={`w-full border bg-zinc-900 px-2 py-1.5 text-white ${
                 errors.line2 ? "border-red-500" : "border-zinc-800/70"
               }`}
             />
             {errors.line2 && (
-              <div className="text-[10px] text-red-400 mt-1">{errors.line2}</div>
+              <div className="mt-1 text-[10px] text-red-400">{errors.line2}</div>
             )}
           </div>
           <div>
-            <label className="block text-gray-400 mb-0.5">City</label>
+            <label className="mb-0.5 block text-gray-400">City</label>
             <input
               type="text"
               value={value.city}
               onChange={(e) => onChange("city", e.target.value)}
-              className={`w-full bg-zinc-900 text-white px-2 py-1.5 border ${
+              className={`w-full border bg-zinc-900 px-2 py-1.5 text-white ${
                 errors.city ? "border-red-500" : "border-zinc-800/70"
               }`}
             />
             {errors.city && (
-              <div className="text-[10px] text-red-400 mt-1">{errors.city}</div>
+              <div className="mt-1 text-[10px] text-red-400">{errors.city}</div>
             )}
           </div>
           <div>
-            <label className="block text-gray-400 mb-0.5">State</label>
+            <label className="mb-0.5 block text-gray-400">State</label>
             <input
               type="text"
               value={value.state}
               onChange={(e) => onChange("state", e.target.value)}
-              className={`w-full bg-zinc-900 text-white px-2 py-1.5 border ${
+              className={`w-full border bg-zinc-900 px-2 py-1.5 text-white ${
                 errors.state ? "border-red-500" : "border-zinc-800/70"
               }`}
             />
             {errors.state && (
-              <div className="text-[10px] text-red-400 mt-1">{errors.state}</div>
+              <div className="mt-1 text-[10px] text-red-400">{errors.state}</div>
             )}
           </div>
           <div>
-            <label className="block text-gray-400 mb-0.5">Postal Code</label>
+            <label className="mb-0.5 block text-gray-400">Postal Code</label>
             <input
               type="text"
               value={value.postal_code}
               onChange={(e) => onChange("postal_code", e.target.value)}
-              className={`w-full bg-zinc-900 text-white px-2 py-1.5 border ${
+              className={`w-full border bg-zinc-900 px-2 py-1.5 text-white ${
                 errors.postal_code ? "border-red-500" : "border-zinc-800/70"
               }`}
             />
             {errors.postal_code && (
-              <div className="text-[10px] text-red-400 mt-1">{errors.postal_code}</div>
+              <div className="mt-1 text-[10px] text-red-400">{errors.postal_code}</div>
             )}
           </div>
           <div>
-            <label className="block text-gray-400 mb-0.5">Country</label>
+            <label className="mb-0.5 block text-gray-400">Country</label>
             <input
               type="text"
               value={value.country}
               onChange={(e) => onChange("country", e.target.value)}
-              className={`w-full bg-zinc-900 text-white px-2 py-1.5 border ${
+              className={`w-full border bg-zinc-900 px-2 py-1.5 text-white ${
                 errors.country ? "border-red-500" : "border-zinc-800/70"
               }`}
             />
             {errors.country && (
-              <div className="text-[10px] text-red-400 mt-1">{errors.country}</div>
+              <div className="mt-1 text-[10px] text-red-400">{errors.country}</div>
             )}
           </div>
         </div>
@@ -195,11 +195,11 @@ export function OriginModal({
           </div>
         )}
 
-        <div className="mt-3 sm:mt-6 flex items-center justify-end gap-2 sm:gap-3">
+        <div className="mt-3 flex items-center justify-end gap-2 sm:mt-6 sm:gap-3">
           <button
             type="button"
             onClick={onClose}
-            className="px-3 sm:px-4 py-1.5 sm:py-2 border border-zinc-800/70 text-[11px] sm:text-sm text-gray-300"
+            className="border border-zinc-800/70 px-3 py-1.5 text-[11px] text-gray-300 sm:px-4 sm:py-2 sm:text-sm"
           >
             Cancel
           </button>
@@ -207,7 +207,7 @@ export function OriginModal({
             type="button"
             onClick={onSave}
             disabled={savingOrigin}
-            className="px-3 sm:px-4 py-1.5 sm:py-2 bg-red-600 text-white text-[11px] sm:text-sm hover:bg-red-500 disabled:bg-zinc-700"
+            className="bg-red-600 px-3 py-1.5 text-[11px] text-white hover:bg-red-500 disabled:bg-zinc-700 sm:px-4 sm:py-2 sm:text-sm"
           >
             {savingOrigin ? "Saving..." : "Save origin"}
           </button>

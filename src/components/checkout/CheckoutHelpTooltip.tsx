@@ -25,7 +25,7 @@ export function CheckoutHelpTooltip({
       <span
         id={tooltipId}
         role="tooltip"
-        className="pointer-events-none invisible absolute bottom-[calc(100%+0.75rem)] right-[-0.5rem] w-52 rounded-xl bg-zinc-900 px-3 py-2 text-center text-xs leading-4 text-white opacity-0 shadow-lg transition group-hover:visible group-hover:opacity-100 group-focus-within:visible group-focus-within:opacity-100 after:absolute after:right-3 after:top-full after:border-8 after:border-transparent after:border-t-zinc-900"
+        className="pointer-events-none invisible absolute bottom-[calc(100%+0.75rem)] right-[-0.5rem] w-52 rounded-xl bg-zinc-900 px-3 py-2 text-center text-xs leading-4 text-white opacity-0 shadow-lg transition after:absolute after:right-3 after:top-full after:border-8 after:border-transparent after:border-t-zinc-900 group-focus-within:visible group-focus-within:opacity-100 group-hover:visible group-hover:opacity-100"
       >
         {children}
       </span>

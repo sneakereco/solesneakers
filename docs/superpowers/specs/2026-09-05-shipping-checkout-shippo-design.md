@@ -64,12 +64,12 @@ The calculation is server-authoritative. Client-submitted totals, category names
 
 Examples:
 
-| Cart | Category rates | Customer shipping charge |
-| --- | --- | --- |
-| One pair of sneakers | Sneakers $15 | $15 |
-| Three pairs of sneakers | Sneakers $15 | $15 |
-| Sneakers and clothing | Sneakers $15, clothing $9 | $15 |
-| Pickup order | Any categories | $0 |
+| Cart                    | Category rates            | Customer shipping charge |
+| ----------------------- | ------------------------- | ------------------------ |
+| One pair of sneakers    | Sneakers $15              | $15                      |
+| Three pairs of sneakers | Sneakers $15              | $15                      |
+| Sneakers and clothing   | Sneakers $15, clothing $9 | $15                      |
+| Pickup order            | Any categories            | $0                       |
 
 ## Carrier Availability
 

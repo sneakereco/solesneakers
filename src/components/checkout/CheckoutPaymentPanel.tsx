@@ -218,7 +218,7 @@ export function CheckoutPaymentPanel({
             {([true, false] as const).map((same) => (
               <label
                 key={String(same)}
-                className={`flex cursor-pointer items-center gap-3 px-4 py-4 text-sm transition-colors duration-200 motion-reduce:transition-none first:rounded-t-xl first:border-b first:border-[#dedede] last:rounded-b-xl ${sameAsShipping === same ? "bg-[#f5faff]" : "bg-white"}`}
+                className={`flex cursor-pointer items-center gap-3 px-4 py-4 text-sm transition-colors duration-200 first:rounded-t-xl first:border-b first:border-[#dedede] last:rounded-b-xl motion-reduce:transition-none ${sameAsShipping === same ? "bg-[#f5faff]" : "bg-white"}`}
               >
                 <input
                   type="radio"

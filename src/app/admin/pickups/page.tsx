@@ -1,6 +1,8 @@
 // app/admin/pickups/page.tsx
 "use client";
 
+import Image from "next/image";
+
 import { Fragment, useEffect, useMemo, useState } from "react";
 import { ChevronDown } from "lucide-react";
 
@@ -55,6 +57,43 @@ type PickupOrder = {
   items?: OrderItem[] | null;
 };
 
+const resolveShippingAddress = (value: unknown): { name?: string | null } | null => {
+  if (!value) {
+    return null;
+  }
+  if (Array.isArray(value)) {
+    return (value[0] ?? null) as { name?: string | null } | null;
+  }
+  if (typeof value === "object") {
+    return value as { name?: string | null };
+  }
+  return null;
+};
+
+const getCustomerName = (order: PickupOrder) => {
+  const address = resolveShippingAddress(order.shipping);
+  const addressName = address?.name?.trim() ?? "";
+  if (addressName) {
+    return addressName;
+  }
+  const profileName = (order.shipping_profile_name ?? "").trim();
+  return profileName || "-";
+};
+
+const getCustomerEmail = (order: PickupOrder) => {
+  const email = (order.profiles?.email ?? order.guest_email ?? "").trim();
+  return email || "-";
+};
+
+const getOrderTitle = (item: OrderItem) =>
+  item.product_name ?? item.product?.name ?? "Item";
+
+const getPrimaryImage = (item: OrderItem) => {
+  const images = item.product?.images ?? [];
+  const primary = images.find((img) => img.is_primary) ?? images[0];
+  return primary?.url ?? "/images/logo.png";
+};
+
 export default function PickupsPage() {
   const [orders, setOrders] = useState<PickupOrder[]>([]);
   const [activeTab, setActiveTab] = useState<TabKey>("pending");
@@ -81,10 +120,6 @@ export default function PickupsPage() {
   const currentPage = pageByTab[activeTab];
   const activeCount = counts[activeTab] ?? 0;
   const totalPages = Math.max(1, Math.ceil(activeCount / PAGE_SIZE));
-
-  useEffect(() => {
-    setPageByTab((prev) => ({ ...prev, [activeTab]: 1 }));
-  }, [activeTab]);
 
   useEffect(() => {
     const loadCounts = async () => {
@@ -114,7 +149,7 @@ export default function PickupsPage() {
       }
     };
 
-    loadCounts();
+    void loadCounts();
   }, [refreshToken]);
 
   useEffect(() => {
@@ -148,51 +183,12 @@ export default function PickupsPage() {
       }
     };
 
-    loadOrders();
+    void loadOrders();
   }, [activeTab, currentPage, refreshToken]);
 
-  useEffect(() => {
-    if (currentPage > totalPages) {
-      setPageByTab((prev) => ({ ...prev, [activeTab]: totalPages }));
-    }
-  }, [currentPage, totalPages, activeTab]);
-
-  const resolveShippingAddress = (value: unknown): { name?: string | null } | null => {
-    if (!value) {
-      return null;
-    }
-    if (Array.isArray(value)) {
-      return (value[0] ?? null) as { name?: string | null } | null;
-    }
-    if (typeof value === "object") {
-      return value as { name?: string | null };
-    }
-    return null;
-  };
-
-  const getCustomerName = (order: PickupOrder) => {
-    const address = resolveShippingAddress(order.shipping);
-    const addressName = address?.name?.trim() ?? "";
-    if (addressName) {
-      return addressName;
-    }
-    const profileName = (order.shipping_profile_name ?? "").trim();
-    return profileName || "-";
-  };
-
-  const getCustomerEmail = (order: PickupOrder) => {
-    const email = (order.profiles?.email ?? order.guest_email ?? "").trim();
-    return email || "-";
-  };
-
-  const getOrderTitle = (item: OrderItem) =>
-    item.product_name ?? item.product?.name ?? "Item";
-
-  const getPrimaryImage = (item: OrderItem) => {
-    const images = item.product?.images ?? [];
-    const primary = images.find((img) => img.is_primary) ?? images[0];
-    return primary?.url ?? "/images/logo.png";
-  };
+  if (currentPage > totalPages) {
+    setPageByTab((prev) => ({ ...prev, [activeTab]: totalPages }));
+  }
 
   const summary = useMemo(() => {
     let revenue = 0;
@@ -329,7 +325,7 @@ export default function PickupsPage() {
             }))
           }
           disabled={currentPage === 1}
-          className="px-3 py-2 rounded-sm border border-zinc-800/70 text-sm text-gray-300 disabled:text-zinc-600 disabled:border-zinc-900"
+          className="rounded-sm border border-zinc-800/70 px-3 py-2 text-sm text-gray-300 disabled:border-zinc-900 disabled:text-zinc-600"
         >
           Previous
         </button>
@@ -338,7 +334,7 @@ export default function PickupsPage() {
           <button
             type="button"
             onClick={() => setPageByTab((prev) => ({ ...prev, [activeTab]: 1 }))}
-            className="px-3 py-2 rounded-sm border border-zinc-800/70 text-sm text-gray-300"
+            className="rounded-sm border border-zinc-800/70 px-3 py-2 text-sm text-gray-300"
           >
             1
           </button>
@@ -350,7 +346,7 @@ export default function PickupsPage() {
             key={p}
             type="button"
             onClick={() => setPageByTab((prev) => ({ ...prev, [activeTab]: p }))}
-            className={`px-3 py-2 rounded-sm border text-sm ${
+            className={`rounded-sm border px-3 py-2 text-sm ${
               p === currentPage
                 ? "border-red-600 text-white"
                 : "border-zinc-800/70 text-gray-300"
@@ -365,7 +361,7 @@ export default function PickupsPage() {
           <button
             type="button"
             onClick={() => setPageByTab((prev) => ({ ...prev, [activeTab]: totalPages }))}
-            className="px-3 py-2 rounded-sm border border-zinc-800/70 text-sm text-gray-300"
+            className="rounded-sm border border-zinc-800/70 px-3 py-2 text-sm text-gray-300"
           >
             {totalPages}
           </button>
@@ -380,7 +376,7 @@ export default function PickupsPage() {
             }))
           }
           disabled={currentPage === totalPages}
-          className="px-3 py-2 rounded-sm border border-zinc-800/70 text-sm text-gray-300 disabled:text-zinc-600 disabled:border-zinc-900"
+          className="rounded-sm border border-zinc-800/70 px-3 py-2 text-sm text-gray-300 disabled:border-zinc-900 disabled:text-zinc-600"
         >
           Next
         </button>
@@ -397,24 +393,24 @@ export default function PickupsPage() {
       />
 
       <div data-admin-metrics className="grid grid-cols-3 gap-2 sm:gap-6">
-        <div className="bg-zinc-900 border border-zinc-800/70 rounded p-3 sm:p-6">
-          <span className="text-gray-400 text-[11px] sm:text-sm">Total Sales</span>
-          <div className="text-lg sm:text-3xl font-bold text-white mt-1 sm:mt-2">
+        <div className="rounded border border-zinc-800/70 bg-zinc-900 p-3 sm:p-6">
+          <span className="text-[11px] text-gray-400 sm:text-sm">Total Sales</span>
+          <div className="mt-1 text-lg font-bold text-white sm:mt-2 sm:text-3xl">
             <span className="sm:hidden">{compactNumber.format(summary.totalSales)}</span>
             <span className="hidden sm:inline">{summary.totalSales}</span>
           </div>
         </div>
-        <div className="bg-zinc-900 border border-zinc-800/70 rounded p-3 sm:p-6">
-          <span className="text-gray-400 text-[11px] sm:text-sm">Revenue</span>
-          <div className="text-lg sm:text-3xl font-bold text-white mt-1 sm:mt-2">
+        <div className="rounded border border-zinc-800/70 bg-zinc-900 p-3 sm:p-6">
+          <span className="text-[11px] text-gray-400 sm:text-sm">Revenue</span>
+          <div className="mt-1 text-lg font-bold text-white sm:mt-2 sm:text-3xl">
             <span className="sm:hidden">{compactMoney(summary.revenue)}</span>
             <span className="hidden sm:inline">${summary.revenue.toFixed(2)}</span>
           </div>
         </div>
-        <div className="bg-zinc-900 border border-zinc-800/70 rounded p-3 sm:p-6">
-          <span className="text-gray-400 text-[11px] sm:text-sm">Profit</span>
+        <div className="rounded border border-zinc-800/70 bg-zinc-900 p-3 sm:p-6">
+          <span className="text-[11px] text-gray-400 sm:text-sm">Profit</span>
           <div
-            className={`text-lg sm:text-3xl font-bold mt-1 sm:mt-2 ${
+            className={`mt-1 text-lg font-bold sm:mt-2 sm:text-3xl ${
               summary.profit >= 0 ? "text-green-400" : "text-red-400"
             }`}
           >
@@ -429,16 +425,19 @@ export default function PickupsPage() {
           <button
             type="button"
             key={tab.key}
-            onClick={() => setActiveTab(tab.key)}
+            onClick={() => {
+              setActiveTab(tab.key);
+              setPageByTab((prev) => ({ ...prev, [tab.key]: 1 }));
+            }}
             aria-pressed={activeTab === tab.key}
-            className={`py-3 text-sm font-medium transition-colors flex items-center gap-2 ${
+            className={`flex items-center gap-2 py-3 text-sm font-medium transition-colors ${
               activeTab === tab.key
-                ? "text-white border-b-2 border-red-600"
-                : "text-gray-400 hover:text-white border-b-2 border-transparent"
+                ? "border-b-2 border-red-600 text-white"
+                : "border-b-2 border-transparent text-gray-400 hover:text-white"
             }`}
           >
             {tab.label}
-            <span className="text-[11px] px-2 py-0.5 rounded-sm bg-zinc-900 border border-zinc-800/70 text-gray-300">
+            <span className="rounded-sm border border-zinc-800/70 bg-zinc-900 px-2 py-0.5 text-[11px] text-gray-300">
               {counts[tab.key] > 99 ? "99+" : counts[tab.key]}
             </span>
           </button>
@@ -458,39 +457,39 @@ export default function PickupsPage() {
         className="overflow-hidden rounded border border-zinc-800/70 bg-zinc-900"
       >
         {isLoading ? (
-          <div className="text-center py-12 text-gray-400">Loading...</div>
+          <div className="py-12 text-center text-gray-400">Loading...</div>
         ) : filteredOrders.length === 0 ? (
-          <div className="text-center py-12 text-gray-400">No orders in this queue.</div>
+          <div className="py-12 text-center text-gray-400">No orders in this queue.</div>
         ) : (
           <table className="w-full text-[12px] sm:text-sm">
             <thead>
               <tr className="border-b border-zinc-800/70 bg-zinc-800">
-                <th className="text-left text-gray-400 font-semibold p-3 sm:p-4">
+                <th className="p-3 text-left font-semibold text-gray-400 sm:p-4">
                   Placed At
                 </th>
-                <th className="text-left text-gray-400 font-semibold p-3 sm:p-4">
+                <th className="p-3 text-left font-semibold text-gray-400 sm:p-4">
                   Order
                 </th>
-                <th className="hidden md:table-cell text-left text-gray-400 font-semibold p-3 sm:p-4">
+                <th className="hidden p-3 text-left font-semibold text-gray-400 sm:p-4 md:table-cell">
                   Customer
                 </th>
-                <th className="hidden md:table-cell text-left text-gray-400 font-semibold p-3 sm:p-4">
+                <th className="hidden p-3 text-left font-semibold text-gray-400 sm:p-4 md:table-cell">
                   Email
                 </th>
-                <th className="hidden md:table-cell text-left text-gray-400 font-semibold p-3 sm:p-4">
+                <th className="hidden p-3 text-left font-semibold text-gray-400 sm:p-4 md:table-cell">
                   Fulfillment
                 </th>
-                <th className="text-right text-gray-400 font-semibold p-3 sm:p-4">
+                <th className="p-3 text-right font-semibold text-gray-400 sm:p-4">
                   Amount
                 </th>
-                <th className="hidden md:table-cell text-right text-gray-400 font-semibold p-3 sm:p-4">
+                <th className="hidden p-3 text-right font-semibold text-gray-400 sm:p-4 md:table-cell">
                   Profit
                 </th>
-                <th className="text-left md:text-right text-gray-400 font-semibold p-3 sm:p-4">
+                <th className="p-3 text-left font-semibold text-gray-400 sm:p-4 md:text-right">
                   <span className="hidden md:inline">Items</span>
                   <span className="md:hidden">Details</span>
                 </th>
-                <th className="hidden md:table-cell text-center text-gray-400 font-semibold p-3 sm:p-4">
+                <th className="hidden p-3 text-center font-semibold text-gray-400 sm:p-4 md:table-cell">
                   Complete
                 </th>
               </tr>
@@ -529,7 +528,7 @@ export default function PickupsPage() {
                       onClick={() => toggleOrderExpansion(order.id)}
                       className="cursor-pointer border-b border-zinc-800/70 hover:bg-zinc-800"
                     >
-                      <td className="p-3 sm:p-4 text-gray-400">
+                      <td className="p-3 text-gray-400 sm:p-4">
                         {createdAt ? (
                           <div className="space-y-1">
                             <div>{createdAt.toLocaleDateString()}</div>
@@ -544,36 +543,36 @@ export default function PickupsPage() {
                           "-"
                         )}
                       </td>
-                      <td className="p-3 sm:p-4 text-white">#{order.id.slice(0, 8)}</td>
-                      <td className="hidden md:table-cell p-3 sm:p-4 text-gray-400">
+                      <td className="p-3 text-white sm:p-4">#{order.id.slice(0, 8)}</td>
+                      <td className="hidden p-3 text-gray-400 sm:p-4 md:table-cell">
                         {customerName}
                       </td>
-                      <td className="hidden md:table-cell p-3 sm:p-4 text-gray-400">
+                      <td className="hidden p-3 text-gray-400 sm:p-4 md:table-cell">
                         {customerEmail}
                       </td>
-                      <td className="hidden md:table-cell p-3 sm:p-4 text-gray-400">
+                      <td className="hidden p-3 text-gray-400 sm:p-4 md:table-cell">
                         {fulfillmentLabel}
                       </td>
-                      <td className="p-3 sm:p-4 text-right text-white">
+                      <td className="p-3 text-right text-white sm:p-4">
                         ${Number(order.total ?? 0).toFixed(2)}
                       </td>
                       <td
-                        className={`hidden md:table-cell p-3 sm:p-4 text-right ${profitClass}`}
+                        className={`hidden p-3 text-right sm:p-4 md:table-cell ${profitClass}`}
                       >
                         {profitPrefix}${Math.abs(profit).toFixed(2)}
                       </td>
-                      <td className="p-3 sm:p-4 text-left md:text-right">
+                      <td className="p-3 text-left sm:p-4 md:text-right">
                         <button
                           type="button"
                           onClick={(event) => {
                             event.stopPropagation();
                             toggleOrderItems(order.id);
                           }}
-                          className="hidden md:inline-flex text-sm text-red-400 hover:text-red-300 items-center gap-2"
+                          className="hidden items-center gap-2 text-sm text-red-400 hover:text-red-300 md:inline-flex"
                         >
                           {itemsExpanded ? "Hide items" : `View items (${itemCount})`}
                           <ChevronDown
-                            className={`w-4 h-4 transition-transform ${
+                            className={`h-4 w-4 transition-transform ${
                               itemsExpanded ? "rotate-180" : ""
                             }`}
                           />
@@ -584,17 +583,17 @@ export default function PickupsPage() {
                             event.stopPropagation();
                             toggleOrderDetails(order.id);
                           }}
-                          className="md:hidden w-full text-[12px] text-red-400 hover:text-red-300 inline-flex items-center justify-start gap-1 leading-none whitespace-nowrap"
+                          className="inline-flex w-full items-center justify-start gap-1 whitespace-nowrap text-[12px] leading-none text-red-400 hover:text-red-300 md:hidden"
                         >
                           {detailsExpanded ? "Hide details" : "View details"}
                           <ChevronDown
-                            className={`w-4 h-4 transition-transform ${
+                            className={`h-4 w-4 transition-transform ${
                               detailsExpanded ? "rotate-180" : ""
                             }`}
                           />
                         </button>
                       </td>
-                      <td className="hidden md:table-cell p-3 sm:p-4">
+                      <td className="hidden p-3 sm:p-4 md:table-cell">
                         <div className="flex justify-center">
                           <input
                             type="checkbox"
@@ -613,8 +612,8 @@ export default function PickupsPage() {
                       </td>
                     </tr>
                     {itemsExpanded && (
-                      <tr className="hidden md:table-row bg-zinc-900/40">
-                        <td colSpan={colSpan} className="p-0 border-b border-zinc-800/70">
+                      <tr className="hidden bg-zinc-900/40 md:table-row">
+                        <td colSpan={colSpan} className="border-b border-zinc-800/70 p-0">
                           <div className="flex flex-col">
                             {(order.items ?? []).map((item: OrderItem) => {
                               const imageUrl = getPrimaryImage(item);
@@ -632,7 +631,7 @@ export default function PickupsPage() {
                                   }}
                                   className={`group relative cursor-pointer px-6 py-4 transition-colors ${
                                     isRefunded
-                                      ? "bg-red-950/20 border-y border-red-900/40"
+                                      ? "border-y border-red-900/40 bg-red-950/20"
                                       : "hover:bg-zinc-800"
                                   }`}
                                 >
@@ -645,7 +644,10 @@ export default function PickupsPage() {
                                     }`}
                                   >
                                     <div className="h-12 w-12 flex-shrink-0 overflow-hidden rounded-sm border border-zinc-800 bg-black">
-                                      <img
+                                      <Image
+                                        unoptimized
+                                        width={400}
+                                        height={400}
                                         src={imageUrl}
                                         alt={title}
                                         className="h-full w-full object-cover opacity-90 transition-opacity group-hover:opacity-100"
@@ -723,7 +725,7 @@ export default function PickupsPage() {
                       </tr>
                     )}
                     {detailsExpanded && (
-                      <tr className="md:hidden border-b border-zinc-800/70 bg-zinc-900/40">
+                      <tr className="border-b border-zinc-800/70 bg-zinc-900/40 md:hidden">
                         <td colSpan={colSpan} className="px-3 pb-3 pt-3 sm:px-4 sm:pb-4">
                           <div className="space-y-3 text-sm">
                             <div className="flex items-center justify-between gap-4">
@@ -740,7 +742,7 @@ export default function PickupsPage() {
                             </div>
                             <div className="flex items-center justify-between gap-4">
                               <span className="text-gray-500">Email</span>
-                              <span className="text-white truncate">{customerEmail}</span>
+                              <span className="truncate text-white">{customerEmail}</span>
                             </div>
                             <div className="flex items-center justify-between gap-4">
                               <span className="text-gray-500">Fulfillment</span>
@@ -779,7 +781,7 @@ export default function PickupsPage() {
                           </div>
 
                           <div className="mt-4 border-t border-zinc-800/70 pt-4">
-                            <div className="text-[11px] uppercase tracking-wide text-gray-500 mb-2">
+                            <div className="mb-2 text-[11px] uppercase tracking-wide text-gray-500">
                               Items
                             </div>
                             <div className="space-y-2">
@@ -795,27 +797,30 @@ export default function PickupsPage() {
                                     onClick={() => openItemDetails(item)}
                                     className={`relative flex cursor-pointer items-start gap-3 rounded-sm p-2 text-base transition ${
                                       isRefunded
-                                        ? "bg-red-950/20 border border-red-900/40"
+                                        ? "border border-red-900/40 bg-red-950/20"
                                         : "hover:bg-zinc-800/60"
                                     }`}
                                   >
                                     {isRefunded && (
                                       <span className="absolute inset-y-0 left-0 w-1 rounded-l-sm bg-red-500/80" />
                                     )}
-                                    <img
+                                    <Image
+                                      unoptimized
+                                      width={400}
+                                      height={400}
                                       src={getPrimaryImage(item)}
                                       alt={getOrderTitle(item)}
-                                      className="h-14 w-14 flex-shrink-0 object-cover border border-zinc-800/70 bg-black"
+                                      className="h-14 w-14 flex-shrink-0 border border-zinc-800/70 bg-black object-cover"
                                     />
                                     <div className="min-w-0">
-                                      <div className="text-white truncate">
+                                      <div className="truncate text-white">
                                         {getOrderTitle(item)}
                                       </div>
                                       <div className="text-sm text-gray-500">
                                         Size {item.size_label ?? "N/A"} - Qty{" "}
                                         {item.quantity}
                                       </div>
-                                      <div className="text-sm font-medium text-white mt-0.5">
+                                      <div className="mt-0.5 text-sm font-medium text-white">
                                         ${Number(item.line_total ?? 0).toFixed(2)}
                                       </div>
                                       <div className="mt-0.5 text-xs text-gray-500">

@@ -4,7 +4,7 @@ export default function TermsPage() {
   return (
     <PolicyPage title="Terms of Service">
       <div className="prose prose-invert max-w-none">
-        <div className="text-zinc-400 space-y-6">
+        <div className="space-y-6 text-zinc-400">
           <p className="text-sm">Last updated: December 30, 2025</p>
 
           <p>
@@ -22,7 +22,7 @@ export default function TermsPage() {
           </p>
 
           <section>
-            <h2 className="text-2xl font-bold text-white mt-8 mb-4">1) Privacy Policy</h2>
+            <h2 className="mb-4 mt-8 text-2xl font-bold text-white">1) Privacy Policy</h2>
             <p>
               Your use of the Services is also subject to our Privacy Policy, available at{" "}
               <a href="/privacy" className="text-red-400 hover:underline">
@@ -34,7 +34,7 @@ export default function TermsPage() {
           </section>
 
           <section>
-            <h2 className="text-2xl font-bold text-white mt-8 mb-4">
+            <h2 className="mb-4 mt-8 text-2xl font-bold text-white">
               2) Independent Reseller; No Brand Affiliation
             </h2>
             <p>
@@ -47,7 +47,7 @@ export default function TermsPage() {
           </section>
 
           <section>
-            <h2 className="text-2xl font-bold text-white mt-8 mb-4">3) Accounts</h2>
+            <h2 className="mb-4 mt-8 text-2xl font-bold text-white">3) Accounts</h2>
             <p>
               If you create an account, you agree to provide accurate and complete
               information and to keep your login credentials secure. You are responsible
@@ -56,7 +56,7 @@ export default function TermsPage() {
           </section>
 
           <section>
-            <h2 className="text-2xl font-bold text-white mt-8 mb-4">
+            <h2 className="mb-4 mt-8 text-2xl font-bold text-white">
               4) Products, Condition, and Listings
             </h2>
             <p>
@@ -69,7 +69,7 @@ export default function TermsPage() {
           </section>
 
           <section>
-            <h2 className="text-2xl font-bold text-white mt-8 mb-4">5) Authenticity</h2>
+            <h2 className="mb-4 mt-8 text-2xl font-bold text-white">5) Authenticity</h2>
             <p>
               We stand behind the authenticity of the products we sell. If you believe an
               item you received is not authentic, you must follow the instructions in our
@@ -82,7 +82,7 @@ export default function TermsPage() {
           </section>
 
           <section>
-            <h2 className="text-2xl font-bold text-white mt-8 mb-4">
+            <h2 className="mb-4 mt-8 text-2xl font-bold text-white">
               6) Pricing, Availability, and Order Acceptance
             </h2>
             <p>
@@ -93,7 +93,7 @@ export default function TermsPage() {
               We may accept, reject, or cancel orders for reasons including, but not
               limited to:
             </p>
-            <ul className="list-disc pl-6 mt-2 space-y-1">
+            <ul className="mt-2 list-disc space-y-1 pl-6">
               <li>product availability</li>
               <li>pricing or listing errors</li>
               <li>suspected fraud or unauthorized activity</li>
@@ -106,7 +106,7 @@ export default function TermsPage() {
           </section>
 
           <section>
-            <h2 className="text-2xl font-bold text-white mt-8 mb-4">7) Payments</h2>
+            <h2 className="mb-4 mt-8 text-2xl font-bold text-white">7) Payments</h2>
             <p>
               Payments are processed through third-party payment processors. We do not
               store full payment card numbers.
@@ -114,7 +114,7 @@ export default function TermsPage() {
           </section>
 
           <section>
-            <h2 className="text-2xl font-bold text-white mt-8 mb-4">
+            <h2 className="mb-4 mt-8 text-2xl font-bold text-white">
               8) Shipping, Delivery, and Risk of Loss
             </h2>
             <p>
@@ -130,7 +130,7 @@ export default function TermsPage() {
           </section>
 
           <section>
-            <h2 className="text-2xl font-bold text-white mt-8 mb-4">
+            <h2 className="mb-4 mt-8 text-2xl font-bold text-white">
               9) Returns and Refunds
             </h2>
             <p>
@@ -146,7 +146,7 @@ export default function TermsPage() {
           </section>
 
           <section>
-            <h2 className="text-2xl font-bold text-white mt-8 mb-4">
+            <h2 className="mb-4 mt-8 text-2xl font-bold text-white">
               10) Chargebacks and Payment Disputes
             </h2>
             <p>
@@ -158,11 +158,11 @@ export default function TermsPage() {
           </section>
 
           <section>
-            <h2 className="text-2xl font-bold text-white mt-8 mb-4">
+            <h2 className="mb-4 mt-8 text-2xl font-bold text-white">
               11) Prohibited Conduct
             </h2>
             <p>You agree not to:</p>
-            <ul className="list-disc pl-6 mt-2 space-y-1">
+            <ul className="mt-2 list-disc space-y-1 pl-6">
               <li>attempt unauthorized access to the Site or its systems</li>
               <li>
                 interfere with or disrupt the Services (including via attacks, scraping,
@@ -174,7 +174,7 @@ export default function TermsPage() {
           </section>
 
           <section>
-            <h2 className="text-2xl font-bold text-white mt-8 mb-4">
+            <h2 className="mb-4 mt-8 text-2xl font-bold text-white">
               12) Intellectual Property
             </h2>
             <p>
@@ -185,7 +185,7 @@ export default function TermsPage() {
           </section>
 
           <section>
-            <h2 className="text-2xl font-bold text-white mt-8 mb-4">13) Disclaimers</h2>
+            <h2 className="mb-4 mt-8 text-2xl font-bold text-white">13) Disclaimers</h2>
             <p>
               The Services are provided on an &quot;AS IS&quot; and &quot;AS
               AVAILABLE&quot; basis to the maximum extent permitted by law. We do not
@@ -194,7 +194,7 @@ export default function TermsPage() {
           </section>
 
           <section>
-            <h2 className="text-2xl font-bold text-white mt-8 mb-4">
+            <h2 className="mb-4 mt-8 text-2xl font-bold text-white">
               14) Limitation of Liability
             </h2>
             <p>
@@ -206,7 +206,7 @@ export default function TermsPage() {
           </section>
 
           <section>
-            <h2 className="text-2xl font-bold text-white mt-8 mb-4">
+            <h2 className="mb-4 mt-8 text-2xl font-bold text-white">
               15) Indemnification
             </h2>
             <p>
@@ -217,7 +217,7 @@ export default function TermsPage() {
           </section>
 
           <section>
-            <h2 className="text-2xl font-bold text-white mt-8 mb-4">
+            <h2 className="mb-4 mt-8 text-2xl font-bold text-white">
               16) Governing Law and Venue
             </h2>
             <p>
@@ -229,7 +229,7 @@ export default function TermsPage() {
           </section>
 
           <section>
-            <h2 className="text-2xl font-bold text-white mt-8 mb-4">
+            <h2 className="mb-4 mt-8 text-2xl font-bold text-white">
               17) Changes to These Terms
             </h2>
             <p>
@@ -239,7 +239,7 @@ export default function TermsPage() {
           </section>
 
           <section>
-            <h2 className="text-2xl font-bold text-white mt-8 mb-4">18) Contact</h2>
+            <h2 className="mb-4 mt-8 text-2xl font-bold text-white">18) Contact</h2>
             <p>Email: realdealholyspill@gmail.com</p>
             <p>Location: Simpsonville, South Carolina, USA</p>
           </section>

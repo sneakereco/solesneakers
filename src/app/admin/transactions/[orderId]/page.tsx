@@ -1,6 +1,8 @@
 "use client";
 
-import { useEffect, useState } from "react";
+import Image from "next/image";
+
+import { useCallback, useEffect, useState } from "react";
 import { useParams, useRouter } from "next/navigation";
 import {
   AlertTriangle,
@@ -191,8 +193,11 @@ const REFUND_EMAIL_TYPE = "refund_notification" as const;
 const fmt = new Intl.NumberFormat("en-US", { style: "currency", currency: "USD" });
 const fmtMoney = (value: number | null | undefined) => fmt.format(Number(value ?? 0));
 
-async function fetchTransactionData(orderId: string): Promise<TransactionPayload> {
-  const response = await fetch(`/api/admin/transactions/${orderId}`);
+async function fetchTransactionData(
+  orderId: string,
+  signal?: AbortSignal,
+): Promise<TransactionPayload> {
+  const response = await fetch(`/api/admin/transactions/${orderId}`, { signal });
   const data = await response.json().catch(() => ({}));
 
   if (!response.ok) {
@@ -615,33 +620,46 @@ export default function TransactionDetailPage() {
   const [selectedItem, setSelectedItem] = useState<AdminOrderItem | null>(null);
   const [itemModalOpen, setItemModalOpen] = useState(false);
 
-  const loadTransaction = async () => {
+  const [previousOrderId, setPreviousOrderId] = useState(orderId);
+  if (previousOrderId !== orderId) {
+    setPreviousOrderId(orderId);
     setIsLoading(true);
     setError(null);
+  }
 
-    try {
-      const data = await fetchTransactionData(orderId);
-      setOrder(data.order);
-      setPaymentTx(data.paymentTransaction);
-      setPaymentEvents(data.paymentEvents);
-      setEmailLogs(data.emailLogs);
-      setTrackingEvents(data.trackingEvents);
-      setCheckoutLogs(data.checkoutLogs);
-      setCustomerSummary(data.customer ?? null);
-    } catch (err) {
-      setError(err instanceof Error ? err.message : "Failed to load transaction");
-    } finally {
-      setIsLoading(false);
-    }
-  };
+  const loadTransaction = useCallback(
+    (signal?: AbortSignal) => {
+      return fetchTransactionData(orderId, signal)
+        .then((data) => {
+          if (signal?.aborted) return;
+          setError(null);
+          setOrder(data.order);
+          setPaymentTx(data.paymentTransaction);
+          setPaymentEvents(data.paymentEvents);
+          setEmailLogs(data.emailLogs);
+          setTrackingEvents(data.trackingEvents);
+          setCheckoutLogs(data.checkoutLogs);
+          setCustomerSummary(data.customer ?? null);
+        })
+        .catch((err: unknown) => {
+          if (signal?.aborted) return;
+          setError(err instanceof Error ? err.message : "Failed to load transaction");
+        })
+        .finally(() => {
+          if (!signal?.aborted) setIsLoading(false);
+        });
+    },
+    [orderId],
+  );
 
   useEffect(() => {
-    void loadTransaction();
-  }, [orderId]);
+    const controller = new AbortController();
+    void loadTransaction(controller.signal);
+    return () => controller.abort();
+  }, [loadTransaction]);
 
   useEffect(() => {
     if (!selectedPaymentEventId) {
-      setIsPaymentDrawerVisible(false);
       return;
     }
 
@@ -681,6 +699,8 @@ export default function TransactionDetailPage() {
 
       if (response.ok) {
         setToast({ message: "Email resent successfully.", tone: "success" });
+        setIsLoading(true);
+        setError(null);
         await loadTransaction();
       } else {
         setToast({
@@ -864,7 +884,10 @@ export default function TransactionDetailPage() {
                       className={`group -mx-2 flex w-full items-start gap-4 rounded-sm border border-transparent px-2 py-3 text-left transition-colors hover:border-zinc-700/80 hover:bg-zinc-800/50 ${isRefunded ? "opacity-50" : ""}`}
                     >
                       <div className="h-10 w-10 shrink-0 overflow-hidden border border-zinc-800 bg-zinc-950">
-                        <img
+                        <Image
+                          unoptimized
+                          width={400}
+                          height={400}
                           src={imageUrl}
                           alt={title}
                           className="h-full w-full object-cover"

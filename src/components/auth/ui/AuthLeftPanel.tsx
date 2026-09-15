@@ -35,8 +35,8 @@ export default function AuthLeftPanel({
   return (
     <div className="relative z-10 flex flex-1 flex-col justify-between px-10 py-10 lg:px-14 lg:py-12">
       {/* Brand watermark on desktop */}
-      <div className="pointer-events-none select-none absolute -left-4 top-20 hidden lg:block opacity-[0.06]">
-        <p className="text-7xl xl:text-8xl font-black uppercase tracking-[0.25em] leading-none">
+      <div className="pointer-events-none absolute -left-4 top-20 hidden select-none opacity-[0.06] lg:block">
+        <p className="text-7xl font-black uppercase leading-none tracking-[0.25em] xl:text-8xl">
           RDK
         </p>
       </div>
@@ -45,7 +45,7 @@ export default function AuthLeftPanel({
       <div className="relative">
         {/* Logo + brand name in top-left */}
         <div className="flex items-center gap-3">
-          <div className="relative h-9 w-9 rounded-xl bg-black/40 border border-white/10 overflow-hidden shadow-sm shadow-black/40">
+          <div className="relative h-9 w-9 overflow-hidden rounded-xl border border-white/10 bg-black/40 shadow-sm shadow-black/40">
             <Image
               src="/images/rdk-logo.png"
               alt="Realdealkickzsc logo"
@@ -64,7 +64,7 @@ export default function AuthLeftPanel({
         <div className="mt-5 h-px w-12 rounded-full bg-gradient-to-r from-white/40 via-white/10 to-transparent" />
 
         {/* Headline */}
-        <h2 className="mt-6 text-3xl lg:text-4xl font-semibold text-white">
+        <h2 className="mt-6 text-3xl font-semibold text-white lg:text-4xl">
           {v.headlineTop}
           <span className="block text-red-200/95">{v.headlineBottom}</span>
         </h2>

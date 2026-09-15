@@ -19,13 +19,19 @@ export function useSquareCardState(
 ) {
   const [brand, setBrand] = useState<string | null>(null);
   const [errors, setErrors] = useState<Record<string, string>>({});
-  const nativeErrors = useRef<Record<string, boolean>>({});
-  const submit = useRef(onSubmit);
-  submit.current = onSubmit;
-  useEffect(() => {
-    nativeErrors.current = {};
+  const [previousCard, setPreviousCard] = useState(card);
+  if (card !== previousCard) {
+    setPreviousCard(card);
     setBrand(null);
     setErrors({});
+  }
+  const nativeErrors = useRef<Record<string, boolean>>({});
+  const submit = useRef(onSubmit);
+  useEffect(() => {
+    submit.current = onSubmit;
+  }, [onSubmit]);
+  useEffect(() => {
+    nativeErrors.current = {};
     if (!card?.addEventListener) {
       return;
     }

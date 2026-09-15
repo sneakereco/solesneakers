@@ -8,6 +8,7 @@ import { CheckCircle, Loader2, Mail } from "lucide-react";
 import { clearIdempotencyKeyFromStorage } from "@/lib/checkout/idempotency";
 import type { OrderStatusResponse } from "@/types/domain/checkout";
 import { useCart } from "@/components/cart/CartProvider";
+import { useHydrated } from "@/components/ui/useHydrated";
 import { clearGuestShippingAddress } from "@/lib/checkout/guest-shipping-address";
 import {
   readGuestOrderAccess,
@@ -23,11 +24,22 @@ function SuccessContent() {
   const fulfillmentParam = searchParams.get("fulfillment");
   const isPickupParam = fulfillmentParam === "pickup";
 
-  const [accessToken, setAccessToken] = useState<string | null>(tokenParam);
+  const hydrated = useHydrated();
+  const accessToken =
+    tokenParam ?? (hydrated && orderId ? readGuestOrderAccess(orderId) : null);
   const [status, setStatus] = useState<OrderStatusResponse | null>(null);
-  const [canFetchStatus, setCanFetchStatus] = useState<boolean | null>(null);
+  const [accessResult, setAccessResult] = useState<{
+    orderId: string | null;
+    token: string | null;
+    allowed: boolean;
+  } | null>(null);
+  const sessionAccess =
+    accessResult?.orderId === orderId && accessResult.token === accessToken
+      ? accessResult.allowed
+      : null;
+  const canFetchStatus =
+    sessionAccess === false ? false : accessToken ? true : sessionAccess;
   const [isAuthenticated, setIsAuthenticated] = useState(false);
-  const [isPolling, setIsPolling] = useState(false);
   const [error, setError] = useState<string | null>(null);
   const hasClearedRef = useRef(false);
 
@@ -51,16 +63,13 @@ function SuccessContent() {
       return;
     }
 
-    const resolvedToken = tokenParam ?? readGuestOrderAccess(orderId);
-    if (resolvedToken) {
-      storeGuestOrderAccess(orderId, resolvedToken);
+    if (accessToken) {
+      storeGuestOrderAccess(orderId, accessToken);
     }
-    setAccessToken(resolvedToken ?? null);
-  }, [orderId, tokenParam]);
+  }, [orderId, accessToken]);
 
   useEffect(() => {
-    if (accessToken) {
-      setCanFetchStatus(true);
+    if (!hydrated || accessToken) {
       return;
     }
 
@@ -70,22 +79,19 @@ function SuccessContent() {
         const data = await response.json().catch(() => null);
         const hasUser = Boolean(data?.user);
         setIsAuthenticated(hasUser);
-        setCanFetchStatus(hasUser);
+        setAccessResult({ orderId, token: accessToken, allowed: hasUser });
       } catch {
-        setCanFetchStatus(false);
+        setAccessResult({ orderId, token: accessToken, allowed: false });
       }
     };
 
-    loadSession();
-  }, [accessToken]);
+    void loadSession();
+  }, [accessToken, hydrated, orderId]);
 
   useEffect(() => {
     if (!orderId || !canFetchStatus) {
       return;
     }
-
-    let pollInterval: NodeJS.Timeout;
-    let timeoutId: NodeJS.Timeout;
 
     const pollOrderStatus = async () => {
       try {
@@ -97,7 +103,7 @@ function SuccessContent() {
         const data = await response.json().catch(() => null);
         if (!response.ok) {
           if (data?.error === "Unauthorized") {
-            setCanFetchStatus(false);
+            setAccessResult({ orderId, token: accessToken, allowed: false });
             return;
           }
           throw new Error(data?.error || "Failed to fetch order status");
@@ -106,7 +112,6 @@ function SuccessContent() {
         setStatus(data);
 
         if (data?.status === "paid") {
-          setIsPolling(false);
           clearInterval(pollInterval);
           clearTimeout(timeoutId);
         }
@@ -114,22 +119,18 @@ function SuccessContent() {
         const message =
           err instanceof Error ? err.message : "Failed to fetch order status";
         setError(message);
-        setIsPolling(false);
         clearInterval(pollInterval);
         clearTimeout(timeoutId);
       }
     };
 
-    setIsPolling(true);
-    pollOrderStatus();
-
-    pollInterval = setInterval(() => {
+    const pollInterval = setInterval(() => {
       void pollOrderStatus();
     }, 2000);
-    timeoutId = setTimeout(() => {
-      setIsPolling(false);
+    const timeoutId = setTimeout(() => {
       clearInterval(pollInterval);
     }, 60000);
+    void pollOrderStatus();
 
     return () => {
       clearInterval(pollInterval);
@@ -143,9 +144,9 @@ function SuccessContent() {
 
   if (error) {
     return (
-      <div className="max-w-2xl mx-auto px-4 py-20 text-center">
+      <div className="mx-auto max-w-2xl px-4 py-20 text-center">
         <div className="border border-zinc-300 bg-white p-6 text-zinc-950">
-          <p className="text-lg font-semibold mb-2">Error</p>
+          <p className="mb-2 text-lg font-semibold">Error</p>
           <p>{error}</p>
           <button
             onClick={() => router.push("/cart")}
@@ -160,7 +161,7 @@ function SuccessContent() {
 
   if (canFetchStatus === false) {
     return (
-      <div className="max-w-2xl mx-auto px-4 py-20 text-center">
+      <div className="mx-auto max-w-2xl px-4 py-20 text-center">
         <Mail className="mx-auto mb-6 h-16 w-16 text-zinc-950" />
         <h1 className="mb-4 text-3xl font-bold text-zinc-950">Order Confirmed!</h1>
         <p className="mb-6 text-zinc-600">
@@ -187,7 +188,7 @@ function SuccessContent() {
             </p>
           </div>
         )}
-        <p className="text-xs text-zinc-500 mb-6">Order ID: {orderId}</p>
+        <p className="mb-6 text-xs text-zinc-500">Order ID: {orderId}</p>
         <button
           onClick={() => router.push("/store")}
           className="w-full bg-zinc-950 py-3 font-bold text-white transition hover:bg-black"
@@ -198,9 +199,9 @@ function SuccessContent() {
     );
   }
 
-  if (isPolling || !status || status.status !== "paid") {
+  if (!status || status.status !== "paid") {
     return (
-      <div className="max-w-2xl mx-auto px-4 py-20 text-center">
+      <div className="mx-auto max-w-2xl px-4 py-20 text-center">
         <Loader2 className="mx-auto mb-6 h-16 w-16 animate-spin text-zinc-950" />
         <h1 className="mb-4 text-3xl font-bold text-zinc-950">
           Processing your payment...
@@ -216,7 +217,7 @@ function SuccessContent() {
             </div>
             <div className="flex justify-between text-zinc-600">
               <span>Status:</span>
-              <span className="text-amber-600 capitalize">{status.status}</span>
+              <span className="capitalize text-amber-600">{status.status}</span>
             </div>
           </div>
         )}
@@ -226,7 +227,7 @@ function SuccessContent() {
 
   const isPickup = status.fulfillment === "pickup" || isPickupParam;
   return (
-    <div className="max-w-2xl mx-auto px-4 py-20 text-center">
+    <div className="mx-auto max-w-2xl px-4 py-20 text-center">
       <CheckCircle className="mx-auto mb-6 h-16 w-16 text-zinc-950" />
       <h1 className="mb-4 text-3xl font-bold text-zinc-950">Order Confirmed!</h1>
       <p className="mb-8 text-zinc-600">
@@ -310,7 +311,7 @@ export default function CheckoutSuccessPage() {
   return (
     <Suspense
       fallback={
-        <div className="max-w-2xl mx-auto px-4 py-20 text-center">
+        <div className="mx-auto max-w-2xl px-4 py-20 text-center">
           <Loader2 className="mx-auto h-16 w-16 animate-spin text-zinc-950" />
         </div>
       }

@@ -108,7 +108,7 @@ export function InventoryClient({
     }
   };
 
-  const exportInventory = () => {
+  const getExportHref = () => {
     const params = new URLSearchParams();
     if (query.trim()) {
       params.set("q", query.trim());
@@ -120,7 +120,7 @@ export function InventoryClient({
       params.set("condition", condition);
     }
     params.set("stockStatus", stockStatus);
-    window.location.assign(`/api/admin/products/export?${params.toString()}`);
+    return `/api/admin/products/export?${params.toString()}`;
   };
 
   return (
@@ -131,13 +131,9 @@ export function InventoryClient({
         description="Manage website products, variants, and available stock."
         actions={
           <>
-            <button
-              type="button"
-              onClick={exportInventory}
-              className="admin-button-secondary"
-            >
+            <a download href={getExportHref()} className="admin-button-secondary">
               <Download className="h-4 w-4" /> Export
-            </button>
+            </a>
             <Link href="/admin/inventory/create" className="admin-button-primary">
               <Plus className="h-4 w-4" /> Add product
             </Link>

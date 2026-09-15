@@ -4,7 +4,7 @@ export default function RefundsPage() {
   return (
     <PolicyPage title="Returns and Refunds Policy">
       <div className="prose prose-invert max-w-none">
-        <div className="text-zinc-400 space-y-6">
+        <div className="space-y-6 text-zinc-400">
           <p className="text-sm">Last updated: December 30, 2025</p>
           <p>
             This Return &amp; Refund Policy applies to purchases made through{" "}
@@ -12,14 +12,14 @@ export default function RefundsPage() {
           </p>
 
           <section>
-            <h2 className="text-2xl font-bold text-white mt-8 mb-4">
+            <h2 className="mb-4 mt-8 text-2xl font-bold text-white">
               1) All Sales Final
             </h2>
             <p>All sales are final, except as expressly stated below.</p>
           </section>
 
           <section>
-            <h2 className="text-2xl font-bold text-white mt-8 mb-4">
+            <h2 className="mb-4 mt-8 text-2xl font-bold text-white">
               2) Authenticity Refund (Eligible)
             </h2>
             <p>
@@ -27,17 +27,17 @@ export default function RefundsPage() {
               refund under this section.
             </p>
 
-            <h3 className="text-lg font-semibold text-white mt-4 mb-2">Claim Window</h3>
+            <h3 className="mb-2 mt-4 text-lg font-semibold text-white">Claim Window</h3>
             <p>
               You must contact us within 72 hours of delivery to start an authenticity
               claim.
             </p>
 
-            <h3 className="text-lg font-semibold text-white mt-4 mb-2">
+            <h3 className="mb-2 mt-4 text-lg font-semibold text-white">
               How to Submit a Claim
             </h3>
             <p>Email realdealholyspill@gmail.com and include:</p>
-            <ul className="list-disc pl-6 mt-2 space-y-1">
+            <ul className="mt-2 list-disc space-y-1 pl-6">
               <li>your order number</li>
               <li>
                 clear photos of the item and packaging (including any size tags, labels,
@@ -46,7 +46,7 @@ export default function RefundsPage() {
               <li>a brief explanation of your concern</li>
             </ul>
 
-            <h3 className="text-lg font-semibold text-white mt-4 mb-2">
+            <h3 className="mb-2 mt-4 text-lg font-semibold text-white">
               Return Required Before Refund
             </h3>
             <p>
@@ -54,17 +54,17 @@ export default function RefundsPage() {
               inspection before any refund is issued.
             </p>
 
-            <h3 className="text-lg font-semibold text-white mt-4 mb-2">
+            <h3 className="mb-2 mt-4 text-lg font-semibold text-white">
               Condition Requirements
             </h3>
             <p>Returned items must be:</p>
-            <ul className="list-disc pl-6 mt-2 space-y-1">
+            <ul className="mt-2 list-disc space-y-1 pl-6">
               <li>in the same condition as received</li>
               <li>unworn and unaltered</li>
               <li>returned with original packaging/accessories when applicable</li>
             </ul>
 
-            <h3 className="text-lg font-semibold text-white mt-4 mb-2">Outcome</h3>
+            <h3 className="mb-2 mt-4 text-lg font-semibold text-white">Outcome</h3>
             <p>
               If we confirm the item is not authentic, we will issue a full refund to the
               original payment method after return processing.
@@ -76,7 +76,7 @@ export default function RefundsPage() {
           </section>
 
           <section>
-            <h2 className="text-2xl font-bold text-white mt-8 mb-4">
+            <h2 className="mb-4 mt-8 text-2xl font-bold text-white">
               3) Shipping, Transit Damage, Carrier Delays, and Lost Packages
             </h2>
             <p>
@@ -89,7 +89,7 @@ export default function RefundsPage() {
           </section>
 
           <section>
-            <h2 className="text-2xl font-bold text-white mt-8 mb-4">
+            <h2 className="mb-4 mt-8 text-2xl font-bold text-white">
               4) Wrong Item Sent (Our Error)
             </h2>
             <p>
@@ -100,7 +100,7 @@ export default function RefundsPage() {
           </section>
 
           <section>
-            <h2 className="text-2xl font-bold text-white mt-8 mb-4">
+            <h2 className="mb-4 mt-8 text-2xl font-bold text-white">
               5) Address Accuracy
             </h2>
             <p>
@@ -111,7 +111,7 @@ export default function RefundsPage() {
           </section>
 
           <section>
-            <h2 className="text-2xl font-bold text-white mt-8 mb-4">6) Contact</h2>
+            <h2 className="mb-4 mt-8 text-2xl font-bold text-white">6) Contact</h2>
             <p>Email: realdealholyspill@gmail.com</p>
             <p>Location: Simpsonville, South Carolina, USA</p>
           </section>

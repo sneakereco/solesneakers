@@ -38,13 +38,11 @@ function AdminInviteContent() {
       }
     };
 
-    loadMe();
+    void loadMe();
   }, []);
 
   useEffect(() => {
     if (!token) {
-      setState("missing");
-      setMessage("This invite link is missing a token.");
       return;
     }
 
@@ -53,9 +51,6 @@ function AdminInviteContent() {
     }
 
     const acceptInvite = async () => {
-      setState("accepting");
-      setMessage("Accepting invite...");
-
       try {
         const response = await fetch("/api/invites/accept", {
           method: "POST",
@@ -78,14 +73,14 @@ function AdminInviteContent() {
       }
     };
 
-    acceptInvite();
+    void acceptInvite();
   }, [token, me, state]);
 
   if (!token) {
     return (
-      <div className="max-w-xl mx-auto px-6 py-16">
-        <div className="bg-zinc-900 border border-zinc-800/70 p-6 text-center">
-          <h1 className="text-2xl font-bold text-white mb-2">Invite link invalid</h1>
+      <div className="mx-auto max-w-xl px-6 py-16">
+        <div className="border border-zinc-800/70 bg-zinc-900 p-6 text-center">
+          <h1 className="mb-2 text-2xl font-bold text-white">Invite link invalid</h1>
           <p className="text-zinc-400">This admin invite is missing a token.</p>
         </div>
       </div>
@@ -94,22 +89,22 @@ function AdminInviteContent() {
 
   if (!me?.user) {
     return (
-      <div className="max-w-xl mx-auto px-6 py-16">
-        <div className="bg-zinc-900 border border-zinc-800/70 p-6 text-center space-y-4">
+      <div className="mx-auto max-w-xl px-6 py-16">
+        <div className="space-y-4 border border-zinc-800/70 bg-zinc-900 p-6 text-center">
           <h1 className="text-2xl font-bold text-white">Admin invitation</h1>
           <p className="text-zinc-400">
             Sign in or create an account to accept this admin invitation.
           </p>
-          <div className="flex flex-col sm:flex-row gap-3 justify-center">
+          <div className="flex flex-col justify-center gap-3 sm:flex-row">
             <Link
               href={`/auth/login?next=${encodeURIComponent(nextUrl)}`}
-              className="bg-red-600 hover:bg-red-700 text-white font-semibold px-5 py-2"
+              className="bg-red-600 px-5 py-2 font-semibold text-white hover:bg-red-700"
             >
               Sign in
             </Link>
             <Link
               href={`/auth/register?next=${encodeURIComponent(nextUrl)}`}
-              className="bg-zinc-800 hover:bg-zinc-700 text-white font-semibold px-5 py-2"
+              className="bg-zinc-800 px-5 py-2 font-semibold text-white hover:bg-zinc-700"
             >
               Create account
             </Link>
@@ -120,14 +115,14 @@ function AdminInviteContent() {
   }
 
   return (
-    <div className="max-w-xl mx-auto px-6 py-16">
-      <div className="bg-zinc-900 border border-zinc-800/70 p-6 text-center space-y-3">
+    <div className="mx-auto max-w-xl px-6 py-16">
+      <div className="space-y-3 border border-zinc-800/70 bg-zinc-900 p-6 text-center">
         <h1 className="text-2xl font-bold text-white">Admin invitation</h1>
-        <p className="text-zinc-400">{message}</p>
+        <p className="text-zinc-400">{message || "Accepting invite..."}</p>
         {state === "accepted" && (
           <Link
             href="/admin"
-            className="inline-flex items-center justify-center bg-red-600 hover:bg-red-700 text-white font-semibold px-5 py-2"
+            className="inline-flex items-center justify-center bg-red-600 px-5 py-2 font-semibold text-white hover:bg-red-700"
           >
             Go to admin
           </Link>
@@ -139,7 +134,7 @@ function AdminInviteContent() {
 
 export default function AdminInvitePage() {
   return (
-    <Suspense fallback={<div className="max-w-xl mx-auto px-6 py-16 text-zinc-400" />}>
+    <Suspense fallback={<div className="mx-auto max-w-xl px-6 py-16 text-zinc-400" />}>
       <AdminInviteContent />
     </Suspense>
   );

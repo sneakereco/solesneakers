@@ -202,7 +202,9 @@ try {
     await page.evaluate(() => window.paymentTest.cashOptions.shouldTokenize()),
     true,
   );
-  await page.evaluate(() => { window.paymentTest.holdPrepare = true; });
+  await page.evaluate(() => {
+    window.paymentTest.holdPrepare = true;
+  });
   await page.evaluate(() =>
     window.paymentTest.cashCallback({
       detail: { tokenResult: { status: "OK", token: "test" } },
@@ -210,7 +212,10 @@ try {
   );
   await page.waitForFunction(() => window.paymentTest.prepareCalls === 1);
   await page.getByRole("heading", { name: "Preparing checkout", exact: true }).waitFor();
-  await page.evaluate(() => { window.paymentTest.holdPrepare = false; window.paymentTest.rejectPrepare(new Error("test boundary")); });
+  await page.evaluate(() => {
+    window.paymentTest.holdPrepare = false;
+    window.paymentTest.rejectPrepare(new Error("test boundary"));
+  });
   await page.getByRole("heading", { name: "Payment could not be completed" }).waitFor();
   assert.equal(
     await page.evaluate(() => window.paymentTest.lastPrepare[1].billingAddress.line1),

@@ -38,6 +38,7 @@
 ### Task 1: Replace the Checkout Flat Rate with Category Pricing
 
 **Files:**
+
 - Modify: `tests/unit/checkout-pricing-gateway.test.ts`
 - Modify: `tests/unit/checkout-cart-resolver.test.ts`
 - Modify: `tests/unit/create-payment-link.test.ts`
@@ -48,6 +49,7 @@
 - Modify: `src/repositories/product-repo.ts:1955-2001`
 
 **Interfaces:**
+
 - Consumes: `ShippingDefaultsRepository.getByCategories(tenantId: string | null, categories: string[]): Promise<ShippingDefaultRow[]>`.
 - Produces: `createCheckoutPricingGateway(repository: ShippingDefaultsReader): CheckoutPricingGateway`, where the gateway exposes only `quote(input: CheckoutPricingQuoteInput): Promise<CheckoutPricingQuote>`.
 - Produces: `ResolvedCheckoutItem` without `shippingPriceCents`; `category` remains supplied by `CheckoutReservationItem`.
@@ -93,17 +95,14 @@ it("charges the highest represented category once", async () => {
   });
 
   expect(quote.shippingCents).toBe(1500);
-  expect(getByCategories).toHaveBeenCalledWith("tenant-1", [
-    "sneakers",
-    "clothing",
-  ]);
+  expect(getByCategories).toHaveBeenCalledWith("tenant-1", ["sneakers", "clothing"]);
 });
 
 it("fails closed when a represented category is missing", async () => {
   const gateway = createCheckoutPricingGateway({
-    getByCategories: jest.fn().mockResolvedValue([
-      { category: "sneakers", shipping_cost_cents: 1500 },
-    ]),
+    getByCategories: jest
+      .fn()
+      .mockResolvedValue([{ category: "sneakers", shipping_cost_cents: 1500 }]),
   });
 
   await expect(
@@ -181,9 +180,7 @@ export function createCheckoutPricingGateway(
 
       const categories = [...new Set(input.items.map(({ category }) => category))];
       const rows = await repository.getByCategories(input.tenantId, categories);
-      const prices = new Map(
-        rows.map((row) => [row.category, row.shipping_cost_cents]),
-      );
+      const prices = new Map(rows.map((row) => [row.category, row.shipping_cost_cents]));
       let shippingCents = 0;
       for (const category of categories) {
         const cents = prices.get(category);
@@ -229,6 +226,7 @@ git commit -m "fix: price checkout shipping by category"
 ### Task 2: Remove Duplicate Shipping Controls and Centralize Package Defaults
 
 **Files:**
+
 - Create: `src/lib/shipping/package-profile.ts`
 - Create: `tests/unit/shipping-package-profile.test.ts`
 - Modify: `app/admin/shipping/page.tsx:396-437`
@@ -247,6 +245,7 @@ git commit -m "fix: price checkout shipping by category"
 - Modify: `src/lib/validation/admin.ts`
 
 **Interfaces:**
+
 - Produces: `buildPackageProfile(items: PackageProfileItem[], defaults: Record<string, ShippingPackageDefaults>): PackageProfile`.
 - `PackageProfile` contains only `weight`, `length`, `width`, and `height`; customer shipping price is not part of Shippo parcel construction.
 
@@ -317,17 +316,20 @@ export function buildPackageProfile(
 ): PackageProfile {
   if (items.length === 0) return FALLBACK_PACKAGE;
 
-  return items.reduce<PackageProfile>((profile, item) => {
-    const configured = item.category ? defaults[item.category] : undefined;
-    const parcel = configured ?? FALLBACK_PACKAGE;
-    const quantity = Math.max(1, Number(item.quantity ?? 0));
-    return {
-      weight: profile.weight + parcel.weight * quantity,
-      length: Math.max(profile.length, parcel.length),
-      width: Math.max(profile.width, parcel.width),
-      height: Math.max(profile.height, parcel.height),
-    };
-  }, { weight: 0, length: 0, width: 0, height: 0 });
+  return items.reduce<PackageProfile>(
+    (profile, item) => {
+      const configured = item.category ? defaults[item.category] : undefined;
+      const parcel = configured ?? FALLBACK_PACKAGE;
+      const quantity = Math.max(1, Number(item.quantity ?? 0));
+      return {
+        weight: profile.weight + parcel.weight * quantity,
+        length: Math.max(profile.length, parcel.length),
+        width: Math.max(profile.width, parcel.width),
+        height: Math.max(profile.height, parcel.height),
+      };
+    },
+    { weight: 0, length: 0, width: 0, height: 0 },
+  );
 }
 ```
 
@@ -360,6 +362,7 @@ git commit -m "refactor: make category shipping settings authoritative"
 ### Task 3: Repair Carrier Selection and Persistence
 
 **Files:**
+
 - Create: `src/lib/shipping/carriers.ts`
 - Create: `src/components/admin/shipping/CarrierSelector.tsx`
 - Create: `tests/unit/shipping-carriers.test.tsx`
@@ -368,6 +371,7 @@ git commit -m "refactor: make category shipping settings authoritative"
 - Delete: `src/services/shipping-carriers-service.ts`
 
 **Interfaces:**
+
 - Produces: `CARRIER_KEYS`, `CarrierKey`, `normalizeCarrier(value: unknown): CarrierKey | null`, `parseCarrierSelection(values: unknown): CarrierKey[]`, `parseStoredCarrierSelection(values: unknown): CarrierKey[]`, and `toggleCarrierSelection(enabled: CarrierKey[], carrier: CarrierKey): CarrierKey[]`.
 - Produces: `CarrierSelector({ enabled, onToggle })`, with `aria-pressed` reflecting selected state.
 
@@ -395,9 +399,7 @@ it("normalizes FedEx and preserves stable provider order", () => {
 });
 
 it("rejects unknown saved providers", () => {
-  expect(() => parseCarrierSelection(["DHL"])).toThrow(
-    "shipping_carrier_invalid",
-  );
+  expect(() => parseCarrierSelection(["DHL"])).toThrow("shipping_carrier_invalid");
 });
 
 it("toggles a canonical carrier and exposes selected state", () => {
@@ -428,7 +430,9 @@ export const CARRIER_KEYS = ["UPS", "USPS", "FEDEX"] as const;
 export type CarrierKey = (typeof CARRIER_KEYS)[number];
 
 export function normalizeCarrier(value: unknown): CarrierKey | null {
-  const normalized = String(value ?? "").trim().toUpperCase();
+  const normalized = String(value ?? "")
+    .trim()
+    .toUpperCase();
   return CARRIER_KEYS.find((carrier) => carrier === normalized) ?? null;
 }
 
@@ -445,7 +449,9 @@ export function parseCarrierSelection(values: unknown): CarrierKey[] {
 export function parseStoredCarrierSelection(values: unknown): CarrierKey[] {
   if (!Array.isArray(values)) return [];
   const selected = new Set(
-    values.map(normalizeCarrier).filter((carrier): carrier is CarrierKey => Boolean(carrier)),
+    values
+      .map(normalizeCarrier)
+      .filter((carrier): carrier is CarrierKey => Boolean(carrier)),
   );
   return CARRIER_KEYS.filter((carrier) => selected.has(carrier));
 }
@@ -469,7 +475,10 @@ const AVAILABLE_CARRIERS = [
   { key: "FEDEX", label: "FedEx", description: "Federal Express" },
 ] satisfies Array<{ key: CarrierKey; label: string; description: string }>;
 
-export function CarrierSelector({ enabled, onToggle }: {
+export function CarrierSelector({
+  enabled,
+  onToggle,
+}: {
   enabled: CarrierKey[];
   onToggle(carrier: CarrierKey): void;
 }) {
@@ -481,9 +490,11 @@ export function CarrierSelector({ enabled, onToggle }: {
         type="button"
         aria-pressed={selected}
         onClick={() => onToggle(carrier.key)}
-        className={selected
-          ? "w-full rounded border border-red-500 bg-red-950/40 p-3 text-left"
-          : "w-full rounded border border-zinc-800 bg-zinc-950/40 p-3 text-left"}
+        className={
+          selected
+            ? "w-full rounded border border-red-500 bg-red-950/40 p-3 text-left"
+            : "w-full rounded border border-zinc-800 bg-zinc-950/40 p-3 text-left"
+        }
       >
         <span className="block text-sm font-medium text-white">{carrier.label}</span>
         <span className="block text-xs text-gray-500">{carrier.description}</span>
@@ -518,6 +529,7 @@ git commit -m "fix: persist selectable shipping carriers"
 ### Task 4: Synchronize Square's Final Shipment Address
 
 **Files:**
+
 - Create: `supabase/migrations/20260905120000_square_shipping_address_sync.sql`
 - Modify: `src/types/db/database.types.ts:761-801`
 - Modify: `src/repositories/addresses-repo.ts:15-75`
@@ -533,6 +545,7 @@ git commit -m "fix: persist selectable shipping carriers"
 - Modify: `tests/unit/square-webhook-route.test.ts`
 
 **Interfaces:**
+
 - Produces: `SquareOrderShippingReader.get(squareOrderId: string): Promise<AddressInput | null>`.
 - Produces: `synchronizeSquareShippingAddress(result: SquarePaymentEventResult, deps: SquareShippingSyncDependencies): Promise<"skipped" | "synced">`.
 - Extends processed event results with optional `paymentStatus` and `squareOrderId`, populated for payment events.
@@ -545,23 +558,25 @@ it("maps the Square shipment recipient into the local address shape", async () =
   const reader = new SquareOrderShippingReader({
     get: jest.fn().mockResolvedValue({
       order: {
-        fulfillments: [{
-          type: "SHIPMENT",
-          shipmentDetails: {
-            recipient: {
-              displayName: "Buyer Name",
-              phoneNumber: "8435550100",
-              address: {
-                addressLine1: "1 Main Street",
-                addressLine2: "Unit 2",
-                locality: "Charleston",
-                administrativeDistrictLevel1: "SC",
-                postalCode: "29401",
-                country: "US",
+        fulfillments: [
+          {
+            type: "SHIPMENT",
+            shipmentDetails: {
+              recipient: {
+                displayName: "Buyer Name",
+                phoneNumber: "8435550100",
+                address: {
+                  addressLine1: "1 Main Street",
+                  addressLine2: "Unit 2",
+                  locality: "Charleston",
+                  administrativeDistrictLevel1: "SC",
+                  postalCode: "29401",
+                  country: "US",
+                },
               },
             },
           },
-        }],
+        ],
       },
     }),
   } as never);
@@ -698,9 +713,13 @@ export class SquareOrderShippingReader {
       (fulfillment) => fulfillment.type === "SHIPMENT",
     )?.shipmentDetails?.recipient;
     const address = recipient?.address;
-    if (!address?.addressLine1 || !address.locality ||
-        !address.administrativeDistrictLevel1 || !address.postalCode ||
-        !address.country) {
+    if (
+      !address?.addressLine1 ||
+      !address.locality ||
+      !address.administrativeDistrictLevel1 ||
+      !address.postalCode ||
+      !address.country
+    ) {
       return null;
     }
     return {
@@ -738,8 +757,11 @@ export async function synchronizeSquareShippingAddress(
   result: SquarePaymentEventResult,
   deps: SquareShippingSyncDependencies,
 ): Promise<"skipped" | "synced"> {
-  if ("ignored" in result || result.paymentStatus !== "COMPLETED" ||
-      !result.squareOrderId) {
+  if (
+    "ignored" in result ||
+    result.paymentStatus !== "COMPLETED" ||
+    !result.squareOrderId
+  ) {
     return "skipped";
   }
   const order = result.orderId
@@ -779,6 +801,7 @@ git commit -m "feat: sync Square shipping addresses"
 ### Task 5: Enforce Order and Carrier Policy Before Shippo Purchase
 
 **Files:**
+
 - Create: `src/lib/shipping/label-purchase-policy.ts`
 - Create: `tests/unit/shipping-label-policy.test.ts`
 - Modify: `src/services/shipping-label-service.ts`
@@ -787,6 +810,7 @@ git commit -m "feat: sync Square shipping addresses"
 - Create: `tests/unit/shipping-label-api.test.ts`
 
 **Interfaces:**
+
 - Extends `NormalizedRate` with `shipmentId: string`.
 - Produces: `ShippoService.getRate(rateId: string): Promise<NormalizedRate>` using `shippo.rates.get(rateId)`.
 - Produces: `assertOrderReadyForLabel(order, shipping): void` and `assertRateAllowed(rate, shipmentId, enabledCarriers): void`.
@@ -799,22 +823,29 @@ import {
   assertRateAllowed,
 } from "@/lib/shipping/label-purchase-policy";
 
-it.each(["pending", "review", "refunded", "canceled"])(
-  "blocks a %s order",
-  (status) => {
-    expect(() =>
-      assertOrderReadyForLabel(
-        { status, fulfillment: "ship", fulfillment_status: "unfulfilled", tracking_number: null },
-        { square_synced_at: "2026-09-05T12:00:00.000Z" },
-      ),
-    ).toThrow("shipping_order_not_fulfillment_ready");
-  },
-);
+it.each(["pending", "review", "refunded", "canceled"])("blocks a %s order", (status) => {
+  expect(() =>
+    assertOrderReadyForLabel(
+      {
+        status,
+        fulfillment: "ship",
+        fulfillment_status: "unfulfilled",
+        tracking_number: null,
+      },
+      { square_synced_at: "2026-09-05T12:00:00.000Z" },
+    ),
+  ).toThrow("shipping_order_not_fulfillment_ready");
+});
 
 it("blocks an unsynchronized shipment address", () => {
   expect(() =>
     assertOrderReadyForLabel(
-      { status: "paid", fulfillment: "ship", fulfillment_status: "unfulfilled", tracking_number: null },
+      {
+        status: "paid",
+        fulfillment: "ship",
+        fulfillment_status: "unfulfilled",
+        tracking_number: null,
+      },
       { square_synced_at: null },
     ),
   ).toThrow("shipping_address_not_square_synced");
@@ -871,9 +902,12 @@ export function assertOrderReadyForLabel(
   if (order.status !== "paid" || order.fulfillment !== "ship") {
     throw new Error("shipping_order_not_fulfillment_ready");
   }
-  if (order.tracking_number || ["ready_to_ship", "shipped", "delivered"].includes(
-    String(order.fulfillment_status ?? "").toLowerCase(),
-  )) {
+  if (
+    order.tracking_number ||
+    ["ready_to_ship", "shipped", "delivered"].includes(
+      String(order.fulfillment_status ?? "").toLowerCase(),
+    )
+  ) {
     throw new Error("shipping_label_already_purchased");
   }
   if (!shipping?.square_synced_at) {
@@ -966,9 +1000,11 @@ git commit -m "fix: enforce Shippo label purchase policy"
 ### Task 6: Run Release-Level Verification
 
 **Files:**
+
 - Modify only if a verification failure identifies an in-scope defect.
 
 **Interfaces:**
+
 - Consumes all deliverables from Tasks 1-5.
 - Produces a clean test/build report and a manual checkout-to-label validation record.
 
