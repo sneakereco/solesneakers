@@ -1,7 +1,7 @@
 {
   "name": "solesneakers",
   "engines": {
-    "node": "24.14.1"
+    "node": "^24.14.1"
   },
   "scripts": {
     "lint": "eslint .",
