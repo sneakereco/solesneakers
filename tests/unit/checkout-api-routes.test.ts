@@ -26,10 +26,10 @@ import { checkoutQuoteHandler } from "@/lib/checkout/checkout-quote";
 import { issuePaymentPermitHandler } from "@/lib/checkout/issue-payment-permit";
 import { createDirectPaymentHandler } from "@/lib/checkout/create-direct-payment";
 
-import { POST as prepare } from "../../app/api/checkout/prepare/route";
-import { POST as quote } from "../../app/api/checkout/quote/route";
-import { POST as permit } from "../../app/api/checkout/payment-permit/route";
-import { POST as pay } from "../../app/api/checkout/pay/route";
+import { POST as prepare } from "../../src/app/api/checkout/prepare/route";
+import { POST as quote } from "../../src/app/api/checkout/quote/route";
+import { POST as permit } from "../../src/app/api/checkout/payment-permit/route";
+import { POST as pay } from "../../src/app/api/checkout/pay/route";
 
 describe("direct checkout API routes", () => {
   it.each([

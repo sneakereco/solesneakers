@@ -20,7 +20,7 @@ import { ShippingCarriersRepository } from "@/repositories/shipping-carriers-rep
 import { ShippingOriginsRepository } from "@/repositories/shipping-origins-repo";
 import { ShippoService } from "@/services/shipping-label-service";
 
-import { POST } from "../../app/api/admin/shipping/rates/route";
+import { POST } from "../../src/app/api/admin/shipping/rates/route";
 
 const mockGetOrigin = jest.fn();
 const mockGetCarriers = jest.fn();

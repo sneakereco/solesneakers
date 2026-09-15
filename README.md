@@ -1,38 +1,20 @@
-# Sole Sneakers
+# Solesneakers
 
-Sole Sneakers is a Next.js App Router storefront and administration console backed by Supabase.
+Solesneakers is a full-stack ecommerce storefront and admin console built on Next.js App Router with Supabase.
 
-## Current Capabilities
+## Repository status
 
-- Responsive storefront, product discovery, cart, account, and policy pages
-- Supabase authentication, customer profiles, addresses, and order history
-- First-party product, variant, inventory, catalog, customer, fulfillment, pickup, and tax administration
-- Shippo shipping rates, labels, tracking, and webhook processing
-- Amazon SES transactional email
-- Role-based admin access and audit history
+This repository will be deprecated. Development will migrate to the replacement
+platform currently being built.
 
-Checkout is intentionally unavailable until a replacement payment and tax implementation is selected. The application does not create unpaid orders as a fallback.
+## New developer onboarding
 
-## Development
+New developers should begin with the
+[developer onboarding guide](docs/DEVELOPER_ONBOARDING.md).
 
-```bash
-npm install
-npm run dev
-```
+## Stack
 
-Common validation commands:
-
-```bash
-npm run typecheck
-npm run lint
-npm run test:jest:unit -- --runInBand
-npm run build
-```
-
-Environment variables are validated in `src/config/env.ts`. Database changes are forward-only Supabase migrations in `supabase/migrations`.
-
-## Operations
-
-- [Vercel/Cloudflare edge boundary](docs/operations/vercel-cloudflare-edge.md)
-- [Checkout security monitoring](docs/operations/checkout-security-monitoring.md)
-- [Square checkout launch gates](docs/operations/square-checkout-launch-gates.md)
+- Next.js 16 App Router (React 19)
+- Supabase Postgres + Auth (SSR helpers)
+- Upstash Redis (rate limiting; memory fallback in dev/test)
+- Tailwind CSS

@@ -28,7 +28,7 @@ import {
 } from "@/lib/square/shipping-address-sync";
 import { verifySquareWebhookSignature } from "@/lib/square/webhook";
 
-import { POST } from "../../app/api/webhooks/square/route";
+import { POST } from "../../src/app/api/webhooks/square/route";
 
 const mockVerifySignature = jest.mocked(verifySquareWebhookSignature);
 const mockCreateSyncDependencies = jest.mocked(createSquareShippingSyncDependencies);

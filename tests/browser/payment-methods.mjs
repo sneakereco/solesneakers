@@ -2,7 +2,7 @@
 // Real React/DOM lifecycle, with Square replaced only at the external SDK boundary.
 import assert from "node:assert/strict";
 import { build } from "esbuild";
-import { chromium } from "playwright";
+import { chromium } from "@playwright/test";
 
 const result = await build({
   stdin: {

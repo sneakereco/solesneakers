@@ -3,7 +3,7 @@
 import assert from "node:assert/strict";
 import { readFile, mkdir } from "node:fs/promises";
 import { build } from "esbuild";
-import { chromium } from "playwright";
+import { chromium } from "@playwright/test";
 import postcss from "postcss";
 import tailwindcss from "tailwindcss";
 import nextEnv from "@next/env";

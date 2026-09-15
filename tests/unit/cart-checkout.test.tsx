@@ -35,7 +35,7 @@ jest.mock("@/components/cart/ShippingEstimate", () => ({
   ShippingEstimate: () => <div>Shipping estimate</div>,
 }));
 
-import CartPage from "../../app/(store)/cart/page";
+import CartPage from "../../src/app/(store)/cart/page";
 
 describe("CartPage checkout", () => {
   it("links to checkout without asking for fulfillment in the cart", () => {

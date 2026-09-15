@@ -17,9 +17,9 @@ import { CheckoutUnavailable } from "@/components/checkout/CheckoutUnavailable";
 import { loadCheckoutPageAccess } from "@/lib/checkout/checkout-page-access";
 import { loadCheckoutPageData } from "@/lib/checkout/checkout-page-data";
 
-import CheckoutPage from "../../app/checkout/page";
+import CheckoutPage from "../../src/app/checkout/page";
 
-describe("app/checkout/page", () => {
+describe("src/app/checkout/page", () => {
   beforeEach(() => {
     jest.clearAllMocks();
   });

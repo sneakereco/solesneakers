@@ -3,7 +3,11 @@ import type { Json } from "@/types/db/database.types";
 export type CheckoutNotification = {
   id: string;
   orderId: string;
-  kind: "order_confirmation" | "refund_confirmation";
+  kind:
+    | "order_confirmation"
+    | "refund_confirmation"
+    | "shipping_update"
+    | "delivery_confirmation";
   payload: Json;
 };
 

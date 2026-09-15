@@ -1,0 +1,10 @@
+src/types/db/database.types.ts
+
+.next/
+out/
+dist/
+coverage/
+.worktrees/
+.codegraph/
+.superpowers/
+next-env.d.ts

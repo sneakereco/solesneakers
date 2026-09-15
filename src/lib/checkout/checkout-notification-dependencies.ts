@@ -16,7 +16,12 @@ const notificationsSchema = z.array(
   z.object({
     id: z.string().uuid(),
     orderId: z.string().uuid(),
-    kind: z.enum(["order_confirmation", "refund_confirmation"]),
+    kind: z.enum([
+      "order_confirmation",
+      "refund_confirmation",
+      "shipping_update",
+      "delivery_confirmation",
+    ]),
     payload: z.unknown(),
   }),
 );
@@ -24,6 +29,53 @@ const notificationsSchema = z.array(
 const refundPayloadSchema = z.object({
   refundAmountCents: z.number().int().positive(),
 });
+
+const shippingPayloadSchema = z.object({
+  trackingNumber: z.string().min(1),
+  carrier: z.string().nullable(),
+  trackingUrl: z.string().nullable(),
+});
+
+async function sendShippingUpdate(
+  admin: AdminSupabaseClient,
+  notification: CheckoutNotification,
+) {
+  // A previous attempt may have sent successfully but failed to finish the queue row.
+  const { data: sent, error } = await admin
+    .from("email_audit_log")
+    .select("id")
+    .eq("notification_id", notification.id)
+    .eq("delivery_status", "sent")
+    .limit(1)
+    .maybeSingle();
+  if (error) {
+    throw error;
+  }
+  if (sent) {
+    return;
+  }
+
+  const payload = shippingPayloadSchema.parse(notification.payload);
+  const order = await loadDetailedOrder(admin, notification.orderId);
+  const recipient = order.profiles?.email ?? order.guest_email ?? null;
+  if (!recipient) {
+    throw new Error("shipping_notification_recipient_missing");
+  }
+  let orderUrl: string | null = null;
+  if (!order.user_id && order.guest_email) {
+    const { token } = await new OrderAccessTokenService(admin).createToken({
+      orderId: order.id,
+    });
+    orderUrl = `${env.NEXT_PUBLIC_SITE_URL}/order-status/${order.id}?token=${encodeURIComponent(token)}`;
+  }
+  const email = new OrderEmailService(admin, order.tenant_id, notification.id);
+  const input = { ...payload, to: recipient, orderId: order.id, orderUrl };
+  if (notification.kind === "shipping_update") {
+    await email.sendOrderInTransit(input);
+  } else {
+    await email.sendOrderDelivered(input);
+  }
+}
 
 async function loadDetailedOrder(admin: AdminSupabaseClient, orderId: string) {
   // The nested relation is intentionally kept in one query so the email is a
@@ -140,10 +192,17 @@ export function createCheckoutNotificationDependencies(
         payload: notification.payload as Json,
       }));
     },
-    send: (notification) =>
-      notification.kind === "order_confirmation"
-        ? sendOrderConfirmation(admin, notification)
-        : sendRefundConfirmation(admin, notification),
+    send: (notification) => {
+      switch (notification.kind) {
+        case "order_confirmation":
+          return sendOrderConfirmation(admin, notification);
+        case "refund_confirmation":
+          return sendRefundConfirmation(admin, notification);
+        case "shipping_update":
+        case "delivery_confirmation":
+          return sendShippingUpdate(admin, notification);
+      }
+    },
     markSent: async (id) => {
       const { data, error } = await admin.rpc("finish_checkout_notification", {
         p_notification_id: id,

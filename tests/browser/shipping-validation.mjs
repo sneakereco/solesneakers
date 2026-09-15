@@ -2,7 +2,7 @@
 // Real checkout UI; replace provider responses and cart/session data only.
 import assert from "node:assert/strict";
 import { build } from "esbuild";
-import { chromium } from "playwright";
+import { chromium } from "@playwright/test";
 import { expect } from "@playwright/test";
 import { readFile, mkdir } from "node:fs/promises";
 import postcss from "postcss";
