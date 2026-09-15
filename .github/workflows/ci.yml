@@ -21,7 +21,6 @@ jobs:
       NEXT_PUBLIC_SUPABASE_URL: https://example.supabase.co
       NEXT_PUBLIC_SUPABASE_PUBLISHABLE_KEY: ci-public-key
       SUPABASE_SECRET_KEY: ci-secret-key
-      SUPABASE_DB_URL: postgresql://postgres:postgres@127.0.0.1:5432/ci
       UPSTASH_REDIS_REST_URL: https://example.invalid
       UPSTASH_REDIS_REST_TOKEN: ci-redis-token
       ADMIN_SESSION_SECRET: ci-admin-session-secret
