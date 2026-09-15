@@ -1,11 +1,11 @@
 import Link from "next/link";
 import { unstable_cache } from "next/cache";
+import { connection } from "next/server";
 
 import { createSupabasePublicClient } from "@/lib/supabase/public";
 import { TagTaxonomyRepository } from "@/repositories/tag-taxonomy-repo";
 
 const BRANDS_REVALIDATE_SECONDS = 300;
-export const revalidate = 300;
 
 type BrandOption = {
   id: string;
@@ -44,6 +44,7 @@ function normalizeLetter(label: string) {
 }
 
 export default async function BrandsPage() {
+  await connection();
   const brands = (await listBrandsCached()).sort((a, b) =>
     a.label.localeCompare(b.label, undefined, { sensitivity: "base" }),
   );
