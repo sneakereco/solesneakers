@@ -265,14 +265,9 @@ try {
   await load();
   await page.getByLabel("Name on card", { exact: true }).fill("Test Buyer");
   await page.getByRole("button", { name: "Pay $110.00 now" }).click();
-  await page
-    .getByRole("button", { name: "Continue with address I entered" })
-    .click();
+  await page.getByRole("button", { name: "Continue with address I entered" }).click();
   await expect.poll(() => Boolean(releasePay)).toBe(true);
-  assert.equal(
-    prepares.at(-1).shippingAddress.line1,
-    "1600 Pennsylvania Avenue NW",
-  );
+  assert.equal(prepares.at(-1).shippingAddress.line1, "1600 Pennsylvania Avenue NW");
   assert.equal(prepares.at(-1).shippingAddressOverride, true);
   assert.equal(prepares.at(-1).shippingConfirmation, "entered-confirmation");
   assert.equal(payCalls, 1);
@@ -283,10 +278,12 @@ try {
   await load();
   await page.getByLabel("Name on card", { exact: true }).fill("Test Buyer");
   await page.getByRole("button", { name: "Pay $110.00 now" }).click();
-  await page.getByRole("button", { name: "Accept suggested address" }).evaluate((button) => {
-    button.click();
-    button.click();
-  });
+  await page
+    .getByRole("button", { name: "Accept suggested address" })
+    .evaluate((button) => {
+      button.click();
+      button.click();
+    });
   await expect.poll(() => Boolean(releasePay)).toBe(true);
   assert.equal(payCalls, 1);
   assert.equal(await page.evaluate(() => window.test.tokenized), 1);

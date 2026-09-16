@@ -27,31 +27,35 @@ function ProcessingContent() {
       return;
     }
 
-    return startCheckoutOrderPolling(orderId, readGuestOrderAccess(orderId), (state, order) => {
-      if (state === "paid") {
-        if (order) storeConfirmedOrder(order);
-        performance.mark("checkout-confirmed");
-        if (performance.getEntriesByName("checkout-payment-start").length) {
-          performance.measure(
-            "checkout-click-to-confirmed",
-            "checkout-payment-start",
-            "checkout-confirmed",
-          );
+    return startCheckoutOrderPolling(
+      orderId,
+      readGuestOrderAccess(orderId),
+      (state, order) => {
+        if (state === "paid") {
+          if (order) storeConfirmedOrder(order);
+          performance.mark("checkout-confirmed");
+          if (performance.getEntriesByName("checkout-payment-start").length) {
+            performance.measure(
+              "checkout-click-to-confirmed",
+              "checkout-payment-start",
+              "checkout-confirmed",
+            );
+          }
+          router.replace(`/checkout/success?orderId=${encodeURIComponent(orderId)}`);
+          return;
         }
-        router.replace(`/checkout/success?orderId=${encodeURIComponent(orderId)}`);
-        return;
-      }
-      setView(state === "unauthorized" ? "error" : state);
-      setMessage(
-        state === "delayed"
-          ? "We could not confirm your order yet. Do not pay again. Check the status below or contact support with your order ID."
-          : state === "review"
-            ? "Your payment was received and is being reviewed. Do not submit another payment."
-            : state === "unauthorized"
-              ? "This browser cannot open the order details. Check your email for your secure order link."
-              : "This checkout could not be completed. Check your email or contact support before trying again.",
-      );
-    });
+        setView(state === "unauthorized" ? "error" : state);
+        setMessage(
+          state === "delayed"
+            ? "We could not confirm your order yet. Do not pay again. Check the status below or contact support with your order ID."
+            : state === "review"
+              ? "Your payment was received and is being reviewed. Do not submit another payment."
+              : state === "unauthorized"
+                ? "This browser cannot open the order details. Check your email for your secure order link."
+                : "This checkout could not be completed. Check your email or contact support before trying again.",
+        );
+      },
+    );
   }, [orderId, router, retry]);
 
   if (!orderId) {

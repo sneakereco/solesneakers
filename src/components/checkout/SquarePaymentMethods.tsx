@@ -481,11 +481,14 @@ export function SquarePaymentMethods({
   const [totalReview, setTotalReview] = useState<number | null>(null);
   const [cashAppReapproval, setCashAppReapproval] = useState(false);
   const addressContinuation = useRef<
-    ((value: {
-      address: ShippingAddress;
-      confirmation?: string;
-      override?: boolean;
-    } | null) => void) | null
+    | ((
+        value: {
+          address: ShippingAddress;
+          confirmation?: string;
+          override?: boolean;
+        } | null,
+      ) => void)
+    | null
   >(null);
   const totalContinuation = useRef<((accepted: boolean) => void) | null>(null);
   const cashAppCancellation = useRef<(() => void) | null>(null);
@@ -618,7 +621,12 @@ export function SquarePaymentMethods({
       active = false;
       void lifecycles.card.dispose();
     };
-  }, [lifecycles, paymentConfig.applicationId, paymentConfig.environment, paymentConfig.locationId]);
+  }, [
+    lifecycles,
+    paymentConfig.applicationId,
+    paymentConfig.environment,
+    paymentConfig.locationId,
+  ]);
 
   useEffect(() => {
     if (!payments || !hasQuote || !latest.current.quote) {

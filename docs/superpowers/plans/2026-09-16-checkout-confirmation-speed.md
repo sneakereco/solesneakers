@@ -22,10 +22,12 @@
 ### Task 1: Faster verified polling
 
 **Files:**
+
 - Modify: `src/lib/checkout/checkout-order-polling.ts`
 - Test: `tests/unit/checkout-order-polling.test.ts`
 
 **Interfaces:**
+
 - Produces: `startCheckoutOrderPolling(..., onState)` supplies the paid order response as the callback's second argument.
 - Produces: first retry after 500 ms with `reconcile=1`; later retries remain at 2 seconds.
 
@@ -37,6 +39,7 @@
 ### Task 2: Remove the redundant confirmation wait
 
 **Files:**
+
 - Create: `src/lib/checkout/confirmed-order-cache.ts`
 - Modify: `src/app/checkout/processing/page.tsx`
 - Modify: `src/app/checkout/success/page.tsx`
@@ -44,6 +47,7 @@
 - Test: `tests/unit/confirmed-order-cache.test.ts`
 
 **Interfaces:**
+
 - Produces: `storeConfirmedOrder(status)` stores only a verified paid response for its order ID.
 - Produces: `readConfirmedOrder(orderId)` returns a minimally validated paid response once, then removes it.
 
@@ -56,11 +60,13 @@
 ### Task 3: Observable end-to-end timing
 
 **Files:**
+
 - Modify: `src/components/checkout/SquarePaymentMethods.tsx`
 - Modify: `src/app/checkout/processing/page.tsx`
 - Test: `tests/browser/checkout-progress.mjs`
 
 **Interfaces:**
+
 - Produces: Performance entry `checkout-click-to-confirmed` for a successful soft-navigation checkout.
 
 - [x] Add a browser assertion for the completed performance measure and confirm it fails.
@@ -70,6 +76,7 @@
 ### Task 4: Verification
 
 **Files:**
+
 - Verify all files above.
 
 - [x] Run focused unit and browser tests.

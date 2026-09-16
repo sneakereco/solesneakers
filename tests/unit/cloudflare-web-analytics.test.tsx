@@ -17,8 +17,6 @@ describe("CloudflareWebAnalytics", () => {
       value: "development",
     });
 
-    expect(
-      renderToStaticMarkup(<CloudflareWebAnalytics token="test-token" />),
-    ).toBe("");
+    expect(renderToStaticMarkup(<CloudflareWebAnalytics token="test-token" />)).toBe("");
   });
 });

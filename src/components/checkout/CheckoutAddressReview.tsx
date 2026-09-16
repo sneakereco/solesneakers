@@ -95,9 +95,7 @@ export function CheckoutAddressReview({
       </div>
       <button
         type="button"
-        onClick={() =>
-          onContinue(entered, review.enteredShippingConfirmation, true)
-        }
+        onClick={() => onContinue(entered, review.enteredShippingConfirmation, true)}
         className="mt-3 w-full rounded-lg border border-zinc-300 px-5 py-3 font-medium"
       >
         Continue with address I entered
