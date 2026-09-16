@@ -3,7 +3,9 @@
 
 import { useEffect, useRef, useState, Suspense } from "react";
 import { useSearchParams, useRouter } from "next/navigation";
-import { CheckCircle, Loader2, Mail } from "lucide-react";
+import { CheckCircle, Mail } from "lucide-react";
+
+import { CheckoutPaymentDialog } from "@/components/checkout/CheckoutPaymentDialog";
 
 import { clearIdempotencyKeyFromStorage } from "@/lib/checkout/idempotency";
 import type { OrderStatusResponse } from "@/types/domain/checkout";
@@ -146,6 +148,7 @@ function SuccessContent() {
   if (error) {
     return (
       <div className="mx-auto max-w-2xl px-4 py-20 text-center">
+        <CheckoutPaymentDialog open={false} />
         <div className="border border-zinc-300 bg-white p-6 text-zinc-950">
           <p className="mb-2 text-lg font-semibold">Error</p>
           <p>{error}</p>
@@ -163,6 +166,7 @@ function SuccessContent() {
   if (canFetchStatus === false) {
     return (
       <div className="mx-auto max-w-2xl px-4 py-20 text-center">
+        <CheckoutPaymentDialog open={false} />
         <Mail className="mx-auto mb-6 h-16 w-16 text-zinc-950" />
         <h1 className="mb-4 text-3xl font-bold text-zinc-950">Order Confirmed!</h1>
         <p className="mb-6 text-zinc-600">
@@ -201,34 +205,13 @@ function SuccessContent() {
   }
 
   if (!status || status.status !== "paid") {
-    return (
-      <div className="mx-auto max-w-2xl px-4 py-20 text-center">
-        <Loader2 className="mx-auto mb-6 h-16 w-16 animate-spin text-zinc-950" />
-        <h1 className="mb-4 text-3xl font-bold text-zinc-950">
-          Processing your payment...
-        </h1>
-        <p className="mb-8 text-zinc-600">
-          Please wait while we confirm your order. This should only take a moment.
-        </p>
-        {status && (
-          <div className="border border-zinc-300 bg-white p-6 text-left">
-            <div className="mb-2 flex justify-between text-zinc-600">
-              <span>Order ID:</span>
-              <span className="font-mono text-sm text-zinc-950">{status.id}</span>
-            </div>
-            <div className="flex justify-between text-zinc-600">
-              <span>Status:</span>
-              <span className="capitalize text-amber-600">{status.status}</span>
-            </div>
-          </div>
-        )}
-      </div>
-    );
+    return <CheckoutPaymentDialog open />;
   }
 
   const isPickup = status.fulfillment === "pickup" || isPickupParam;
   return (
     <div className="mx-auto max-w-2xl px-4 py-20 text-center">
+      <CheckoutPaymentDialog open={false} />
       <CheckCircle className="mx-auto mb-6 h-16 w-16 text-zinc-950" />
       <h1 className="mb-4 text-3xl font-bold text-zinc-950">Order Confirmed!</h1>
       <p className="mb-8 text-zinc-600">
@@ -310,13 +293,7 @@ function SuccessContent() {
 
 export default function CheckoutSuccessPage() {
   return (
-    <Suspense
-      fallback={
-        <div className="mx-auto max-w-2xl px-4 py-20 text-center">
-          <Loader2 className="mx-auto h-16 w-16 animate-spin text-zinc-950" />
-        </div>
-      }
-    >
+    <Suspense fallback={<CheckoutPaymentDialog open />}>
       <SuccessContent />
     </Suspense>
   );

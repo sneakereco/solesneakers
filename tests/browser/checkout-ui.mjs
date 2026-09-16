@@ -32,6 +32,7 @@ const bundle = await build({
     contents: `
       import { useState } from 'react';
       import { createRoot } from 'react-dom/client';
+      import { CheckoutPaymentProvider } from './src/components/checkout/CheckoutPaymentDialog';
       import { SquarePaymentMethods } from './src/components/checkout/SquarePaymentMethods';
       import { CheckoutContactSection } from './src/components/checkout/CheckoutContactSection';
       import { CheckoutDeliverySection } from './src/components/checkout/CheckoutDeliverySection';
@@ -66,7 +67,7 @@ const bundle = await build({
           </SquarePaymentMethods>
         </div></div>;
       }
-      createRoot(document.getElementById('root')).render(<Harness />);
+      createRoot(document.getElementById('root')).render(<CheckoutPaymentProvider><Harness /></CheckoutPaymentProvider>);
     `,
   },
   bundle: true,
@@ -79,13 +80,16 @@ const bundle = await build({
       name: "external-services",
       setup(builder) {
         builder.onResolve(
-          { filter: /^@\/config\/client-env$|^@\/lib\/utils\/log$/ },
+          { filter: /^next\/navigation$|^@\/config\/client-env$|^@\/lib\/utils\/log$/ },
           (args) => ({ path: args.path, namespace: "test" }),
         );
         builder.onLoad({ filter: /.*/, namespace: "test" }, (args) => ({
-          contents: args.path.endsWith("client-env")
-            ? "export const clientEnv = {};"
-            : "export const log = () => {};",
+          contents:
+            args.path === "next/navigation"
+              ? "const router = { replace: url => window.location.replace(url) }; export const useRouter = () => router;"
+              : args.path.endsWith("client-env")
+                ? "export const clientEnv = {};"
+                : "export const log = () => {};",
           loader: "js",
         }));
       },

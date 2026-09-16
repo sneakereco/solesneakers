@@ -5,6 +5,7 @@
 import { useEffect } from "react";
 import { useRouter } from "next/navigation";
 import { XCircle } from "lucide-react";
+import { CheckoutPaymentDialog } from "@/components/checkout/CheckoutPaymentDialog";
 
 import { clearIdempotencyKeyFromStorage } from "@/lib/checkout/idempotency";
 import { clearGuestShippingAddress } from "@/lib/checkout/guest-shipping-address";
@@ -19,6 +20,7 @@ export default function CheckoutCancelPage() {
 
   return (
     <div className="mx-auto max-w-2xl px-4 py-20 text-center text-zinc-950">
+      <CheckoutPaymentDialog open={false} />
       <XCircle className="mx-auto mb-6 h-16 w-16 text-yellow-500" />
       <h1 className="mb-4 text-3xl font-bold">Checkout Canceled</h1>
       <p className="mb-8 text-zinc-600">

@@ -101,6 +101,7 @@ export type PaymentCheckout = {
   squareOrderId: string | null;
   squareOrderVersion: number | null;
   deviceSessionId: string;
+  shippingAddressOverrideConfirmed?: boolean;
   pickupContact?: CheckoutPickupContact | null;
   shippingAddress: ReserveCheckoutInput["shippingAddress"];
   billingAddress: Pick<
@@ -194,6 +195,7 @@ const paymentCheckoutSchema = z.object({
   checkout_protection_evidence: z
     .object({
       device_session_id: z.string().min(1),
+      shipping_address_override_confirmed: z.boolean().optional(),
     })
     .passthrough(),
   order_shipping: z
@@ -345,6 +347,8 @@ export class CheckoutReservationRepository {
       squareOrderId: row.square_order_id,
       squareOrderVersion: row.square_order_version,
       deviceSessionId: row.checkout_protection_evidence.device_session_id,
+      shippingAddressOverrideConfirmed:
+        row.checkout_protection_evidence.shipping_address_override_confirmed === true,
       pickupContact:
         row.pickup_name && row.pickup_phone
           ? { name: row.pickup_name, phone: row.pickup_phone }

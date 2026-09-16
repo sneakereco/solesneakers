@@ -2,6 +2,7 @@
 
 import { useEffect, useMemo, useRef, useState, type ReactNode } from "react";
 import { flushSync } from "react-dom";
+import { useRouter } from "next/navigation";
 
 import {
   EMPTY_BILLING_ADDRESS,
@@ -23,7 +24,7 @@ import {
 import { ExpressCheckoutMethods } from "@/components/checkout/ExpressCheckoutMethods";
 import { validateCheckoutFields } from "@/components/checkout/CheckoutField";
 import { useSquareCardState } from "@/components/checkout/useSquareCardState";
-import { initializeSquareCard } from "@/components/checkout/square-card-initialization";
+import { squareCardStyle } from "@/components/checkout/square-card-style";
 import {
   squarePaymentDiagnostic,
   type SquarePaymentPhase,
@@ -92,6 +93,7 @@ export type WalletCheckoutContext = {
 
 export type CheckoutPreparationContext = {
   shippingConfirmation?: string;
+  shippingAddressOverride?: boolean;
   quote?: ExactCheckoutQuote;
   shippingAddress?: CheckoutPaymentAddress;
   buyerEmail?: string;
@@ -465,9 +467,8 @@ export function SquarePaymentMethods({
   const [turnstileWidget, setTurnstileWidget] = useState<string | null>(null);
   const [isPaying, setIsPaying] = useState(false);
   const [paymentDialogOpen, setPaymentDialogOpen] = useState(false);
-  const [paymentStage, setPaymentStage] = useState<
-    "preparing" | "afterpay" | "processing"
-  >("preparing");
+  const router = useRouter();
+  const [providerActive, setProviderActive] = useState(false);
   const [walletReview, setWalletReview] = useState<WalletDetailsReview | null>(null);
   const walletContinuation = useRef<((value: WalletDetails | null) => void) | null>(null);
   const [paymentFailureMessage, setError] = useState<string | null>(null);
@@ -480,7 +481,11 @@ export function SquarePaymentMethods({
   const [totalReview, setTotalReview] = useState<number | null>(null);
   const [cashAppReapproval, setCashAppReapproval] = useState(false);
   const addressContinuation = useRef<
-    ((value: { address: ShippingAddress; confirmation?: string } | null) => void) | null
+    ((value: {
+      address: ShippingAddress;
+      confirmation?: string;
+      override?: boolean;
+    } | null) => void) | null
   >(null);
   const totalContinuation = useRef<((accepted: boolean) => void) | null>(null);
   const cashAppCancellation = useRef<(() => void) | null>(null);
@@ -522,6 +527,7 @@ export function SquarePaymentMethods({
   >({});
   const [methodRetries, setMethodRetries] = useState({ cashAppPay: 0, afterpay: 0 });
   const [lifecycles] = useState(() => ({
+    card: createSquareMethodLifecycle<SquarePaymentMethod>(),
     applePay: createSquareMethodLifecycle<SquarePaymentMethod>(),
     googlePay: createSquareMethodLifecycle<SquarePaymentMethod>(),
     cashAppPay: createSquareMethodLifecycle<SquareCashAppPayMethod>(),
@@ -574,27 +580,30 @@ export function SquarePaymentMethods({
 
   useEffect(() => {
     let active = true;
-    let nextCard: SquarePaymentMethod | null = null;
     let phase: SquarePaymentPhase = "load";
     void (async () => {
       try {
         const nextPayments = await loadSquareWebPayments(paymentConfig);
-        nextCard = await initializeSquareCard(
-          nextPayments,
-          (readyPayments) => {
+        if (!active) {
+          return;
+        }
+        setPayments(nextPayments);
+        await lifecycles.card.replace(
+          () => {
+            phase = "create";
+            return nextPayments.card({ style: squareCardStyle });
+          },
+          async (nextCard) => {
+            if (!nextCard.attach) {
+              throw new Error("square_card_attach_unavailable");
+            }
+            phase = "attach";
+            await nextCard.attach("#square-card-container");
             if (active) {
-              setPayments(readyPayments);
+              setCard(nextCard);
             }
           },
-          (nextPhase) => {
-            phase = nextPhase;
-          },
         );
-        if (active) {
-          setCard(nextCard);
-        } else {
-          void nextCard.destroy?.();
-        }
       } catch (caughtError) {
         reportUnavailable("card", phase, caughtError);
         if (active) {
@@ -607,9 +616,9 @@ export function SquarePaymentMethods({
     })();
     return () => {
       active = false;
-      void nextCard?.destroy?.();
+      void lifecycles.card.dispose();
     };
-  }, [paymentConfig.applicationId, paymentConfig.environment, paymentConfig.locationId]);
+  }, [lifecycles, paymentConfig.applicationId, paymentConfig.environment, paymentConfig.locationId]);
 
   useEffect(() => {
     if (!payments || !hasQuote || !latest.current.quote) {
@@ -883,7 +892,6 @@ export function SquarePaymentMethods({
   }, [isGuest]);
 
   async function pay(authorization: { permit: string; sourceId: string }) {
-    setPaymentStage("processing");
     setPaymentDialogOpen(true);
     const response = await fetch("/api/checkout/pay", {
       method: "POST",
@@ -895,7 +903,7 @@ export function SquarePaymentMethods({
       throw new Error(data?.error || "Payment could not be completed");
     }
     clearCart();
-    window.location.replace(data.statusUrl);
+    router.replace(data.statusUrl);
   }
 
   function permitRequest(checkout: PreparedCheckout, method: PaymentMethod) {
@@ -928,8 +936,6 @@ export function SquarePaymentMethods({
     cardInputError.current = false;
     setAddressReview(null);
     setIsPaying(true);
-    setPaymentStage("preparing");
-    setPaymentDialogOpen(requireVisibleExactQuote);
     setError(null);
     try {
       assertPayable(requireVisibleExactQuote);
@@ -981,6 +987,7 @@ export function SquarePaymentMethods({
     let currentAddress = shippingAddress;
     let currentBilling = resolvedBillingAddress!;
     let shippingConfirmation: string | undefined;
+    let shippingAddressOverride = false;
     for (;;) {
       try {
         const checkout = await prepare(method, {
@@ -988,6 +995,7 @@ export function SquarePaymentMethods({
           shippingAddress: currentAddress ?? undefined,
           billingAddress: currentBilling,
           shippingConfirmation,
+          shippingAddressOverride,
         });
         return {
           checkout,
@@ -1007,6 +1015,7 @@ export function SquarePaymentMethods({
         const choice = await new Promise<{
           address: ShippingAddress;
           confirmation?: string;
+          override?: boolean;
         } | null>((resolve) => {
           addressContinuation.current = resolve;
         });
@@ -1021,6 +1030,7 @@ export function SquarePaymentMethods({
         currentQuote = context.quote;
         currentAddress = context.shippingAddress;
         shippingConfirmation = choice.confirmation;
+        shippingAddressOverride = choice.override === true;
         if (sameAsShipping) {
           currentBilling = resolveBillingAddress({
             fulfillment,
@@ -1103,6 +1113,7 @@ export function SquarePaymentMethods({
         throw new Error("Enter your billing address to continue.");
       }
       const prepared = await prepareWithAddressReview(method);
+      setPaymentDialogOpen(true);
       const { checkout } = prepared;
       if (prepared.quote.totals.totalCents !== exactQuote?.totals.totalCents) {
         sourceId = await reauthorizeCashApp(prepared.quote);
@@ -1146,8 +1157,14 @@ export function SquarePaymentMethods({
     }
     walletQuote.current = null;
     void runPayment(async () => {
-      const result = await wallet.tokenize();
-      setPaymentStage("processing");
+      flushSync(() => setProviderActive(true));
+      let result: Awaited<ReturnType<typeof wallet.tokenize>>;
+      try {
+        result = await wallet.tokenize();
+      } finally {
+        setProviderActive(false);
+      }
+
       setPaymentDialogOpen(true);
       const sourceId = checkedToken(result);
       let walletBilling = walletBillingAddress(result.details?.billing);
@@ -1269,7 +1286,6 @@ export function SquarePaymentMethods({
     payment: SquarePaymentMethod,
   ) {
     void runPayment(async () => {
-      setPaymentStage(method === "afterpay" ? "afterpay" : "preparing");
       if (method === "card" && !cardholderName.trim()) {
         cardholderNameInput.current?.reportValidity();
         throw new Error("Enter the name shown on the card.");
@@ -1283,6 +1299,7 @@ export function SquarePaymentMethods({
         throw new Error("Enter a complete US billing address.");
       }
       const prepared = await prepareWithAddressReview(method);
+      setPaymentDialogOpen(true);
       const { checkout } = prepared;
       const paymentBilling = prepared.billing;
       if (method === "afterpay") {
@@ -1302,7 +1319,6 @@ export function SquarePaymentMethods({
             ? contact(prepared.address.name, buyerEmail, prepared.address)
             : undefined,
         });
-        setPaymentStage("afterpay");
       }
       const buyer = squareBillingContact({
         cardholderName:
@@ -1318,7 +1334,7 @@ export function SquarePaymentMethods({
           paymentMethod: {
             tokenize: async (details) => {
               // Let Square own focus while its verification or wallet UI is open.
-              flushSync(() => setPaymentDialogOpen(false));
+              flushSync(() => setProviderActive(true));
               try {
                 const result = await payment.tokenize(details);
                 if (result.status === "CANCEL") throw new CheckoutCancelled();
@@ -1345,6 +1361,7 @@ export function SquarePaymentMethods({
                 }
                 return result;
               } finally {
+                setProviderActive(false);
                 setPaymentDialogOpen(!cardInputError.current);
               }
             },
@@ -1407,7 +1424,7 @@ export function SquarePaymentMethods({
     <>
       <CheckoutPaymentDialog
         open={paymentDialogOpen}
-        stage={paymentStage}
+        providerActive={providerActive}
         walletReview={
           walletReview ? (
             <CheckoutWalletDetails
@@ -1422,16 +1439,15 @@ export function SquarePaymentMethods({
           ) : null
         }
         addressReview={addressReview}
-        onAcceptAddress={(address, confirmation) => {
+        onAcceptAddress={(address, confirmation, override) => {
           const continuation = addressContinuation.current;
           if (!continuation) {
             return;
           }
           addressContinuation.current = null;
           setAddressReview(null);
-          setPaymentStage("preparing");
           setError(null);
-          continuation({ address, confirmation });
+          continuation({ address, confirmation, override });
         }}
         totalReview={totalReview}
         onConfirmTotal={() => {

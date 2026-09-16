@@ -125,6 +125,43 @@ describe("createDirectPaymentHandler", () => {
 });
 
 describe("final shipping verification", () => {
+  it("charges an explicitly confirmed entered address without forcing the suggestion", async () => {
+    const deps = dependencies();
+    deps.loadOrder.mockResolvedValue({
+      ...(await deps.loadOrder()),
+      fulfillment: "ship",
+      shippingAddressOverrideConfirmed: true,
+      shippingAddress: {
+        name: "Buyer",
+        phone: "2025550100",
+        line1: "1600 Pennsylvania Avenue NW",
+        line2: null,
+        city: "Washington",
+        state: "DC",
+        postalCode: "20500",
+        country: "US",
+      },
+    });
+    deps.validateShippingAddress.mockResolvedValue({
+      status: "suggestion",
+      address: {
+        name: "Buyer",
+        phone: "2025550100",
+        line1: "1600 Pennsylvania Ave NW",
+        line2: null,
+        city: "Washington",
+        state: "DC",
+        postalCode: "20500-0005",
+        country: "US",
+      },
+    });
+
+    const response = await createDirectPaymentHandler(request(), deps);
+
+    expect(response.status).toBe(202);
+    expect(deps.validateShippingAddress).not.toHaveBeenCalled();
+    expect(deps.createPayment).toHaveBeenCalledTimes(1);
+  });
   it.each(["applePay", "googlePay"])(
     "charges %s using the stored wallet address without Shippo",
     async (method) => {

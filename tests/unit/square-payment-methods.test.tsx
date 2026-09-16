@@ -1,3 +1,5 @@
+jest.mock("next/navigation", () => ({ useRouter: () => ({ replace: jest.fn() }) }));
+
 import { renderToStaticMarkup } from "react-dom/server";
 
 import {

@@ -249,6 +249,11 @@ export async function prepareCheckoutHandler(
                     deps.shippingConfirmationSecret(),
                     deps.now(),
                   ),
+                  enteredShippingConfirmation: issueShippingConfirmation(
+                    confirmationScope!,
+                    deps.shippingConfirmationSecret(),
+                    deps.now(),
+                  ),
                 }
               : {}),
           },
@@ -412,6 +417,10 @@ export async function prepareCheckoutHandler(
           client_ip_masked: maskIp(clientIp),
           normalized_email_hmac: normalizedEmailHash,
           device_session_id: parsed.data.deviceSessionId,
+          shipping_address_override_confirmed:
+            parsed.data.fulfillment === "ship" &&
+            confirmed &&
+            parsed.data.shippingAddressOverride === true,
           created_at: deps.now().toISOString(),
         },
         items: cart.items,

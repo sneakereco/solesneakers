@@ -243,6 +243,41 @@ describe("shipping deliverability gate", () => {
     expect(deps.checkAddressValidationAttempt).toHaveBeenCalledTimes(1);
     expect(deps.checkAttempt).toHaveBeenCalledTimes(1);
   });
+  it("continues the entered address when the buyer explicitly overrides a suggestion", async () => {
+    const deps = dependencies();
+    const body = await (request() as Request).json();
+    deps.validateShippingAddress.mockResolvedValue({
+      status: "suggestion",
+      address: { ...body.shippingAddress, line1: "1 Main St" },
+    });
+    const first = await prepareCheckoutHandler(request(), deps);
+    const review = await first.json();
+
+    expect(typeof review.enteredShippingConfirmation).toBe("string");
+
+    const response = await prepareCheckoutHandler(
+      new Request("https://shop.example.com/api/checkout/prepare", {
+        method: "POST",
+        body: JSON.stringify({
+          ...body,
+          shippingAddressOverride: true,
+          shippingConfirmation: review.enteredShippingConfirmation,
+        }),
+      }) as never,
+      deps,
+    );
+
+    expect(response.status).toBe(201);
+    expect(deps.validateShippingAddress).toHaveBeenCalledTimes(1);
+    expect(deps.reserve).toHaveBeenCalledWith(
+      expect.objectContaining({
+        shippingAddress: body.shippingAddress,
+        protectionEvidence: expect.objectContaining({
+          shipping_address_override_confirmed: true,
+        }),
+      }),
+    );
+  });
   it.each(["applePay", "googlePay"])(
     "prepares %s without Shippo or its quota",
     async (paymentMethod) => {

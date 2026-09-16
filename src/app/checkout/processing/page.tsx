@@ -2,10 +2,12 @@
 
 import { Suspense, useEffect, useState } from "react";
 import { useRouter, useSearchParams } from "next/navigation";
-import { AlertTriangle, Loader2, XCircle } from "lucide-react";
+import { AlertTriangle, XCircle } from "lucide-react";
 
 import { startCheckoutOrderPolling } from "@/lib/checkout/checkout-order-polling";
 import { readGuestOrderAccess } from "@/lib/checkout/client-session";
+
+import { CheckoutPaymentDialog } from "@/components/checkout/CheckoutPaymentDialog";
 
 type ViewState = "waiting" | "delayed" | "review" | "error";
 
@@ -46,12 +48,12 @@ function ProcessingContent() {
     return null;
   }
 
+  if (view === "waiting") return <CheckoutPaymentDialog open />;
+
   return (
     <main className="flex min-h-screen items-center justify-center bg-[var(--storefront-surface)] px-5 text-zinc-950">
+      <CheckoutPaymentDialog open={false} />
       <div className="w-full max-w-md text-center">
-        {view === "waiting" && (
-          <Loader2 className="mx-auto mb-6 h-16 w-16 animate-spin text-zinc-950" />
-        )}
         {view === "review" && (
           <AlertTriangle className="mx-auto mb-6 h-16 w-16 text-amber-400" />
         )}
@@ -89,13 +91,7 @@ function ProcessingContent() {
 
 export default function CheckoutProcessingPage() {
   return (
-    <Suspense
-      fallback={
-        <div className="flex min-h-screen items-center justify-center bg-[var(--storefront-surface)]">
-          <Loader2 className="h-12 w-12 animate-spin text-zinc-950" />
-        </div>
-      }
-    >
+    <Suspense fallback={<CheckoutPaymentDialog open />}>
       <ProcessingContent />
     </Suspense>
   );

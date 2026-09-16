@@ -1,3 +1,5 @@
+import { CheckoutPaymentProvider } from "@/components/checkout/CheckoutPaymentDialog";
+
 export default function CheckoutLayout({ children }: { children: React.ReactNode }) {
-  return children;
+  return <CheckoutPaymentProvider>{children}</CheckoutPaymentProvider>;
 }
