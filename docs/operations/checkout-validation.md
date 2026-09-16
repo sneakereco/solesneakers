@@ -16,7 +16,7 @@ Emails share a quieter neutral design. Customer-visible legacy branding is repla
 
 | Check                           | Observed result                                                                                                                                |
 | ------------------------------- | ---------------------------------------------------------------------------------------------------------------------------------------------- |
-| Unit suite                      | 98 suites, 402 tests passed before final saved-message normalization; focused follow-up recorded below                                         |
+| Unit suite                      | 98 suites, 404 tests passed on the final application source                                                                                    |
 | Integration suite               | 3 suites, 20 tests passed                                                                                                                      |
 | Browser harness                 | All four suites passed; missing-shipping-phone continuation and missing-destination rejection subsequently passed in `shipping-validation.mjs` |
 | Notification SQL rollback check | Passed: distinct jobs, replay, independent failure/retry, disjoint scoped/fallback claims, permissions                                         |
@@ -52,9 +52,9 @@ Verified target: Vercel project `soles-stg`, `https://soles-stg.vercel.app`, Squ
 | Cash App Pay | Blocked before quote | Blocked before quote | Complete Sandbox provider approval                                |
 | Afterpay     | Blocked before quote | Blocked before quote | Verify native select-shipping and pickup screens                  |
 
-The deployed baseline (`86e5c5b`) displayed **Checkout verification failed** before returning a quote in the controlled browser. Square Sandbox card fields loaded, but no payment or test email was submitted. Security controls were not disabled to force a result. Updated deployment outcomes must be recorded below before calling any live scenario passed.
+Both the baseline (`86e5c5b`) and updated build (`c945d5e`) displayed **Checkout verification failed** before returning a quote in the controlled browser. Vercel request logs show HTTP 403 for `/api/checkout/quote`. The user confirmed the updated checkout calculates pickup totals in their normal browser. This distinguishes the automation block from the normal-browser behavior; it does not prove a completed payment. Security controls were not disabled to force a result.
 
-For **both** pickup and shipping, test Visa, Mastercard, American Express, Discover, Diners Club, JCB, and UnionPay using the [official Square Sandbox card values](https://developer.squareup.com/docs/devtools/sandbox/payments). Every brand is currently unverified end to end. Also exercise invalid CVV, invalid postal code, expiration failure, generic decline, and supported SCA challenges using that same reference. Do not use real payment-card details.
+Square's live Sandbox fields displayed the correct brand for Visa, Mastercard, American Express, Discover, Diners Club, JCB, and UnionPay using the [official Square Sandbox card values](https://developer.squareup.com/docs/devtools/sandbox/payments). This verifies field loading and brand recognition only. Every brand is still unverified end to end for **both** pickup and shipping. Also pending: invalid CVV, invalid postal code, expiration failure, generic decline, and supported SCA challenges using that same reference. Do not use real payment-card details.
 
 ## Edge-case coverage
 
@@ -77,4 +77,12 @@ No production migration or deployment is authorized by this work.
 
 ## Final staging outcome
 
-Pending completion of the coordinated staging checks. Do not treat local checks as live payment, SMTP acceptance, or inbox-delivery evidence.
+On September 15, 2026 (EDT), deployed application commit `c945d5e438b6da7852ccb0a11a74102bcd9c044e` to Vercel project **soles-stg**. Deployment `dpl_33sa67ZmLgoLAXKW6cUBAimMB46t` / `https://soles-fibw26maj-sneakereco.vercel.app` is active at `https://soles-stg.vercel.app`. The deployment target is named `production` inside this staging-only Vercel project; the actual production project was not changed.
+
+The application was built before migration. Checkout and cron were paused, zero in-flight payments/unexpired reservations were confirmed, both migrations were applied, and the matching build was promoted. Remote schema and service-role-only claim permissions were verified. Checkout is unlocked and cron is enabled against the new deployment. An older expired reservation was left untouched.
+
+Readiness returned HTTP 200, `ready: true`, with the existing degraded-latency flag at 541ms. The check used the descriptive user agent `Solesneakers staging readiness verification/1.0`; the short default Node user agent was rejected by the existing proxy policy. No protection settings were changed.
+
+Supabase project **soles-stg** (`byskzklzdgquamwzrljt`) received exactly three auth configuration updates: confirmation, magic-link, and recovery HTML bodies. A minimal temporary config preserved all undeclared settings; the CLI reported only those three changed properties. Their live inbox rendering remains unverified.
+
+No test order/payment was created and no test email was sent in this session. The approved inbox remains `dsrush13@gmail.com`. The automated-browser block and Windows native-wallet limitations leave the live matrix, prompt SMTP timing, and inbox receipt pending. Next manual verification: complete one Sandbox pickup order in the normal browser, then inspect its saved contact and the separate confirmation/pickup outbox and audit records.

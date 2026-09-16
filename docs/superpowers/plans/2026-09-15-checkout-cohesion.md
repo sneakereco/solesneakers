@@ -23,10 +23,10 @@
 
 **Interfaces:** Consume persisted paid orders. Produce `pickup_instructions` outbox jobs and an order-scoped notification dispatch using existing claim/send/finish semantics.
 
-- [ ] Add regression cases proving paid pickup queues both kinds exactly once, delivery failures retry independently, and sent audit records prevent a retry after queue completion failure.
-- [ ] Run focused tests and record expected failures.
-- [ ] Implement the migration, order-scoped claim, dispatch after persisted successful payment, and confirmation audit linkage. Reuse Next `after` for route lifetime where appropriate; fallback cron remains authoritative.
-- [ ] Verify with Jest and a rollback database check, including concurrency and failed send.
+- [x] Add regression cases proving paid pickup queues both kinds exactly once, delivery failures retry independently, and sent audit records prevent a retry after queue completion failure.
+- [x] Run focused tests and record expected failures.
+- [x] Implement the migration, order-scoped claim, dispatch after persisted successful payment, and confirmation audit linkage. Reuse Next `after` for route lifetime where appropriate; fallback cron remains authoritative.
+- [x] Verify with Jest and a rollback database check, including concurrency and failed send.
 
 ```ts
 expect(notifications.map(({ kind }) => kind).sort()).toEqual([
@@ -42,10 +42,10 @@ expect(replayedNotifications).toHaveLength(2);
 
 **Interfaces:** `pickupContact: { name: string; phone: string } | null`; email remains the authoritative buyer email. Wallet completion resolves only missing fields in its existing attempt.
 
-- [ ] Test missing/invalid pickup contact rejection, persistence, identity changes, and Square recipient mapping.
-- [ ] Observe failures, then carry the contact end to end and display it to staff.
-- [ ] Add continuation for missing wallet contact without retokenizing or charging before completion.
-- [ ] Run contract tests and browser cases for pickup card/wallet contact handling.
+- [x] Test missing/invalid pickup contact rejection, persistence, identity changes, and Square recipient mapping.
+- [x] Observe failures, then carry the contact end to end and display it to staff.
+- [x] Add continuation for missing wallet contact without retokenizing or charging before completion.
+- [x] Run contract tests and browser cases for pickup card/wallet contact handling.
 
 ```ts
 expect(
@@ -64,10 +64,10 @@ expect(order.fulfillments?.[0]?.pickupDetails?.recipient).toMatchObject({
 
 **Interfaces:** Authoritative prepared address and quote supply shipping options; the callback compares normalized full destination fields where provided and never treats a shared ZIP as proof of an identical address. Pickup sets requestShippingContact:false. The optional provider pickupContact is intentionally omitted because pickup is by appointment and no fixed public street address is configured.
 
-- [ ] Test ZIP+4 equivalence, different street/apartment rejection, missing contact, pickup, and exact totals.
-- [ ] Implement the smallest provider-specific correction; retain normal address review and total reauthorization.
-- [ ] Use the existing payment dialog for app-owned progress; avoid simultaneous button/dialog spinners and treat provider cancel consistently.
-- [ ] Verify flow and focus behavior in existing browser harnesses.
+- [x] Test ZIP+4 equivalence, different street/apartment rejection, missing contact, pickup, and exact totals.
+- [x] Implement the smallest provider-specific correction; retain normal address review and total reauthorization.
+- [x] Use the existing payment dialog for app-owned progress; avoid simultaneous button/dialog spinners and treat provider cancel consistently.
+- [x] Verify flow and focus behavior in existing browser harnesses.
 
 ## Task 4: Email styling and customer-visible branding
 
@@ -75,16 +75,16 @@ expect(order.fulfillments?.[0]?.pickupDetails?.recipient).toMatchObject({
 
 **Interfaces:** Existing template inputs and centralized brand/contact constants remain stable.
 
-- [ ] Render representative confirmation, pickup, shipping, refund, and auth messages; keep separate pickup instructions explicit.
-- [ ] Soften typography, borders, spacing and buttons; remove slogans and redundant product metadata while preserving prices, status, appointment/ID instructions, and support.
-- [ ] Replace old visible brand names, logo references, SEO and social links using existing constants.
-- [ ] Run template checks and inspect rendered desktop/mobile output. Do not rename storage/rate-limit keys without compatibility work.
+- [x] Render representative confirmation, pickup, shipping, refund, and auth messages; keep separate pickup instructions explicit.
+- [x] Soften typography, borders, spacing and buttons; remove slogans and redundant product metadata while preserving prices, status, appointment/ID instructions, and support.
+- [x] Replace old visible brand names, logo references, SEO and social links using existing constants.
+- [x] Run template checks and inspect rendered desktop/mobile output. Do not rename storage/rate-limit keys without compatibility work.
 
 ## Task 5: Integration, review, and staging coverage
 
 **Files:** Existing tests plus `docs/operations/checkout-validation.md`.
 
-- [ ] Run relevant SQL rollback checks, unit/integration suites, typecheck, lint, formatting and build.
-- [ ] Review the complete diff for money, security, concurrency, and required business-rule preservation; fix actionable findings.
+- [x] Run relevant SQL rollback checks, unit/integration suites, typecheck, lint, formatting and build.
+- [x] Review the complete diff for money, security, concurrency, and required business-rule preservation; fix actionable findings.
 - [ ] Run the authorized staging Sandbox matrix where access/device capabilities permit; record each outcome and concrete blockers. Do not claim mocked SDK tests as live payment evidence.
-- [ ] Keep a reviewable feature branch/PR and report deployment/migration requirements without changing production.
+- [x] Keep a reviewable feature branch/PR and report deployment/migration requirements without changing production.
