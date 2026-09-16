@@ -14,9 +14,9 @@ function dependencies(): jest.Mocked<CheckoutNotificationWorkerDependencies> {
       },
       {
         id: "notification-2",
-        orderId: "order-2",
-        kind: "refund_confirmation",
-        payload: { refundAmountCents: 5000 },
+        orderId: "order-1",
+        kind: "pickup_instructions",
+        payload: {},
       },
     ]),
     send: jest.fn().mockResolvedValue(undefined),

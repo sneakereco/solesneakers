@@ -1,4 +1,6 @@
 import { PolicyPage } from "@/components/legal/PolicyPage";
+import { BRAND_DOMAIN, BRAND_NAME } from "@/config/constants/brand";
+import { SUPPORT_EMAIL } from "@/config/constants/mail";
 
 export default function PrivacyPage() {
   return (
@@ -8,11 +10,11 @@ export default function PrivacyPage() {
           <p className="text-sm">Last updated: December 30, 2025</p>
 
           <p>
-            This Privacy Policy describes how Realdealkickzsc (&quot;we,&quot;
+            This Privacy Policy describes how {BRAND_NAME} (&quot;we,&quot;
             &quot;us,&quot; or &quot;our&quot;) collects, uses, and discloses personal
             information when you visit, use our services, create an account, or make a
-            purchase through realdealkickzsc.com (the &quot;Site&quot;) or otherwise
-            interact with us (collectively, the &quot;Services&quot;).
+            purchase through {BRAND_DOMAIN} (the &quot;Site&quot;) or otherwise interact
+            with us (collectively, the &quot;Services&quot;).
           </p>
 
           <section>
@@ -151,8 +153,8 @@ export default function PrivacyPage() {
             <p>
               Depending on your location, you may have rights to access, correct, delete,
               or obtain a copy of your personal information. To request action on your
-              information, contact us at realdealholyspill@gmail.com. We may verify your
-              identity before responding.
+              information, contact us at {SUPPORT_EMAIL}. We may verify your identity
+              before responding.
             </p>
           </section>
 
@@ -168,7 +170,7 @@ export default function PrivacyPage() {
 
           <section>
             <h2 className="mb-4 mt-8 text-2xl font-bold text-white">10) Contact</h2>
-            <p>Email: realdealholyspill@gmail.com</p>
+            <p>Email: {SUPPORT_EMAIL}</p>
             <p>Location: Simpsonville, South Carolina, USA</p>
           </section>
         </div>

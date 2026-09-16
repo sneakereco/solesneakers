@@ -1,6 +1,8 @@
 // components/auth/ui/AuthLeftPanel.tsx
 import Image from "next/image";
 
+import { BRAND_LOGO_URL, BRAND_NAME } from "@/config/constants/brand";
+
 export type AuthLeftPanelVariant = "login" | "register";
 
 const COPY: Record<
@@ -14,14 +16,12 @@ const COPY: Record<
   login: {
     headlineTop: "Welcome back,",
     headlineBottom: "pick up where you left off.",
-    blurb:
-      "Check your orders, track new drops, and secure pairs before they’re gone. Thousands of sneakerheads already trust Realdealkickzsc.",
+    blurb: `Check your orders, track shipments, and manage your ${BRAND_NAME} account.`,
   },
   register: {
-    headlineTop: "Join thousands of buyers",
-    headlineBottom: "who shop with confidence.",
-    blurb:
-      "Verified kicks, fast communication, and a reseller trusted by thousands of customers with hundreds of positive reviews. Create an account to never miss the next drop.",
+    headlineTop: "Create your account",
+    headlineBottom: "and keep orders in one place.",
+    blurb: `Save your account details, review orders, and track shipments with ${BRAND_NAME}.`,
   },
 };
 
@@ -37,7 +37,7 @@ export default function AuthLeftPanel({
       {/* Brand watermark on desktop */}
       <div className="pointer-events-none absolute -left-4 top-20 hidden select-none opacity-[0.06] lg:block">
         <p className="text-7xl font-black uppercase leading-none tracking-[0.25em] xl:text-8xl">
-          RDK
+          {BRAND_NAME}
         </p>
       </div>
 
@@ -45,18 +45,18 @@ export default function AuthLeftPanel({
       <div className="relative">
         {/* Logo + brand name in top-left */}
         <div className="flex items-center gap-3">
-          <div className="relative h-9 w-9 overflow-hidden rounded-xl border border-white/10 bg-black/40 shadow-sm shadow-black/40">
+          <div className="relative h-10 w-24 overflow-hidden rounded-xl border border-white/10 bg-white/90 shadow-sm shadow-black/40">
             <Image
-              src="/images/rdk-logo.png"
-              alt="Realdealkickzsc logo"
+              src={BRAND_LOGO_URL}
+              alt={`${BRAND_NAME} logo`}
               fill
-              sizes="36px"
+              sizes="96px"
               className="object-contain"
               priority
             />
           </div>
           <span className="text-xs font-semibold uppercase tracking-[0.18em] text-neutral-100/90">
-            Realdealkickzsc
+            {BRAND_NAME}
           </span>
         </div>
 

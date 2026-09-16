@@ -20,6 +20,23 @@ const item = {
 };
 
 describe("Square checkout order payload", () => {
+  it("includes the pickup recipient while keeping billing separate", () => {
+    const order = buildSquareCheckoutOrder("LOCATION", {
+      fulfillment: "pickup",
+      referenceId: "order-1",
+      buyerEmail: "buyer@example.com",
+      pickupContact: { name: "Pickup Buyer", phone: "3365550100" },
+      shippingAddress: null,
+      subtotalCents: 25_000,
+      shippingCents: 0,
+      items: [item],
+    });
+    expect(order.fulfillments?.[0]?.pickupDetails?.recipient).toEqual({
+      displayName: "Pickup Buyer",
+      emailAddress: "buyer@example.com",
+      phoneNumber: "3365550100",
+    });
+  });
   it("builds a tax quote from a redacted wallet destination", () => {
     const order = buildSquareCheckoutOrder("LOCATION", {
       fulfillment: "ship",

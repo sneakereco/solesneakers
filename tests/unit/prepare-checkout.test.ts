@@ -332,16 +332,52 @@ describe("shipping deliverability gate", () => {
     expect(deps.validateShippingAddress).not.toHaveBeenCalled();
     expect(deps.checkAttempt).not.toHaveBeenCalled();
   });
-  it("skips Shippo for pickup", async () => {
+  it("persists the pickup recipient and sends it to Square without Shippo", async () => {
     const deps = dependencies();
     const body = await (request() as Request).json();
-    await prepareCheckoutHandler(
+    const pickupContact = { name: "Pickup Buyer", phone: "3365550100" };
+    const pickupTotals = {
+      subtotalCents: 10000,
+      shippingCents: 0,
+      taxCents: 700,
+      totalCents: 10700,
+    };
+    deps.quote.mockResolvedValue({
+      shippingCents: 0,
+      taxCents: 0,
+      taxCalculationId: "square:pending",
+      customerState: "NC",
+    });
+    deps.calculateSquareOrder.mockResolvedValue(pickupTotals);
+    deps.createSquareOrder.mockResolvedValue({
+      ...(await deps.createSquareOrder()),
+      ...pickupTotals,
+    });
+    deps.createSquareOrder.mockClear();
+    const quoteFingerprint = createCheckoutQuoteFingerprint({
+      items: [{ variantId: VARIANT_ID, quantity: 1, unitPriceCents: 10000 }],
+      fulfillment: "pickup",
+      shippingAddress: null,
+      totals: pickupTotals,
+    });
+    const response = await prepareCheckoutHandler(
       new Request("https://shop.example.com/api/checkout/prepare", {
         method: "POST",
-        body: JSON.stringify({ ...body, fulfillment: "pickup", shippingAddress: null }),
+        body: JSON.stringify({
+          ...body,
+          quoteFingerprint,
+          fulfillment: "pickup",
+          shippingAddress: null,
+          pickupContact,
+        }),
       }) as never,
       deps,
     );
     expect(deps.validateShippingAddress).not.toHaveBeenCalled();
+    expect(response.status).toBe(201);
+    expect(deps.reserve).toHaveBeenCalledWith(expect.objectContaining({ pickupContact }));
+    expect(deps.createSquareOrder).toHaveBeenCalledWith(
+      expect.objectContaining({ pickupContact }),
+    );
   });
 });

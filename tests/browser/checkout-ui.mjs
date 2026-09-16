@@ -238,10 +238,12 @@ try {
     assert.equal(await email.evaluate((el) => el === document.activeElement), true);
     await page.getByRole("button", { name: "Google Pay test" }).click();
     await page.waitForFunction(() => window.checkoutTest.tokenized.includes("google"));
-    await page
-      .getByRole("button", { name: /close|dismiss|return|back|try again/i })
-      .first()
-      .click();
+    await page.waitForFunction(() => !document.querySelector("dialog")?.open);
+    assert.equal(
+      await page.evaluate(() => window.checkoutTest.prepared),
+      0,
+      "wallet cancellation must not prepare or show a payment error",
+    );
     const last = page.getByLabel("Last name", { exact: true });
     await last.fill("Buyer");
     assert.equal(

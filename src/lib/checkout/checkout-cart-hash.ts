@@ -4,7 +4,12 @@ import type { PrepareCheckoutRequest } from "@/lib/checkout/checkout-request";
 
 type CheckoutCartHashInput = Pick<
   PrepareCheckoutRequest,
-  "items" | "fulfillment" | "paymentMethod" | "shippingAddress" | "billingAddress"
+  | "items"
+  | "fulfillment"
+  | "paymentMethod"
+  | "shippingAddress"
+  | "billingAddress"
+  | "pickupContact"
 > & {
   tenantId: string;
   buyerEmail: string;
@@ -18,13 +23,16 @@ export function createCheckoutCartHash(input: CheckoutCartHashInput): string {
   });
 
   const canonical = JSON.stringify({
-    version: 2,
+    version: 3,
     tenantId: input.tenantId,
     buyerEmail: input.buyerEmail,
     fulfillment: input.fulfillment,
     paymentMethod: input.paymentMethod,
     shippingAddress: input.shippingAddress ?? null,
     billingAddress: input.billingAddress ?? null,
+    pickupContact: input.pickupContact
+      ? { name: input.pickupContact.name, phone: input.pickupContact.phone }
+      : null,
     items,
   });
 

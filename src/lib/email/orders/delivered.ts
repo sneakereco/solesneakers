@@ -19,7 +19,7 @@ export const buildOrderDeliveredEmail = (input: OrderDeliveredEmailInput) => {
     orderShort,
     eyebrow: "Delivered",
     heading: "Delivered",
-    message: `Order #${orderShort} has arrived. We hope it looks even better in hand.`,
+    message: `Order #${orderShort} has arrived.`,
     buttonUrl,
     buttonLabel: "View tracking",
   });

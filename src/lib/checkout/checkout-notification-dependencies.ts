@@ -18,6 +18,7 @@ const notificationsSchema = z.array(
     orderId: z.string().uuid(),
     kind: z.enum([
       "order_confirmation",
+      "pickup_instructions",
       "refund_confirmation",
       "shipping_update",
       "delivery_confirmation",
@@ -36,10 +37,10 @@ const shippingPayloadSchema = z.object({
   trackingUrl: z.string().nullable(),
 });
 
-async function sendShippingUpdate(
+async function wasNotificationSent(
   admin: AdminSupabaseClient,
   notification: CheckoutNotification,
-) {
+): Promise<boolean> {
   // A previous attempt may have sent successfully but failed to finish the queue row.
   const { data: sent, error } = await admin
     .from("email_audit_log")
@@ -51,10 +52,13 @@ async function sendShippingUpdate(
   if (error) {
     throw error;
   }
-  if (sent) {
-    return;
-  }
+  return Boolean(sent);
+}
 
+async function sendShippingUpdate(
+  admin: AdminSupabaseClient,
+  notification: CheckoutNotification,
+) {
   const payload = shippingPayloadSchema.parse(notification.payload);
   const order = await loadDetailedOrder(admin, notification.orderId);
   const recipient = order.profiles?.email ?? order.guest_email ?? null;
@@ -93,7 +97,7 @@ async function loadDetailedOrder(admin: AdminSupabaseClient, orderId: string) {
         product:products(name, category, images:product_images(url, is_primary, sort_order)),
         variant:product_variants(sku)
       ),
-      shipping:order_shipping(*)
+      shippingAddress:order_shipping(*)
       `,
     )
     .eq("id", orderId)
@@ -126,9 +130,13 @@ async function sendOrderConfirmation(
     orderUrl = `${env.NEXT_PUBLIC_SITE_URL}/order-status/${order.id}?token=${encodeURIComponent(token)}`;
   }
 
-  const shippingRaw = order.shipping;
-  const shipping = Array.isArray(shippingRaw) ? shippingRaw[0] : shippingRaw;
-  await new OrderEmailService(admin, order.tenant_id).sendOrderConfirmationFromDetailed({
+  const shippingRaw = order.shippingAddress;
+  const shippingAddress = Array.isArray(shippingRaw) ? shippingRaw[0] : shippingRaw;
+  await new OrderEmailService(
+    admin,
+    order.tenant_id,
+    notification.id,
+  ).sendOrderConfirmationFromDetailed({
     to: recipient,
     order: {
       orderId: order.id,
@@ -139,15 +147,15 @@ async function sendOrderConfirmation(
       tax: Number(order.tax_amount ?? 0),
       shipping: Number(order.shipping ?? 0),
       total: Number(order.total ?? 0),
-      shippingAddress: shipping
+      shippingAddress: shippingAddress
         ? {
-            name: shipping.name ?? null,
-            line1: shipping.line1 ?? null,
-            line2: shipping.line2 ?? null,
-            city: shipping.city ?? null,
-            state: shipping.state ?? null,
-            postalCode: shipping.postal_code ?? null,
-            country: shipping.country ?? null,
+            name: shippingAddress.name ?? null,
+            line1: shippingAddress.line1 ?? null,
+            line2: shippingAddress.line2 ?? null,
+            city: shippingAddress.city ?? null,
+            state: shippingAddress.state ?? null,
+            postalCode: shippingAddress.postal_code ?? null,
+            country: shippingAddress.country ?? null,
           }
         : null,
       orderUrl,
@@ -159,6 +167,35 @@ async function sendOrderConfirmation(
     orderId: order.id,
     type: "order_confirmation_sent",
     message: "Square order confirmation sent",
+  });
+}
+
+async function sendPickupInstructions(
+  admin: AdminSupabaseClient,
+  notification: CheckoutNotification,
+): Promise<void> {
+  const order = await loadDetailedOrder(admin, notification.orderId);
+  const recipient = order.profiles?.email ?? order.guest_email ?? null;
+  if (!recipient) {
+    throw new Error("checkout_notification_recipient_missing");
+  }
+
+  let orderUrl: string | null = null;
+  if (!order.user_id && order.guest_email) {
+    const { token } = await new OrderAccessTokenService(admin).createToken({
+      orderId: order.id,
+    });
+    orderUrl = `${env.NEXT_PUBLIC_SITE_URL}/order-status/${order.id}?token=${encodeURIComponent(token)}`;
+  }
+
+  await new OrderEmailService(
+    admin,
+    order.tenant_id,
+    notification.id,
+  ).sendPickupInstructions({
+    to: recipient,
+    orderId: order.id,
+    orderUrl,
   });
 }
 
@@ -178,12 +215,16 @@ async function sendRefundConfirmation(
 
 export function createCheckoutNotificationDependencies(
   admin: AdminSupabaseClient,
+  orderId?: string,
 ): CheckoutNotificationWorkerDependencies {
   return {
     claim: async (limit) => {
-      const { data, error } = await admin.rpc("claim_checkout_notifications", {
-        p_limit: limit,
-      });
+      const { data, error } = orderId
+        ? await admin.rpc("claim_checkout_notifications_for_order", {
+            p_limit: limit,
+            p_order_id: orderId,
+          })
+        : await admin.rpc("claim_checkout_notifications", { p_limit: limit });
       if (error) {
         throw error;
       }
@@ -192,10 +233,15 @@ export function createCheckoutNotificationDependencies(
         payload: notification.payload as Json,
       }));
     },
-    send: (notification) => {
+    send: async (notification) => {
+      if (await wasNotificationSent(admin, notification)) {
+        return;
+      }
       switch (notification.kind) {
         case "order_confirmation":
           return sendOrderConfirmation(admin, notification);
+        case "pickup_instructions":
+          return sendPickupInstructions(admin, notification);
         case "refund_confirmation":
           return sendRefundConfirmation(admin, notification);
         case "shipping_update":

@@ -8,29 +8,29 @@ const siteUrl = env.NEXT_PUBLIC_SITE_URL;
 
 export const emailFooterHtml = () => `
   <tr>
-    <td class="email-pad" style="padding:38px 40px 36px;background:${EMAIL_COLORS.text};font-family:${EMAIL_FONT_STACK};color:${EMAIL_COLORS.inverse};">
+    <td class="email-pad" style="padding:32px 40px;background:${EMAIL_COLORS.accentSoft};border-top:1px solid ${EMAIL_COLORS.border};font-family:${EMAIL_FONT_STACK};color:${EMAIL_COLORS.muted};">
       <table role="presentation" width="100%" cellspacing="0" cellpadding="0">
         <tr>
-          <td style="padding:0 0 20px;font-family:'Arial Black','Helvetica Neue',Arial,sans-serif;font-size:20px;line-height:1;font-style:italic;font-weight:900;letter-spacing:-0.04em;text-transform:uppercase;color:${EMAIL_COLORS.inverse};">
+          <td style="padding:0 0 18px;font-size:17px;line-height:1.2;font-weight:700;color:${EMAIL_COLORS.text};">
             ${EMAIL_BRAND.name}
           </td>
         </tr>
         <tr>
-          <td style="padding:0 0 24px;font-size:10px;line-height:2;letter-spacing:0.12em;text-transform:uppercase;color:${EMAIL_COLORS.inverseMuted};">
-            <a href="${siteUrl}/store" style="color:${EMAIL_COLORS.inverse};text-decoration:none;">Shop</a>
+          <td style="padding:0 0 20px;font-size:12px;line-height:2;color:${EMAIL_COLORS.subtle};">
+            <a href="${siteUrl}/store" style="color:${EMAIL_COLORS.text};text-decoration:none;">Shop</a>
             &nbsp;&nbsp;&bull;&nbsp;&nbsp;
-            <a href="${siteUrl}/account" style="color:${EMAIL_COLORS.inverse};text-decoration:none;">Account</a>
+            <a href="${siteUrl}/account" style="color:${EMAIL_COLORS.text};text-decoration:none;">Account</a>
             &nbsp;&nbsp;&bull;&nbsp;&nbsp;
-            <a href="${siteUrl}/shipping" style="color:${EMAIL_COLORS.inverse};text-decoration:none;">Shipping</a>
+            <a href="${siteUrl}/shipping" style="color:${EMAIL_COLORS.text};text-decoration:none;">Shipping</a>
             &nbsp;&nbsp;&bull;&nbsp;&nbsp;
-            <a href="${siteUrl}/contact" style="color:${EMAIL_COLORS.inverse};text-decoration:none;">Contact</a>
+            <a href="${siteUrl}/contact" style="color:${EMAIL_COLORS.text};text-decoration:none;">Contact</a>
           </td>
         </tr>
         <tr>
-          <td style="padding:22px 0 0;border-top:1px solid #3f3f46;font-size:11px;line-height:1.8;color:${EMAIL_COLORS.inverseMuted};">
-            Need help? <a href="mailto:${SUPPORT_EMAIL}" style="color:${EMAIL_COLORS.inverse};text-decoration:underline;">${SUPPORT_EMAIL}</a>
+          <td style="padding:18px 0 0;border-top:1px solid ${EMAIL_COLORS.border};font-size:11px;line-height:1.8;color:${EMAIL_COLORS.subtle};">
+            Need help? <a href="mailto:${SUPPORT_EMAIL}" style="color:${EMAIL_COLORS.text};text-decoration:underline;">${SUPPORT_EMAIL}</a>
             &nbsp;&nbsp;&bull;&nbsp;&nbsp;
-            <a href="${INSTAGRAM_URL}" style="color:${EMAIL_COLORS.inverse};text-decoration:underline;">${INSTAGRAM_HANDLE}</a>
+            <a href="${INSTAGRAM_URL}" style="color:${EMAIL_COLORS.text};text-decoration:underline;">${INSTAGRAM_HANDLE}</a>
             <br />&copy; ${new Date().getFullYear()} ${EMAIL_BRAND.name}. All rights reserved.
           </td>
         </tr>

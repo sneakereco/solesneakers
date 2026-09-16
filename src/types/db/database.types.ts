@@ -834,6 +834,8 @@ export type Database = {
           label_created_by: string | null;
           label_url: string | null;
           payment_transaction_id: string | null;
+          pickup_name: string | null;
+          pickup_phone: string | null;
           pickup_instructions: string | null;
           pickup_location_id: string | null;
           public_token: string | null;
@@ -878,6 +880,8 @@ export type Database = {
           label_created_by?: string | null;
           label_url?: string | null;
           payment_transaction_id?: string | null;
+          pickup_name?: string | null;
+          pickup_phone?: string | null;
           pickup_instructions?: string | null;
           pickup_location_id?: string | null;
           public_token?: string | null;
@@ -922,6 +926,8 @@ export type Database = {
           label_created_by?: string | null;
           label_url?: string | null;
           payment_transaction_id?: string | null;
+          pickup_name?: string | null;
+          pickup_phone?: string | null;
           pickup_instructions?: string | null;
           pickup_location_id?: string | null;
           public_token?: string | null;
@@ -2391,10 +2397,15 @@ export type Database = {
         Args: { p_order_id: string; p_reason: string };
         Returns: boolean;
       };
+      claim_checkout_notifications_for_order: {
+        Args: { p_order_id: string; p_limit: number };
+        Returns: Json;
+      };
       reserve_square_checkout_inventory: {
         Args: {
           p_cart_hash: string;
           p_billing_address: Json | null;
+          p_pickup_contact?: Json | null;
           p_customer_state: string;
           p_currency: string;
           p_expires_at: string;

@@ -1,4 +1,3 @@
-import { Loader2 } from "lucide-react";
 import Image from "next/image";
 import Link from "next/link";
 import type { ReactNode, RefObject } from "react";
@@ -278,13 +277,11 @@ export function CheckoutPaymentPanel({
           aria-busy={selectedMethod === "afterpay" && !afterpayReady}
           className="mt-5 flex h-12 w-full items-center justify-center rounded-xl bg-zinc-950 px-6 text-sm font-semibold text-white disabled:cursor-not-allowed disabled:bg-zinc-400"
         >
-          {isPaying ? (
-            <Loader2 className="h-5 w-5 animate-spin" />
-          ) : selectedMethod === "cashAppPay" ? (
-            "Continue with Cash App Pay"
-          ) : (
-            payLabel
-          )}
+          {isPaying
+            ? "Processing…"
+            : selectedMethod === "cashAppPay"
+              ? "Continue with Cash App Pay"
+              : payLabel}
         </button>
       ) : null}
       {error ? (

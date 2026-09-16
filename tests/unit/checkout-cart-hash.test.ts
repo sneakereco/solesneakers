@@ -12,6 +12,24 @@ const second = {
 };
 
 describe("createCheckoutCartHash", () => {
+  it("changes checkout identity when the pickup recipient changes", () => {
+    const input = {
+      tenantId: "tenant-1",
+      buyerEmail: "buyer@example.com",
+      fulfillment: "pickup" as const,
+      paymentMethod: "googlePay" as const,
+      shippingAddress: null,
+      billingAddress: null,
+      pickupContact: { name: "Pickup Buyer", phone: "3365550100" },
+      items: [first],
+    };
+    expect(createCheckoutCartHash(input)).not.toBe(
+      createCheckoutCartHash({
+        ...input,
+        pickupContact: { ...input.pickupContact, phone: "3365550101" },
+      }),
+    );
+  });
   it("binds card checkout identity to its billing address", () => {
     const input = {
       tenantId: "tenant-1",

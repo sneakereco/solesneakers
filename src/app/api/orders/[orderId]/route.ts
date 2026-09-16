@@ -17,6 +17,7 @@ import { reconcilePendingSquarePayment } from "@/lib/square/payment-reconciliati
 import { createSquarePaymentReconciliationCooldown } from "@/lib/square/payment-reconciliation-cooldown";
 import { log, logError } from "@/lib/utils/log";
 import { OrdersRepository } from "@/repositories/orders-repo";
+import { scheduleCheckoutNotifications } from "@/lib/checkout/checkout-notification-scheduler";
 
 const paramsSchema = z.object({
   orderId: z.string().uuid(),
@@ -185,6 +186,7 @@ export async function GET(
           adminSupabase,
           config.locationId,
           createSquarePaymentOrderVerifier(adminSupabase),
+          scheduleCheckoutNotifications,
         );
         const orders = new OrdersRepository(adminSupabase);
         await reconcilePendingSquarePayment(orderId, {

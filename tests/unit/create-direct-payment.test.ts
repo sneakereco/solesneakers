@@ -31,6 +31,7 @@ function dependencies() {
       squareOrderId: "square-order-1",
       deviceSessionId: "device-1",
       fulfillment: "pickup",
+      pickupContact: { name: "Pickup Buyer", phone: "3365550100" },
       shippingAddress: null,
       billingAddress: {
         line1: "2 Billing Street",
@@ -58,6 +59,16 @@ function dependencies() {
 }
 
 describe("createDirectPaymentHandler", () => {
+  it("does not charge a pickup order without a complete recipient", async () => {
+    const deps = dependencies();
+    deps.loadOrder.mockResolvedValue({
+      ...(await deps.loadOrder()),
+      pickupContact: null,
+    });
+    const response = await createDirectPaymentHandler(request(), deps);
+    expect(response.status).toBe(409);
+    expect(deps.createPayment).not.toHaveBeenCalled();
+  });
   it("rejects an older order without billing before contacting Square", async () => {
     const deps = dependencies();
     deps.loadOrder.mockResolvedValue({

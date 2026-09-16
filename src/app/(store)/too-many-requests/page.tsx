@@ -6,6 +6,8 @@ import Link from "next/link";
 import { Suspense } from "react";
 import { useRouter, useSearchParams } from "next/navigation";
 
+import { BRAND_NAME } from "@/config/constants/brand";
+
 function TooManyRequestsContent() {
   const router = useRouter();
   const searchParams = useSearchParams();
@@ -19,7 +21,7 @@ function TooManyRequestsContent() {
       <main className="w-full max-w-3xl">
         <div className="rounded-2xl border border-zinc-800 bg-black/80 px-6 py-8 backdrop-blur sm:px-10 sm:py-10">
           <p className="text-center text-[11px] uppercase tracking-[0.18em] text-red-400">
-            Realdealkickzsc
+            {BRAND_NAME}
           </p>
 
           <div className="mt-4 flex items-center justify-center text-[11px] uppercase tracking-[0.22em] text-zinc-400">
@@ -27,11 +29,11 @@ function TooManyRequestsContent() {
             <span aria-hidden className="mx-3 text-zinc-600">
               •
             </span>
-            <span>Cool down</span>
+            <span>Request limit</span>
           </div>
 
           <h1 className="mt-6 text-center text-3xl font-semibold tracking-tight sm:text-4xl">
-            Slow it down — we&apos;re restocking
+            Too many requests
           </h1>
 
           <p className="mx-auto mt-4 max-w-2xl text-center text-zinc-300">

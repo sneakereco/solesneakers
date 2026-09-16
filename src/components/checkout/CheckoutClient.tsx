@@ -28,11 +28,15 @@ import {
 } from "@/lib/checkout/client-session";
 import type {
   CheckoutBillingAddress,
+  CheckoutPickupContact,
   CheckoutQuoteRequest,
   CheckoutQuoteResponse,
   PaymentPermitRequest,
 } from "@/lib/checkout/checkout-request";
-import { checkoutShippingAddressSchema } from "@/lib/checkout/checkout-request";
+import {
+  checkoutPickupContactSchema,
+  checkoutShippingAddressSchema,
+} from "@/lib/checkout/checkout-request";
 import type {
   CheckoutAddressForm,
   CheckoutPageData,
@@ -74,6 +78,7 @@ type CheckoutPreparePayload = {
   buyerEmail: string;
   shippingAddress: CheckoutPaymentAddress | null;
   billingAddress: CheckoutBillingAddress | null;
+  pickupContact?: CheckoutPickupContact | null;
   quoteFingerprint: string;
   shippingConfirmation?: string;
   idempotencyKey: string;
@@ -210,10 +215,22 @@ export function CheckoutClient({ initialData }: { initialData: CheckoutPageData 
     method: PaymentMethod,
     context?: CheckoutPreparationContext,
   ): Promise<PreparedCheckout> {
-    const buyerEmail = (context?.buyerEmail ?? email).trim().toLowerCase();
+    const buyerEmail = (initialData.isGuest ? (context?.buyerEmail ?? email) : email)
+      .trim()
+      .toLowerCase();
     const selectedQuote = context?.quote ?? exactQuote;
     const selectedShippingAddress = context?.shippingAddress ?? shippingAddress;
     const selectedBillingAddress = context?.billingAddress ?? null;
+    const pickup =
+      fulfillment === "pickup"
+        ? checkoutPickupContactSchema.safeParse(
+            context?.pickupContact ?? { name: address.name, phone: address.phone },
+          )
+        : null;
+    if (pickup && !pickup.success) {
+      throw new Error("Enter a pickup name and valid phone number before paying.");
+    }
+    const selectedPickupContact = pickup?.success ? pickup.data : null;
     if (!buyerEmail || !selectedQuote) {
       throw new Error("Complete your contact and delivery details before paying.");
     }
@@ -228,6 +245,7 @@ export function CheckoutClient({ initialData }: { initialData: CheckoutPageData 
       paymentMethod: method,
       shippingAddress: selectedShippingAddress,
       billingAddress: selectedBillingAddress,
+      pickupContact: selectedPickupContact,
       quoteFingerprint: selectedQuote.quoteFingerprint,
     });
     const deviceSessionId = getOrCreateCheckoutDeviceSessionId();
@@ -242,6 +260,7 @@ export function CheckoutClient({ initialData }: { initialData: CheckoutPageData 
           buyerEmail,
           shippingAddress: selectedShippingAddress,
           billingAddress: selectedBillingAddress,
+          pickupContact: selectedPickupContact,
           quoteFingerprint: selectedQuote.quoteFingerprint,
           shippingConfirmation: context?.shippingConfirmation,
           idempotencyKey: getOrCreateCheckoutIdempotencyKey(cartFingerprint),
@@ -332,6 +351,11 @@ export function CheckoutClient({ initialData }: { initialData: CheckoutPageData 
               fulfillment={fulfillment}
               buyerEmail={email}
               shippingAddress={shippingAddress}
+              pickupContact={
+                fulfillment === "pickup"
+                  ? { name: address.name, phone: address.phone }
+                  : null
+              }
               isGuest={initialData.isGuest}
               quoteWalletShippingDestination={quoteWalletShippingDestination}
               resolveWalletShippingContact={resolveWalletShippingContact}

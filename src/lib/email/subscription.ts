@@ -9,8 +9,8 @@ export const buildSubscriptionConfirmedEmail = () => {
       <tr>
         <td class="email-hero" style="${emailStyles.heroCell}">
           <div style="${emailStyles.eyebrow}">Subscription confirmed</div>
-          <h1 class="email-heading" style="${emailStyles.heading}">You're on the list</h1>
-          <p style="margin:16px auto 0;max-width:430px;${emailStyles.copy}">New arrivals, restocks, and curated drops from ${EMAIL_DISPLAY_NAME} will land here first.</p>
+          <h1 class="email-heading" style="${emailStyles.heading}">You're subscribed</h1>
+          <p style="margin:16px auto 0;max-width:430px;${emailStyles.copy}">New arrivals, restocks, and store updates from ${EMAIL_DISPLAY_NAME} will arrive here.</p>
           <div style="margin-top:26px;">
             <a class="email-button" href="${env.NEXT_PUBLIC_SITE_URL}/store" style="${emailStyles.button}">Shop new arrivals</a>
           </div>
@@ -37,7 +37,7 @@ export const buildSubscriptionConfirmationEmail = (confirmUrl: string) => {
       <tr>
           <td class="email-hero" style="${emailStyles.heroCell}">
             <div style="${emailStyles.eyebrow}">Confirm subscription</div>
-            <h1 class="email-heading" style="${emailStyles.heading}">One step from the drop</h1>
+            <h1 class="email-heading" style="${emailStyles.heading}">Confirm your email</h1>
             <p style="margin:16px auto 0;max-width:430px;${emailStyles.copy}">Confirm your email to get new arrivals, restocks, and store updates from ${EMAIL_DISPLAY_NAME}.</p>
           </td>
         </tr>

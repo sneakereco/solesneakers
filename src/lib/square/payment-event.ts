@@ -112,6 +112,7 @@ export class SquarePaymentEventProcessor {
     private readonly verifyPaymentOrder: (
       payment: SquarePaymentSnapshot,
     ) => Promise<void>,
+    private readonly scheduleNotifications?: (orderId: string) => void,
   ) {}
 
   async process(rawBody: string): Promise<SquarePaymentEventResult> {
@@ -202,11 +203,15 @@ export class SquarePaymentEventProcessor {
       p_currency: payment.currency,
       p_risk_level: payment.riskLevel,
     });
-    return {
+    const processed = {
       ...result,
       paymentStatus: payment.paymentStatus,
       squareOrderId: payment.squareOrderId,
     };
+    if (payment.paymentStatus === "COMPLETED" && "orderId" in result && result.orderId) {
+      this.scheduleNotifications?.(result.orderId);
+    }
+    return processed;
   }
 
   private async processRefund(
