@@ -3,12 +3,20 @@ import { z } from "zod";
 import type { TypedSupabaseClient } from "@/lib/supabase/server";
 import type { SquareCheckoutOrder } from "@/lib/square/checkout-orders";
 import type { ExpiredCheckout } from "@/lib/checkout/expire-checkout-reservations";
-import type { Json } from "@/types/db/database.types";
+import type { Database, Json } from "@/types/db/database.types";
 import type {
   CheckoutBillingAddress,
   CheckoutPickupContact,
   PaymentPermitRequest,
 } from "@/lib/checkout/checkout-request";
+
+type ReserveCheckoutRpcArgs = Omit<
+  Database["public"]["Functions"]["reserve_square_checkout_inventory"]["Args"],
+  "p_guest_email" | "p_user_id"
+> & {
+  p_guest_email: string | null;
+  p_user_id: string | null;
+};
 
 export type CheckoutReservationItem = {
   productId: string;
@@ -395,7 +403,7 @@ export class CheckoutReservationRepository {
       size_label: item.sizeLabel,
     }));
 
-    const { data, error } = await this.supabase.rpc("reserve_square_checkout_inventory", {
+    const reservationArgs = {
       p_tenant_id: input.tenantId,
       p_user_id: input.userId,
       p_guest_email: input.guestEmail,
@@ -439,7 +447,11 @@ export class CheckoutReservationRepository {
         : null,
       p_items: items,
       p_protection_evidence: input.protectionEvidence,
-    });
+    } satisfies ReserveCheckoutRpcArgs;
+    const { data, error } = await this.supabase.rpc(
+      "reserve_square_checkout_inventory",
+      reservationArgs as never,
+    );
 
     if (error) {
       throw error;

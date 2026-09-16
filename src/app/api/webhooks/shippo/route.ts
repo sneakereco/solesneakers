@@ -13,6 +13,15 @@ import {
   shippoWebhookEventSchema,
   shippoWebhookQuerySchema,
 } from "@/lib/validation/webhooks";
+import type { Database } from "@/types/db/database.types";
+
+type RecordTrackingUpdateArgs = Omit<
+  Database["public"]["Functions"]["record_shippo_tracking_update"]["Args"],
+  "p_carrier" | "p_tracking_url"
+> & {
+  p_carrier: string | null;
+  p_tracking_url: string | null;
+};
 
 export async function POST(req: NextRequest) {
   const requestId = getRequestIdFromHeaders(req.headers);
@@ -137,14 +146,15 @@ export async function POST(req: NextRequest) {
 
     // Persist status and a deduplicated notification in one database transaction.
     // Email delivery is handled by the existing retry worker, outside this request.
+    const trackingUpdateArgs = {
+      p_tracking_number: trackingNumber,
+      p_status: newFulfillmentStatus,
+      p_carrier: trackingUpdate.carrier,
+      p_tracking_url: trackingUpdate.trackingUrl,
+    } satisfies RecordTrackingUpdateArgs;
     const { data, error } = await createSupabaseAdminClient().rpc(
       "record_shippo_tracking_update",
-      {
-        p_tracking_number: trackingNumber,
-        p_status: newFulfillmentStatus,
-        p_carrier: trackingUpdate.carrier,
-        p_tracking_url: trackingUpdate.trackingUrl,
-      },
+      trackingUpdateArgs as never,
     );
     if (error) {
       throw error;
