@@ -41,18 +41,31 @@ describe("checkout order polling", () => {
     expect(onState).toHaveBeenLastCalledWith("delayed");
   });
 
-  it("reconciles every third attempt and stops on verified payment", async () => {
+  it("reconciles after 500ms and returns the verified paid order", async () => {
+    const paidOrder = {
+      id: "order-1",
+      status: "paid",
+      subtotal: 100,
+      shipping: 0,
+      tax: 8,
+      total: 108,
+      fulfillment: "pickup",
+      updatedAt: "2026-09-16T00:00:00.000Z",
+      events: [],
+      supportEmail: "support@example.com",
+    };
     global.fetch = jest
       .fn()
       .mockResolvedValueOnce(Response.json({ status: "pending" }))
-      .mockResolvedValueOnce(Response.json({ status: "pending" }))
-      .mockResolvedValueOnce(Response.json({ status: "paid" }));
+      .mockResolvedValueOnce(Response.json(paidOrder));
     const onState = jest.fn();
     startCheckoutOrderPolling("order-1", "guest-token", onState);
-    await jest.advanceTimersByTimeAsync(60_000);
-    expect(fetch).toHaveBeenCalledTimes(3);
-    expect(jest.mocked(fetch).mock.calls[2][0]).toContain("reconcile=1");
-    expect(onState).toHaveBeenLastCalledWith("paid");
+    await jest.advanceTimersByTimeAsync(499);
+    expect(fetch).toHaveBeenCalledTimes(1);
+    await jest.advanceTimersByTimeAsync(1);
+    expect(fetch).toHaveBeenCalledTimes(2);
+    expect(jest.mocked(fetch).mock.calls[1][0]).toContain("reconcile=1");
+    expect(onState).toHaveBeenLastCalledWith("paid", paidOrder);
   });
 
   it("cancels polling when the page unmounts", async () => {

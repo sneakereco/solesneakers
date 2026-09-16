@@ -78,6 +78,9 @@ try {
           shipping: 0,
           tax: 8,
           total: 108,
+          updatedAt: "2026-09-16T00:00:00.000Z",
+          events: [],
+          supportEmail: "support@example.com",
         },
       });
     }
@@ -89,6 +92,7 @@ try {
     .getByRole("heading", { name: "Processing your payment", exact: true })
     .waitFor();
   await page.evaluate(() => {
+    performance.mark("checkout-payment-start");
     window.originalSpinner = document.querySelector("dialog .animate-spin");
     window.originalDialog = document.querySelector("dialog");
     window.navigate("/checkout/processing?orderId=test-order");
@@ -110,23 +114,21 @@ try {
   await expect.poll(() => Boolean(releaseStatus)).toBe(true);
   releaseStatus();
   await page.waitForFunction(() => location.pathname.endsWith("/success"));
-  await expect.poll(() => Boolean(releaseDetails)).toBe(true);
-  assert.equal(
-    await unchanged(),
-    true,
-    "The SAME spinner must survive processing -> success details loading",
-  );
-  assert.match(
-    await page.locator("#checkout-payment-description").innerText(),
-    /process your payment and confirm your order/,
-  );
-  releaseDetails();
   await page.getByRole("heading", { name: "Order Confirmed!", exact: true }).waitFor();
+  await expect.poll(() => Boolean(releaseDetails)).toBe(true);
   assert.equal(
     await page.locator("dialog[open]").count(),
     0,
     "Confirmed details dismiss the loader",
   );
+  assert.equal(
+    await page.evaluate(
+      () => performance.getEntriesByName("checkout-click-to-confirmed").length,
+    ),
+    1,
+    "Checkout timing is recorded when payment confirmation is shown",
+  );
+  releaseDetails();
   await page.evaluate(() => window.navigate("/checkout"));
   await page
     .getByRole("heading", { name: "Processing your payment", exact: true })
@@ -140,7 +142,7 @@ try {
   );
   assert.deepEqual(errors, []);
   console.log(
-    "PASS: a single mounted spinner and message persist until confirmed order details are ready",
+    "PASS: verified payment renders confirmation without waiting for a duplicate status response",
   );
 } finally {
   await browser.close();

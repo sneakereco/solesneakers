@@ -6,6 +6,7 @@ import { AlertTriangle, XCircle } from "lucide-react";
 
 import { startCheckoutOrderPolling } from "@/lib/checkout/checkout-order-polling";
 import { readGuestOrderAccess } from "@/lib/checkout/client-session";
+import { storeConfirmedOrder } from "@/lib/checkout/confirmed-order-cache";
 
 import { CheckoutPaymentDialog } from "@/components/checkout/CheckoutPaymentDialog";
 
@@ -26,8 +27,17 @@ function ProcessingContent() {
       return;
     }
 
-    return startCheckoutOrderPolling(orderId, readGuestOrderAccess(orderId), (state) => {
+    return startCheckoutOrderPolling(orderId, readGuestOrderAccess(orderId), (state, order) => {
       if (state === "paid") {
+        if (order) storeConfirmedOrder(order);
+        performance.mark("checkout-confirmed");
+        if (performance.getEntriesByName("checkout-payment-start").length) {
+          performance.measure(
+            "checkout-click-to-confirmed",
+            "checkout-payment-start",
+            "checkout-confirmed",
+          );
+        }
         router.replace(`/checkout/success?orderId=${encodeURIComponent(orderId)}`);
         return;
       }

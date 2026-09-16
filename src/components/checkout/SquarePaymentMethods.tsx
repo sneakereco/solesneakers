@@ -933,6 +933,10 @@ export function SquarePaymentMethods({
       return;
     }
     paymentInFlight.current = true;
+    performance.clearMarks("checkout-payment-start");
+    performance.clearMarks("checkout-confirmed");
+    performance.clearMeasures("checkout-click-to-confirmed");
+    performance.mark("checkout-payment-start");
     cardInputError.current = false;
     setAddressReview(null);
     setIsPaying(true);

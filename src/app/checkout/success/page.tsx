@@ -1,7 +1,7 @@
 // app/checkout/success/page.tsx
 "use client";
 
-import { useEffect, useRef, useState, Suspense } from "react";
+import { useEffect, useMemo, useRef, useState, Suspense } from "react";
 import { useSearchParams, useRouter } from "next/navigation";
 import { CheckCircle, Mail } from "lucide-react";
 
@@ -12,6 +12,7 @@ import type { OrderStatusResponse } from "@/types/domain/checkout";
 import { useCart } from "@/components/cart/CartProvider";
 import { useHydrated } from "@/components/ui/useHydrated";
 import { clearGuestShippingAddress } from "@/lib/checkout/guest-shipping-address";
+import { readConfirmedOrder } from "@/lib/checkout/confirmed-order-cache";
 import {
   readGuestOrderAccess,
   storeGuestOrderAccess,
@@ -28,6 +29,10 @@ function SuccessContent() {
   const isPickupParam = fulfillmentParam === "pickup";
 
   const hydrated = useHydrated();
+  const cachedStatus = useMemo(
+    () => (hydrated && orderId ? readConfirmedOrder(orderId) : null),
+    [hydrated, orderId],
+  );
   const accessToken =
     tokenParam ?? (hydrated && orderId ? readGuestOrderAccess(orderId) : null);
   const [status, setStatus] = useState<OrderStatusResponse | null>(null);
@@ -204,11 +209,12 @@ function SuccessContent() {
     );
   }
 
-  if (!status || status.status !== "paid") {
+  const visibleStatus = status ?? cachedStatus;
+  if (!visibleStatus || visibleStatus.status !== "paid") {
     return <CheckoutPaymentDialog open />;
   }
 
-  const isPickup = status.fulfillment === "pickup" || isPickupParam;
+  const isPickup = visibleStatus.fulfillment === "pickup" || isPickupParam;
   return (
     <div className="mx-auto max-w-2xl px-4 py-20 text-center">
       <CheckoutPaymentDialog open={false} />
@@ -223,28 +229,28 @@ function SuccessContent() {
         <div className="space-y-2 text-zinc-600">
           <div className="flex justify-between">
             <span>Order ID:</span>
-            <span className="font-mono text-sm text-zinc-950">{status.id}</span>
+            <span className="font-mono text-sm text-zinc-950">{visibleStatus.id}</span>
           </div>
           <div className="flex justify-between">
             <span>Subtotal:</span>
-            <span className="text-zinc-950">${status.subtotal.toFixed(2)}</span>
+            <span className="text-zinc-950">${visibleStatus.subtotal.toFixed(2)}</span>
           </div>
           <div className="flex justify-between">
             <span>Shipping:</span>
             <span className="text-zinc-950">
-              {status.fulfillment === "pickup"
+              {visibleStatus.fulfillment === "pickup"
                 ? "Free (Pickup)"
-                : `$${status.shipping.toFixed(2)}`}
+                : `$${visibleStatus.shipping.toFixed(2)}`}
             </span>
           </div>
           <div className="flex justify-between">
             <span>Tax:</span>
-            <span className="text-zinc-950">${status.tax.toFixed(2)}</span>
+            <span className="text-zinc-950">${visibleStatus.tax.toFixed(2)}</span>
           </div>
           <div className="mt-2 border-t border-zinc-300 pt-2">
             <div className="flex justify-between text-xl font-bold">
               <span className="text-zinc-950">Total:</span>
-              <span className="text-zinc-950">${status.total.toFixed(2)}</span>
+              <span className="text-zinc-950">${visibleStatus.total.toFixed(2)}</span>
             </div>
           </div>
         </div>

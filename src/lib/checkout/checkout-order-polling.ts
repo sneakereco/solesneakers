@@ -1,5 +1,6 @@
 import { classifyCheckoutOrderStatus } from "@/lib/checkout/checkout-order-state";
 import { buildCheckoutStatusUrl } from "@/lib/checkout/checkout-status-url";
+import type { OrderStatusResponse } from "@/types/domain/checkout";
 
 export type CheckoutConfirmationState =
   | "paid"
@@ -11,7 +12,7 @@ export type CheckoutConfirmationState =
 export function startCheckoutOrderPolling(
   orderId: string,
   token: string | null,
-  onState: (state: CheckoutConfirmationState) => void,
+  onState: (state: CheckoutConfirmationState, order?: OrderStatusResponse) => void,
 ): () => void {
   let stopped = false;
   let attempts = 0;
@@ -38,7 +39,7 @@ export function startCheckoutOrderPolling(
     attempts += 1;
     try {
       const response = await fetch(
-        buildCheckoutStatusUrl(orderId, token, attempts % 3 === 0),
+        buildCheckoutStatusUrl(orderId, token, attempts === 2 || attempts % 3 === 0),
         { cache: "no-store", signal: controller.signal },
       );
       const data = await response.json().catch(() => null);
@@ -54,6 +55,11 @@ export function startCheckoutOrderPolling(
       if (response.ok) {
         const state = classifyCheckoutOrderStatus(String(data?.status ?? ""));
         if (state !== "waiting") {
+          if (state === "paid") {
+            stop();
+            onState("paid", data as OrderStatusResponse);
+            return;
+          }
           return finish(state === "exception" ? "error" : state);
         }
       }
@@ -61,7 +67,7 @@ export function startCheckoutOrderPolling(
       // Transient failures can retry until the wall-clock deadline.
     }
     if (!stopped) {
-      timer = setTimeout(() => void poll(), 2_000);
+      timer = setTimeout(() => void poll(), attempts === 1 ? 500 : 2_000);
     }
   }
 
