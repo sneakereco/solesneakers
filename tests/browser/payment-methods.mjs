@@ -31,13 +31,13 @@ const result = await build({
           },
           async destroy() { host?.replaceChildren(); return true; },
           addEventListener(event, listener) { if (name === "cashAppPay") { test.cashCallback = listener; test.cashOptions = options; } },
-          async tokenize() { test.lastTokenized = name; test.lastRequest = request?.options; if (test.holdToken) return new Promise(resolve => test.resolveToken = resolve); return test.tokenResult ?? { status: 'CANCEL' }; },
+          async tokenize() { test.tokenizeCalls = (test.tokenizeCalls || 0) + 1; test.lastTokenized = name; test.lastRequest = request?.options; if (test.holdToken) return new Promise(resolve => test.resolveToken = resolve); return test.tokenResult ?? { status: 'CANCEL' }; },
         };
       };
       window.Square = { payments: () => ({
         card: async () => method('card'),
-        paymentRequest: (options) => { const request = { options,
-          addEventListener() {}, update(next) { if (!test.updateAllowed) return false;
+        paymentRequest: (options) => { const request = { options, listeners: {},
+          addEventListener(event, listener) { request.listeners[event] = listener; }, update(next) { if (!test.updateAllowed) return false;
             request.options = { ...request.options, ...next }; return true; } };
           test.requests.push(request); return request;
         },
@@ -181,7 +181,7 @@ try {
   const counts = await page.evaluate(() => window.paymentTest.counts);
   assert.equal(counts.applePay, beforeContactEdit.applePay);
   assert.equal(counts.googlePay, beforeContactEdit.googlePay);
-  assert.equal(counts.afterpay, 1);
+  assert.equal(counts.afterpay, beforeContactEdit.afterpay);
   assert.equal(counts.cashAppPay, 1);
   await page.getByRole("radio", { name: "Cash App Pay", exact: true }).click();
   await page.getByRole("button", { name: "cashAppPay", exact: true }).waitFor();
@@ -266,11 +266,11 @@ try {
     await page.evaluate(() => window.paymentTest.lastRequest.requestShippingContact),
     true,
   );
-  await page.getByRole("alert").first().waitFor();
+  await page.waitForFunction(() => !document.querySelector("dialog")?.open);
   await change({
     fulfillment: "pickup",
     shippingAddress: null,
-    buyerEmail: "",
+    buyerEmail: "account@example.com",
     quote: exact,
   });
   await page.evaluate(() => {
@@ -294,14 +294,30 @@ try {
   if (await page.getByRole("dialog").isVisible())
     await page.getByRole("button", { name: "Return to checkout" }).click();
   await page.getByRole("button", { name: "googlePay", exact: true }).click();
+  await page.getByRole("heading", { name: "Complete your checkout details" }).waitFor();
+  const walletTokenizeCount = await page.evaluate(() => window.paymentTest.tokenizeCalls);
+  assert.equal(await page.evaluate(() => window.paymentTest.prepareCalls), 0);
+  await page.getByRole("dialog").getByLabel("Pickup phone").fill("3365550100");
+  await page.getByRole("button", { name: "Continue", exact: true }).click();
   await page.waitForFunction(() => window.paymentTest.prepareCalls === 1);
+  assert.equal(
+    await page.evaluate(() => window.paymentTest.tokenizeCalls),
+    walletTokenizeCount,
+  );
+  assert.deepEqual(
+    await page.evaluate(() => window.paymentTest.lastPrepare[1].pickupContact),
+    {
+      name: "Wallet Buyer",
+      phone: "3365550100",
+    },
+  );
   assert.equal(
     await page.evaluate(() => window.paymentTest.lastRequest.requestShippingContact),
     false,
   );
   assert.equal(
     await page.evaluate(() => window.paymentTest.lastPrepare[1].buyerEmail),
-    "wallet@example.com",
+    "account@example.com",
   );
   assert.equal(
     await page.evaluate(() => window.paymentTest.counts.googlePay),
@@ -313,6 +329,52 @@ try {
     theme: "dark",
     width: "full",
   });
+  await page.getByRole("button", { name: "Return to checkout" }).click();
+  // Missing billing and pickup contact can be canceled without preparing or paying.
+  await page.evaluate(() => {
+    window.paymentTest.prepareCalls = 0;
+    window.paymentTest.tokenResult = { status: "OK", token: "held-wallet-token" };
+  });
+  await page.getByRole("button", { name: "Pay with Apple Pay" }).click();
+  await page.getByRole("heading", { name: "Complete your checkout details" }).waitFor();
+  assert.equal(
+    await page
+      .getByRole("dialog")
+      .getByLabel("Billing address", { exact: true })
+      .isVisible(),
+    true,
+  );
+  assert.equal(await page.evaluate(() => window.paymentTest.prepareCalls), 0);
+  await page.getByRole("button", { name: "Cancel checkout" }).click();
+  await page.waitForFunction(() => !document.querySelector("dialog")?.open);
+  assert.equal(await page.evaluate(() => window.paymentTest.prepareCalls), 0);
+  // A second attempt asks for missing fields again and submits the same wallet token once.
+  await change({ pickupContact: { name: "Different Recipient", phone: "3365550199" } });
+  await page.getByRole("button", { name: "Pay with Apple Pay" }).click();
+  await page.getByRole("heading", { name: "Complete your checkout details" }).waitFor();
+  const beforeBillingContinue = await page.evaluate(
+    () => window.paymentTest.tokenizeCalls,
+  );
+  const review = page.getByRole("dialog");
+  await review.getByLabel("Billing first name", { exact: true }).fill("Billing");
+  await review.getByLabel("Billing last name", { exact: true }).fill("Buyer");
+  await review.getByLabel("Billing address", { exact: true }).fill("1 Billing St");
+  await review.getByLabel("Billing city", { exact: true }).fill("Wilmington");
+  await review.getByLabel("Billing state", { exact: true }).selectOption("DE");
+  await review.getByLabel("Billing ZIP code", { exact: true }).fill("19801");
+  await page.getByRole("button", { name: "Continue", exact: true }).evaluate((button) => {
+    button.click();
+    button.click();
+  });
+  await page.waitForFunction(() => window.paymentTest.prepareCalls === 1);
+  assert.equal(
+    await page.evaluate(() => window.paymentTest.tokenizeCalls),
+    beforeBillingContinue,
+  );
+  assert.deepEqual(
+    await page.evaluate(() => window.paymentTest.lastPrepare[1].pickupContact),
+    { name: "Different Recipient", phone: "3365550199" },
+  );
   await page.getByRole("button", { name: "Return to checkout" }).click();
   await change({
     fulfillment: "ship",
@@ -338,6 +400,24 @@ try {
     }),
   );
   await page.waitForFunction(() => Boolean(window.paymentTest.resolveToken));
+  const afterpayResults = await page.evaluate(() => {
+    const req = window.paymentTest.requests.findLast(
+      (request) => request.listeners.afterpay_shippingaddresschanged,
+    );
+    const contact = {
+      addressLines: ["1 Test St"],
+      city: "Wilmington",
+      state: "Delaware",
+      postalCode: "19801-1234",
+      countryCode: "US",
+    };
+    const update = req.listeners.afterpay_shippingaddresschanged;
+    const wrong = update({ ...contact, addressLines: ["999 Test St"] });
+    const right = update(contact);
+    return { wrong, right };
+  });
+  assert.ok(afterpayResults.wrong.error);
+  assert.equal(afterpayResults.right.shippingOptions[0].total.amount, "118.00");
   assert.equal(await page.getByRole("dialog").isVisible(), false);
   await page.evaluate(() =>
     window.paymentTest.resolveToken({ status: "OK", token: "test" }),

@@ -2,6 +2,7 @@ import type { NextRequest } from "next/server";
 
 import {
   checkoutShippingAddressSchema,
+  checkoutPickupContactSchema,
   directPaymentRequestSchema,
 } from "@/lib/checkout/checkout-request";
 import type { PaymentPermitPayload } from "@/lib/checkout/payment-permit";
@@ -77,6 +78,19 @@ export async function createDirectPaymentHandler(
     const order = await deps.loadOrder(permit.orderId);
     if (!order || !matches(order, permit, deps.now())) {
       return json({ error: "Checkout details changed; start again" }, 409);
+    }
+
+    if (
+      order.fulfillment === "pickup" &&
+      !checkoutPickupContactSchema.safeParse(order.pickupContact).success
+    ) {
+      return json(
+        {
+          error:
+            "Pickup contact is incomplete. Return to checkout and review it. You have not been charged.",
+        },
+        409,
+      );
     }
 
     // Require a complete stored address for every shipment. Express wallets supply

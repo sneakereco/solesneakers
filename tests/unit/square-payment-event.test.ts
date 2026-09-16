@@ -126,6 +126,32 @@ describe("SquarePaymentEventProcessor", () => {
     expect(JSON.stringify(args)).not.toContain("4242");
   });
 
+  it("schedules both immediate notifications only after a completed payment is persisted", async () => {
+    const rpc = jest.fn().mockResolvedValue({
+      data: {
+        duplicate: false,
+        fulfillment_authorized: true,
+        order_id: "local-order-1",
+      },
+      error: null,
+    });
+    const scheduleNotifications = jest.fn();
+    const processor = new SquarePaymentEventProcessor(
+      { rpc } as never,
+      "location-1",
+      verifyPaymentOrder,
+      scheduleNotifications,
+    );
+
+    await processor.process(JSON.stringify(completedPaymentEvent));
+
+    expect(rpc).toHaveBeenCalledTimes(1);
+    expect(scheduleNotifications).toHaveBeenCalledWith("local-order-1");
+    expect(rpc.mock.invocationCallOrder[0]).toBeLessThan(
+      scheduleNotifications.mock.invocationCallOrder[0],
+    );
+  });
+
   it("ignores a signed event for another configured location", async () => {
     const rpc = jest.fn();
     const processor = new SquarePaymentEventProcessor(

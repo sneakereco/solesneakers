@@ -1,39 +1,29 @@
-// app/sitemap.ts
+import type { MetadataRoute } from "next";
 
-export default function sitemap() {
-  const baseUrl = "https://realdealkickzsc.com";
+import { BRAND_SITE_URL } from "@/config/constants/brand";
 
+export default function sitemap(): MetadataRoute.Sitemap {
   return [
     // Homepage
     {
-      url: baseUrl,
+      url: BRAND_SITE_URL,
       lastModified: new Date().toISOString(),
       changeFrequency: "weekly",
       priority: 1.0,
     },
 
-    // Catalog root
     {
-      url: `${baseUrl}/products`,
+      url: `${BRAND_SITE_URL}/store`,
       lastModified: new Date().toISOString(),
       changeFrequency: "weekly",
       priority: 0.8,
     },
 
-    // Brand index page (stub for now)
     {
-      url: `${baseUrl}/brand`,
+      url: `${BRAND_SITE_URL}/brands`,
       lastModified: new Date().toISOString(),
       changeFrequency: "monthly",
       priority: 0.5,
-    },
-
-    // Size index page (stub for now)
-    {
-      url: `${baseUrl}/size`,
-      lastModified: new Date().toISOString(),
-      changeFrequency: "monthly",
-      priority: 0.4,
     },
   ];
 }

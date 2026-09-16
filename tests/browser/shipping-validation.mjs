@@ -32,8 +32,8 @@ const bundle = await build({
       card: async () => ({ attach: async () => {}, tokenize: async (details) => { window.test.tokenized++; window.test.cardDetails = details; return { status: 'OK', token: 'card-test' }; } }),
       paymentRequest: (input) => ({ input, listeners: {}, addEventListener(name, callback) { this.listeners[name] = callback; }, update(value) { Object.assign(this.input, value); return true; } }),
       applePay: async () => ({ tokenize: async () => ({ status: 'CANCEL' }) }),
-      googlePay: async (request) => ({ attach: async selector => { document.querySelector(selector).innerHTML = '<button type="button">Google test</button>'; }, tokenize: async () => { window.test.walletQuote = await request.listeners.shippingcontactchanged({countryCode:'US',state:original.state,postalCode:original.postalCode}); return ({ status: 'OK', token: 'test', details: { billing: { givenName: 'Test', familyName: 'Buyer', email: 'buyer@example.com', addressLines: ['2 Billing St'], city: 'Washington', state: 'DC', postalCode: '20001', countryCode: 'US' }, shipping: { contact: { givenName: 'Test', familyName: 'Buyer', phone: '2025550100', addressLines: [original.line1], city: original.city, state: original.state, postalCode: original.postalCode, countryCode: 'US' } } } }); } }),
-      afterpayClearpay: async (request) => ({ attach: async () => {}, tokenize: async () => { window.test.afterpayRequest = request.input; return { status: 'OK', token: 'afterpay-test' }; } }),
+      googlePay: async (request) => ({ attach: async selector => { document.querySelector(selector).innerHTML = '<button type="button">Google test</button>'; }, tokenize: async () => { window.test.walletTokenizations = (window.test.walletTokenizations || 0) + 1; window.test.walletQuote = await request.listeners.shippingcontactchanged({countryCode:'US',state:original.state,postalCode:original.postalCode}); return ({ status: 'OK', token: 'test', details: { billing: { givenName: 'Test', familyName: 'Buyer', email: 'buyer@example.com', addressLines: ['2 Billing St'], city: 'Washington', state: 'DC', postalCode: '20001', countryCode: 'US' }, shipping: { contact: { givenName: 'Test', familyName: 'Buyer', phone: window.test.omitShippingPhone ? undefined : '2025550100', addressLines: [original.line1], city: original.city, state: original.state, postalCode: original.postalCode, countryCode: 'US' } } } }); } }),
+      afterpayClearpay: async (request) => ({ attach: async () => {}, tokenize: async () => { window.test.afterpayRequest = request.input; return { status: 'OK', token: 'afterpay-test', details: { shipping: { contact: request.input.shippingContact } } }; } }),
       cashAppPay: async (request) => { let listener; return { attach: async (selector) => { const button = document.createElement('button'); button.type = 'button'; button.textContent = 'Cash test'; button.onclick = () => { window.test.cashTotal = request.input.total.amount; listener({ detail: { tokenResult: { status: 'OK', token: 'cash-' + request.input.total.amount } } }); }; document.querySelector(selector).append(button); }, addEventListener(event, callback) { listener = callback; }, destroy: async () => true }; },
     }) };
     createRoot(document.getElementById('root')).render(<CheckoutClient initialData={{ isGuest: false, customer: { email: 'buyer@example.com', address: original }, paymentConfig: { applicationId: 'test', locationId: 'test', environment: 'sandbox' } }} />);
@@ -302,8 +302,14 @@ try {
   await load();
   await page.evaluate(() => {
     window.test.original.line1 = "9 Wallet Road";
+    window.test.omitShippingPhone = true;
   });
   await page.getByRole("button", { name: "Google test" }).click();
+  await page.getByRole("heading", { name: "Complete your checkout details" }).waitFor();
+  assert.equal(payCalls, 0);
+  await page.getByRole("dialog").getByLabel("Shipping phone").fill("2025550100");
+  await page.getByRole("button", { name: "Continue", exact: true }).click();
+  assert.equal(await page.evaluate(() => window.test.walletTokenizations), 1);
   await page.getByRole("heading", { name: "Processing your payment" }).waitFor();
   await expect.poll(() => Boolean(releasePrepare)).toBe(true);
   assert.equal(
@@ -327,6 +333,20 @@ try {
   releasePay();
   await page.waitForURL("**/checkout/processing?orderId=test-order");
   assert.equal(payCalls, 1);
+  // An incomplete wallet destination cannot use the wallet-only address exception.
+  await load();
+  const preparesBeforeMissingStreet = prepares.length;
+  await page.evaluate(() => {
+    window.test.original.line1 = "";
+    window.test.omitShippingPhone = true;
+  });
+  await page.getByRole("button", { name: "Google test" }).click();
+  await page
+    .getByText("Choose a complete US shipping address in your wallet.", { exact: true })
+    .waitFor();
+  assert.equal(await page.getByLabel("Shipping street address").count(), 0);
+  assert.equal(prepares.length, preparesBeforeMissingStreet);
+  assert.equal(payCalls, 0);
   console.log(
     "PASS: address acceptance, editing, cancellation, changed totals, duplicate clicks, Afterpay and Cash App continuation; express bypass preserved",
   );

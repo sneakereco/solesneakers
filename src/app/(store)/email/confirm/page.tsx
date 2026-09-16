@@ -1,10 +1,11 @@
 import Link from "next/link";
 
+import { BRAND_NAME } from "@/config/constants/brand";
+
 const STATUS_CONTENT: Record<string, { title: string; message: string }> = {
   success: {
     title: "Subscription confirmed",
-    message:
-      "You’re all set to receive newsletter & product posting alerts from Realdealkickzsc.",
+    message: `You’re all set to receive new arrivals and store updates from ${BRAND_NAME}.`,
   },
   already: {
     title: "Already subscribed",

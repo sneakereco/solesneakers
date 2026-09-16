@@ -8,6 +8,19 @@ export const checkoutItemSchema = z
   })
   .strict();
 
+export const checkoutPickupContactSchema = z
+  .object({
+    name: z.string().trim().min(1).max(100),
+    phone: z
+      .string()
+      .trim()
+      .min(7)
+      .max(30)
+      .regex(/^\+?[\d\s().-]+$/)
+      .refine((value) => /^\d{7,15}$/.test(value.replace(/\D/g, ""))),
+  })
+  .strict();
+
 export const checkoutShippingAddressSchema = z
   .object({
     name: z.string().trim().min(1).max(100),
@@ -121,11 +134,26 @@ export const prepareCheckoutRequestSchema = z
     buyerEmail: z.string().trim().toLowerCase().email().max(254).nullable().optional(),
     shippingAddress: checkoutShippingAddressSchema.nullable(),
     billingAddress: checkoutBillingAddressSchema.nullable(),
+    pickupContact: checkoutPickupContactSchema.nullable().optional(),
   })
   .strict()
   .superRefine((value, context) => {
     validateUniqueVariants(value, context);
 
+    if (value.fulfillment === "pickup" && !value.pickupContact) {
+      context.addIssue({
+        code: "custom",
+        path: ["pickupContact"],
+        message: "Pickup requires a recipient name and phone number",
+      });
+    }
+    if (value.fulfillment === "ship" && value.pickupContact) {
+      context.addIssue({
+        code: "custom",
+        path: ["pickupContact"],
+        message: "Shipping checkout must not include a pickup recipient",
+      });
+    }
     if (value.fulfillment === "ship" && !value.shippingAddress) {
       context.addIssue({
         code: "custom",
@@ -169,6 +197,7 @@ export const directPaymentRequestSchema = z
 export type PrepareCheckoutRequest = z.infer<typeof prepareCheckoutRequestSchema>;
 export type PrepareCheckoutRequestItem = PrepareCheckoutRequest["items"][number];
 export type CheckoutBillingAddress = z.infer<typeof checkoutBillingAddressSchema>;
+export type CheckoutPickupContact = z.infer<typeof checkoutPickupContactSchema>;
 export type CheckoutQuoteRequest = z.infer<typeof checkoutQuoteRequestSchema>;
 export type CheckoutTotals = {
   subtotalCents: number;

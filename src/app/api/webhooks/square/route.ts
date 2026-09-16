@@ -1,6 +1,7 @@
 import { NextResponse } from "next/server";
 
 import { getRequestIdFromHeaders } from "@/lib/http/request-id";
+import { scheduleCheckoutNotifications } from "@/lib/checkout/checkout-notification-scheduler";
 import { createSupabaseAdminClient } from "@/lib/supabase/service-role";
 import { getSquareConfig } from "@/lib/square/config";
 import { SquarePaymentEventProcessor } from "@/lib/square/payment-event";
@@ -49,6 +50,7 @@ export async function POST(request: Request) {
       supabase,
       config.locationId,
       createSquarePaymentOrderVerifier(supabase),
+      scheduleCheckoutNotifications,
     );
     const result = await processor.process(rawBody);
     await synchronizeSquareShippingAddress(

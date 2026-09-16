@@ -1,6 +1,7 @@
 // src/lib/email/template.ts
 import { emailFooterHtml } from "@/lib/email/footer";
 import { env } from "@/config/env";
+import { BRAND_LOGO_URL } from "@/config/constants/brand";
 import { EMAIL_BRAND, emailStyles } from "@/lib/email/theme";
 
 type EmailLayoutInput = {
@@ -32,13 +33,13 @@ export const renderEmailLayout = ({
         img { -ms-interpolation-mode: bicubic; }
         a[x-apple-data-detectors] { color: inherit !important; text-decoration: none !important; }
         @media only screen and (max-width: 640px) {
-          .email-outer { padding: 0 !important; }
-          .email-shell { border-left: 0 !important; border-right: 0 !important; }
-          .email-logo-cell { padding: 25px 20px 23px !important; }
-          .email-logo { width: 146px !important; }
-          .email-hero { padding: 38px 22px 26px !important; }
+          .email-outer { padding: 12px 8px !important; }
+          .email-shell { border-radius: 12px !important; }
+          .email-logo-cell { padding: 22px 20px 20px !important; }
+          .email-logo { width: 140px !important; }
+          .email-hero { padding: 32px 22px 24px !important; }
           .email-pad { padding-left: 20px !important; padding-right: 20px !important; }
-          .email-heading { font-size: 32px !important; }
+          .email-heading { font-size: 27px !important; }
           .email-button { display: block !important; text-align: center !important; }
         }
       </style>
@@ -50,12 +51,9 @@ export const renderEmailLayout = ({
           <td align="center">
             <table role="presentation" width="100%" cellspacing="0" cellpadding="0" class="email-shell" style="max-width:${width}px;${emailStyles.container}">
               <tr>
-                <td style="${emailStyles.announcement}">Curated heat &nbsp;&bull;&nbsp; Authenticated always &nbsp;&bull;&nbsp; New inventory daily</td>
-              </tr>
-              <tr>
                 <td class="email-logo-cell" style="${emailStyles.logoCell}">
                   <a href="${env.NEXT_PUBLIC_SITE_URL}" aria-label="Visit ${EMAIL_BRAND.name}" style="display:inline-block;text-decoration:none;">
-                    <img class="email-logo" src="${env.NEXT_PUBLIC_SITE_URL}/images/email-logo.png" width="168" alt="${EMAIL_BRAND.name}" style="${emailStyles.logo}" />
+                    <img class="email-logo" src="${env.NEXT_PUBLIC_SITE_URL}${BRAND_LOGO_URL}" width="156" alt="${EMAIL_BRAND.name}" style="${emailStyles.logo}" />
                   </a>
                 </td>
               </tr>

@@ -51,6 +51,9 @@ type PickupOrder = {
   created_at?: string | null;
   user_id?: string | null;
   guest_email?: string | null;
+  pickup_name?: string | null;
+  pickup_phone?: string | null;
+  billing?: { name?: string | null; phone?: string | null } | null;
   profiles?: OrderProfile | null;
   shipping?: unknown;
   shipping_profile_name?: string | null;
@@ -71,6 +74,9 @@ const resolveShippingAddress = (value: unknown): { name?: string | null } | null
 };
 
 const getCustomerName = (order: PickupOrder) => {
+  if (order.pickup_name?.trim()) return order.pickup_name.trim();
+  if (order.billing?.name?.trim())
+    return `${order.billing.name.trim()} (billing contact)`;
   const address = resolveShippingAddress(order.shipping);
   const addressName = address?.name?.trim() ?? "";
   if (addressName) {
@@ -549,6 +555,7 @@ export default function PickupsPage() {
                       </td>
                       <td className="hidden p-3 text-gray-400 sm:p-4 md:table-cell">
                         {customerEmail}
+                        <div>{order.pickup_phone ?? order.billing?.phone}</div>
                       </td>
                       <td className="hidden p-3 text-gray-400 sm:p-4 md:table-cell">
                         {fulfillmentLabel}
@@ -743,6 +750,14 @@ export default function PickupsPage() {
                             <div className="flex items-center justify-between gap-4">
                               <span className="text-gray-500">Email</span>
                               <span className="truncate text-white">{customerEmail}</span>
+                            </div>
+                            <div className="flex items-center justify-between gap-4">
+                              <span className="text-gray-500">
+                                {order.pickup_phone ? "Pickup phone" : "Billing phone"}
+                              </span>
+                              <span className="text-white">
+                                {order.pickup_phone ?? order.billing?.phone ?? "—"}
+                              </span>
                             </div>
                             <div className="flex items-center justify-between gap-4">
                               <span className="text-gray-500">Fulfillment</span>

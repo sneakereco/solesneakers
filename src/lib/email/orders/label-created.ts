@@ -20,7 +20,7 @@ export const buildOrderLabelCreatedEmail = (input: OrderLabelCreatedEmailInput) 
     order: input,
     orderShort,
     eyebrow: "Label created",
-    heading: "Packed for the road",
+    heading: "Your shipping label is ready",
     message: `Order #${orderShort} has a shipping label${trackingNumber}. Tracking starts after the carrier's first scan.`,
     buttonUrl,
     buttonLabel,

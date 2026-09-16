@@ -55,6 +55,22 @@ const billingAddress = {
 };
 
 describe("direct checkout request schemas", () => {
+  it("requires a valid pickup recipient independently of billing", () => {
+    const pickup = { ...base, fulfillment: "pickup", shippingAddress: null };
+    expect(prepareCheckoutRequestSchema.safeParse(pickup).success).toBe(false);
+    expect(
+      prepareCheckoutRequestSchema.safeParse({
+        ...pickup,
+        pickupContact: { name: "Pickup Buyer", phone: "not-a-phone" },
+      }).success,
+    ).toBe(false);
+    expect(
+      prepareCheckoutRequestSchema.parse({
+        ...pickup,
+        pickupContact: { name: " Pickup Buyer ", phone: "3365550100" },
+      }).pickupContact,
+    ).toEqual({ name: "Pickup Buyer", phone: "3365550100" });
+  });
   it.each(["card", "afterpay", "cashAppPay", "applePay", "googlePay"])(
     "requires and normalizes billing for %s checkout",
     (paymentMethod) => {
@@ -146,6 +162,7 @@ describe("direct checkout request schemas", () => {
         ...base,
         fulfillment: "pickup",
         shippingAddress: null,
+        pickupContact: { name: "Pickup Buyer", phone: "3365550100" },
       }).success,
     ).toBe(true);
     expect(

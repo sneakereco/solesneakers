@@ -52,19 +52,6 @@ export const buildOrderConfirmationEmail = (input: OrderConfirmationEmailInput) 
       const size = item.sizeLabel ? ` (${safeText(item.sizeLabel)})` : "";
       const imageUrl = safeHttpsUrl(item.imageUrl);
 
-      const detailParts = [
-        safeText(item.brand),
-        safeText(item.model),
-        safeText(item.category),
-        safeText(item.sku),
-      ].filter(Boolean);
-
-      const detailsLine = detailParts.length
-        ? `<div style="font-size:12px;color:${EMAIL_COLORS.muted};margin-top:4px;">${detailParts.join(
-            " • ",
-          )}</div>`
-        : "";
-
       const thumb = imageUrl
         ? `<img
             src="${imageUrl}"
@@ -87,7 +74,6 @@ export const buildOrderConfirmationEmail = (input: OrderConfirmationEmailInput) 
                   <div style="font-size:14px;color:${EMAIL_COLORS.text};font-weight:600;">
                     ${title}${size}
                   </div>
-                  ${detailsLine}
                   <div style="font-size:12px;color:${EMAIL_COLORS.muted};margin-top:6px;">Qty ${
                     item.quantity
                   }</div>
@@ -130,7 +116,7 @@ export const buildOrderConfirmationEmail = (input: OrderConfirmationEmailInput) 
       <tr>
         <td class="email-hero" style="${emailStyles.heroCell}">
           <div style="${emailStyles.eyebrow}">Order confirmed</div>
-          <h1 class="email-heading" style="${emailStyles.heading}">The heat is yours</h1>
+          <h1 class="email-heading" style="${emailStyles.heading}">Thanks for your order</h1>
           <p style="margin:16px auto 0;max-width:440px;${emailStyles.copy}">
             Order #${safeText(orderShort)} is confirmed and being prepared now.
           </p>
@@ -217,14 +203,7 @@ export const buildOrderConfirmationEmail = (input: OrderConfirmationEmailInput) 
     "Items:",
     ...input.items.map((item) => {
       const size = item.sizeLabel ? ` (${item.sizeLabel})` : "";
-      const detailsParts = [item.brand, item.model, item.category, item.sku].filter(
-        Boolean,
-      );
-      const details = detailsParts.length ? ` [${detailsParts.join(" • ")}]` : "";
-      const img = item.imageUrl ? ` (img: ${item.imageUrl})` : "";
-      return `- ${item.title}${size}${details}${img} x${item.quantity} - $${formatMoney(
-        item.lineTotal,
-      )}`;
+      return `- ${item.title}${size} x${item.quantity} - $${formatMoney(item.lineTotal)}`;
     }),
     "",
     `Subtotal: $${formatMoney(input.subtotal)}`,

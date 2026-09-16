@@ -24,6 +24,7 @@ export type SquareCheckoutOrderInput = {
   idempotencyKey: string;
   fulfillment: "ship" | "pickup";
   buyerEmail: string;
+  pickupContact?: PrepareCheckoutRequest["pickupContact"];
   subtotalCents: number;
   shippingCents: number;
   shippingAddress: PrepareCheckoutRequest["shippingAddress"] | null;

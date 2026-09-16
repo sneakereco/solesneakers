@@ -30,7 +30,8 @@
 
 ```ts
 expect(notifications.map(({ kind }) => kind).sort()).toEqual([
-  "order_confirmation", "pickup_instructions",
+  "order_confirmation",
+  "pickup_instructions",
 ]);
 expect(replayedNotifications).toHaveLength(2);
 ```
@@ -47,9 +48,13 @@ expect(replayedNotifications).toHaveLength(2);
 - [ ] Run contract tests and browser cases for pickup card/wallet contact handling.
 
 ```ts
-expect(prepareCheckoutRequestSchema.safeParse({ ...pickup, pickupContact: null }).success).toBe(false);
+expect(
+  prepareCheckoutRequestSchema.safeParse({ ...pickup, pickupContact: null }).success,
+).toBe(false);
 expect(order.fulfillments?.[0]?.pickupDetails?.recipient).toMatchObject({
-  displayName: "Pickup Buyer", phoneNumber: "3365550100", emailAddress: "buyer@example.com",
+  displayName: "Pickup Buyer",
+  phoneNumber: "3365550100",
+  emailAddress: "buyer@example.com",
 });
 ```
 
@@ -57,7 +62,7 @@ expect(order.fulfillments?.[0]?.pickupDetails?.recipient).toMatchObject({
 
 **Files:** `SquarePaymentMethods.tsx`, a focused Afterpay shipping helper if needed, existing payment dialog/panel, related tests.
 
-**Interfaces:** Authoritative prepared address and quote supply shipping options; the callback compares normalized full destination fields where provided and never treats a shared ZIP as proof of an identical address. Pickup supplies provider pickup details.
+**Interfaces:** Authoritative prepared address and quote supply shipping options; the callback compares normalized full destination fields where provided and never treats a shared ZIP as proof of an identical address. Pickup sets requestShippingContact:false. The optional provider pickupContact is intentionally omitted because pickup is by appointment and no fixed public street address is configured.
 
 - [ ] Test ZIP+4 equivalence, different street/apartment rejection, missing contact, pickup, and exact totals.
 - [ ] Implement the smallest provider-specific correction; retain normal address review and total reauthorization.

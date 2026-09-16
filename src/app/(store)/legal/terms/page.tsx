@@ -1,4 +1,6 @@
 import { PolicyPage } from "@/components/legal/PolicyPage";
+import { BRAND_DOMAIN, BRAND_NAME } from "@/config/constants/brand";
+import { SUPPORT_EMAIL } from "@/config/constants/mail";
 
 export default function TermsPage() {
   return (
@@ -9,10 +11,9 @@ export default function TermsPage() {
 
           <p>
             These Terms of Service (&quot;Terms&quot;) govern your access to and use of
-            the website located at realdealkickzsc.com (the &quot;Site&quot;) and any
-            related services provided by Realdealkickzsc (&quot;Realdealkickzsc,&quot;
-            &quot;we,&quot; &quot;us,&quot; or &quot;our&quot;) (collectively, the
-            &quot;Services&quot;).
+            the website located at {BRAND_DOMAIN} (the &quot;Site&quot;) and any related
+            services provided by {BRAND_NAME} (&quot;{BRAND_NAME},&quot; &quot;we,&quot;
+            &quot;us,&quot; or &quot;our&quot;) (collectively, the &quot;Services&quot;).
           </p>
           <p>
             By accessing or using the Services, you acknowledge that you have read and
@@ -38,7 +39,7 @@ export default function TermsPage() {
               2) Independent Reseller; No Brand Affiliation
             </h2>
             <p>
-              Realdealkickzsc is an independent sneaker and apparel reseller. We are not
+              {BRAND_NAME} is an independent sneaker and apparel reseller. We are not
               affiliated with, endorsed by, sponsored by, or supported by Nike, Jordan,
               Adidas, New Balance, or any other brand. All trademarks, logos, and brand
               names are the property of their respective owners and are used only to
@@ -151,9 +152,8 @@ export default function TermsPage() {
             </h2>
             <p>
               If you have an issue with an order, please contact us first at
-              realdealholyspill@gmail.com. Unjustified chargebacks or payment disputes may
-              result in account restrictions and refusal of future service, where
-              permitted by law.
+              {SUPPORT_EMAIL}. Unjustified chargebacks or payment disputes may result in
+              account restrictions and refusal of future service, where permitted by law.
             </p>
           </section>
 
@@ -179,7 +179,7 @@ export default function TermsPage() {
             </h2>
             <p>
               All Site content (including text, graphics, layout, and design) is owned by
-              or licensed to Realdealkickzsc and is protected by applicable intellectual
+              or licensed to {BRAND_NAME} and is protected by applicable intellectual
               property laws. You may not use our content without prior written permission.
             </p>
           </section>
@@ -198,10 +198,10 @@ export default function TermsPage() {
               14) Limitation of Liability
             </h2>
             <p>
-              To the maximum extent permitted by law, Realdealkickzsc will not be liable
-              for any indirect, incidental, special, consequential, or punitive damages.
-              In all cases, Realdealkickzsc&apos;s total liability for any claim will not
-              exceed the amount you paid to us for the order giving rise to the claim.
+              To the maximum extent permitted by law, {BRAND_NAME} will not be liable for
+              any indirect, incidental, special, consequential, or punitive damages. In
+              all cases, {BRAND_NAME}&apos;s total liability for any claim will not exceed
+              the amount you paid to us for the order giving rise to the claim.
             </p>
           </section>
 
@@ -210,7 +210,7 @@ export default function TermsPage() {
               15) Indemnification
             </h2>
             <p>
-              You agree to indemnify and hold harmless Realdealkickzsc from and against
+              You agree to indemnify and hold harmless {BRAND_NAME} from and against
               claims, damages, liabilities, and expenses arising out of your misuse of the
               Services or violation of these Terms.
             </p>
@@ -240,7 +240,7 @@ export default function TermsPage() {
 
           <section>
             <h2 className="mb-4 mt-8 text-2xl font-bold text-white">18) Contact</h2>
-            <p>Email: realdealholyspill@gmail.com</p>
+            <p>Email: {SUPPORT_EMAIL}</p>
             <p>Location: Simpsonville, South Carolina, USA</p>
           </section>
         </div>

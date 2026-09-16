@@ -264,6 +264,7 @@ export async function prepareCheckoutHandler(
       paymentMethod: parsed.data.paymentMethod,
       shippingAddress: parsed.data.shippingAddress,
       billingAddress: parsed.data.billingAddress,
+      pickupContact: parsed.data.pickupContact,
       items: parsed.data.items,
     });
     const existing = await deps.findExisting(tenantId, parsed.data.idempotencyKey);
@@ -358,6 +359,7 @@ export async function prepareCheckoutHandler(
     }
 
     const calculatedTotals = await deps.calculateSquareOrder({
+      pickupContact: parsed.data.pickupContact,
       fulfillment: parsed.data.fulfillment,
       buyerEmail,
       subtotalCents: cart.subtotalCents,
@@ -387,6 +389,7 @@ export async function prepareCheckoutHandler(
     if (!reservation) {
       const expiresAt = new Date(deps.now().getTime() + 15 * 60 * 1000);
       reservation = await deps.reserve({
+        pickupContact: parsed.data.pickupContact,
         tenantId,
         userId: session?.user.id ?? null,
         guestEmail: session ? null : buyerEmail,
@@ -416,6 +419,7 @@ export async function prepareCheckoutHandler(
     }
 
     const squareOrder = await deps.createSquareOrder({
+      pickupContact: parsed.data.pickupContact,
       localOrderId: reservation.orderId,
       idempotencyKey: parsed.data.idempotencyKey,
       fulfillment: parsed.data.fulfillment,

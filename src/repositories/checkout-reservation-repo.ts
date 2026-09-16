@@ -6,6 +6,7 @@ import type { ExpiredCheckout } from "@/lib/checkout/expire-checkout-reservation
 import type { Json } from "@/types/db/database.types";
 import type {
   CheckoutBillingAddress,
+  CheckoutPickupContact,
   PaymentPermitRequest,
 } from "@/lib/checkout/checkout-request";
 
@@ -51,6 +52,7 @@ export type ReserveCheckoutInput = {
     country: "US";
   } | null;
   billingAddress: CheckoutBillingAddress | null;
+  pickupContact?: CheckoutPickupContact | null;
   protectionEvidence: Json;
   items: CheckoutReservationItem[];
 };
@@ -99,6 +101,7 @@ export type PaymentCheckout = {
   squareOrderId: string | null;
   squareOrderVersion: number | null;
   deviceSessionId: string;
+  pickupContact?: CheckoutPickupContact | null;
   shippingAddress: ReserveCheckoutInput["shippingAddress"];
   billingAddress: Pick<
     CheckoutBillingAddress,
@@ -159,6 +162,8 @@ const expiredCheckoutSchema = z.object({
 });
 
 const paymentCheckoutSchema = z.object({
+  pickup_name: z.string().nullable().optional(),
+  pickup_phone: z.string().nullable().optional(),
   order_billing: z.preprocess(
     (value) => (Array.isArray(value) && value.length <= 1 ? (value[0] ?? null) : value),
     z
@@ -306,7 +311,7 @@ export class CheckoutReservationRepository {
     const { data, error } = await this.supabase
       .from("orders")
       .select(
-        "id, tenant_id, user_id, guest_email, cart_hash, status, expires_at, subtotal, shipping, tax_amount, total, fulfillment, square_order_id, square_order_version, checkout_protection_evidence, order_shipping(name, phone, line1, line2, city, state, postal_code, country), order_billing(line1, line2, city, state, postal_code, country)",
+        "id, tenant_id, user_id, guest_email, cart_hash, status, expires_at, subtotal, shipping, tax_amount, total, fulfillment, pickup_name, pickup_phone, square_order_id, square_order_version, checkout_protection_evidence, order_shipping(name, phone, line1, line2, city, state, postal_code, country), order_billing(line1, line2, city, state, postal_code, country)",
       )
       .eq("id", orderId)
       .maybeSingle();
@@ -340,6 +345,10 @@ export class CheckoutReservationRepository {
       squareOrderId: row.square_order_id,
       squareOrderVersion: row.square_order_version,
       deviceSessionId: row.checkout_protection_evidence.device_session_id,
+      pickupContact:
+        row.pickup_name && row.pickup_phone
+          ? { name: row.pickup_name, phone: row.pickup_phone }
+          : null,
       billingAddress: row.order_billing
         ? {
             line1: row.order_billing.line1,
@@ -398,6 +407,7 @@ export class CheckoutReservationRepository {
       p_tax_calculation_id: input.taxCalculationId,
       p_customer_state: input.customerState,
       p_payment_method: input.paymentMethod,
+      p_pickup_contact: input.pickupContact ?? null,
       p_shipping_address: input.shippingAddress
         ? {
             name: input.shippingAddress.name,

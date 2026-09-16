@@ -1,4 +1,6 @@
 import Link from "next/link";
+
+import { BRAND_NAME } from "@/config/constants/brand";
 // app/not-found.tsx
 export default function NotFound() {
   return (
@@ -6,7 +8,7 @@ export default function NotFound() {
       <main className="w-full max-w-3xl">
         <div className="rounded-2xl border border-zinc-800 bg-black/80 px-6 py-8 shadow-[0_0_0_1px_rgba(255,255,255,0.02)] backdrop-blur sm:px-10 sm:py-10">
           <p className="text-center text-[11px] uppercase tracking-[0.18em] text-red-400">
-            Realdealkickzsc
+            {BRAND_NAME}
           </p>
 
           <div className="mt-4 flex items-center justify-center text-[11px] uppercase tracking-[0.22em] text-zinc-400">
@@ -14,16 +16,15 @@ export default function NotFound() {
             <span aria-hidden className="mx-3 text-zinc-600">
               •
             </span>
-            <span>Lost drop</span>
+            <span>Page not found</span>
           </div>
 
           <h1 className="mt-6 text-center text-3xl font-semibold tracking-tight sm:text-5xl">
-            This page is out of stock
+            We couldn&apos;t find this page
           </h1>
 
           <p className="mx-auto mt-4 max-w-2xl text-center text-zinc-300">
-            The link you followed doesn&apos;t exist anymore. Let&apos;s get you back to
-            heat.
+            The link may be outdated or the page may have moved.
           </p>
 
           <div className="mt-7 flex flex-wrap items-center justify-center gap-3">

@@ -1,7 +1,17 @@
 import type { TypedSupabaseClient } from "@/lib/supabase/server";
+import { INSTAGRAM_HANDLE } from "@/config/constants/contact";
 
-export const DEFAULT_CHECKOUT_LOCK_MESSAGE =
+export const DEFAULT_CHECKOUT_LOCK_MESSAGE = `Sorry, we currently cannot accept payments. Please message ${INSTAGRAM_HANDLE} on Instagram with the items you would like to purchase.`;
+
+const LEGACY_DEFAULT_CHECKOUT_LOCK_MESSAGE =
   "sorry we currently can not accept payments please message @realdealkickzsc on instagram the items you would like to purchase.";
+
+const normalizeCheckoutLockMessage = (message?: string | null) => {
+  const normalized = message?.trim();
+  return !normalized || normalized === LEGACY_DEFAULT_CHECKOUT_LOCK_MESSAGE
+    ? DEFAULT_CHECKOUT_LOCK_MESSAGE
+    : normalized;
+};
 
 export type StoreAccessSettings = {
   siteLockEnabled: boolean;
@@ -36,8 +46,7 @@ export class StoreAccessSettingsRepository {
       siteLockEnabled: row?.site_lock_enabled ?? false,
       siteUnlockAt: row?.site_unlock_at ?? null,
       checkoutLockEnabled: row?.checkout_lock_enabled ?? false,
-      checkoutLockMessage:
-        row?.checkout_lock_message?.trim() || DEFAULT_CHECKOUT_LOCK_MESSAGE,
+      checkoutLockMessage: normalizeCheckoutLockMessage(row?.checkout_lock_message),
     };
   }
 
@@ -70,8 +79,7 @@ export class StoreAccessSettingsRepository {
       siteLockEnabled: row.site_lock_enabled ?? false,
       siteUnlockAt: row.site_unlock_at ?? null,
       checkoutLockEnabled: row.checkout_lock_enabled ?? false,
-      checkoutLockMessage:
-        row.checkout_lock_message?.trim() || DEFAULT_CHECKOUT_LOCK_MESSAGE,
+      checkoutLockMessage: normalizeCheckoutLockMessage(row.checkout_lock_message),
     };
   }
 }

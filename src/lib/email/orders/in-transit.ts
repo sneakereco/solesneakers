@@ -19,7 +19,7 @@ export const buildOrderInTransitEmail = (input: OrderInTransitEmailInput) => {
     order: input,
     orderShort,
     eyebrow: "On the way",
-    heading: "Your pair is moving",
+    heading: "Your order is on the way",
     message: `Order #${orderShort} is in transit and headed your way.`,
     buttonUrl,
     buttonLabel,

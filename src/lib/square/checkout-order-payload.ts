@@ -2,6 +2,7 @@ import type * as Square from "square";
 
 import type {
   CheckoutQuoteRequest,
+  CheckoutPickupContact,
   CheckoutTotals,
 } from "@/lib/checkout/checkout-request";
 import type { CheckoutReservationItem } from "@/repositories/checkout-reservation-repo";
@@ -9,6 +10,7 @@ import type { CheckoutReservationItem } from "@/repositories/checkout-reservatio
 export type SquareCheckoutOrderPayloadInput = {
   fulfillment: "ship" | "pickup";
   buyerEmail?: string;
+  pickupContact?: CheckoutPickupContact | null;
   subtotalCents: number;
   shippingCents: number;
   shippingAddress: CheckoutQuoteRequest["shippingAddress"];
@@ -125,6 +127,13 @@ export function buildSquareCheckoutOrder(
               pickupDetails: {
                 scheduleType: "ASAP",
                 prepTimeDuration: "PT0S",
+                recipient: input.pickupContact
+                  ? {
+                      displayName: input.pickupContact.name,
+                      emailAddress: input.buyerEmail,
+                      phoneNumber: input.pickupContact.phone,
+                    }
+                  : undefined,
               },
             },
           ],

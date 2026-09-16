@@ -1,4 +1,6 @@
 import { PolicyPage } from "@/components/legal/PolicyPage";
+import { BRAND_DOMAIN } from "@/config/constants/brand";
+import { SUPPORT_EMAIL } from "@/config/constants/mail";
 
 export default function RefundsPage() {
   return (
@@ -8,7 +10,7 @@ export default function RefundsPage() {
           <p className="text-sm">Last updated: December 30, 2025</p>
           <p>
             This Return &amp; Refund Policy applies to purchases made through{" "}
-            realdealkickzsc.com.
+            {BRAND_DOMAIN}.
           </p>
 
           <section>
@@ -36,7 +38,7 @@ export default function RefundsPage() {
             <h3 className="mb-2 mt-4 text-lg font-semibold text-white">
               How to Submit a Claim
             </h3>
-            <p>Email realdealholyspill@gmail.com and include:</p>
+            <p>Email {SUPPORT_EMAIL} and include:</p>
             <ul className="mt-2 list-disc space-y-1 pl-6">
               <li>your order number</li>
               <li>
@@ -112,7 +114,7 @@ export default function RefundsPage() {
 
           <section>
             <h2 className="mb-4 mt-8 text-2xl font-bold text-white">6) Contact</h2>
-            <p>Email: realdealholyspill@gmail.com</p>
+            <p>Email: {SUPPORT_EMAIL}</p>
             <p>Location: Simpsonville, South Carolina, USA</p>
           </section>
         </div>

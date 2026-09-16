@@ -4,6 +4,7 @@ import type { Factor } from "@supabase/supabase-js";
 import type { TypedSupabaseClient } from "@/lib/supabase/server";
 import { ProfileRepository } from "@/repositories/profile-repo";
 import { isAdminRole, isProfileRole } from "@/config/constants/roles";
+import { BRAND_NAME } from "@/config/constants/brand";
 
 interface AuthError extends Error {
   code?: string;
@@ -77,7 +78,7 @@ export class AdminAuthService {
     return this.supabase.auth.mfa.enroll({
       factorType: "totp",
       friendlyName: "Admin TOTP",
-      issuer: "Realdealkickzsc",
+      issuer: BRAND_NAME,
     });
   }
 

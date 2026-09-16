@@ -33,7 +33,7 @@ export const buildPickupInstructionsEmail = (input: PickupInstructionsEmailInput
     <tr>
       <td class="email-hero" style="${emailStyles.heroCell}">
         <div style="${emailStyles.eyebrow}">Local pickup</div>
-        <h1 class="email-heading" style="${emailStyles.heading}">Let's get your order to you</h1>
+        <h1 class="email-heading" style="${emailStyles.heading}">Arrange your pickup</h1>
         <p style="margin:16px auto 0;max-width:450px;${emailStyles.copy}">
           Order ${orderNumber} is ready to coordinate for local pickup in ${locationSummary}.
         </p>
@@ -46,6 +46,7 @@ export const buildPickupInstructionsEmail = (input: PickupInstructionsEmailInput
             <td style="padding:20px;">
               <div style="${emailStyles.labelAccent}">Next step</div>
               <ul style="margin:10px 0 0;padding-left:18px;font-size:13px;line-height:1.7;color:${EMAIL_COLORS.text};">
+                <li style="margin:0 0 8px;">Pickup is by appointment only.</li>
                 <li style="margin:0 0 8px;">
                   Reply to this email or DM us on Instagram
                   <a href="${INSTAGRAM_URL}" style="color:${EMAIL_COLORS.text};text-decoration:underline;">${INSTAGRAM_HANDLE}</a>
@@ -81,6 +82,7 @@ export const buildPickupInstructionsEmail = (input: PickupInstructionsEmailInput
     `Pickup area: ${locationSummary}`,
     "",
     "Next step:",
+    "- Pickup is by appointment only.",
     `- Reply to this email or DM us on Instagram: ${INSTAGRAM_URL} (${INSTAGRAM_HANDLE})`,
     `- Include ${orderNumber} and 2-3 times that work for you.`,
     `- Bring your order confirmation email to the meetup.`,

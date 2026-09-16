@@ -14,6 +14,7 @@ import {
   readGuestOrderAccess,
   storeGuestOrderAccess,
 } from "@/lib/checkout/client-session";
+import { INSTAGRAM_HANDLE, INSTAGRAM_URL } from "@/config/constants/contact";
 
 function SuccessContent() {
   const searchParams = useSearchParams();
@@ -177,12 +178,12 @@ function SuccessContent() {
             <p className="text-sm text-zinc-600">
               You can also DM us on Instagram{" "}
               <a
-                href="https://instagram.com/realdealkickzsc"
+                href={INSTAGRAM_URL}
                 className="text-zinc-950 underline underline-offset-4"
                 target="_blank"
                 rel="noreferrer"
               >
-                @realdealkickzsc
+                {INSTAGRAM_HANDLE}
               </a>{" "}
               to schedule pickup.
             </p>
@@ -275,12 +276,12 @@ function SuccessContent() {
           <p className="mb-2 text-sm text-zinc-600">
             You can also DM us on{" "}
             <a
-              href="https://instagram.com/realdealkickzsc"
+              href={INSTAGRAM_URL}
               className="text-zinc-950 underline underline-offset-4"
               target="_blank"
               rel="noreferrer"
             >
-              Instagram @realdealkickzsc
+              Instagram {INSTAGRAM_HANDLE}
             </a>
             .
           </p>
