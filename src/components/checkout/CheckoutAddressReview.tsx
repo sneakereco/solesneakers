@@ -12,11 +12,10 @@ export function CheckoutAddressReview({
   onContinue,
 }: {
   review: ShippingAddressValidationError;
-  onContinue(address: ShippingAddress, confirmation?: string): void;
+  onContinue(address: ShippingAddress, confirmation?: string, override?: boolean): void;
 }) {
-  const [editing, setEditing] = useState(!review.suggestedAddress);
   const [error, setError] = useState("");
-  if (editing) {
+  if (!review.suggestedAddress) {
     return (
       <form
         className="mt-5 grid gap-3 text-left"
@@ -69,7 +68,8 @@ export function CheckoutAddressReview({
       </form>
     );
   }
-  const address = review.suggestedAddress!;
+  const address = review.suggestedAddress;
+  const entered = review.enteredAddress;
   return (
     <div className="mt-5 rounded-xl border border-zinc-200 bg-zinc-50 p-4 text-left text-sm">
       <p className="font-semibold">Suggested shipping address</p>
@@ -83,14 +83,22 @@ export function CheckoutAddressReview({
         onClick={() => onContinue(address, review.shippingConfirmation)}
         className="mt-4 w-full rounded-lg bg-zinc-900 px-5 py-3 font-medium text-white"
       >
-        Accept and continue
+        Accept suggested address
       </button>
+      <div className="mt-4 border-t border-zinc-200 pt-4">
+        <p className="font-semibold">Address you entered</p>
+        <p className="mt-2">{entered.line1}</p>
+        {entered.line2 && <p>{entered.line2}</p>}
+        <p>
+          {entered.city}, {entered.state} {entered.postalCode}
+        </p>
+      </div>
       <button
         type="button"
-        onClick={() => setEditing(true)}
+        onClick={() => onContinue(entered, review.enteredShippingConfirmation, true)}
         className="mt-3 w-full rounded-lg border border-zinc-300 px-5 py-3 font-medium"
       >
-        Edit address
+        Continue with address I entered
       </button>
     </div>
   );

@@ -1,7 +1,7 @@
 const BEACON_URL = "https://static.cloudflareinsights.com/beacon.min.js";
 
 export function CloudflareWebAnalytics({ token }: { token?: string }) {
-  if (!token) {
+  if (process.env.NODE_ENV !== "production" || !token) {
     return null;
   }
 

@@ -106,7 +106,11 @@ export async function createDirectPaymentHandler(
           409,
         );
       }
-      if (permit.method !== "applePay" && permit.method !== "googlePay") {
+      if (
+        permit.method !== "applePay" &&
+        permit.method !== "googlePay" &&
+        !order.shippingAddressOverrideConfirmed
+      ) {
         let validation: ShippingValidationResult;
         try {
           validation = await deps.validateShippingAddress(address.data);

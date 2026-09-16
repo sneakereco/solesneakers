@@ -9,8 +9,9 @@ const result = await build({
     resolveDir: process.cwd(),
     loader: "tsx",
     contents: `
-      import { useState } from 'react';
+      import { StrictMode, useState } from 'react';
       import { createRoot } from 'react-dom/client';
+      import { CheckoutPaymentProvider } from './src/components/checkout/CheckoutPaymentDialog';
       import { SquarePaymentMethods } from './src/components/checkout/SquarePaymentMethods';
       const totals = { subtotalCents: 10000, shippingCents: 1000, taxCents: 800, totalCents: 11800 };
       const initial = { quote: { completeness: 'preliminary', quoteFingerprint: null,
@@ -23,6 +24,7 @@ const result = await build({
         let host;
         return {
           async attach(selector, attachOptions) { if (name === "googlePay") test.googleAttachOptions = attachOptions; if (name === "cashAppPay") test.cashAttachOptions = attachOptions; host = document.querySelector(selector);
+            if (name === 'card') host.replaceChildren(document.createTextNode('Secure card fields'));
             if (name === 'afterpay') host.replaceChildren(document.createTextNode('SDK owns this node'));
             if (name === 'googlePay' || name === 'cashAppPay') {
               const button = document.createElement('button'); button.type = 'button'; button.textContent = name;
@@ -54,7 +56,7 @@ const result = await build({
           clearCart={() => {}} quoteWalletShippingDestination={async () => { throw new Error('unused'); }}
           resolveWalletShippingContact={async () => { throw new Error('unused'); }} />;
       }
-      createRoot(document.getElementById('root')).render(<Harness />);
+      createRoot(document.getElementById('root')).render(<StrictMode><CheckoutPaymentProvider><Harness /></CheckoutPaymentProvider></StrictMode>);
     `,
   },
   bundle: true,
@@ -67,13 +69,16 @@ const result = await build({
       name: "external-service-boundaries",
       setup(builder) {
         builder.onResolve(
-          { filter: /^@\/config\/client-env$|^@\/lib\/utils\/log$/ },
+          { filter: /^next\/navigation$|^@\/config\/client-env$|^@\/lib\/utils\/log$/ },
           (args) => ({ path: args.path, namespace: "test" }),
         );
         builder.onLoad({ filter: /.*/, namespace: "test" }, (args) => ({
-          contents: args.path.endsWith("client-env")
-            ? "export const clientEnv = {};"
-            : "export const log = () => {};",
+          contents:
+            args.path === "next/navigation"
+              ? "const router = { replace: url => window.location.replace(url) }; export const useRouter = () => router;"
+              : args.path.endsWith("client-env")
+                ? "export const clientEnv = {};"
+                : "export const log = () => {};",
           loader: "js",
         }));
       },
@@ -96,6 +101,7 @@ try {
   await page.goto("http://checkout.test/checkout");
   await page.addScriptTag({ content: result.outputFiles[0].text });
   await page.getByRole("radio", { name: "Cash App Pay", exact: true }).waitFor();
+  await page.getByText("Secure card fields", { exact: true }).waitFor();
   const stableRows = async () => {
     assert.equal(
       await page.getByRole("radio", { name: "Cash App Pay", exact: true }).isVisible(),
@@ -210,8 +216,12 @@ try {
       detail: { tokenResult: { status: "OK", token: "test" } },
     }),
   );
-  await page.waitForFunction(() => window.paymentTest.prepareCalls === 1);
-  await page.getByRole("heading", { name: "Preparing checkout", exact: true }).waitFor();
+  await page.waitForFunction(() => Boolean(window.paymentTest.resolvePrepare));
+  assert.equal(
+    await page.locator("dialog[open]").count(),
+    0,
+    "Cash App address preparation finishes before processing is shown",
+  );
   await page.evaluate(() => {
     window.paymentTest.holdPrepare = false;
     window.paymentTest.rejectPrepare(new Error("test boundary"));
@@ -387,7 +397,12 @@ try {
     window.paymentTest.holdToken = true;
   });
   await page.getByRole("button", { name: "Continue with Afterpay" }).click();
-  await page.getByRole("heading", { name: "Opening Afterpay", exact: true }).waitFor();
+  await page.waitForFunction(() => Boolean(window.paymentTest.resolvePrepare));
+  assert.equal(
+    await page.locator("dialog[open]").count(),
+    0,
+    "Afterpay address preparation finishes before processing is shown",
+  );
   await page.route("**/api/checkout/payment-permit", (route) =>
     route.fulfill({ json: { permit: "test" } }),
   );
@@ -399,6 +414,12 @@ try {
       totals: { totalCents: 11800 },
     }),
   );
+  await page
+    .getByRole("heading", { name: "Processing your payment", exact: true })
+    .waitFor();
+  await page.evaluate(() => {
+    window.paymentTest.spinner = document.querySelector("dialog .animate-spin");
+  });
   await page.waitForFunction(() => Boolean(window.paymentTest.resolveToken));
   const afterpayResults = await page.evaluate(() => {
     const req = window.paymentTest.requests.findLast(
@@ -418,7 +439,23 @@ try {
   });
   assert.ok(afterpayResults.wrong.error);
   assert.equal(afterpayResults.right.shippingOptions[0].total.amount, "118.00");
-  assert.equal(await page.getByRole("dialog").isVisible(), false);
+  assert.equal(await page.getByRole("dialog").isVisible(), true);
+  assert.equal(
+    await page.evaluate(() => {
+      const input = document.createElement("input");
+      document.body.append(input);
+      input.focus();
+      const providerCanFocus = document.activeElement === input;
+      input.remove();
+      return (
+        providerCanFocus &&
+        !document.querySelector("dialog").matches(":modal") &&
+        window.paymentTest.spinner === document.querySelector("dialog .animate-spin")
+      );
+    }),
+    true,
+    "Provider approval can take focus without replacing the payment spinner",
+  );
   await page.evaluate(() =>
     window.paymentTest.resolveToken({ status: "OK", token: "test" }),
   );

@@ -81,6 +81,7 @@ type CheckoutPreparePayload = {
   pickupContact?: CheckoutPickupContact | null;
   quoteFingerprint: string;
   shippingConfirmation?: string;
+  shippingAddressOverride?: boolean;
   idempotencyKey: string;
   deviceSessionId: string;
 };
@@ -263,6 +264,7 @@ export function CheckoutClient({ initialData }: { initialData: CheckoutPageData 
           pickupContact: selectedPickupContact,
           quoteFingerprint: selectedQuote.quoteFingerprint,
           shippingConfirmation: context?.shippingConfirmation,
+          shippingAddressOverride: context?.shippingAddressOverride,
           idempotencyKey: getOrCreateCheckoutIdempotencyKey(cartFingerprint),
           deviceSessionId,
         }),
@@ -287,6 +289,9 @@ export function CheckoutClient({ initialData }: { initialData: CheckoutPageData 
           suggestion.success ? suggestion.data : undefined,
           typeof data?.shippingConfirmation === "string"
             ? data.shippingConfirmation
+            : undefined,
+          typeof data?.enteredShippingConfirmation === "string"
+            ? data.enteredShippingConfirmation
             : undefined,
           data.code,
         );

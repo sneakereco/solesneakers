@@ -2,6 +2,7 @@
 
 import Link from "next/link";
 import { useEffect } from "react";
+import { CheckoutPaymentDialog } from "@/components/checkout/CheckoutPaymentDialog";
 
 import { logError } from "@/lib/utils/log";
 
@@ -22,6 +23,7 @@ export default function Error({
 
   return (
     <div className="mx-auto max-w-4xl px-4 py-20 text-center text-zinc-950">
+      <CheckoutPaymentDialog open={false} />
       <h1 className="mb-3 text-3xl font-bold">Checkout error</h1>
       <p className="mb-8 text-zinc-600">
         We hit an issue loading checkout. Try again or return to your cart.

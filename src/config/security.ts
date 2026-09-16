@@ -131,7 +131,7 @@ export const security = {
       csp: {
         dev: [
           "default-src 'self'",
-          "img-src 'self' data: https: blob: https://www.gstatic.com https://sandbox.api.cash.app https://api.cash.app https://franklin-assets.s3.amazonaws.com https://static.afterpay.com https://site-assets.afterpay.com",
+          "img-src 'self' data: https: blob: http://localhost:* http://127.0.0.1:* https://www.gstatic.com https://sandbox.api.cash.app https://api.cash.app https://franklin-assets.s3.amazonaws.com https://static.afterpay.com https://site-assets.afterpay.com",
           "style-src 'self' 'unsafe-inline' https://web.squarecdn.com https://sandbox.web.squarecdn.com https://fonts.googleapis.com https://sandbox.kit.cash.app https://kit.cash.app",
           "script-src 'self' 'unsafe-inline' 'unsafe-eval' https://web.squarecdn.com https://sandbox.web.squarecdn.com https://js-sandbox.squarecdn.com https://js.squarecdn.com https://challenges.cloudflare.com https://static.cloudflareinsights.com/beacon.min.js https://pay.google.com/gp/p/js/pay.js https://sandbox.kit.cash.app/v1/pay.js https://kit.cash.app/v1/pay.js https://portal.sandbox.afterpay.com/afterpay.js https://portal.afterpay.com/afterpay.js https://js.afterpay.com/afterpay-1.x.js",
           "worker-src 'self' blob:",

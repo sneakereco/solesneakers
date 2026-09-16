@@ -24,6 +24,7 @@ export class ShippingAddressValidationError extends Error {
     readonly enteredAddress: ShippingAddress,
     readonly suggestedAddress?: ShippingAddress,
     readonly shippingConfirmation?: string,
+    readonly enteredShippingConfirmation?: string,
     readonly code?: string,
   ) {
     super(message);

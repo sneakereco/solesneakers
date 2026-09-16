@@ -25,6 +25,7 @@ const bundle = await build({
     loader: "tsx",
     contents: `
     import { createRoot } from 'react-dom/client';
+      import { CheckoutPaymentProvider } from './src/components/checkout/CheckoutPaymentDialog';
     import { CheckoutClient } from './src/components/checkout/CheckoutClient';
     const original = { name: 'Test Buyer', phone: '2025550100', line1: '1600 Pennsylvania Avenue NW', line2: '', city: 'Washington', state: 'DC', postalCode: '20500', country: 'US' };
     window.test = { tokenized: 0, original };
@@ -36,7 +37,7 @@ const bundle = await build({
       afterpayClearpay: async (request) => ({ attach: async () => {}, tokenize: async () => { window.test.afterpayRequest = request.input; return { status: 'OK', token: 'afterpay-test', details: { shipping: { contact: request.input.shippingContact } } }; } }),
       cashAppPay: async (request) => { let listener; return { attach: async (selector) => { const button = document.createElement('button'); button.type = 'button'; button.textContent = 'Cash test'; button.onclick = () => { window.test.cashTotal = request.input.total.amount; listener({ detail: { tokenResult: { status: 'OK', token: 'cash-' + request.input.total.amount } } }); }; document.querySelector(selector).append(button); }, addEventListener(event, callback) { listener = callback; }, destroy: async () => true }; },
     }) };
-    createRoot(document.getElementById('root')).render(<CheckoutClient initialData={{ isGuest: false, customer: { email: 'buyer@example.com', address: original }, paymentConfig: { applicationId: 'test', locationId: 'test', environment: 'sandbox' } }} />);
+    createRoot(document.getElementById('root')).render(<CheckoutPaymentProvider><CheckoutClient initialData={{ isGuest: false, customer: { email: 'buyer@example.com', address: original }, paymentConfig: { applicationId: 'test', locationId: 'test', environment: 'sandbox' } }} /></CheckoutPaymentProvider>);
   `,
   },
   bundle: true,
@@ -51,19 +52,22 @@ const bundle = await build({
         builder.onResolve(
           {
             filter:
-              /^@\/(config\/client-env|lib\/utils\/log|components\/cart\/CartProvider|contexts\/SessionContext)$/,
+              /^next\/navigation$|^@\/(config\/client-env|lib\/utils\/log|components\/cart\/CartProvider|contexts\/SessionContext)$/,
           },
           (args) => ({ path: args.path, namespace: "test" }),
         );
         builder.onLoad({ filter: /.*/, namespace: "test" }, (args) => ({
           loader: "js",
-          contents: args.path.endsWith("CartProvider")
-            ? "const items = [{productId:'11111111-1111-4111-8111-111111111111',variantId:'22222222-2222-4222-8222-222222222222',titleDisplay:'Test shoes',quantity:1,priceCents:10000}]; export const useCart = () => ({items,itemCount:1,isReady:true,clearCart(){}});"
-            : args.path.endsWith("SessionContext")
-              ? "export const useSession = () => ({user:null});"
-              : args.path.endsWith("client-env")
-                ? "export const clientEnv = {};"
-                : "export const log = () => {};",
+          contents:
+            args.path === "next/navigation"
+              ? 'const router = { replace: url => history.replaceState({}, "", url) }; export const useRouter = () => router;'
+              : args.path.endsWith("CartProvider")
+                ? "const items = [{productId:'11111111-1111-4111-8111-111111111111',variantId:'22222222-2222-4222-8222-222222222222',titleDisplay:'Test shoes',quantity:1,priceCents:10000}]; export const useCart = () => ({items,itemCount:1,isReady:true,clearCart(){}});"
+                : args.path.endsWith("SessionContext")
+                  ? "export const useSession = () => ({user:null});"
+                  : args.path.endsWith("client-env")
+                    ? "export const clientEnv = {};"
+                    : "export const log = () => {};",
         }));
       },
     },
@@ -88,6 +92,8 @@ try {
   let formattingOnly = false;
   let changeTotal = true;
   let paymentBody;
+  let releaseAddressValidation;
+  let holdAddressValidation = true;
   let releasePrepare;
   let releasePay;
   const totals = {
@@ -129,6 +135,18 @@ try {
         });
         return route.fulfill({ json: { orderId: "test-order", totals } });
       }
+      if (
+        body.shippingAddressOverride === true &&
+        body.shippingConfirmation === "entered-confirmation"
+      ) {
+        return route.fulfill({ json: { orderId: "test-order", totals } });
+      }
+      if (holdAddressValidation) {
+        holdAddressValidation = false;
+        await new Promise((resolve) => {
+          releaseAddressValidation = resolve;
+        });
+      }
       const validation = await validateShippingAddress(
         body.shippingAddress,
         "test",
@@ -158,6 +176,8 @@ try {
             error:
               "Please confirm the suggested shipping address. You have not been charged.",
             suggestedAddress: validation.address,
+            shippingConfirmation: "suggested-confirmation",
+            enteredShippingConfirmation: "entered-confirmation",
           },
         });
       return route.fulfill({
@@ -194,17 +214,41 @@ try {
     await page.addScriptTag({ content: bundle.outputFiles[0].text });
     await page.getByRole("button", { name: "Pay $110.00 now" }).waitFor();
   };
+  const finishPayment = async () => {
+    await page.evaluate(() => {
+      window.test.spinner = document.querySelector("dialog .animate-spin");
+    });
+    releasePay();
+    await page.waitForURL("**/checkout/processing?orderId=test-order");
+    assert.equal(
+      await page.evaluate(
+        () =>
+          window.test?.spinner === document.querySelector("dialog .animate-spin") &&
+          window.test.spinner.isConnected,
+      ),
+      true,
+      "Payment acceptance and cart clearing preserve the same spinner without a document reload",
+    );
+  };
   await load();
   await page.getByLabel("Name on card", { exact: true }).fill("Test Buyer");
   await page.getByRole("button", { name: "Pay $110.00 now" }).click();
-  await page.getByRole("button", { name: "Accept and continue" }).waitFor();
+  await expect.poll(() => Boolean(releaseAddressValidation)).toBe(true);
+  assert.equal(
+    await page.locator("dialog[open]").count(),
+    0,
+    "Address validation finishes before the processing dialog opens",
+  );
+  releaseAddressValidation();
+  await page.getByRole("button", { name: "Accept suggested address" }).waitFor();
   await mkdir("test-results/shipping-validation", { recursive: true });
   await page
     .getByRole("dialog")
     .screenshot({ path: "test-results/shipping-validation/correction.png" });
   assert.equal(await page.evaluate(() => window.test.tokenized), 0);
   assert.equal(payCalls, 0);
-  await page.getByRole("button", { name: "Accept and continue" }).click();
+  assert.equal(await page.getByRole("button", { name: "Edit address" }).count(), 0);
+  await page.getByRole("button", { name: "Accept suggested address" }).click();
   await page.getByRole("button", { name: "Confirm $111.00 and continue" }).waitFor();
   assert.equal(await page.evaluate(() => window.test.tokenized), 0);
   await page.getByRole("button", { name: "Confirm $111.00 and continue" }).click();
@@ -215,64 +259,42 @@ try {
   await expect.poll(() => Boolean(releasePay)).toBe(true);
   assert.equal(await page.evaluate(() => window.test.cardDetails.amount), "111.00");
   assert.equal(payCalls, 1);
-  releasePay();
-  await page.waitForURL("**/checkout/processing?orderId=test-order");
+  await finishPayment();
 
-  // Editing and cancellation stay in the dialog and never start a charge.
+  // The entered address can be used without looping through the suggestion again.
   await load();
   await page.getByLabel("Name on card", { exact: true }).fill("Test Buyer");
   await page.getByRole("button", { name: "Pay $110.00 now" }).click();
-  await page.getByRole("button", { name: "Edit address" }).click();
-  await page.setViewportSize({ width: 390, height: 844 });
-  await page.getByRole("button", { name: "Save and continue" }).scrollIntoViewIfNeeded();
-  assert.ok(
-    await page.getByRole("dialog").evaluate((dialog) => {
-      const bounds = dialog.getBoundingClientRect();
-      return (
-        bounds.left >= 0 &&
-        bounds.right <= window.innerWidth &&
-        bounds.top >= 0 &&
-        bounds.bottom <= window.innerHeight
-      );
-    }),
-  );
-  await page
-    .getByRole("dialog")
-    .screenshot({ path: "test-results/shipping-validation/edit-mobile.png" });
-  await page
-    .getByRole("dialog")
-    .getByLabel("Street address")
-    .fill("1602 Pennsylvania Ave NW");
-  await page.getByRole("dialog").getByLabel("ZIP code").fill("20500-0005");
-  await page.getByRole("button", { name: "Save and continue" }).click();
-  await page.getByRole("button", { name: "Confirm $111.00 and continue" }).waitFor();
-  await page.getByRole("button", { name: "Cancel checkout" }).click();
-  await page.waitForFunction(() => !document.querySelector("dialog[open]"));
-  assert.equal(payCalls, 0);
-  assert.equal(await page.evaluate(() => window.test.tokenized), 0);
-  await page.setViewportSize({ width: 1280, height: 720 });
+  await page.getByRole("button", { name: "Continue with address I entered" }).click();
+  await expect.poll(() => Boolean(releasePay)).toBe(true);
+  assert.equal(prepares.at(-1).shippingAddress.line1, "1600 Pennsylvania Avenue NW");
+  assert.equal(prepares.at(-1).shippingAddressOverride, true);
+  assert.equal(prepares.at(-1).shippingConfirmation, "entered-confirmation");
+  assert.equal(payCalls, 1);
+  await finishPayment();
 
   // With the same total, acceptance alone continues; duplicate clicks cannot charge twice.
   changeTotal = false;
   await load();
   await page.getByLabel("Name on card", { exact: true }).fill("Test Buyer");
   await page.getByRole("button", { name: "Pay $110.00 now" }).click();
-  await page.getByRole("button", { name: "Accept and continue" }).evaluate((button) => {
-    button.click();
-    button.click();
-  });
+  await page
+    .getByRole("button", { name: "Accept suggested address" })
+    .evaluate((button) => {
+      button.click();
+      button.click();
+    });
   await expect.poll(() => Boolean(releasePay)).toBe(true);
   assert.equal(payCalls, 1);
   assert.equal(await page.evaluate(() => window.test.tokenized), 1);
-  releasePay();
-  await page.waitForURL("**/checkout/processing?orderId=test-order");
+  await finishPayment();
 
   // Cash App reauthorizes a changed amount inside the dialog using a fresh source token.
   changeTotal = true;
   await load();
   await page.getByRole("radio", { name: "Afterpay", exact: true }).click();
   await page.getByRole("button", { name: "Continue with Afterpay", exact: true }).click();
-  await page.getByRole("button", { name: "Accept and continue" }).click();
+  await page.getByRole("button", { name: "Accept suggested address" }).click();
   await page.getByRole("button", { name: "Confirm $111.00 and continue" }).click();
   await expect.poll(() => Boolean(releasePay)).toBe(true);
   assert.equal(
@@ -284,20 +306,18 @@ try {
     "20500-0005",
   );
   assert.equal(payCalls, 1);
-  releasePay();
-  await page.waitForURL("**/checkout/processing?orderId=test-order");
+  await finishPayment();
 
   await load();
   await page.getByRole("radio", { name: "Cash App Pay", exact: true }).click();
   await page.getByRole("button", { name: "Cash test" }).click();
-  await page.getByRole("button", { name: "Accept and continue" }).click();
+  await page.getByRole("button", { name: "Accept suggested address" }).click();
   await page.getByRole("button", { name: "Confirm $111.00 and continue" }).click();
   await page.getByRole("dialog").getByRole("button", { name: "Cash test" }).click();
   await expect.poll(() => Boolean(releasePay)).toBe(true);
   assert.equal(paymentBody.sourceId, "cash-111.00");
   assert.equal(payCalls, 1);
-  releasePay();
-  await page.waitForURL("**/checkout/processing?orderId=test-order");
+  await finishPayment();
   // Wallet details remain private to this attempt while the processing overlay stays open.
   await load();
   await page.evaluate(() => {
@@ -318,7 +338,7 @@ try {
   );
   assert.equal(payCalls, 0);
   assert.equal(
-    await page.getByRole("button", { name: "Accept and continue" }).count(),
+    await page.getByRole("button", { name: "Accept suggested address" }).count(),
     0,
   );
   releasePrepare();
@@ -330,8 +350,7 @@ try {
     .getByRole("dialog")
     .screenshot({ path: "test-results/shipping-validation/express-processing.png" });
   formattingOnly = true;
-  releasePay();
-  await page.waitForURL("**/checkout/processing?orderId=test-order");
+  await finishPayment();
   assert.equal(payCalls, 1);
   // An incomplete wallet destination cannot use the wallet-only address exception.
   await load();
