@@ -12,10 +12,7 @@ type MenuPanel = "brand" | "size" | "category";
 
 type StoreMenuDrawerProps = {
   isOpen: boolean;
-  isAuthenticated?: boolean;
-  loginHref?: string;
   onClose: () => void;
-  showAdminDashboardLink?: boolean;
 };
 
 type SizeOption = {
@@ -163,13 +160,7 @@ function PanelHeader({ title, onBack }: { title: string; onBack: () => void }) {
   );
 }
 
-export function StoreMenuDrawer({
-  isOpen,
-  isAuthenticated = false,
-  loginHref = "/auth/login",
-  onClose,
-  showAdminDashboardLink = false,
-}: StoreMenuDrawerProps) {
+export function StoreMenuDrawer({ isOpen, onClose }: StoreMenuDrawerProps) {
   const isMounted = useHydrated();
   const [previousOpen, setPreviousOpen] = useState(isOpen);
   const [shouldRender, setShouldRender] = useState(isOpen);
@@ -410,30 +401,6 @@ export function StoreMenuDrawer({
             >
               Shop All
             </Link>
-
-            <div className="mt-8 border-t border-zinc-300 pt-2">
-              <p className="py-3 text-[10px] font-semibold uppercase tracking-[0.18em] text-zinc-400">
-                More
-              </p>
-              <DrawerLink href="/" onNavigate={closeMenu} variant="row">
-                Home
-              </DrawerLink>
-              <DrawerLink href="/contact" onNavigate={closeMenu} variant="row">
-                Contact
-              </DrawerLink>
-              <DrawerLink
-                href={isAuthenticated ? "/account" : loginHref}
-                onNavigate={closeMenu}
-                variant="row"
-              >
-                {isAuthenticated ? "Account" : "Sign in"}
-              </DrawerLink>
-              {showAdminDashboardLink && (
-                <DrawerLink href="/admin" onNavigate={closeMenu} variant="row">
-                  Admin dashboard
-                </DrawerLink>
-              )}
-            </div>
           </nav>
         </div>
 

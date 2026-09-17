@@ -234,13 +234,7 @@ export function Navbar({
         </div>
       </div>
 
-      <StoreMenuDrawer
-        isOpen={isMenuOpen}
-        onClose={() => setIsMenuOpen(false)}
-        isAuthenticated={effectiveIsAuthenticated}
-        loginHref={loginUrl}
-        showAdminDashboardLink={showAdminDashboardLink}
-      />
+      <StoreMenuDrawer isOpen={isMenuOpen} onClose={() => setIsMenuOpen(false)} />
     </nav>
   );
 }

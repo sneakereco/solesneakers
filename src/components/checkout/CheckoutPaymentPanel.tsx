@@ -7,6 +7,7 @@ import {
   type CheckoutBillingAddressForm,
 } from "@/components/checkout/BillingAddressFields";
 import { CheckoutField } from "@/components/checkout/CheckoutField";
+import { CheckoutLegalNotice } from "@/components/checkout/CheckoutLegalNotice";
 import { CheckoutCollapse } from "@/components/checkout/CheckoutCollapse";
 import { PaymentCardBrands } from "@/components/checkout/PaymentCardBrands";
 import { CHECKOUT_INPUT_CLASS } from "@/components/checkout/checkout-field-styles";
@@ -242,6 +243,7 @@ export function CheckoutPaymentPanel({
       </div>
 
       {securityChallenge}
+      <CheckoutLegalNotice />
       <div
         hidden={
           selectedMethod !== "cashAppPay" ||

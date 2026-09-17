@@ -15,6 +15,7 @@ import { getRequestIdFromHeaders } from "@/lib/http/request-id";
 import { logError } from "@/lib/utils/log";
 import { env } from "@/config/env";
 import { security } from "@/config/security";
+import { BRAND_DOMAIN } from "@/config/constants/brand";
 import { BUG_REPORT_EMAIL, SUPPORT_EMAIL } from "@/config/constants/mail";
 
 export const runtime = "nodejs";
@@ -260,7 +261,7 @@ export async function POST(request: NextRequest) {
           : `${filename}.${signature.ext}`;
 
         // email CID inline
-        const contentId = `attachment-${index + 1}@realdealkickzsc`;
+        const contentId = `attachment-${index + 1}@${BRAND_DOMAIN}`;
         emailAttachments.push({
           filename: finalFilename,
           content: buffer,

@@ -7,7 +7,7 @@ const shortOrderId = (orderId: string) => orderId.slice(0, 8);
 export const MAIL_FROM_EMAIL = "info@shopsolesneakers.com";
 export const MAIL_FROM_NAME = "Solesneakers";
 
-export const SUPPORT_EMAIL = "Jmanrule15@gmail.com";
+export const SUPPORT_EMAIL = "SolesneakersLLC@yahoo.com";
 export const BUG_REPORT_EMAIL = "jrushinski@sneakereco.com";
 export const MAIL_REPLY_TO_EMAIL = SUPPORT_EMAIL;
 

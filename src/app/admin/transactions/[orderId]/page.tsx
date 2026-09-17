@@ -5,7 +5,6 @@ import Image from "next/image";
 import { useCallback, useEffect, useState } from "react";
 import { useParams, useRouter } from "next/navigation";
 import {
-  AlertTriangle,
   ArrowLeft,
   CheckCircle,
   Clock,
@@ -14,7 +13,6 @@ import {
   Mail,
   Package,
   RefreshCw,
-  Terminal,
   Truck,
   X,
   XCircle,
@@ -121,13 +119,6 @@ type PaymentTransaction = {
   customer_ip?: string | null;
 };
 
-type PaymentEvent = {
-  id: string;
-  event_type: string;
-  event_data: Record<string, unknown>;
-  created_at: string;
-};
-
 type EmailLog = {
   id: string;
   email_type: string;
@@ -149,26 +140,11 @@ type TrackingEvent = {
   event_timestamp: string;
 };
 
-type CheckoutLog = {
-  id: string;
-  route: string;
-  method: string;
-  http_status?: number | null;
-  duration_ms?: number | null;
-  event_label?: string | null;
-  error_message?: string | null;
-  request_payload?: unknown;
-  response_payload?: unknown;
-  created_at: string;
-};
-
 type TransactionPayload = {
   order: Order;
   paymentTransaction: PaymentTransaction | null;
-  paymentEvents: PaymentEvent[];
   emailLogs: EmailLog[];
   trackingEvents: TrackingEvent[];
-  checkoutLogs: CheckoutLog[];
   customer?: {
     displayId: string;
     kind: "account" | "guest";
@@ -176,10 +152,6 @@ type TransactionPayload = {
     email: string | null;
   } | null;
 };
-
-type SessionEntry =
-  | { id: string; kind: "payment"; timestamp: string; data: PaymentEvent }
-  | { id: string; kind: "email"; timestamp: string; data: EmailLog };
 
 const SHIPPING_EMAIL_TYPES = [
   "order_confirmation",
@@ -207,10 +179,8 @@ async function fetchTransactionData(
   return {
     order: data.order,
     paymentTransaction: data.paymentTransaction ?? null,
-    paymentEvents: data.paymentEvents ?? [],
     emailLogs: data.emailLogs ?? [],
     trackingEvents: data.trackingEvents ?? [],
-    checkoutLogs: data.checkoutLogs ?? [],
   };
 }
 
@@ -235,54 +205,54 @@ function getOrderStatusMeta(status: string | null | undefined) {
     case "paid":
       return {
         label: "Succeeded",
-        cls: "border border-emerald-800 bg-emerald-950/40 text-emerald-300",
+        cls: "border border-emerald-200 bg-emerald-50 text-emerald-700",
       };
     case "shipped":
       return {
         label: "Shipped",
-        cls: "border border-blue-800 bg-blue-950/40 text-blue-300",
+        cls: "border border-sky-200 bg-sky-50 text-sky-700",
       };
     case "refunded":
       return {
         label: "Refunded",
-        cls: "border border-red-800 bg-red-950/40 text-red-300",
+        cls: "border border-rose-200 bg-rose-50 text-rose-700",
       };
     case "partially_refunded":
       return {
         label: "Partially refunded",
-        cls: "border border-amber-800 bg-amber-950/40 text-amber-300",
+        cls: "border border-amber-200 bg-amber-50 text-amber-700",
       };
     case "refund_pending":
       return {
         label: "Refund pending",
-        cls: "border border-amber-800 bg-amber-950/40 text-amber-300",
+        cls: "border border-amber-200 bg-amber-50 text-amber-700",
       };
     case "refund_failed":
       return {
         label: "Refund failed",
-        cls: "border border-rose-800 bg-rose-950/40 text-rose-300",
+        cls: "border border-rose-200 bg-rose-50 text-rose-700",
       };
     case "failed":
-      return { label: "Failed", cls: "border border-red-800 bg-red-950/40 text-red-300" };
+      return { label: "Failed", cls: "border border-red-200 bg-red-50 text-red-700" };
     case "blocked":
       return {
         label: "Blocked",
-        cls: "border border-orange-800 bg-orange-950/40 text-orange-300",
+        cls: "border border-orange-200 bg-orange-50 text-orange-700",
       };
     case "review":
       return {
         label: "Under review",
-        cls: "border border-yellow-800 bg-yellow-950/40 text-yellow-300",
+        cls: "border border-yellow-200 bg-yellow-50 text-yellow-700",
       };
     case "pending":
       return {
         label: "Incomplete",
-        cls: "border border-zinc-700 bg-zinc-800 text-zinc-300",
+        cls: "border border-zinc-200 bg-zinc-100 text-zinc-700",
       };
     default:
       return {
         label: status ?? "Unknown",
-        cls: "border border-zinc-700 bg-zinc-800 text-zinc-300",
+        cls: "border border-zinc-200 bg-zinc-100 text-zinc-700",
       };
   }
 }
@@ -319,142 +289,6 @@ function getCvvLabel(code: string | null | undefined) {
   };
 
   return map[code] ?? { label: `Code: ${code}`, color: "text-zinc-400" };
-}
-
-function getDeclineDescription(eventData: Record<string, unknown>) {
-  const errorCode = String(eventData.error_code ?? eventData.decline_code ?? "").trim();
-  const statusCode = String(eventData.status_code ?? "").trim();
-  const statusText = String(eventData.status ?? eventData.response_text ?? "").trim();
-
-  const codeMap: Record<string, string> = {
-    "05": "Do not honor",
-    "14": "Invalid card number",
-    "51": "Insufficient funds",
-    "54": "Expired card",
-    "57": "Transaction not permitted",
-    "61": "Exceeds withdrawal limit",
-    "62": "Restricted card",
-    "65": "Activity limit exceeded",
-    "78": "No account on file",
-    "41": "Lost card",
-    "43": "Stolen card",
-    "82": "Incorrect CVV",
-    N7: "CVV2 mismatch",
-    D: "Declined",
-    E: "Processor error",
-  };
-
-  if (errorCode && codeMap[errorCode]) {
-    return codeMap[errorCode];
-  }
-  if (statusCode && codeMap[statusCode]) {
-    return codeMap[statusCode];
-  }
-  if (statusText && statusText.toLowerCase() !== "declined") {
-    return statusText;
-  }
-
-  return null;
-}
-
-function getEventMeta(
-  type: string,
-  eventData?: Record<string, unknown>,
-): { icon: React.ReactNode; label: string; description?: string } {
-  const desc = eventData ? getDeclineDescription(eventData) : undefined;
-
-  switch (type) {
-    case "payment_started":
-      return {
-        icon: <Info className="h-4 w-4 text-zinc-400" />,
-        label: "Checkout started",
-      };
-    case "authorization_approved":
-      return {
-        icon: <CheckCircle className="h-4 w-4 text-emerald-400" />,
-        label: "Payment authorized",
-      };
-    case "authorization_declined":
-      return {
-        icon: <XCircle className="h-4 w-4 text-red-400" />,
-        label: "Authorization declined",
-        description: desc ?? undefined,
-      };
-    case "authorization_error":
-      return {
-        icon: <AlertTriangle className="h-4 w-4 text-red-400" />,
-        label: "Authorization error",
-        description: desc ?? undefined,
-      };
-    case "fraud_check_pass":
-      return {
-        icon: <CheckCircle className="h-4 w-4 text-emerald-400" />,
-        label: "Fraud screening passed",
-      };
-    case "fraud_check_fail":
-      return {
-        icon: <XCircle className="h-4 w-4 text-red-400" />,
-        label: "Fraud screening failed",
-      };
-    case "fraud_check_review":
-      return {
-        icon: <Clock className="h-4 w-4 text-amber-400" />,
-        label: "Fraud screening review",
-      };
-    case "fraud_check_skipped":
-      return {
-        icon: <AlertTriangle className="h-4 w-4 text-amber-400" />,
-        label: "Fraud screening skipped",
-      };
-    case "payment_captured":
-      return {
-        icon: <CheckCircle className="h-4 w-4 text-emerald-400" />,
-        label: "Payment captured",
-      };
-    case "payment_voided":
-      return {
-        icon: <XCircle className="h-4 w-4 text-red-400" />,
-        label: "Payment voided",
-      };
-    case "payment_refunded":
-      return {
-        icon: <Info className="h-4 w-4 text-blue-400" />,
-        label: "Full refund issued",
-      };
-    case "payment_refund_partial":
-      return {
-        icon: <Info className="h-4 w-4 text-blue-400" />,
-        label: "Partial refund issued",
-      };
-    case "square_refund_completed":
-      return {
-        icon: <Info className="h-4 w-4 text-blue-400" />,
-        label: "Square refund completed",
-      };
-    case "square_refund_pending":
-      return {
-        icon: <Clock className="h-4 w-4 text-amber-400" />,
-        label: "Square refund pending",
-      };
-    case "square_refund_failed":
-    case "square_refund_rejected":
-      return {
-        icon: <XCircle className="h-4 w-4 text-red-400" />,
-        label: "Square refund failed",
-      };
-    case "square_dispute_alert":
-      return {
-        icon: <AlertTriangle className="h-4 w-4 text-red-400" />,
-        label: "Square dispute alert",
-        description:
-          typeof eventData?.state === "string" ? `State: ${eventData.state}` : undefined,
-      };
-    default:
-      return {
-        icon: <Info className="h-4 w-4 text-zinc-400" />,
-        label: type.replace(/_/g, " "),
-      };
-  }
 }
 
 function getEmailTypeMeta(type: string) {
@@ -513,85 +347,6 @@ function SectionCard({ title, children }: { title: string; children: React.React
   );
 }
 
-function formatPayload(payload: unknown) {
-  if (payload === null || payload === undefined) {
-    return null;
-  }
-  if (typeof payload === "string") {
-    return payload;
-  }
-  try {
-    return JSON.stringify(payload, null, 2);
-  } catch {
-    return String(payload);
-  }
-}
-
-function getRelatedCheckoutLogs(event: PaymentEvent, logs: CheckoutLog[]) {
-  const eventTime = new Date(event.created_at).getTime();
-  const keywordsByType: Record<string, string[]> = {
-    payment_started: ["checkout"],
-    authorization_approved: ["approved", "response"],
-    authorization_declined: ["declined", "payment error"],
-    authorization_error: ["processing error", "payment error"],
-    fraud_check_pass: ["approved", "order complete"],
-    fraud_check_fail: ["fraud", "blocked"],
-    fraud_check_review: ["review"],
-    fraud_check_skipped: ["approved", "response"],
-    payment_captured: ["approved", "order complete", "response"],
-    payment_voided: ["void", "blocked", "fraud"],
-    payment_refunded: ["refund"],
-    payment_refund_partial: ["refund"],
-  };
-
-  const keywords = keywordsByType[event.event_type] ?? [];
-  const matched = logs.filter((log) => {
-    const haystack = [
-      log.event_label,
-      log.route,
-      log.method,
-      log.error_message,
-      formatPayload(log.response_payload),
-    ]
-      .filter(Boolean)
-      .join(" ")
-      .toLowerCase();
-
-    return keywords.some((keyword) => haystack.includes(keyword));
-  });
-
-  const nearby = logs.filter((log) => {
-    const logTime = new Date(log.created_at).getTime();
-    return Math.abs(logTime - eventTime) <= 2 * 60 * 1000;
-  });
-
-  return [...matched, ...nearby]
-    .filter((log, index, arr) => arr.findIndex((entry) => entry.id === log.id) === index)
-    .sort(
-      (a, b) =>
-        Math.abs(new Date(a.created_at).getTime() - eventTime) -
-        Math.abs(new Date(b.created_at).getTime() - eventTime),
-    );
-}
-
-function PayloadBlock({ label, payload }: { label: string; payload: unknown }) {
-  const content = formatPayload(payload);
-
-  return (
-    <div className="space-y-2">
-      <div className="flex items-center justify-between gap-3">
-        <p className="text-[11px] uppercase tracking-[0.18em] text-zinc-500">{label}</p>
-        {!content && <span className="text-xs text-zinc-600">No data</span>}
-      </div>
-      {content && (
-        <pre className="overflow-x-auto rounded border border-zinc-800/70 bg-zinc-950/80 p-3 text-[11px] text-zinc-300">
-          {content}
-        </pre>
-      )}
-    </div>
-  );
-}
-
 export default function TransactionDetailPage() {
   const params = useParams();
   const router = useRouter();
@@ -599,10 +354,8 @@ export default function TransactionDetailPage() {
 
   const [order, setOrder] = useState<Order | null>(null);
   const [paymentTx, setPaymentTx] = useState<PaymentTransaction | null>(null);
-  const [paymentEvents, setPaymentEvents] = useState<PaymentEvent[]>([]);
   const [emailLogs, setEmailLogs] = useState<EmailLog[]>([]);
   const [trackingEvents, setTrackingEvents] = useState<TrackingEvent[]>([]);
-  const [checkoutLogs, setCheckoutLogs] = useState<CheckoutLog[]>([]);
   const [customerSummary, setCustomerSummary] =
     useState<TransactionPayload["customer"]>(null);
   const [isLoading, setIsLoading] = useState(true);
@@ -613,10 +366,6 @@ export default function TransactionDetailPage() {
     tone: "success" | "error" | "info";
   } | null>(null);
   const [resendingEmail, setResendingEmail] = useState<string | null>(null);
-  const [selectedPaymentEventId, setSelectedPaymentEventId] = useState<string | null>(
-    null,
-  );
-  const [isPaymentDrawerVisible, setIsPaymentDrawerVisible] = useState(false);
   const [selectedItem, setSelectedItem] = useState<AdminOrderItem | null>(null);
   const [itemModalOpen, setItemModalOpen] = useState(false);
 
@@ -635,10 +384,8 @@ export default function TransactionDetailPage() {
           setError(null);
           setOrder(data.order);
           setPaymentTx(data.paymentTransaction);
-          setPaymentEvents(data.paymentEvents);
           setEmailLogs(data.emailLogs);
           setTrackingEvents(data.trackingEvents);
-          setCheckoutLogs(data.checkoutLogs);
           setCustomerSummary(data.customer ?? null);
         })
         .catch((err: unknown) => {
@@ -659,19 +406,7 @@ export default function TransactionDetailPage() {
   }, [loadTransaction]);
 
   useEffect(() => {
-    if (!selectedPaymentEventId) {
-      return;
-    }
-
-    const frame = window.requestAnimationFrame(() => {
-      setIsPaymentDrawerVisible(true);
-    });
-
-    return () => window.cancelAnimationFrame(frame);
-  }, [selectedPaymentEventId]);
-
-  useEffect(() => {
-    if (!selectedPaymentEventId && !emailPreview) {
+    if (!emailPreview) {
       return;
     }
 
@@ -681,7 +416,7 @@ export default function TransactionDetailPage() {
     return () => {
       document.body.style.overflow = previousOverflow;
     };
-  }, [emailPreview, selectedPaymentEventId]);
+  }, [emailPreview]);
 
   const handleResendEmail = async (emailType: string) => {
     if (!order || resendingEmail) {
@@ -787,38 +522,6 @@ export default function TransactionDetailPage() {
     ...(refundedCents > 0 ? [REFUND_EMAIL_TYPE] : []),
   ];
 
-  const sessionTimeline: SessionEntry[] = [
-    ...paymentEvents.map(
-      (event): SessionEntry => ({
-        id: `payment-${event.id}`,
-        kind: "payment",
-        timestamp: event.created_at,
-        data: event,
-      }),
-    ),
-    ...emailLogs.map(
-      (log): SessionEntry => ({
-        id: `email-${log.id}`,
-        kind: "email",
-        timestamp: log.sent_at,
-        data: log,
-      }),
-    ),
-  ].sort((a, b) => new Date(b.timestamp).getTime() - new Date(a.timestamp).getTime());
-
-  const selectedPaymentEvent =
-    paymentEvents.find((event) => event.id === selectedPaymentEventId) ?? null;
-  const relatedCheckoutLogs = selectedPaymentEvent
-    ? getRelatedCheckoutLogs(selectedPaymentEvent, checkoutLogs)
-    : [];
-
-  const closePaymentDrawer = () => {
-    setIsPaymentDrawerVisible(false);
-    window.setTimeout(() => {
-      setSelectedPaymentEventId(null);
-    }, 220);
-  };
-
   const openItemModal = (item: OrderItem) => {
     setSelectedItem(item as unknown as AdminOrderItem);
     setItemModalOpen(true);
@@ -834,7 +537,7 @@ export default function TransactionDetailPage() {
         backLabel="Transactions"
         meta={
           <span
-            className={`inline-flex items-center px-2 py-0.5 text-xs font-medium ${statusMeta.cls}`}
+            className={`inline-flex items-center rounded-full px-2.5 py-1 text-[0.68rem] font-semibold uppercase tracking-[0.08em] ${statusMeta.cls}`}
           >
             {statusMeta.label}
           </span>
@@ -1248,125 +951,6 @@ export default function TransactionDetailPage() {
               </div>
             </SectionCard>
           )}
-
-          <SectionCard title="Session Activity">
-            {sessionTimeline.length === 0 ? (
-              <p className="text-sm text-zinc-500">
-                No activity recorded for this order.
-              </p>
-            ) : (
-              <ol className="space-y-3">
-                {sessionTimeline.map((entry) => {
-                  if (entry.kind === "payment") {
-                    const event = entry.data;
-                    const meta = getEventMeta(event.event_type, event.event_data);
-
-                    return (
-                      <li
-                        key={entry.id}
-                        className="rounded border border-zinc-800/60 bg-zinc-950/30"
-                      >
-                        <button
-                          type="button"
-                          onClick={() => setSelectedPaymentEventId(event.id)}
-                          className="w-full px-4 py-4 text-left transition hover:bg-zinc-900/60"
-                        >
-                          <div className="flex items-start justify-between gap-4">
-                            <div className="flex min-w-0 items-start gap-3">
-                              <div className="mt-0.5 shrink-0">{meta.icon}</div>
-                              <div className="min-w-0 flex-1">
-                                <p className="text-sm text-white">{meta.label}</p>
-                                {meta.description && (
-                                  <p className="mt-0.5 text-xs text-zinc-400">
-                                    {meta.description}
-                                  </p>
-                                )}
-                                <p className="mt-1 text-xs text-zinc-500">
-                                  {fmtDate(event.created_at)}
-                                </p>
-                              </div>
-                            </div>
-                            <p className="shrink-0 text-xs text-zinc-500">View details</p>
-                          </div>
-                        </button>
-                      </li>
-                    );
-                  }
-
-                  const log = entry.data;
-                  const emailMeta = getEmailTypeMeta(log.email_type);
-                  const deliveryColor =
-                    log.delivery_status === "delivered"
-                      ? "text-emerald-400"
-                      : log.delivery_status === "failed"
-                        ? "text-red-400"
-                        : "text-zinc-400";
-
-                  return (
-                    <li
-                      key={entry.id}
-                      className="rounded border border-zinc-800/60 bg-zinc-950/30 p-4"
-                    >
-                      <div className="flex items-start gap-3">
-                        <div className="mt-0.5 shrink-0">{emailMeta.icon}</div>
-                        <div className="min-w-0 flex-1">
-                          <p className="text-sm text-white">{emailMeta.label}</p>
-                          <p className="text-xs text-zinc-500">
-                            To: {log.recipient_email}
-                          </p>
-                          <p className="mt-0.5 text-xs text-zinc-500">
-                            Sent{" "}
-                            {fmtDate(log.sent_at, {
-                              month: "short",
-                              day: "numeric",
-                              hour: "numeric",
-                              minute: "2-digit",
-                            })}
-                          </p>
-                          {log.delivered_at && (
-                            <p className="text-xs text-zinc-500">
-                              Delivered{" "}
-                              {fmtDate(log.delivered_at, {
-                                month: "short",
-                                day: "numeric",
-                                hour: "numeric",
-                                minute: "2-digit",
-                              })}
-                            </p>
-                          )}
-                          {log.opened_at && (
-                            <p className="text-xs text-emerald-500">
-                              Opened{" "}
-                              {fmtDate(log.opened_at, {
-                                month: "short",
-                                day: "numeric",
-                                hour: "numeric",
-                                minute: "2-digit",
-                              })}
-                            </p>
-                          )}
-                          <span className={`text-xs capitalize ${deliveryColor}`}>
-                            {log.delivery_status}
-                          </span>
-                        </div>
-                        <div className="shrink-0">
-                          {log.html_snapshot && (
-                            <button
-                              type="button"
-                              onClick={() => setEmailPreview(log)}
-                              className="text-xs text-zinc-400 transition-colors hover:text-white"
-                            >
-                              View details
-                            </button>
-                          )}
-                        </div>
-                      </div>
-                    </li>
-                  );
-                })}
-              </ol>
-            )}
-          </SectionCard>
         </div>
 
         <div className="space-y-6">
@@ -1457,149 +1041,6 @@ export default function TransactionDetailPage() {
                 className="h-full min-h-[500px] w-full"
                 sandbox="allow-same-origin"
               />
-            </div>
-          </div>
-        </div>
-      )}
-
-      {selectedPaymentEvent && (
-        <div
-          className={`fixed inset-0 z-50 flex items-end overflow-hidden bg-black/70 transition-opacity duration-200 ${isPaymentDrawerVisible ? "opacity-100" : "opacity-0"}`}
-          onClick={closePaymentDrawer}
-        >
-          <div
-            className={`w-full rounded-t-2xl border-t border-zinc-800 bg-zinc-900 shadow-2xl transition-transform duration-300 ease-out ${isPaymentDrawerVisible ? "translate-y-0" : "translate-y-full"}`}
-            onClick={(event) => event.stopPropagation()}
-          >
-            <div className="mx-auto flex max-h-[80vh] w-full max-w-7xl flex-col overflow-hidden">
-              <div className="flex items-start justify-between gap-4 border-b border-zinc-800 px-6 py-4">
-                <div>
-                  <p className="text-[11px] uppercase tracking-[0.18em] text-zinc-500">
-                    Activity details
-                  </p>
-                  <p className="mt-1 text-lg font-semibold text-white">
-                    {
-                      getEventMeta(
-                        selectedPaymentEvent.event_type,
-                        selectedPaymentEvent.event_data,
-                      ).label
-                    }
-                  </p>
-                  <p className="mt-1 text-sm text-zinc-500">
-                    {fmtDate(selectedPaymentEvent.created_at)}
-                  </p>
-                </div>
-                <button
-                  type="button"
-                  onClick={closePaymentDrawer}
-                  className="text-zinc-400 transition hover:text-white"
-                >
-                  <X className="h-5 w-5" />
-                </button>
-              </div>
-
-              <div className="min-h-0 flex-1 overflow-y-auto overscroll-contain px-6 py-6">
-                <div className="grid gap-6 lg:grid-cols-[minmax(0,0.85fr)_minmax(0,1.15fr)]">
-                  <div className="space-y-4">
-                    <div className="grid gap-3 sm:grid-cols-3">
-                      <div className="rounded border border-zinc-800/70 bg-zinc-950/70 p-3">
-                        <p className="text-[11px] uppercase tracking-[0.18em] text-zinc-500">
-                          Event
-                        </p>
-                        <p className="mt-2 text-sm font-semibold text-white">
-                          {
-                            getEventMeta(
-                              selectedPaymentEvent.event_type,
-                              selectedPaymentEvent.event_data,
-                            ).label
-                          }
-                        </p>
-                      </div>
-                      <div className="rounded border border-zinc-800/70 bg-zinc-950/70 p-3">
-                        <p className="text-[11px] uppercase tracking-[0.18em] text-zinc-500">
-                          Recorded
-                        </p>
-                        <p className="mt-2 text-sm font-semibold text-zinc-200">
-                          {fmtDate(selectedPaymentEvent.created_at)}
-                        </p>
-                      </div>
-                      <div className="rounded border border-zinc-800/70 bg-zinc-950/70 p-3">
-                        <p className="text-[11px] uppercase tracking-[0.18em] text-zinc-500">
-                          Related logs
-                        </p>
-                        <p className="mt-2 text-sm font-semibold text-zinc-200">
-                          {relatedCheckoutLogs.length}
-                        </p>
-                      </div>
-                    </div>
-
-                    <PayloadBlock
-                      label="Event data"
-                      payload={selectedPaymentEvent.event_data}
-                    />
-                  </div>
-
-                  <div className="space-y-4">
-                    <div className="flex items-center justify-between gap-3">
-                      <p className="text-[11px] uppercase tracking-[0.18em] text-zinc-500">
-                        Related checkout logs
-                      </p>
-                      {relatedCheckoutLogs.length === 0 && (
-                        <span className="text-xs text-zinc-600">
-                          No related API logs found
-                        </span>
-                      )}
-                    </div>
-
-                    {relatedCheckoutLogs.map((log) => {
-                      const isError =
-                        log.http_status !== null && (log.http_status ?? 0) >= 400;
-                      const statusColor = isError ? "text-red-400" : "text-emerald-400";
-
-                      return (
-                        <div
-                          key={log.id}
-                          className="space-y-4 rounded border border-zinc-800/70 bg-zinc-950/60 p-4"
-                        >
-                          <div className="flex items-start justify-between gap-4">
-                            <div className="flex min-w-0 items-start gap-3">
-                              <Terminal className="mt-0.5 h-4 w-4 shrink-0 text-zinc-400" />
-                              <div className="min-w-0">
-                                <p className="text-sm text-white">
-                                  {log.event_label ?? log.route}
-                                </p>
-                                <p className="mt-0.5 break-all font-mono text-xs text-zinc-500">
-                                  {log.method} {log.route}
-                                </p>
-                                {log.error_message && (
-                                  <p className="mt-1 text-xs text-red-400">
-                                    {log.error_message}
-                                  </p>
-                                )}
-                              </div>
-                            </div>
-                            <div className="shrink-0 text-right">
-                              <p className={`text-sm font-semibold ${statusColor}`}>
-                                {log.http_status ?? "-"}
-                              </p>
-                              <p className="text-xs text-zinc-500">
-                                {log.duration_ms !== null && log.duration_ms !== undefined
-                                  ? `${log.duration_ms}ms`
-                                  : "-"}
-                              </p>
-                            </div>
-                          </div>
-                          <p className="text-xs text-zinc-500">
-                            {fmtDate(log.created_at)}
-                          </p>
-                          <PayloadBlock label="Request" payload={log.request_payload} />
-                          <PayloadBlock label="Response" payload={log.response_payload} />
-                        </div>
-                      );
-                    })}
-                  </div>
-                </div>
-              </div>
             </div>
           </div>
         </div>

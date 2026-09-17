@@ -634,7 +634,7 @@ export function CreateLabelForm({
                   void getRates();
                 }}
                 disabled={isGettingRates || hasAddressErrors}
-                className="w-full rounded bg-zinc-100 px-4 py-2 text-sm font-semibold text-black hover:bg-white disabled:cursor-not-allowed disabled:opacity-50 md:w-auto"
+                className="admin-button-secondary w-full disabled:cursor-not-allowed disabled:opacity-50 md:w-auto"
               >
                 {isGettingRates ? "Getting rates..." : "Get shipping rates"}
               </button>

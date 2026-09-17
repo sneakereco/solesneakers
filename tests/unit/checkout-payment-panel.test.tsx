@@ -120,5 +120,6 @@ describe("CheckoutPaymentPanel", () => {
     expect(html).toContain('href="/privacy"');
     expect(html).toContain('href="/terms"');
     expect(html).toContain('href="/contact"');
+    expect(html).toContain("By placing your order, you agree to our");
   });
 });

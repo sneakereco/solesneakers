@@ -10,7 +10,7 @@
     "test:jest": "npm run test:jest:unit && npm run test:jest:integration",
     "test:jest:unit": "jest --config jest.config.ts",
     "test:jest:integration": "jest --config jest.integration.config.ts",
-    "test:e2e": "node tests/browser/payment-methods.mjs && node tests/browser/checkout-ui.mjs && node tests/browser/shipping-validation.mjs && node tests/browser/checkout-success.mjs && node tests/browser/checkout-progress.mjs",
+    "test:e2e": "node tests/browser/payment-methods.mjs && node tests/browser/checkout-ui.mjs && node tests/browser/shipping-validation.mjs && node tests/browser/checkout-success.mjs && node tests/browser/checkout-progress.mjs && node tests/browser/admin-transaction-detail.mjs && node tests/browser/admin-button-contrast.mjs && node tests/browser/shipping-settings-modal.mjs && node tests/browser/store-menu.mjs && node tests/browser/home-featured-items.mjs && node tests/browser/storefront-branding.mjs",
     "test:rls": "tsx ./tests/rls/rls-check.ts",
     "format": "prettier --write .",
     "format:check": "prettier --check .",

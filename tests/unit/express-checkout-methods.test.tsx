@@ -37,6 +37,9 @@ describe("ExpressCheckoutMethods", () => {
     expect(html).toContain('id="square-google-pay-container" class="h-12 w-full"');
     expect(html).not.toContain('id="square-cash-app-pay-container"');
     expect(html).not.toContain("sm:grid-cols-2");
+    expect(html).toContain("By using an express payment method");
+    expect(html).toContain('href="/terms"');
+    expect(html).toContain('href="/privacy"');
   });
 
   it("collapses the express section while no wallet is ready", () => {

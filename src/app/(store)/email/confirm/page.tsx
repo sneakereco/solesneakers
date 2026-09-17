@@ -41,11 +41,11 @@ export default async function EmailConfirmPage({
 
   return (
     <div className="mx-auto max-w-3xl px-4 py-20 text-center">
-      <h1 className="mb-4 text-4xl font-bold text-white">{content.title}</h1>
-      <p className="mb-8 text-zinc-400">{content.message}</p>
+      <h1 className="mb-4 text-4xl font-bold text-zinc-900">{content.title}</h1>
+      <p className="mb-8 text-zinc-600">{content.message}</p>
       <Link
         href="/"
-        className="inline-flex cursor-pointer items-center justify-center gap-2 bg-red-600 px-6 py-3 font-bold text-white transition-colors hover:bg-red-700"
+        className="inline-flex cursor-pointer items-center justify-center gap-2 bg-zinc-950 px-6 py-3 font-bold text-white transition-colors hover:bg-zinc-800"
       >
         Back to home
       </Link>

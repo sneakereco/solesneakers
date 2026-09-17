@@ -1,3 +1,7 @@
+import { Loader2 } from "lucide-react";
+
+import { CheckoutLegalNotice } from "@/components/checkout/CheckoutLegalNotice";
+
 export function ExpressCheckoutMethods({
   applePayReady,
   googlePayReady,
@@ -54,6 +58,7 @@ export function ExpressCheckoutMethods({
           onClick={disabled ? undefined : onGooglePayClick}
         />
       </div>
+      {hasReadyMethod ? <CheckoutLegalNotice express /> : null}
       <div className="my-6 flex items-center gap-4 text-xs uppercase text-zinc-400">
         <span className="h-px flex-1 bg-zinc-200" /> or
         <span className="h-px flex-1 bg-zinc-200" />
@@ -61,4 +66,3 @@ export function ExpressCheckoutMethods({
     </section>
   );
 }
-import { Loader2 } from "lucide-react";

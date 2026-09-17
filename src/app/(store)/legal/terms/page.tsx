@@ -1,25 +1,27 @@
 import { PolicyPage } from "@/components/legal/PolicyPage";
-import { BRAND_DOMAIN, BRAND_NAME } from "@/config/constants/brand";
+import { BRAND_DOMAIN, BRAND_NAME, LEGAL_BUSINESS_NAME } from "@/config/constants/brand";
 import { SUPPORT_EMAIL } from "@/config/constants/mail";
+import { PICKUP_LOCATION_SUMMARY } from "@/config/pickup";
 
 export default function TermsPage() {
   return (
     <PolicyPage title="Terms of Service">
       <div className="prose prose-invert max-w-none">
         <div className="space-y-6 text-zinc-400">
-          <p className="text-sm">Last updated: December 30, 2025</p>
+          <p className="text-sm">Last updated: September 16, 2026</p>
 
           <p>
             These Terms of Service (&quot;Terms&quot;) govern your access to and use of
             the website located at {BRAND_DOMAIN} (the &quot;Site&quot;) and any related
-            services provided by {BRAND_NAME} (&quot;{BRAND_NAME},&quot; &quot;we,&quot;
-            &quot;us,&quot; or &quot;our&quot;) (collectively, the &quot;Services&quot;).
+            services provided by {LEGAL_BUSINESS_NAME}, doing business as {BRAND_NAME}
+            (&quot;{BRAND_NAME},&quot; &quot;we,&quot; &quot;us,&quot; or &quot;our&quot;)
+            (collectively, the &quot;Services&quot;).
           </p>
           <p>
-            By accessing or using the Services, you acknowledge that you have read and
-            understood these Terms. When you create an account or complete a purchase, you
-            will be required to affirmatively accept these Terms (for example, by checking
-            a box). If you do not agree to these Terms, do not use the Services.
+            By creating an account, selecting or using a payment method, or placing an
+            order after these Terms are presented, you affirmatively agree to these Terms.
+            If you do not agree, do not create an account, submit payment, or use the
+            Services.
           </p>
 
           <section>
@@ -39,11 +41,11 @@ export default function TermsPage() {
               2) Independent Reseller; No Brand Affiliation
             </h2>
             <p>
-              {BRAND_NAME} is an independent sneaker and apparel reseller. We are not
-              affiliated with, endorsed by, sponsored by, or supported by Nike, Jordan,
-              Adidas, New Balance, or any other brand. All trademarks, logos, and brand
-              names are the property of their respective owners and are used only to
-              identify the products we sell.
+              {BRAND_NAME}, operated by {LEGAL_BUSINESS_NAME}, is an independent sneaker
+              and apparel reseller. We are not affiliated with, endorsed by, sponsored by,
+              or supported by Nike, Jordan, Adidas, New Balance, or any other brand. All
+              trademarks, logos, and brand names are the property of their respective
+              owners and are used only to identify the products we sell.
             </p>
           </section>
 
@@ -53,6 +55,11 @@ export default function TermsPage() {
               If you create an account, you agree to provide accurate and complete
               information and to keep your login credentials secure. You are responsible
               for all activities that occur under your account.
+            </p>
+            <p className="mt-2">
+              You must be at least 18 years old and legally able to enter into a contract,
+              or use the Services with the involvement and permission of a parent or legal
+              guardian.
             </p>
           </section>
 
@@ -116,7 +123,7 @@ export default function TermsPage() {
 
           <section>
             <h2 className="mb-4 mt-8 text-2xl font-bold text-white">
-              8) Shipping, Delivery, and Risk of Loss
+              8) Shipping, Pickup, Delivery, and Risk of Loss
             </h2>
             <p>
               Shipping costs, methods, and estimated delivery times are displayed at
@@ -128,6 +135,13 @@ export default function TermsPage() {
               carrier delays, lost packages, theft after delivery, or damage in transit,
               except where such responsibility cannot be disclaimed under applicable law.
             </p>
+            <p className="mt-2">
+              Pickup by appointment requires the order number and a government-issued ID.
+              We will provide the agreed-upon business location after confirming the
+              pickup time. Contact us in advance if a different person will collect the
+              order. Responsibility for the item transfers when it is handed to the
+              authorized pickup person.
+            </p>
           </section>
 
           <section>
@@ -135,14 +149,13 @@ export default function TermsPage() {
               9) Returns and Refunds
             </h2>
             <p>
-              All returns and refunds are governed by our Return &amp; Refund Policy
-              available at{" "}
+              All sales are final. The only discretionary refund offered is for an item
+              verified as inauthentic under our Return &amp; Refund Policy available at{" "}
               <a href="/refunds" className="text-red-400 hover:underline">
                 refunds
               </a>
-              , which is incorporated by reference into these Terms. If there is a
-              conflict between these Terms and the Return &amp; Refund Policy regarding
-              returns or refunds, the Return &amp; Refund Policy controls.
+              , which is incorporated by reference into these Terms. Nothing in these
+              Terms limits rights or remedies that cannot be waived under applicable law.
             </p>
           </section>
 
@@ -151,9 +164,9 @@ export default function TermsPage() {
               10) Chargebacks and Payment Disputes
             </h2>
             <p>
-              If you have an issue with an order, please contact us first at
-              {SUPPORT_EMAIL}. Unjustified chargebacks or payment disputes may result in
-              account restrictions and refusal of future service, where permitted by law.
+              If you have an issue with an order, please contact us first at{" "}
+              {SUPPORT_EMAIL} so we can try to resolve it. Nothing in these Terms limits a
+              payment-dispute right provided by applicable law.
             </p>
           </section>
 
@@ -198,10 +211,11 @@ export default function TermsPage() {
               14) Limitation of Liability
             </h2>
             <p>
-              To the maximum extent permitted by law, {BRAND_NAME} will not be liable for
-              any indirect, incidental, special, consequential, or punitive damages. In
-              all cases, {BRAND_NAME}&apos;s total liability for any claim will not exceed
-              the amount you paid to us for the order giving rise to the claim.
+              To the maximum extent permitted by law, {LEGAL_BUSINESS_NAME} will not be
+              liable for any indirect, incidental, special, consequential, or punitive
+              damages. In all cases, {LEGAL_BUSINESS_NAME}&apos;s total liability for any
+              claim will not exceed the amount you paid to us for the order giving rise to
+              the claim.
             </p>
           </section>
 
@@ -210,9 +224,9 @@ export default function TermsPage() {
               15) Indemnification
             </h2>
             <p>
-              You agree to indemnify and hold harmless {BRAND_NAME} from and against
-              claims, damages, liabilities, and expenses arising out of your misuse of the
-              Services or violation of these Terms.
+              You agree to indemnify and hold harmless {LEGAL_BUSINESS_NAME} from and
+              against claims, damages, liabilities, and expenses arising out of your
+              misuse of the Services or violation of these Terms.
             </p>
           </section>
 
@@ -221,9 +235,9 @@ export default function TermsPage() {
               16) Governing Law and Venue
             </h2>
             <p>
-              These Terms are governed by the laws of the State of South Carolina, without
+              These Terms are governed by the laws of the State of North Carolina, without
               regard to conflict of law principles. You agree that any dispute will be
-              brought in the state or federal courts located in South Carolina, unless
+              brought in the state or federal courts located in North Carolina, unless
               applicable law requires otherwise.
             </p>
           </section>
@@ -240,8 +254,9 @@ export default function TermsPage() {
 
           <section>
             <h2 className="mb-4 mt-8 text-2xl font-bold text-white">18) Contact</h2>
+            <p>{LEGAL_BUSINESS_NAME}</p>
             <p>Email: {SUPPORT_EMAIL}</p>
-            <p>Location: Simpsonville, South Carolina, USA</p>
+            <p>Location: {PICKUP_LOCATION_SUMMARY}</p>
           </section>
         </div>
       </div>

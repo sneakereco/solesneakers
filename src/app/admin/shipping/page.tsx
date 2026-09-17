@@ -617,7 +617,7 @@ export default function ShippingPage() {
             event.stopPropagation();
             setLabelOrder(order);
           }}
-          className="text-sm text-red-400 hover:text-red-300"
+          className="admin-button-primary"
         >
           Create label
         </button>
