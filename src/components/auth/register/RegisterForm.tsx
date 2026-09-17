@@ -188,11 +188,11 @@ export function RegisterForm() {
 
       <p className="text-center text-[0.76rem] uppercase tracking-[0.08em] text-zinc-500">
         By signing up, you agree to our{" "}
-        <Link href="/legal/terms" className="underline hover:text-zinc-400">
+        <Link href="/terms" className="underline hover:text-zinc-400">
           Terms
         </Link>{" "}
         and{" "}
-        <Link href="/legal/privacy" className="underline hover:text-zinc-400">
+        <Link href="/privacy" className="underline hover:text-zinc-400">
           Privacy Policy
         </Link>
       </p>

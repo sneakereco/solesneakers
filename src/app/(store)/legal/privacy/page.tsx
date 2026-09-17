@@ -1,20 +1,21 @@
 import { PolicyPage } from "@/components/legal/PolicyPage";
-import { BRAND_DOMAIN, BRAND_NAME } from "@/config/constants/brand";
+import { BRAND_DOMAIN, BRAND_NAME, LEGAL_BUSINESS_NAME } from "@/config/constants/brand";
 import { SUPPORT_EMAIL } from "@/config/constants/mail";
+import { PICKUP_LOCATION_SUMMARY } from "@/config/pickup";
 
 export default function PrivacyPage() {
   return (
     <PolicyPage title="Privacy Policy">
       <div className="prose prose-invert max-w-none">
         <div className="space-y-6 text-zinc-400">
-          <p className="text-sm">Last updated: December 30, 2025</p>
+          <p className="text-sm">Last updated: September 16, 2026</p>
 
           <p>
-            This Privacy Policy describes how {BRAND_NAME} (&quot;we,&quot;
-            &quot;us,&quot; or &quot;our&quot;) collects, uses, and discloses personal
-            information when you visit, use our services, create an account, or make a
-            purchase through {BRAND_DOMAIN} (the &quot;Site&quot;) or otherwise interact
-            with us (collectively, the &quot;Services&quot;).
+            This Privacy Policy describes how {LEGAL_BUSINESS_NAME}, doing business as{" "}
+            {BRAND_NAME} (&quot;we,&quot; &quot;us,&quot; or &quot;our&quot;), collects,
+            uses, and discloses personal information when you visit {BRAND_DOMAIN}, create
+            an account, make a purchase, or otherwise interact with us (collectively, the
+            &quot;Services&quot;).
           </p>
 
           <section>
@@ -26,38 +27,38 @@ export default function PrivacyPage() {
             </h3>
             <p>We may collect information you provide directly, including:</p>
             <ul className="mt-2 list-disc space-y-1 pl-6">
+              <li>name, email address, phone number, and shipping or billing address</li>
+              <li>order details, transaction history, and pickup contact information</li>
+              <li>account credentials and profile information</li>
+              <li>marketing preferences, including whether you request store updates</li>
               <li>
-                Contact information (name, email address, phone number, shipping/billing
-                information)
-              </li>
-              <li>
-                Order information (items purchased, order details, transaction history)
-              </li>
-              <li>Account information (if you create an account)</li>
-              <li>
-                Customer support information (messages and information you share with us)
+                customer-support messages, photos, and other files you choose to submit
               </li>
             </ul>
-
-            <h3 className="mb-2 mt-4 text-lg font-semibold text-white">
-              B) Information Collected Automatically (Essential)
-            </h3>
-            <p>
-              When you use the Services, we may automatically collect certain technical
-              information, including:
+            <p className="mt-2">
+              Payment information is collected and processed by Square. We do not store
+              full payment card numbers.
             </p>
+
+            <h3 className="mb-2 mt-4 text-lg font-semibold text-white">
+              B) Information Collected Automatically
+            </h3>
+            <p>When you use the Services, we may collect:</p>
             <ul className="mt-2 list-disc space-y-1 pl-6">
-              <li>IP address, browser type, device identifiers</li>
-              <li>pages viewed and basic usage activity</li>
-              <li>security and fraud-prevention logs</li>
+              <li>
+                IP address, browser type, device information, and session identifiers
+              </li>
+              <li>pages viewed and website performance information</li>
+              <li>security, fraud-prevention, rate-limit, and access logs</li>
             </ul>
 
             <h3 className="mb-2 mt-4 text-lg font-semibold text-white">
-              C) Information From Service Providers
+              C) Information From Other Services
             </h3>
             <p>
-              We may receive information from service providers that help operate the
-              Services, such as payment processors and shipping providers.
+              We may receive account information from Google if you choose Google sign-in,
+              payment and order status from Square, and address, shipment, and tracking
+              information from Shippo and participating carriers.
             </p>
           </section>
 
@@ -67,66 +68,67 @@ export default function PrivacyPage() {
             </h2>
             <p>We use personal information to:</p>
             <ul className="mt-2 list-disc space-y-1 pl-6">
-              <li>process orders and deliver products</li>
-              <li>provide customer support and communicate about purchases</li>
-              <li>
-                maintain accounts and essential session features (such as staying logged
-                in)
-              </li>
+              <li>process, fulfill, and support orders and local pickups</li>
+              <li>maintain accounts and essential session features</li>
+              <li>send order, payment, shipping, security, and support communications</li>
+              <li>send store updates or offers when you choose to receive them</li>
               <li>detect and prevent fraud, abuse, and unauthorized access</li>
-              <li>improve the performance and reliability of the Services</li>
+              <li>measure and improve website performance and reliability</li>
               <li>comply with legal obligations and enforce our policies</li>
             </ul>
           </section>
 
           <section>
             <h2 className="mb-4 mt-8 text-2xl font-bold text-white">
-              3) Cookies and Similar Technologies
+              3) Cookies, Analytics, and Security Technologies
             </h2>
             <p>
-              We use strictly necessary cookies (and similar technologies) for essential
-              site functions such as:
+              We use cookies and similar technologies that are necessary for account
+              sessions, checkout security, fraud prevention, and site operation. We do not
+              use marketing or advertising cookies.
             </p>
-            <ul className="mt-2 list-disc space-y-1 pl-6">
-              <li>keeping you logged in</li>
-              <li>maintaining secure sessions</li>
-              <li>preventing abuse and protecting the Services</li>
-            </ul>
             <p className="mt-2">
-              We do not use marketing/advertising cookies if your implementation is
-              limited to essential login/session cookies. If we add analytics,
-              advertising, or other non-essential cookies in the future, we will update
-              this Privacy Policy and provide any required notices or choices.
+              We use Cloudflare Web Analytics to understand page views and website
+              performance. Cloudflare states that this service does not collect or use
+              visitors&apos; personal data. Cloudflare security services may also process
+              technical signals to distinguish people from automated abuse.
             </p>
           </section>
 
           <section>
             <h2 className="mb-4 mt-8 text-2xl font-bold text-white">
-              4) How We Share Information
+              4) How We Disclose Information
             </h2>
-            <p>We may share personal information with:</p>
+            <p>We may disclose personal information to:</p>
             <ul className="mt-2 list-disc space-y-1 pl-6">
-              <li>payment processors to complete transactions</li>
-              <li>shipping and fulfillment providers to deliver orders</li>
+              <li>Square to process payments and orders</li>
               <li>
-                hosting, security, and IT providers to maintain and protect the Services
+                Shippo and shipping carriers to validate addresses and deliver orders
               </li>
+              <li>Supabase, Google, and other account-service providers</li>
+              <li>Vercel, Cloudflare, email, security, and IT service providers</li>
               <li>
-                legal or regulatory authorities if required by law or to protect rights,
-                safety, and the integrity of the Services
+                legal or regulatory authorities when required by law or necessary to
+                protect rights, safety, and the integrity of the Services
               </li>
             </ul>
+            <p className="mt-2">
+              We do not sell personal information or share it for cross-context behavioral
+              advertising.
+            </p>
           </section>
 
           <section>
             <h2 className="mb-4 mt-8 text-2xl font-bold text-white">5) Data Retention</h2>
-            <p>We retain personal information as long as necessary to:</p>
-            <ul className="mt-2 list-disc space-y-1 pl-6">
-              <li>fulfill orders and provide support</li>
-              <li>maintain business records</li>
-              <li>enforce our policies</li>
-              <li>comply with legal obligations</li>
-            </ul>
+            <p>
+              We keep account information while an account remains active and as needed to
+              provide support. We retain order and transaction records as needed for
+              fulfillment, taxes, accounting, disputes, fraud prevention, and other legal
+              obligations. Marketing subscription information is kept until you
+              unsubscribe or ask us to delete it, subject to records needed to honor that
+              request. Security and support records are kept only as long as reasonably
+              necessary for those purposes.
+            </p>
           </section>
 
           <section>
@@ -144,34 +146,52 @@ export default function PrivacyPage() {
             </h2>
             <p>
               The Services are not intended for children under 13, and we do not knowingly
-              collect personal information from children.
-            </p>
-          </section>
-
-          <section>
-            <h2 className="mb-4 mt-8 text-2xl font-bold text-white">8) Your Rights</h2>
-            <p>
-              Depending on your location, you may have rights to access, correct, delete,
-              or obtain a copy of your personal information. To request action on your
-              information, contact us at {SUPPORT_EMAIL}. We may verify your identity
-              before responding.
+              collect personal information from children under 13.
             </p>
           </section>
 
           <section>
             <h2 className="mb-4 mt-8 text-2xl font-bold text-white">
-              9) Changes to This Privacy Policy
+              8) Your Choices and Rights
             </h2>
             <p>
-              We may update this Privacy Policy from time to time. We will post the
-              revised policy on the Site and update the &quot;Last updated&quot; date.
+              Depending on your location, you may have rights to access, correct, delete,
+              or obtain a copy of your personal information. You may opt out of
+              promotional email by following the instructions in the message or contacting
+              us. To make a privacy request, email {SUPPORT_EMAIL}. We may verify your
+              identity before responding. If we deny a request, you may reply to appeal
+              the decision where applicable law provides that right.
             </p>
           </section>
 
           <section>
-            <h2 className="mb-4 mt-8 text-2xl font-bold text-white">10) Contact</h2>
+            <h2 className="mb-4 mt-8 text-2xl font-bold text-white">
+              9) Tracking Preference Signals
+            </h2>
+            <p>
+              Because we do not sell personal information or use cross-context behavioral
+              advertising, browser Do Not Track or Global Privacy Control signals do not
+              change how the Site operates. We will honor legally required preference
+              signals if our practices change.
+            </p>
+          </section>
+
+          <section>
+            <h2 className="mb-4 mt-8 text-2xl font-bold text-white">
+              10) Changes to This Privacy Policy
+            </h2>
+            <p>
+              We may update this Privacy Policy from time to time. We will post the
+              revised policy on the Site and update the &quot;Last updated&quot; date. We
+              will provide additional notice when required by law.
+            </p>
+          </section>
+
+          <section>
+            <h2 className="mb-4 mt-8 text-2xl font-bold text-white">11) Contact</h2>
+            <p>{LEGAL_BUSINESS_NAME}</p>
             <p>Email: {SUPPORT_EMAIL}</p>
-            <p>Location: Simpsonville, South Carolina, USA</p>
+            <p>Location: {PICKUP_LOCATION_SUMMARY}</p>
           </section>
         </div>
       </div>
