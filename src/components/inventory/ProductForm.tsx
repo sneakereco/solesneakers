@@ -1664,7 +1664,7 @@ export function ProductForm({
         <button
           type="submit"
           disabled={isLoading}
-          className="flex-1 rounded bg-red-600 py-3 text-sm font-semibold text-white transition hover:bg-red-700 disabled:bg-gray-600 md:text-base"
+          className="admin-button-primary flex-1 py-3 disabled:border-zinc-300 disabled:bg-zinc-300 disabled:text-zinc-500"
         >
           {isLoading
             ? "Saving..."

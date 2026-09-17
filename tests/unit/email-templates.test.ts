@@ -26,6 +26,8 @@ const expectBrandedShell = (html: string) => {
   expect(html).toContain("https://example.com/store");
   expect(html).toContain("https://example.com/shipping");
   expect(html).toContain("Solesneakers. All rights reserved.");
+  expect(html).toContain("mailto:SolesneakersLLC@yahoo.com");
+  expect(html).not.toContain("Jmanrule15@gmail.com");
   expect(html).toContain("border-radius:16px");
   expect(html).toContain("border-radius:10px");
   expect(html).not.toContain("Curated heat");
@@ -168,6 +170,8 @@ describe("Supabase auth email templates", () => {
     expect(html).toContain('class="email-logo"');
     expect(html).toContain("{{ .SiteURL }}/images/email-logo.png");
     expect(html).toContain("{{ .Token }}");
+    expect(html).toContain("mailto:SolesneakersLLC@yahoo.com");
+    expect(html).not.toContain("Jmanrule15@gmail.com");
     expect(html).toContain("border-radius: 16px");
     expect(html).not.toContain("Curated heat");
     expect(html).not.toContain("Authenticated always");

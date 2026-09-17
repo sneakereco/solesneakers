@@ -576,12 +576,9 @@ export default function ShippingSettingsPage() {
       </div>
 
       {isDefaultsModalOpen && defaultsDraft && (
-        <div
-          className="fixed inset-0 z-50 flex items-center justify-center bg-black/70 px-4"
-          onClick={closeDefaultsModal}
-        >
+        <ModalPortal open={isDefaultsModalOpen} onClose={closeDefaultsModal}>
           <div
-            className="w-full max-w-2xl space-y-5 rounded-lg border border-zinc-800/70 bg-zinc-900 p-6"
+            className="max-h-[calc(100dvh-2rem)] w-full max-w-2xl space-y-5 overflow-y-auto rounded-lg border border-zinc-800/70 bg-zinc-900 p-6"
             onClick={(event) => event.stopPropagation()}
           >
             <div className="flex items-start justify-between">
@@ -695,7 +692,7 @@ export default function ShippingSettingsPage() {
               </button>
             </div>
           </div>
-        </div>
+        </ModalPortal>
       )}
 
       {isOriginModalOpen && (

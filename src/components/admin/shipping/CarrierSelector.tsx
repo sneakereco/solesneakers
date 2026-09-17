@@ -22,17 +22,22 @@ export function CarrierSelector({
             key={carrier.key}
             type="button"
             aria-pressed={selected}
+            data-admin-inverse={selected ? "" : undefined}
             onClick={() => onToggle(carrier.key)}
             className={
               selected
-                ? "w-full rounded border border-zinc-950 bg-zinc-800 p-3 text-left ring-1 ring-zinc-500"
-                : "w-full rounded border border-zinc-800/70 bg-zinc-950/40 p-3 text-left hover:border-zinc-700"
+                ? "w-full rounded border border-black bg-black p-3 text-left ring-1 ring-black"
+                : "w-full rounded border border-zinc-200 bg-white p-3 text-left hover:border-black hover:bg-zinc-50"
             }
           >
-            <span className="block text-[12px] font-medium text-white sm:text-sm">
+            <span
+              className={`block text-[12px] font-medium sm:text-sm ${selected ? "text-white" : "text-zinc-950"}`}
+            >
               {carrier.label}
             </span>
-            <span className="block text-[11px] text-gray-500 sm:text-xs">
+            <span
+              className={`block text-[11px] sm:text-xs ${selected ? "text-zinc-300" : "text-zinc-500"}`}
+            >
               {carrier.description}
             </span>
           </button>
