@@ -950,30 +950,6 @@ export class ProductRepository {
     return this.transformProduct(data as ProductWithRelations);
   }
 
-  async findByTitleAndCategory(
-    titleRaw: string,
-    category: string,
-    tenantId?: string,
-  ): Promise<ProductRow | null> {
-    let query = this.supabase
-      .from("products")
-      .select("*")
-      .eq("name", titleRaw)
-      .eq("category", category)
-      .eq("is_active", true)
-      .is("archived_at", null);
-
-    if (tenantId) {
-      query = query.eq("tenant_id", tenantId);
-    }
-
-    const { data, error } = await query.limit(1).maybeSingle();
-    if (error) {
-      throw error;
-    }
-    return data ?? null;
-  }
-
   async create(product: ProductInsert) {
     const now = new Date().toISOString();
     const { data, error } = await this.supabase
@@ -1101,19 +1077,6 @@ export class ProductRepository {
     return archivedCount;
   }
 
-  async countOrderItemsForProduct(productId: string): Promise<number> {
-    const { count, error } = await this.supabase
-      .from("order_items")
-      .select("id", { count: "exact", head: true })
-      .eq("product_id", productId);
-
-    if (error) {
-      throw error;
-    }
-
-    return count ?? 0;
-  }
-
   async listVariantSkus(tenantId: string): Promise<string[]> {
     const { data, error } = await this.supabase
       .from("product_variants")
@@ -1154,17 +1117,6 @@ export class ProductRepository {
       throw error;
     }
     return data as VariantRow;
-  }
-
-  async deleteVariantsByProduct(productId: string) {
-    const { error } = await this.supabase
-      .from("product_variants")
-      .delete()
-      .eq("product_id", productId);
-
-    if (error) {
-      throw error;
-    }
   }
 
   async deleteVariant(id: string) {
@@ -1253,19 +1205,6 @@ export class ProductRepository {
     if (error) {
       throw error;
     }
-  }
-
-  async getBrands(): Promise<string[]> {
-    const { data, error } = await this.supabase
-      .from("tag_brands")
-      .select("canonical_label")
-      .eq("is_active", true)
-      .order("canonical_label");
-
-    if (error) {
-      throw error;
-    }
-    return (data ?? []).map((brand) => brand.canonical_label);
   }
 
   async listFilterData(opts?: {
@@ -2073,20 +2012,5 @@ export class ProductRepository {
         imageUrl: imageMap.get(product?.id ?? row.product_id) ?? null,
       };
     });
-  }
-
-  async getModels(category?: string): Promise<string[]> {
-    const query = this.supabase
-      .from("tag_models")
-      .select("canonical_label")
-      .eq("is_active", true)
-      .order("canonical_label");
-
-    const { data, error } = await query;
-    if (error) {
-      throw error;
-    }
-    void category;
-    return (data ?? []).map((model) => model.canonical_label);
   }
 }

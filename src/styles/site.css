@@ -1164,39 +1164,6 @@ body[data-route="admin"] main {
   cursor: not-allowed;
 }
 
-.rdk-toggle {
-  width: 46px;
-  height: 24px;
-  min-width: 46px;
-  min-height: 24px;
-  border: 1px solid #3f3f46;
-  background-color: #0b0b0c;
-  display: inline-flex;
-  align-items: center;
-  padding: 2px;
-  transition:
-    background-color 0.15s ease,
-    border-color 0.15s ease;
-  flex-shrink: 0;
-}
-
-.rdk-toggle[data-state="on"] {
-  background-color: #09090b;
-  border-color: #09090b;
-}
-
-.rdk-toggle__thumb {
-  width: 18px;
-  height: 18px;
-  background-color: #ffffff;
-  transition: transform 0.15s ease;
-  transform: translateX(0);
-}
-
-.rdk-toggle[data-state="on"] .rdk-toggle__thumb {
-  transform: translateX(20px);
-}
-
 /* Focus styles for accessibility */
 *:focus-visible {
   outline: 2px solid #09090b;

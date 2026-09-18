@@ -81,28 +81,3 @@ export function AdminPageHeader({
     </header>
   );
 }
-
-export function AdminSectionHeader({
-  title,
-  description,
-  actions,
-}: {
-  title: React.ReactNode;
-  description?: React.ReactNode;
-  actions?: React.ReactNode;
-}) {
-  return (
-    <div
-      data-admin-section-header
-      className="flex flex-col justify-between gap-3 sm:flex-row sm:items-center"
-    >
-      <div>
-        <h2 className="text-lg font-semibold">{title}</h2>
-        {description && (
-          <p className="mt-1 text-sm leading-5 text-zinc-500">{description}</p>
-        )}
-      </div>
-      {actions && <div className="flex shrink-0 items-center gap-2">{actions}</div>}
-    </div>
-  );
-}

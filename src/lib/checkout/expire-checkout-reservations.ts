@@ -1,14 +1,10 @@
 export type ExpiredCheckout = {
   orderId: string;
-  squarePaymentLinkId: string | null;
-  squarePaymentLinkDeletedAt: string | null;
   squareOrderId: string | null;
   squareOrderVersion: number | null;
 };
 
 export type ExpireCheckoutDependencies = {
-  deleteSquareLink(paymentLinkId: string): Promise<void>;
-  markSquareLinkDeleted(orderId: string, paymentLinkId: string): Promise<void>;
   getSquareOrder(
     squareOrderId: string,
   ): Promise<{ state: string; version: number; hasPayment: boolean }>;
@@ -35,16 +31,10 @@ export async function expireCheckoutReservations(
 
   for (const checkout of checkouts) {
     try {
-      if (checkout.squarePaymentLinkId && !checkout.squarePaymentLinkDeletedAt) {
-        await deps.deleteSquareLink(checkout.squarePaymentLinkId);
-        await deps.markSquareLinkDeleted(checkout.orderId, checkout.squarePaymentLinkId);
-      }
-
-      if (
-        !checkout.squarePaymentLinkId &&
-        checkout.squareOrderId &&
-        checkout.squareOrderVersion !== null
-      ) {
+      if (checkout.squareOrderId) {
+        if (checkout.squareOrderVersion === null) {
+          throw new Error("square_order_missing_version_requires_reconciliation");
+        }
         const currentOrder = await deps.getSquareOrder(checkout.squareOrderId);
         if (currentOrder.hasPayment) {
           throw new Error("square_order_payment_requires_reconciliation");

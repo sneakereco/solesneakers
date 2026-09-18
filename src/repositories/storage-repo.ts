@@ -29,26 +29,4 @@ export class StorageRepository {
     const { data } = this.supabase.storage.from(bucket).getPublicUrl(path);
     return data.publicUrl;
   }
-
-  async uploadBuffer(params: {
-    bucket: string;
-    path: string;
-    buffer: Buffer;
-    contentType: string;
-    upsert?: boolean;
-  }) {
-    const { bucket, path, buffer, contentType, upsert = true } = params;
-
-    const { data, error } = await this.supabase.storage
-      .from(bucket)
-      .upload(path, buffer, {
-        contentType,
-        upsert,
-      });
-
-    if (error) {
-      throw error;
-    }
-    return data;
-  }
 }

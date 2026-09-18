@@ -340,9 +340,7 @@ export async function prepareCheckoutHandler(
         orderId: existing.orderId,
         reused: true,
         expiresAt: existing.expiresAt,
-        squarePaymentLinkId: existing.squarePaymentLinkId,
         squareOrderId: existing.squareOrderId,
-        squarePaymentLinkUrl: existing.squarePaymentLinkUrl,
       };
       cart = { items: existing.items, subtotalCents: existing.subtotalCents };
       pricing = {

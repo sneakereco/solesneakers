@@ -12,9 +12,6 @@ export type ProfileRole = (typeof PROFILE_ROLES)[number];
 export const ADMIN_ROLES = ["admin", "super_admin", "dev"] as const;
 export type AdminRole = (typeof ADMIN_ROLES)[number];
 
-export const SUPER_ADMIN_ROLES = ["super_admin", "dev"] as const;
-export type SuperAdminRole = (typeof SUPER_ADMIN_ROLES)[number];
-
 export const ADMIN_PERMISSIONS: Record<ProfileRole, { canInvite: boolean }> = {
   customer: { canInvite: false },
   seller: { canInvite: false },
@@ -37,10 +34,6 @@ export function isProfileRole(value: unknown): value is ProfileRole {
 
 export function isAdminRole(role: ProfileRole): role is AdminRole {
   return includesConst(ADMIN_ROLES, role);
-}
-
-export function isSuperAdminRole(role: ProfileRole): role is SuperAdminRole {
-  return includesConst(SUPER_ADMIN_ROLES, role);
 }
 
 export function isDevRole(role: ProfileRole): boolean {

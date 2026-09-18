@@ -17,13 +17,13 @@ const result = await build({
       const initial = { quote: { completeness: 'preliminary', quoteFingerprint: null,
         totals: { ...totals, taxCents: null, totalCents: 11000 } }, quoteReady: true,
         fulfillment: 'ship', shippingAddress: null, buyerEmail: 'buyer@example.com' };
-      window.paymentTest = { counts: {}, requests: [], errors: [], prepareCalls: 0, updateAllowed: true };
+      window.paymentTest = { cardFailure: new URLSearchParams(location.search).get('cardFailure'), counts: {}, requests: [], errors: [], prepareCalls: 0, updateAllowed: true };
       const test = window.paymentTest;
       const method = (name, request, options) => {
         test.counts[name] = (test.counts[name] || 0) + 1;
         let host;
         return {
-          async attach(selector, attachOptions) { if (name === "cashAppPay") test.cashAttachOptions = attachOptions; host = document.querySelector(selector);
+          async attach(selector, attachOptions) { if (name === 'card' && test.cardFailure === 'attach') throw new Error('test card attachment failure'); if (name === "cashAppPay") test.cashAttachOptions = attachOptions; host = document.querySelector(selector);
             if (name === 'card') host.replaceChildren(document.createTextNode('Secure card fields'));
             if (name === 'afterpay') host.replaceChildren(document.createTextNode('SDK owns this node'));
             if (name === 'cashAppPay') {
@@ -37,7 +37,7 @@ const result = await build({
         };
       };
       window.Square = { payments: () => ({
-        card: async () => method('card'),
+        card: async () => { if (test.cardFailure === 'create') throw new Error('test card creation failure'); return method('card'); },
         paymentRequest: (options) => { const request = { options, listeners: {},
           addEventListener(event, listener) { request.listeners[event] = listener; }, update(next) { if (!test.updateAllowed) return false;
             request.options = { ...request.options, ...next }; return true; } };
@@ -458,6 +458,24 @@ try {
   await page
     .getByRole("heading", { name: "Processing your payment", exact: true })
     .waitFor();
+  assert.deepEqual(errors, []);
+  for (const phase of ["create", "attach"]) {
+    await page.goto(`http://checkout.test/checkout?cardFailure=${phase}`);
+    await page.addScriptTag({ content: result.outputFiles[0].text });
+    await page
+      .getByText("Secure payment fields could not be loaded. Please retry.", {
+        exact: true,
+      })
+      .first()
+      .waitFor();
+    await page.waitForFunction(() => window.paymentTest.counts.applePay === 1);
+    assert.equal(await page.evaluate(() => window.paymentTest.prepareCalls), 0);
+    assert.equal(await page.evaluate(() => window.paymentTest.tokenizeCalls || 0), 0);
+    await page.reload();
+    await page.evaluate(() => history.replaceState(null, "", "/checkout"));
+    await page.addScriptTag({ content: result.outputFiles[0].text });
+    await page.getByText("Secure card fields", { exact: true }).waitFor();
+  }
   assert.deepEqual(errors, []);
   console.log(
     "PASS: persistent rows, independent wallet instances, updated totals, stale Cash App rejection",
