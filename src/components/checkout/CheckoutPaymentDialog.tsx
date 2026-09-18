@@ -153,7 +153,7 @@ function PaymentDialogContent({
                 : cashAppReapproval
                   ? "Approve the updated total with Cash App to finish your order."
                   : error) ||
-            "Please keep this page open while we process your payment and confirm your order. Don't submit another payment."}
+            "This may take a few seconds. Please keep this page open while we process your payment and confirm your order. Don't submit another payment."}
         </p>
         {walletReview}
         {addressReview && onAcceptAddress && (

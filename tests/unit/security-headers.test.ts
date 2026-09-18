@@ -13,6 +13,18 @@ function directives(csp: string | null): Map<string, string[]> {
 }
 
 describe("production security headers", () => {
+  it.each(["/checkout", "/checkout/processing"])(
+    "allows payment popups on %s without allowing framing",
+    (pathname) => {
+      const response = NextResponse.next();
+      applySecurityHeaders(response, "production", pathname);
+      expect(response.headers.get("cross-origin-opener-policy")).toBe(
+        "same-origin-allow-popups",
+      );
+      expect(response.headers.get("x-frame-options")).toBe("DENY");
+    },
+  );
+
   it("sets isolation and transport headers", () => {
     const response = NextResponse.next();
 

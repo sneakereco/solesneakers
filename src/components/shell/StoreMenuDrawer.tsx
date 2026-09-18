@@ -173,7 +173,7 @@ export function StoreMenuDrawer({ isOpen, onClose }: StoreMenuDrawerProps) {
   >({});
   const [brands, setBrands] = useState<BrandOption[]>([]);
   const [sizes, setSizes] = useState<SizeOption[]>([]);
-  const closeButtonRef = useRef<HTMLButtonElement>(null);
+  const drawerRef = useRef<HTMLElement>(null);
   const panelTimeoutRef = useRef<number | null>(null);
   const closeFromEffect = useEffectEvent(onClose);
 
@@ -218,7 +218,7 @@ export function StoreMenuDrawer({ isOpen, onClose }: StoreMenuDrawerProps) {
 
     const previousOverflow = document.body.style.overflow;
     document.body.style.overflow = "hidden";
-    closeButtonRef.current?.focus();
+    drawerRef.current?.focus({ preventScroll: true });
 
     const handleKeyDown = (event: KeyboardEvent) => {
       if (event.key === "Escape") {
@@ -347,8 +347,11 @@ export function StoreMenuDrawer({ isOpen, onClose }: StoreMenuDrawerProps) {
       }}
     >
       <aside
+        ref={drawerRef}
+        tabIndex={-1}
         className="relative flex h-[100dvh] w-full overflow-hidden bg-white text-black shadow-2xl transition-[max-width,transform]"
         style={{
+          outline: "none",
           maxWidth: isPanelVisible ? "784px" : "392px",
           transform: isVisible ? "none" : "translate3d(-100%,0,0)",
           transitionDuration: `${DRAWER_TRANSITION_MS}ms`,
@@ -361,7 +364,6 @@ export function StoreMenuDrawer({ isOpen, onClose }: StoreMenuDrawerProps) {
         <div className="h-full w-full shrink-0 overflow-y-auto overscroll-contain bg-white md:w-[392px] md:border-r md:border-zinc-200">
           <div className="flex h-20 items-center px-6 md:px-8">
             <button
-              ref={closeButtonRef}
               type="button"
               onClick={closeMenu}
               className="inline-flex h-10 w-10 items-center justify-start text-zinc-800 transition-colors hover:text-black"

@@ -150,12 +150,12 @@ export default function CartPage() {
           <p className="mt-4 text-xs leading-5 text-zinc-500">
             Shipping and taxes are calculated at checkout.
           </p>
-          <Link
+          <a
             href="/checkout"
             className="mt-6 block w-full bg-zinc-950 px-6 py-4 text-center text-sm font-medium uppercase text-white transition-colors hover:bg-black"
           >
             Checkout
-          </Link>
+          </a>
           <Link
             href="/store"
             className="mt-5 block text-center text-sm underline underline-offset-4"

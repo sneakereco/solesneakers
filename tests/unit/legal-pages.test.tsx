@@ -29,10 +29,10 @@ describe("storefront legal policies", () => {
   it("states the delayed-shipment remedy and local pickup rules", () => {
     const shipping = renderToStaticMarkup(<ShippingPage />);
 
-    expect(shipping).toContain("consent to the delay");
+    expect(shipping).toContain("consent to a delay");
     expect(shipping).toContain("cancel for a full refund");
     expect(shipping).toContain("government-issued ID");
-    expect(shipping).toContain("September 16, 2026");
+    expect(shipping).toContain("September 18, 2026");
   });
 
   it("identifies the contracting entity and North Carolina terms", () => {
