@@ -86,6 +86,16 @@ A disposable copy of the existing local database was restored into `codex_retire
 
 ## Remaining release work
 
-No branch has been pushed or merged. No remote schema, provider, auth, or bucket change has been made. Release A must be reviewed and rolled out before Release B. The production baseline backlog, remaining sandbox link, backup verification, live smoke tests, and actual bucket/auth configuration retirement remain explicit deployment tasks.
+Release A was merged through PR #11 at 23e66d8a2a2b2117cbe7e3213699aca4bf012bc7 and its staging workflow passed validation, migration, deployment, and readiness verification. Release B remains local. The agent has not performed remote schema, provider, auth, or bucket changes. Release A still needs production rollout before Release B can reach main. The production baseline backlog, remaining sandbox link, backup verification, live smoke tests, and actual bucket/auth configuration retirement remain explicit deployment tasks.
 
 The current worktree is preserved at `C:/dev/projects/sneakereco/solesneakers/.worktrees/dead-code-retirement`. Main's existing mist.toml deletion, untracked mise.toml, and original untracked plan are unchanged.
+
+## PR #11 deployment verification
+
+Verified after the user reported deployment:
+
+- PR #11 is merged; staging workflow [35387961777](https://github.com/sneakereco/solesneakers/actions/runs/35387961777) succeeded at merge commit `23e66d8a2a2b2117cbe7e3213699aca4bf012bc7`.
+- The latest successful production workflow still reports July commit `dd8ea098a48e9cc5f12463f5c6e699b5b99bc2a4`. A fresh database read still finds 87 migrations through `20260723090000`.
+- The remaining legacy staging hosted link still exists at Square, its order remains in review, and deletion evidence is absent. The other recorded legacy link returns NOT_FOUND and already has deletion evidence.
+
+The staging readiness workflow does not replace payment/fulfillment smoke testing. Production compatibility rollout, legacy-link retirement, recoverable backup verification and live smoke tests remain required before the database contraction release.

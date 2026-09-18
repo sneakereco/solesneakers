@@ -18,7 +18,7 @@
 | -------------------------------------- | ---------------------------------------------------------------------------------------- |
 | 1: isolate and refresh baseline        | Done; production backlog identified, baseline rollout pending                            |
 | 2–5: remove application dependencies   | Code complete and locally verified; remaining provider link retirement is a release gate |
-| 6: release A rollout                   | Local verification done; staging/production deployment pending                           |
+| 6: release A rollout                   | Local verification done; staging deployed via PR #11; production deployment pending      |
 | 7–8: schema migration and verification | Prepared on separate release B branch; clone and full replay checks passed               |
 | 9: release B rollout/configuration     | Pending release A deployments, recoverable backups and reviewed rollout                  |
 
