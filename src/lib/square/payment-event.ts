@@ -4,6 +4,11 @@ import { z } from "zod";
 
 import type { TypedSupabaseClient } from "@/lib/supabase/server";
 import type { Json } from "@/types/db/database.types";
+import {
+  recordSquarePaymentDetails,
+  squarePaymentDetails,
+  type SquarePaymentDetails,
+} from "@/lib/square/payment-details";
 
 const moneySchema = z.object({
   amount: z.number().int().nonnegative(),
@@ -26,6 +31,26 @@ const paymentEventSchema = z.object({
         created_at: z.string().datetime(),
         status: z.string().min(1),
         amount_money: moneySchema,
+        source_type: z.string().optional(),
+        card_details: z
+          .object({
+            card: z
+              .object({
+                card_brand: z.string().optional(),
+                last_4: z
+                  .string()
+                  .regex(/^\d{4}$/)
+                  .optional(),
+                exp_month: z.number().int().min(1).max(12).nullish(),
+                exp_year: z.number().int().nullish(),
+              })
+              .optional(),
+            avs_status: z.string().optional(),
+            cvv_status: z.string().optional(),
+          })
+          .optional(),
+        wallet_details: z.object({ brand: z.string().nullish() }).optional(),
+        buy_now_pay_later_details: z.object({ brand: z.string().nullish() }).optional(),
         risk_evaluation: z.object({ risk_level: z.string().min(1) }).optional(),
       }),
     }),
@@ -92,6 +117,7 @@ export type SquarePaymentEventResult =
     };
 
 export type SquarePaymentSnapshot = {
+  details?: SquarePaymentDetails;
   eventId: string;
   eventType: string;
   merchantId: string;
@@ -163,6 +189,21 @@ export class SquarePaymentEventProcessor {
         amountCents: payment.amount_money.amount,
         currency: payment.amount_money.currency,
         riskLevel: payment.risk_evaluation?.risk_level ?? null,
+        details: squarePaymentDetails({
+          sourceType: payment.source_type,
+          walletDetails: payment.wallet_details,
+          buyNowPayLaterDetails: payment.buy_now_pay_later_details,
+          cardDetails: {
+            card: {
+              cardBrand: payment.card_details?.card?.card_brand,
+              last4: payment.card_details?.card?.last_4,
+              expMonth: payment.card_details?.card?.exp_month,
+              expYear: payment.card_details?.card?.exp_year,
+            },
+            avsStatus: payment.card_details?.avs_status,
+            cvvStatus: payment.card_details?.cvv_status,
+          },
+        }),
       },
       payloadHash,
     );
@@ -210,6 +251,16 @@ export class SquarePaymentEventProcessor {
     };
     if (payment.paymentStatus === "COMPLETED" && "orderId" in result && result.orderId) {
       this.scheduleNotifications?.(result.orderId);
+    }
+    if (payment.paymentStatus === "COMPLETED" && payment.details) {
+      await recordSquarePaymentDetails(this.supabase, {
+        squareOrderId: payment.squareOrderId,
+        paymentId: payment.paymentId,
+        status: payment.paymentStatus,
+        amountCents: payment.amountCents,
+        currency: payment.currency,
+        details: payment.details,
+      });
     }
     return processed;
   }

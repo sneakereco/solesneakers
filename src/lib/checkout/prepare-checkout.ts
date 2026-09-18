@@ -413,6 +413,7 @@ export async function prepareCheckoutHandler(
         billingAddress: parsed.data.billingAddress,
         protectionEvidence: {
           version: 2,
+          payment_method: parsed.data.paymentMethod,
           bot_verdict: bot.reason,
           client_ip_masked: maskIp(clientIp),
           normalized_email_hmac: normalizedEmailHash,

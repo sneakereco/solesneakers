@@ -69,6 +69,54 @@ const disputeCreatedEvent = {
 };
 
 describe("SquarePaymentEventProcessor", () => {
+  it("accepts a completed payment with Square's nullable card expiration fields", async () => {
+    const event = structuredClone(completedPaymentEvent);
+    Object.assign(event.data.object.payment.card_details.card, {
+      exp_month: null,
+      exp_year: null,
+    });
+    const rpc = jest.fn().mockResolvedValue({
+      data: { duplicate: false, fulfillment_authorized: true, order_id: "order-1" },
+      error: null,
+    });
+    const processor = new SquarePaymentEventProcessor(
+      { rpc } as never,
+      "location-1",
+      async () => {},
+    );
+    await expect(processor.process(JSON.stringify(event))).resolves.toMatchObject({
+      fulfillmentAuthorized: true,
+    });
+    expect(rpc).toHaveBeenCalledWith(
+      "record_square_payment_details",
+      expect.objectContaining({
+        p_details: expect.objectContaining({
+          card_expiry_month: null,
+          card_expiry_year: null,
+        }),
+      }),
+    );
+  });
+  it("persists safe card details even when the payment event was already processed", async () => {
+    const rpc = jest.fn().mockResolvedValue({
+      data: { duplicate: true, fulfillment_authorized: false },
+      error: null,
+    });
+    const processor = new SquarePaymentEventProcessor(
+      { rpc } as never,
+      "location-1",
+      async () => {},
+    );
+    await processor.process(JSON.stringify(completedPaymentEvent));
+    expect(rpc).toHaveBeenCalledWith(
+      "record_square_payment_details",
+      expect.objectContaining({
+        p_square_order_id: "square-order-1",
+        p_square_payment_id: "payment-1",
+        p_details: expect.objectContaining({ card_last4: "4242" }),
+      }),
+    );
+  });
   const verifyPaymentOrder = jest.fn().mockResolvedValue(undefined);
 
   beforeEach(() => verifyPaymentOrder.mockClear());
@@ -145,7 +193,7 @@ describe("SquarePaymentEventProcessor", () => {
 
     await processor.process(JSON.stringify(completedPaymentEvent));
 
-    expect(rpc).toHaveBeenCalledTimes(1);
+    expect(rpc).toHaveBeenCalledTimes(2);
     expect(scheduleNotifications).toHaveBeenCalledWith("local-order-1");
     expect(rpc.mock.invocationCallOrder[0]).toBeLessThan(
       scheduleNotifications.mock.invocationCallOrder[0],

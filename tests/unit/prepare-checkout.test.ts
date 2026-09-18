@@ -299,7 +299,11 @@ describe("shipping deliverability gate", () => {
       expect(deps.validateShippingAddress).not.toHaveBeenCalled();
       expect(deps.checkAddressValidationAttempt).not.toHaveBeenCalled();
       expect(deps.reserve).toHaveBeenCalledWith(
-        expect.objectContaining({ shippingAddress: body.shippingAddress, paymentMethod }),
+        expect.objectContaining({
+          shippingAddress: body.shippingAddress,
+          paymentMethod,
+          protectionEvidence: expect.objectContaining({ payment_method: paymentMethod }),
+        }),
       );
     },
   );

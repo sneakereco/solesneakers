@@ -19,7 +19,12 @@ export type CreateDirectPaymentDependencies = {
   consumePermit(token: string): Promise<PaymentPermitPayload | null>;
   loadOrder(orderId: string): Promise<PaymentCheckout | null>;
   createPayment(input: DirectPaymentInput): Promise<DirectPaymentResult>;
-  savePaymentId(orderId: string, paymentId: string): Promise<void>;
+  savePaymentId(
+    orderId: string,
+    paymentId: string,
+    payment: DirectPaymentResult,
+    method: PaymentPermitPayload["method"],
+  ): Promise<void>;
   recordDecline(input: {
     tenantId: string;
     deviceSessionId: string;
@@ -156,7 +161,7 @@ export async function createDirectPaymentHandler(
         402,
       );
     }
-    await deps.savePaymentId(order.orderId, payment.id);
+    await deps.savePaymentId(order.orderId, payment.id, payment, permit.method);
     return json(
       {
         orderId: order.orderId,

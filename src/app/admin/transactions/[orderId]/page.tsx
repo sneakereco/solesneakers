@@ -26,6 +26,7 @@ import { AdminPage, AdminPageHeader } from "@/components/admin/AdminPage";
 import type { AdminOrderItem } from "@/components/admin/orders/OrderItemDetailsModal";
 import { Toast } from "@/components/ui/Toast";
 import { shouldShowOrderProfit } from "@/lib/orders/metrics";
+import { paymentMethodLabel } from "@/lib/orders/payment-method";
 
 type ProductImage = { url: string; is_primary?: boolean; sort_order?: number };
 
@@ -98,6 +99,7 @@ type Order = {
 };
 
 type PaymentTransaction = {
+  payment_method?: string | null;
   id: string;
   card_type?: string | null;
   card_last4?: string | null;
@@ -264,6 +266,9 @@ function getAvsLabel(code: string | null | undefined) {
 
   const map: Record<string, { label: string; color: string }> = {
     YYY: { label: `Address & ZIP match (${code})`, color: "text-emerald-400" },
+    AVS_ACCEPTED: { label: "Address verified", color: "text-emerald-400" },
+    AVS_REJECTED: { label: "Address did not match", color: "text-red-400" },
+    AVS_NOT_CHECKED: { label: "Not checked", color: "text-zinc-400" },
     YYX: { label: `Exact match (${code})`, color: "text-emerald-400" },
     GGG: { label: `International match (${code})`, color: "text-emerald-400" },
     NYZ: { label: `ZIP match only (${code})`, color: "text-amber-400" },
@@ -282,6 +287,9 @@ function getCvvLabel(code: string | null | undefined) {
 
   const map: Record<string, { label: string; color: string }> = {
     M: { label: "Match (M)", color: "text-emerald-400" },
+    CVV_ACCEPTED: { label: "Verified", color: "text-emerald-400" },
+    CVV_REJECTED: { label: "Did not match", color: "text-red-400" },
+    CVV_NOT_CHECKED: { label: "Not checked", color: "text-zinc-400" },
     N: { label: "No match (N)", color: "text-red-400" },
     P: { label: "Not processed (P)", color: "text-zinc-400" },
     U: { label: "Unavailable (U)", color: "text-zinc-400" },
@@ -820,6 +828,9 @@ export default function TransactionDetailPage() {
               ) : (
                 <div className="space-y-0">
                   <DetailRow label="Card type">{paymentTx.card_type ?? "-"}</DetailRow>
+                  <DetailRow label="Payment method">
+                    {paymentMethodLabel(paymentTx.payment_method) ?? "Not recorded"}
+                  </DetailRow>
                   <DetailRow label="Last 4">
                     {paymentTx.card_last4 ? `.... ${paymentTx.card_last4}` : "-"}
                   </DetailRow>

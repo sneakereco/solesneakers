@@ -1,5 +1,15 @@
 # Checkout repair validation
 
+## September 18 repairs (local, not deployed)
+
+Apple Pay shipping updates now replace the native sheet's total at the top level and clear its pending flag. Checkout allows provider popups through its COOP header; both cart entry points use document navigation so this header actually takes effect. The menu initially focuses its container while keyboard navigation retains a visible focus indicator. Processing copy and the shipping policy have been updated.
+
+Payment metadata is recorded from direct payments, signed webhooks, and reconciliation. The selected checkout method supplies Apple Pay/Google Pay labels when Square reports only a card; card brand alone never establishes wallet identity. The admin list and detail page read the same persisted metadata. Historical payments are not automatically backfilled, and old card payments without a recorded wallet method cannot reliably be relabeled.
+
+Apply `20260918140000_square_payment_details.sql` **before deploying the application**, because the admin queries require its new columns. The migration is additive and compatible with the prior application. No remote migration, deployment, or historical backfill has been performed. Run `doppler run --config dev -- node scripts/test-square-payment-details.mjs` for a local rollback check of replay safety, amounts, and permissions. Native Apple Pay shipping totals and Google Pay popup behavior still require real-device testing after deployment.
+
+The reported missing emails were traced to successful SMTP handoff for the two supplied staging orders. The user confirmed they had checked the wrong inbox and withdrew that issue; no email behavior was changed.
+
 Branch: `codex/checkout-cohesion`. Approved scope: September 15, 2026.
 
 ## What changed

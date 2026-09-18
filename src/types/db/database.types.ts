@@ -1126,6 +1126,8 @@ export type Database = {
           cvv2_result_code: string | null
           id: string
           order_id: string
+          payment_method: string | null
+          square_payment_id: string | null
           tenant_id: string | null
           three_ds_eci: string | null
           three_ds_status: string | null
@@ -1156,6 +1158,8 @@ export type Database = {
           cvv2_result_code?: string | null
           id?: string
           order_id: string
+          payment_method?: string | null
+          square_payment_id?: string | null
           tenant_id?: string | null
           three_ds_eci?: string | null
           three_ds_status?: string | null
@@ -1186,6 +1190,8 @@ export type Database = {
           cvv2_result_code?: string | null
           id?: string
           order_id?: string
+          payment_method?: string | null
+          square_payment_id?: string | null
           tenant_id?: string | null
           three_ds_eci?: string | null
           three_ds_status?: string | null
@@ -2533,6 +2539,17 @@ export type Database = {
           p_square_payment_id: string
         }
         Returns: Json
+      }
+      record_square_payment_details: {
+        Args: {
+          p_amount_cents: number
+          p_currency: string
+          p_details: Json
+          p_payment_status: string
+          p_square_order_id: string
+          p_square_payment_id: string
+        }
+        Returns: undefined
       }
       process_square_payment_event: {
         Args: {

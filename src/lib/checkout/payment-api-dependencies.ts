@@ -15,6 +15,7 @@ import { verifyCheckoutBrowser } from "@/lib/security/checkout-bot";
 import { verifyTurnstile } from "@/lib/security/turnstile";
 import { createSquarePaymentsGateway } from "@/lib/square/client";
 import { isDefiniteSquarePaymentDecline } from "@/lib/square/payments";
+import { recordSquarePaymentDetails } from "@/lib/square/payment-details";
 import { createSupabaseAdminClient } from "@/lib/supabase/service-role";
 import { logError } from "@/lib/utils/log";
 import { CheckoutReservationRepository } from "@/repositories/checkout-reservation-repo";
@@ -89,8 +90,20 @@ export function createDirectPaymentDependencies(
     consumePermit: (token) => permits.consume(token),
     loadOrder: (orderId) => reservations.findPaymentCheckout(orderId),
     createPayment: (input) => getPayments().create(input),
-    savePaymentId: (orderId, paymentId) =>
-      orders.updatePaymentTransactionId(orderId, paymentId),
+    savePaymentId: async (orderId, paymentId, payment, method) => {
+      await orders.updatePaymentTransactionId(orderId, paymentId);
+      await recordSquarePaymentDetails(supabase, {
+        squareOrderId: payment.orderId,
+        paymentId,
+        status: payment.status,
+        amountCents: payment.totalCents,
+        currency: "USD",
+        details: {
+          ...payment.details,
+          payment_method: payment.details?.payment_method ?? method,
+        },
+      });
+    },
     recordDecline: (input) => limiter.recordDecline(input),
     isDefiniteDecline: isDefiniteSquarePaymentDecline,
     reportError: (error) =>

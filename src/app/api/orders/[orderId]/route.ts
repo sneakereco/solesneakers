@@ -12,6 +12,7 @@ import { getRequestIdFromHeaders } from "@/lib/http/request-id";
 import { getSquareConfig } from "@/lib/square/config";
 import { createSquareClient } from "@/lib/square/client";
 import { SquarePaymentEventProcessor } from "@/lib/square/payment-event";
+import { squarePaymentDetails } from "@/lib/square/payment-details";
 import { createSquarePaymentOrderVerifier } from "@/lib/square/payment-order-verification";
 import { reconcilePendingSquarePayment } from "@/lib/square/payment-reconciliation";
 import { createSquarePaymentReconciliationCooldown } from "@/lib/square/payment-reconciliation-cooldown";
@@ -244,6 +245,7 @@ export async function GET(
                 : null,
               createdAt: payment.createdAt,
               versionToken: payment.versionToken,
+              details: squarePaymentDetails(payment),
             };
           },
           processPayment: (payment) => processor.processPaymentSnapshot(payment),

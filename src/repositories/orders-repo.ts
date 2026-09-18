@@ -338,7 +338,7 @@ export class OrdersRepository {
     let query = this.supabase
       .from("orders")
       .select(
-        "*, profiles!user_id(email), items:order_items(*, product:products(id, name, category, created_at, description, images:product_images(url, is_primary, sort_order)), variant:product_variants(id, sku, sale_price_cents, unit_cost_cents)), shipping:order_shipping(*), billing:order_billing(name, phone), payment:payment_transactions(card_type, card_last4)",
+        "*, profiles!user_id(email), items:order_items(*, product:products(id, name, category, created_at, description, images:product_images(url, is_primary, sort_order)), variant:product_variants(id, sku, sale_price_cents, unit_cost_cents)), shipping:order_shipping(*), billing:order_billing(name, phone), payment:payment_transactions(payment_method, square_payment_id, card_type, card_last4)",
         { count: "exact" },
       )
       .order("created_at", { ascending: false });
