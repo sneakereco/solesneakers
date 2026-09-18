@@ -22,7 +22,7 @@ export async function POST(req: NextRequest) {
   }
 
   try {
-    const { email, password, updatesOptIn } = parsed.data;
+    const { email, password } = parsed.data;
     if (!isPasswordValid(password)) {
       return NextResponse.json(
         { ok: false, error: "Password does not meet the required criteria.", requestId },
@@ -37,7 +37,7 @@ export async function POST(req: NextRequest) {
     const authService = new AuthService(supabase);
 
     // 3) Perform the sign-up
-    await authService.signUp(email, password, updatesOptIn);
+    await authService.signUp(email, password);
 
     return NextResponse.json({ ok: true }, { headers: { "Cache-Control": "no-store" } });
   } catch (error: unknown) {

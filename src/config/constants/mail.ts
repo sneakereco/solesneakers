@@ -8,7 +8,6 @@ export const MAIL_FROM_EMAIL = "info@shopsolesneakers.com";
 export const MAIL_FROM_NAME = "Solesneakers";
 
 export const SUPPORT_EMAIL = "SolesneakersLLC@yahoo.com";
-export const BUG_REPORT_EMAIL = "jrushinski@sneakereco.com";
 export const MAIL_REPLY_TO_EMAIL = SUPPORT_EMAIL;
 
 export const emailSubjects = {
@@ -23,7 +22,5 @@ export const emailSubjects = {
     `Your ${EMAIL_DISPLAY_NAME} order #${shortOrderId(orderId)} was delivered`,
   orderRefunded: (orderId: string) =>
     `Your ${EMAIL_DISPLAY_NAME} order #${shortOrderId(orderId)} has been refunded`,
-  subscriptionConfirmed: () => `Thanks for subscribing to ${EMAIL_DISPLAY_NAME}`,
-  subscriptionConfirmation: () => `Confirm your ${EMAIL_DISPLAY_NAME} subscription`,
   passwordUpdated: () => `Your ${EMAIL_DISPLAY_NAME} password was updated`,
 };

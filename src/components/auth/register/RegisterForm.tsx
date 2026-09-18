@@ -19,13 +19,11 @@ type State = {
   isSubmitting: boolean;
   password: string;
   confirmPassword: string;
-  updatesOptIn: boolean;
 };
 
 type Action =
   | { type: "SET_PASSWORD"; password: string }
   | { type: "SET_CONFIRM_PASSWORD"; confirmPassword: string }
-  | { type: "SET_UPDATES_OPT_IN"; value: boolean }
   | { type: "START_SUBMIT" }
   | { type: "ERROR"; error: string }
   | { type: "RESET" };
@@ -36,8 +34,6 @@ function reducer(state: State, action: Action): State {
       return { ...state, password: action.password };
     case "SET_CONFIRM_PASSWORD":
       return { ...state, confirmPassword: action.confirmPassword };
-    case "SET_UPDATES_OPT_IN":
-      return { ...state, updatesOptIn: action.value };
     case "START_SUBMIT":
       return { ...state, isSubmitting: true, error: null };
     case "ERROR":
@@ -64,7 +60,6 @@ export function RegisterForm() {
     isSubmitting: false,
     password: "",
     confirmPassword: "",
-    updatesOptIn: false,
   });
 
   const nextUrl = searchParams.get("next") || "/";
@@ -98,7 +93,6 @@ export function RegisterForm() {
         body: JSON.stringify({
           email,
           password: passwordValue,
-          updatesOptIn: state.updatesOptIn,
         }),
       });
 
@@ -162,21 +156,6 @@ export function RegisterForm() {
 
         <PasswordRequirements password={state.password} />
       </div>
-
-      <label className="flex cursor-pointer items-start gap-3">
-        <input
-          type="checkbox"
-          checked={state.updatesOptIn}
-          onChange={(e) =>
-            dispatch({ type: "SET_UPDATES_OPT_IN", value: e.target.checked })
-          }
-          className="mt-0.5 h-[18px] w-[18px] appearance-none border border-zinc-400 bg-white checked:border-zinc-900 checked:bg-zinc-900 focus:outline-none"
-          disabled={state.isSubmitting}
-        />
-        <span className="text-[0.95rem] leading-6 text-zinc-600">
-          Send me drop alerts and exclusive offers
-        </span>
-      </label>
 
       <button
         type="submit"

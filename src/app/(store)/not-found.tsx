@@ -42,15 +42,6 @@ export default function NotFound() {
               Shop new arrivals
             </Link>
           </div>
-
-          <div className="mt-6 text-center">
-            <Link
-              href="/bug-report"
-              className="text-sm text-zinc-600 underline underline-offset-4 transition-colors hover:text-black"
-            >
-              Think this is a bug? Report it.
-            </Link>
-          </div>
         </div>
       </main>
     </div>

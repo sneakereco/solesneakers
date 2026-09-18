@@ -15,10 +15,6 @@ import {
   buildOrderRefundedEmail,
   buildPickupInstructionsEmail,
 } from "@/lib/email/orders";
-import {
-  buildSubscriptionConfirmationEmail,
-  buildSubscriptionConfirmedEmail,
-} from "@/lib/email/subscription";
 
 const expectBrandedShell = (html: string) => {
   expect(html).toContain("https://example.com/images/email-logo.png");
@@ -39,8 +35,6 @@ const expectBrandedShell = (html: string) => {
 describe("customer email templates", () => {
   it("renders every customer notification inside the storefront-branded shell", () => {
     const emails = [
-      buildSubscriptionConfirmedEmail(),
-      buildSubscriptionConfirmationEmail("https://example.com/email/confirm?token=abc"),
       buildPasswordUpdatedEmail("https://example.com/account"),
       buildOrderLabelCreatedEmail({
         to: "buyer@example.com",

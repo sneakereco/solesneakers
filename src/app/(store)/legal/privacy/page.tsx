@@ -15,7 +15,7 @@ export default function PrivacyPage() {
     <PolicyPage title="Privacy Policy">
       <div className="prose prose-invert max-w-none">
         <div className="space-y-6 text-zinc-400">
-          <p className="text-sm">Last updated: September 16, 2026</p>
+          <p className="text-sm">Last updated: September 18, 2026</p>
 
           <p>
             This Privacy Policy describes how {LEGAL_BUSINESS_NAME}, doing business as{" "}
@@ -37,9 +37,8 @@ export default function PrivacyPage() {
               <li>name, email address, phone number, and shipping or billing address</li>
               <li>order details, transaction history, and pickup contact information</li>
               <li>account credentials and profile information</li>
-              <li>marketing preferences, including whether you request store updates</li>
               <li>
-                customer-support messages, photos, and other files you choose to submit
+                customer-support messages and any photos or files you send us by email
               </li>
             </ul>
             <p className="mt-2">
@@ -78,7 +77,6 @@ export default function PrivacyPage() {
               <li>process, fulfill, and support orders and local pickups</li>
               <li>maintain accounts and essential session features</li>
               <li>send order, payment, shipping, security, and support communications</li>
-              <li>send store updates or offers when you choose to receive them</li>
               <li>detect and prevent fraud, abuse, and unauthorized access</li>
               <li>measure and improve website performance and reliability</li>
               <li>comply with legal obligations and enforce our policies</li>
@@ -131,10 +129,8 @@ export default function PrivacyPage() {
               We keep account information while an account remains active and as needed to
               provide support. We retain order and transaction records as needed for
               fulfillment, taxes, accounting, disputes, fraud prevention, and other legal
-              obligations. Marketing subscription information is kept until you
-              unsubscribe or ask us to delete it, subject to records needed to honor that
-              request. Security and support records are kept only as long as reasonably
-              necessary for those purposes.
+              obligations. Security and support records are kept only as long as
+              reasonably necessary for those purposes.
             </p>
           </section>
 
@@ -163,11 +159,10 @@ export default function PrivacyPage() {
             </h2>
             <p>
               Depending on your location, you may have rights to access, correct, delete,
-              or obtain a copy of your personal information. You may opt out of
-              promotional email by following the instructions in the message or contacting
-              us. To make a privacy request, email {SUPPORT_EMAIL}. We may verify your
-              identity before responding. If we deny a request, you may reply to appeal
-              the decision where applicable law provides that right.
+              or obtain a copy of your personal information. To make a privacy request,
+              email {SUPPORT_EMAIL}. We may verify your identity before responding. If we
+              deny a request, you may reply to appeal the decision where applicable law
+              provides that right.
             </p>
           </section>
 

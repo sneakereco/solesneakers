@@ -19,7 +19,7 @@ export default function ContactPage() {
         className="storefront-contact-card mx-auto mt-14 w-full bg-white px-6 py-8 shadow-[0_2px_18px_rgba(0,0,0,0.1)] sm:px-8 sm:py-10"
         style={{ maxWidth: "1180px" }}
       >
-        <ContactForm source="contact_form" variant="storefront" />
+        <ContactForm />
         <p className="mt-7 text-center text-sm text-zinc-800 sm:text-base">
           All messages will be sent to{" "}
           <a

@@ -1,59 +1,23 @@
 // src/components/contact/ContactForm.tsx
 "use client";
 
-import Image from "next/image";
+import { useEffect, useRef, useState } from "react";
 
-import { useEffect, useMemo, useRef, useState } from "react";
-
-import { security } from "@/config/security";
 import { Toast } from "@/components/ui/Toast";
 
-type ContactFormSource = "contact_form" | "bug_report";
-
-type ContactFormProps = {
-  source?: ContactFormSource;
-  variant?: "default" | "storefront";
-  initialSubject?: string;
-  initialMessage?: string;
-  messagePlaceholder?: string;
-};
-
-export function ContactForm({
-  source = "contact_form",
-  variant = "default",
-  initialSubject = "",
-  initialMessage = "",
-  messagePlaceholder,
-}: ContactFormProps) {
+export function ContactForm() {
   const [formData, setFormData] = useState({
     name: "",
     email: "",
-    subject: initialSubject,
-    message: initialMessage,
+    message: "",
   });
-  const [attachments, setAttachments] = useState<File[]>([]);
   const [status, setStatus] = useState<"idle" | "sending" | "success" | "error">("idle");
   const [toast, setToast] = useState<{
     message: string;
     tone: "success" | "error" | "info";
   } | null>(null);
-  const [attachmentError, setAttachmentError] = useState<string | null>(null);
-  const [isDragging, setIsDragging] = useState(false);
-
-  const { attachments: attachmentConfig } = security.contact;
-  const maxAttachments = attachmentConfig.maxFiles;
-  const maxAttachmentSize = attachmentConfig.maxBytes;
-  const allowedTypes = attachmentConfig.allowedTypes.map((type) => type);
-  const maxAttachmentSizeMb = Math.max(1, Math.round(maxAttachmentSize / (1024 * 1024)));
-  const allowedTypesSet = useMemo(() => new Set<string>(allowedTypes), [allowedTypes]);
-  const storageKey =
-    source === "bug_report" ? "rdk_bug_report_draft" : "rdk_contact_draft";
+  const storageKey = "rdk_contact_draft";
   const draftRef = useRef(formData);
-
-  const previews = useMemo(
-    () => attachments.map((file) => ({ file, url: URL.createObjectURL(file) })),
-    [attachments],
-  );
 
   useEffect(() => {
     if (typeof window === "undefined") {
@@ -71,7 +35,6 @@ export function ContactForm({
       setFormData((prev) => ({
         name: parsed.name ?? prev.name,
         email: parsed.email ?? prev.email,
-        subject: parsed.subject ?? prev.subject,
         message: parsed.message ?? prev.message,
       }));
     } catch {
@@ -80,18 +43,12 @@ export function ContactForm({
   }, [storageKey]);
 
   useEffect(() => {
-    return () => {
-      previews.forEach((preview) => URL.revokeObjectURL(preview.url));
-    };
-  }, [previews]);
-
-  useEffect(() => {
     if (typeof window === "undefined") {
       return;
     }
     const handleBeforeUnload = () => {
       const draft = draftRef.current;
-      const hasDraft = draft.name || draft.email || draft.subject || draft.message;
+      const hasDraft = draft.name || draft.email || draft.message;
 
       if (!hasDraft) {
         sessionStorage.removeItem(storageKey);
@@ -112,74 +69,16 @@ export function ContactForm({
     draftRef.current = formData;
   }, [formData]);
 
-  const handleAttachments = (files: FileList | null) => {
-    if (!files) {
-      return;
-    }
-    const incoming = Array.from(files);
-    const next: File[] = [];
-    const errors: string[] = [];
-
-    for (const file of incoming) {
-      if (!allowedTypesSet.has(file.type)) {
-        errors.push(`"${file.name}" is not a supported image type.`);
-        continue;
-      }
-      if (file.size > maxAttachmentSize) {
-        errors.push(`"${file.name}" is larger than ${maxAttachmentSizeMb}MB.`);
-        continue;
-      }
-      next.push(file);
-    }
-
-    if (attachments.length + next.length > maxAttachments) {
-      errors.push(`You can upload up to ${maxAttachments} images.`);
-    }
-
-    const trimmed = next.slice(0, Math.max(0, maxAttachments - attachments.length));
-    setAttachments((prev) => [...prev, ...trimmed]);
-    setAttachmentError(errors.length > 0 ? errors.join(" ") : null);
-  };
-
-  const removeAttachment = (index: number) => {
-    setAttachments((prev) => prev.filter((_, i) => i !== index));
-  };
-
-  const handleDrop = (event: React.DragEvent<HTMLDivElement>) => {
-    event.preventDefault();
-    setIsDragging(false);
-    handleAttachments(event.dataTransfer.files);
-  };
-
-  const handleDragOver = (event: React.DragEvent<HTMLDivElement>) => {
-    event.preventDefault();
-    setIsDragging(true);
-  };
-
-  const handleDragLeave = () => {
-    setIsDragging(false);
-  };
-
   const handleSubmit = async (e: React.FormEvent) => {
     e.preventDefault();
     setStatus("sending");
     setToast(null);
 
     try {
-      const payload = new FormData();
-      payload.append("name", formData.name);
-      payload.append("email", formData.email);
-      payload.append(
-        "subject",
-        formData.subject || (variant === "storefront" ? "Website contact form" : ""),
-      );
-      payload.append("message", formData.message);
-      payload.append("source", source);
-      attachments.forEach((file) => payload.append("attachments", file));
-
       const response = await fetch("/api/contact", {
         method: "POST",
-        body: payload,
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ ...formData, subject: "Website contact form" }),
       });
 
       const data = await response.json().catch(() => null);
@@ -189,11 +88,8 @@ export function ContactForm({
         setFormData({
           name: "",
           email: "",
-          subject: initialSubject,
-          message: initialMessage,
+          message: "",
         });
-        setAttachments([]);
-        setAttachmentError(null);
         setToast({
           message: "Thank you for your message! We'll get back to you soon.",
           tone: "success",
@@ -217,24 +113,9 @@ export function ContactForm({
     }
   };
 
-  const attachmentsLabel = source === "bug_report" ? "Screenshots" : "Photos";
-  const attachmentsHint =
-    source === "bug_report"
-      ? `PNG, JPG, or WEBP. Up to ${maxAttachments} screenshots, ${maxAttachmentSizeMb}MB each.`
-      : `PNG, JPG, or WEBP. Up to ${maxAttachments} photos, ${maxAttachmentSizeMb}MB each.`;
-  const resolvedPlaceholder =
-    messagePlaceholder ??
-    (source === "bug_report"
-      ? "Share the steps, where it happened, and what you expected to see."
-      : undefined);
-  const isStorefront = variant === "storefront";
-  const showExtendedFields = !isStorefront || source === "bug_report";
-  const labelClassName = isStorefront
-    ? "mb-3 block text-sm font-semibold text-black"
-    : "mb-2 block text-sm font-semibold text-white";
-  const inputClassName = isStorefront
-    ? "storefront-contact-field w-full border border-zinc-300 bg-white px-4 py-4 text-base text-zinc-700 placeholder:text-zinc-500 focus:border-black focus:outline-none focus:ring-1 focus:ring-black"
-    : "w-full rounded border border-zinc-800/70 bg-zinc-900 px-4 py-3 text-white focus:border-zinc-600 focus:outline-none focus:ring-1 focus:ring-zinc-700";
+  const labelClassName = "mb-3 block text-sm font-semibold text-black";
+  const inputClassName =
+    "storefront-contact-field w-full border border-zinc-300 bg-white px-4 py-4 text-base text-zinc-700 placeholder:text-zinc-500 focus:border-black focus:outline-none focus:ring-1 focus:ring-black";
 
   return (
     <form
@@ -242,17 +123,17 @@ export function ContactForm({
       onSubmit={(event) => {
         void handleSubmit(event);
       }}
-      className={isStorefront ? "space-y-7" : "space-y-6"}
+      className="space-y-7"
     >
       <div>
         <label htmlFor="name" className={labelClassName}>
-          Name {!isStorefront && <span className="text-red-500">*</span>}
+          Name
         </label>
         <input
           type="text"
           id="name"
           required
-          placeholder={isStorefront ? "Your Name" : undefined}
+          placeholder="Your Name"
           value={formData.name}
           onChange={(e) => setFormData({ ...formData, name: e.target.value })}
           className={inputClassName}
@@ -261,123 +142,38 @@ export function ContactForm({
 
       <div>
         <label htmlFor="email" className={labelClassName}>
-          Email {!isStorefront && <span className="text-red-500">*</span>}
+          Email
         </label>
         <input
           type="email"
           id="email"
           required
-          placeholder={isStorefront ? "Your Email" : undefined}
+          placeholder="Your Email"
           value={formData.email}
           onChange={(e) => setFormData({ ...formData, email: e.target.value })}
           className={inputClassName}
         />
       </div>
 
-      {showExtendedFields && (
-        <div>
-          <label htmlFor="subject" className={labelClassName}>
-            Subject {!isStorefront && <span className="text-red-500">*</span>}
-          </label>
-          <input
-            type="text"
-            id="subject"
-            required
-            placeholder={isStorefront ? "Bug report" : undefined}
-            value={formData.subject}
-            onChange={(e) => setFormData({ ...formData, subject: e.target.value })}
-            className={inputClassName}
-          />
-        </div>
-      )}
-
       <div>
         <label htmlFor="message" className={labelClassName}>
-          Message {!isStorefront && <span className="text-red-500">*</span>}
+          Message
         </label>
         <textarea
           id="message"
           required
-          rows={isStorefront ? 5 : 6}
+          rows={5}
           value={formData.message}
-          placeholder={
-            isStorefront && source !== "bug_report" ? "Your Message" : resolvedPlaceholder
-          }
+          placeholder="Your Message"
           onChange={(e) => setFormData({ ...formData, message: e.target.value })}
           className={`${inputClassName} resize-y`}
         />
       </div>
 
-      {showExtendedFields && (
-        <div>
-          <label htmlFor="attachments" className={labelClassName}>
-            {attachmentsLabel}
-          </label>
-          <div
-            className={`storefront-contact-field border border-dashed px-4 py-4 transition-colors ${
-              isStorefront
-                ? isDragging
-                  ? "border-black bg-zinc-100"
-                  : "border-zinc-300 bg-white"
-                : isDragging
-                  ? "border-red-500/70 bg-red-500/5"
-                  : "border-zinc-700 bg-zinc-900/40"
-            }`}
-            onDrop={handleDrop}
-            onDragOver={handleDragOver}
-            onDragLeave={handleDragLeave}
-          >
-            <input
-              id="attachments"
-              type="file"
-              accept={allowedTypes.join(",")}
-              multiple
-              onChange={(e) => handleAttachments(e.target.files)}
-              className={
-                isStorefront
-                  ? "block w-full cursor-pointer text-sm text-zinc-600 file:mr-4 file:cursor-pointer file:border-0 file:bg-black file:px-4 file:py-2 file:text-sm file:font-semibold file:text-white hover:file:bg-zinc-800"
-                  : "block w-full cursor-pointer text-sm text-zinc-300 file:mr-4 file:cursor-pointer file:rounded file:border-0 file:bg-red-600 file:px-4 file:py-2 file:text-sm file:font-semibold file:text-white hover:file:bg-red-700"
-              }
-            />
-            <p className="mt-2 text-xs text-zinc-500">{attachmentsHint}</p>
-            {attachmentError && (
-              <p className="mt-2 text-xs text-red-400">{attachmentError}</p>
-            )}
-            {attachments.length > 0 && (
-              <div className="mt-4 grid grid-cols-2 gap-3 sm:grid-cols-3">
-                {previews.map((preview, index) => (
-                  <div key={`${preview.file.name}-${index}`} className="relative">
-                    <Image
-                      unoptimized
-                      width={240}
-                      height={80}
-                      src={preview.url}
-                      alt={preview.file.name}
-                      className="h-20 w-full rounded border border-zinc-800 object-cover"
-                    />
-                    <button
-                      type="button"
-                      onClick={() => removeAttachment(index)}
-                      className="absolute right-2 top-2 rounded bg-black/70 px-2 py-1 text-[11px] text-white hover:bg-black"
-                    >
-                      Remove
-                    </button>
-                  </div>
-                ))}
-              </div>
-            )}
-          </div>
-        </div>
-      )}
-
       <button
         type="submit"
         disabled={status === "sending"}
-        className={
-          isStorefront
-            ? "storefront-contact-field w-full cursor-pointer bg-black py-4 text-sm font-semibold uppercase text-white transition-colors hover:bg-zinc-800 disabled:opacity-50"
-            : "w-full cursor-pointer bg-red-600 py-3 font-bold text-white transition-colors hover:bg-red-700 disabled:opacity-50"
-        }
+        className="storefront-contact-field w-full cursor-pointer bg-black py-4 text-sm font-semibold uppercase text-white transition-colors hover:bg-zinc-800 disabled:opacity-50"
       >
         {status === "sending" ? "Sending..." : "Send Message"}
       </button>

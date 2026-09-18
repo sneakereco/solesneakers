@@ -15,8 +15,6 @@ const CUSTOMER_RESOURCE_LINKS = [
   { label: "Authenticity Guarantee", href: "/authenticity-guarantee" },
   { label: "Contact Us", href: "/contact" },
   { label: "Hours & Pickups", href: "/hours" },
-  { label: "Shipping Information", href: "/shipping" },
-  { label: "Report a Problem", href: "/bug-report" },
 ];
 
 const footerLinkClassName =
