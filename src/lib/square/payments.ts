@@ -1,5 +1,9 @@
 import type * as Square from "square";
 import { SquareError } from "square";
+import {
+  squarePaymentDetails,
+  type SquarePaymentDetails,
+} from "@/lib/square/payment-details";
 
 import type {
   PaymentCheckout,
@@ -22,6 +26,7 @@ export type DirectPaymentInput = {
 };
 
 export type DirectPaymentResult = {
+  details?: SquarePaymentDetails;
   id: string;
   orderId: string;
   status: "APPROVED" | "PENDING" | "COMPLETED" | "CANCELED" | "FAILED";
@@ -48,6 +53,7 @@ function parsePayment(payment: Square.Payment | null | undefined): DirectPayment
     orderId: payment.orderId,
     status: status as DirectPaymentResult["status"],
     totalCents: amount,
+    details: squarePaymentDetails(payment),
   };
 }
 

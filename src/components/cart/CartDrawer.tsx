@@ -3,7 +3,6 @@
 import { useEffect } from "react";
 import Image from "next/image";
 import Link from "next/link";
-import { useRouter } from "next/navigation";
 import { Minus, Plus, ShoppingBag, Trash2, X } from "lucide-react";
 
 import { useCart } from "./CartProvider";
@@ -23,7 +22,6 @@ const formatPrice = (priceCents: number) =>
   }).format(priceCents / 100);
 
 export function CartDrawer({ isOpen, onClose }: CartDrawerProps) {
-  const router = useRouter();
   const { items, itemCount, removeItem, updateQuantity, total } = useCart();
 
   useEffect(() => {
@@ -46,11 +44,6 @@ export function CartDrawer({ isOpen, onClose }: CartDrawerProps) {
       window.removeEventListener("keydown", handleKeyDown);
     };
   }, [isOpen, onClose]);
-
-  const handleCheckout = () => {
-    onClose();
-    router.push("/checkout");
-  };
 
   return (
     <div
@@ -212,13 +205,12 @@ export function CartDrawer({ isOpen, onClose }: CartDrawerProps) {
                 <span>Subtotal</span>
                 <span>{formatPrice(total)}</span>
               </div>
-              <button
-                type="button"
-                onClick={handleCheckout}
-                className="mt-5 w-full cursor-pointer bg-zinc-900 px-6 py-4 text-sm font-medium uppercase text-white transition-colors hover:bg-black"
+              <a
+                href="/checkout"
+                className="mt-5 block w-full cursor-pointer bg-zinc-900 px-6 py-4 text-center text-sm font-medium uppercase text-white transition-colors hover:bg-black"
               >
                 Checkout <span aria-hidden="true">&#8226;</span> {formatPrice(total)}
-              </button>
+              </a>
               <Link
                 href="/store"
                 onClick={onClose}

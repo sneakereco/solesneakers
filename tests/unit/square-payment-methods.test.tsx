@@ -272,10 +272,11 @@ describe("SquarePaymentMethods", () => {
           id: "STANDARD",
           label: "Standard shipping",
           amount: "10.00",
-          taxLineItems: [{ label: "Tax", amount: "8.00" }],
-          total: { label: "Total", amount: "118.00" },
         },
       ],
+      shippingLineItems: [{ label: "Shipping", amount: "10.00", pending: false }],
+      taxLineItems: [{ label: "Tax", amount: "8.00", pending: false }],
+      total: { label: "Total", amount: "118.00", pending: false },
     });
     expect(resolveWalletShippingContact).toHaveBeenCalledWith({
       state: "DE",

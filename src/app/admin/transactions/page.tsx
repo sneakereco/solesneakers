@@ -8,6 +8,7 @@ import { AdminPage, AdminPageHeader } from "@/components/admin/AdminPage";
 import { AdminSearchField } from "@/components/admin/AdminSearchField";
 import { getOrderNetProfitDollars, shouldShowOrderProfit } from "@/lib/orders/metrics";
 import { logError } from "@/lib/utils/log";
+import { paymentMethodLabel } from "@/lib/orders/payment-method";
 
 type TabKey = "all" | "succeeded" | "failed" | "refunded" | "incomplete" | "blocked";
 
@@ -58,6 +59,8 @@ const getStatusMeta = (status: string | null | undefined) => {
 };
 
 type PaymentSummary = {
+  payment_method?: string | null;
+  square_payment_id?: string | null;
   card_type?: string | null;
   card_last4?: string | null;
 } | null;
@@ -74,6 +77,7 @@ type OrderItemSummary = {
 };
 
 type TransactionOrder = {
+  payment_transaction_id?: string | null;
   id: string;
   status?: string | null;
   total?: number | null;
@@ -101,12 +105,19 @@ const resolveShipping = (value: unknown): OrderShipping | null => {
   return value as OrderShipping;
 };
 
-const resolvePayment = (value: unknown): PaymentSummary | null => {
+const resolvePayment = (
+  value: TransactionOrder["payment"],
+  paymentId?: string | null,
+): PaymentSummary | null => {
   if (!value) {
     return null;
   }
   if (Array.isArray(value)) {
-    return (value[0] ?? null) as PaymentSummary | null;
+    return (
+      value.find((payment) => paymentId && payment?.square_payment_id === paymentId) ??
+      value[0] ??
+      null
+    );
   }
   return value as PaymentSummary;
 };
@@ -121,13 +132,14 @@ const getCustomerEmail = (order: TransactionOrder) => {
 };
 
 const getPaymentDisplay = (order: TransactionOrder) => {
-  const payment = resolvePayment(order.payment);
-  if (!payment?.card_type && !payment?.card_last4) {
+  const payment = resolvePayment(order.payment, order.payment_transaction_id);
+  const method = paymentMethodLabel(payment?.payment_method);
+  if (!method && !payment?.card_type && !payment?.card_last4) {
     return "—";
   }
-  const type = payment.card_type ?? "";
-  const last4 = payment.card_last4 ? `···· ${payment.card_last4}` : "";
-  return [type, last4].filter(Boolean).join(" ");
+  const type = payment?.card_type ?? "";
+  const last4 = payment?.card_last4 ? `···· ${payment.card_last4}` : "";
+  return [method, type, last4].filter(Boolean).join(" ");
 };
 
 const getProfit = (order: TransactionOrder): number | null => {

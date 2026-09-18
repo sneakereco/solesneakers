@@ -1,4 +1,5 @@
 import { reconcilePendingSquarePayment } from "@/lib/square/payment-reconciliation";
+import { squarePaymentDetails } from "@/lib/square/payment-details";
 
 describe("reconcilePendingSquarePayment", () => {
   it("processes the locally recorded direct payment when its webhook is delayed", async () => {
@@ -30,6 +31,10 @@ describe("reconcilePendingSquarePayment", () => {
         riskLevel: "NORMAL",
         createdAt: "2026-09-05T18:03:33.155Z",
         versionToken: "version-1",
+        details: squarePaymentDetails({
+          sourceType: "WALLET",
+          walletDetails: { brand: "CASH_APP" },
+        }),
       }),
       processPayment,
     });
@@ -47,6 +52,7 @@ describe("reconcilePendingSquarePayment", () => {
       amountCents: 10825,
       currency: "USD",
       riskLevel: "NORMAL",
+      details: expect.objectContaining({ payment_method: "cashAppPay" }),
     });
   });
 

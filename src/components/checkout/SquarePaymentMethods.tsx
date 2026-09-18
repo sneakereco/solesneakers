@@ -305,10 +305,15 @@ function walletShippingUpdate(quote: ExactCheckoutQuote) {
         id: "STANDARD",
         label: "Standard shipping",
         amount: money(quote.totals.shippingCents),
-        taxLineItems: [{ label: "Tax", amount: money(quote.totals.taxCents) }],
-        total: { label: "Total", amount: money(quote.totals.totalCents) },
       },
     ],
+    shippingLineItems: [
+      { label: "Shipping", amount: money(quote.totals.shippingCents), pending: false },
+    ],
+    taxLineItems: [
+      { label: "Tax", amount: money(quote.totals.taxCents), pending: false },
+    ],
+    total: walletPaymentTotal(quote),
   };
 }
 

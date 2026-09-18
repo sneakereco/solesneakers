@@ -1,4 +1,5 @@
 import assert from "node:assert/strict";
+import { readFile } from "node:fs/promises";
 import { build } from "esbuild";
 import { chromium } from "@playwright/test";
 
@@ -56,9 +57,28 @@ try {
   });
 
   await page.goto("https://menu.test/");
+  await page.addStyleTag({ content: await readFile("src/styles/site.css", "utf8") });
   await page.addScriptTag({ content: bundle.outputFiles[0].text });
   const menu = page.getByRole("dialog", { name: "Store menu" });
   await menu.getByRole("link", { name: "Shop All" }).waitFor();
+  assert.equal(
+    await menu.evaluate((element) => document.activeElement === element),
+    true,
+  );
+  assert.equal(
+    await menu.evaluate((element) => getComputedStyle(element).outlineStyle),
+    "none",
+  );
+  await page.keyboard.press("Tab");
+  const close = menu.getByRole("button", { name: "Close menu" });
+  assert.equal(
+    await close.evaluate((element) => document.activeElement === element),
+    true,
+  );
+  assert.equal(
+    await close.evaluate((element) => getComputedStyle(element).outlineStyle),
+    "solid",
+  );
   assert.equal(await menu.getByText("More", { exact: true }).count(), 0);
   assert.equal(await menu.getByRole("link", { name: "Home", exact: true }).count(), 0);
   assert.equal(await menu.getByRole("link", { name: "Contact", exact: true }).count(), 0);

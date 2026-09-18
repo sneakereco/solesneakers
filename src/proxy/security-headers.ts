@@ -18,7 +18,12 @@ export function applySecurityHeaders(
   response.headers.set("X-Frame-Options", isBotIdProxyRoute ? "SAMEORIGIN" : "DENY");
   response.headers.set("X-Content-Type-Options", "nosniff");
   response.headers.set("Referrer-Policy", "strict-origin-when-cross-origin");
-  response.headers.set("Cross-Origin-Opener-Policy", "same-origin");
+  response.headers.set(
+    "Cross-Origin-Opener-Policy",
+    pathname === "/checkout" || pathname.startsWith("/checkout/")
+      ? "same-origin-allow-popups"
+      : "same-origin",
+  );
   response.headers.set("Cross-Origin-Resource-Policy", "same-origin");
   response.headers.set("Origin-Agent-Cluster", "?1");
 

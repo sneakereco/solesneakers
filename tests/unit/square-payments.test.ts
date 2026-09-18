@@ -34,6 +34,11 @@ describe("SquarePaymentsGateway", () => {
         orderId: "square-order-1",
         status: "COMPLETED",
         amountMoney: { amount: BigInt(28563), currency: "USD" },
+        sourceType: "CARD",
+        cardDetails: {
+          card: { cardBrand: "VISA", last4: "4242" },
+          avsStatus: "AVS_ACCEPTED",
+        },
       },
     });
     const gateway = new SquarePaymentsGateway(
@@ -46,6 +51,12 @@ describe("SquarePaymentsGateway", () => {
       orderId: "square-order-1",
       status: "COMPLETED",
       totalCents: 28563,
+      details: expect.objectContaining({
+        source_type: "CARD",
+        card_type: "VISA",
+        card_last4: "4242",
+        avs_result_code: "AVS_ACCEPTED",
+      }),
     });
 
     expect(create).toHaveBeenCalledWith(
@@ -117,6 +128,7 @@ describe("SquarePaymentsGateway", () => {
       orderId: "square-order-1",
       status: "PENDING",
       totalCents: 28563,
+      details: expect.objectContaining({ card_last4: null }),
     });
     expect(get).toHaveBeenCalledWith({ paymentId: "payment-1" });
   });

@@ -12,7 +12,7 @@ export default function ShippingPage() {
     <PolicyPage title="Shipping Policy">
       <div className="prose prose-invert max-w-none">
         <div className="space-y-6 text-zinc-400">
-          <p className="text-sm">Last updated: September 16, 2026</p>
+          <p className="text-sm">Last updated: September 18, 2026</p>
           <p>
             This Shipping Policy applies to orders placed with {LEGAL_BUSINESS_NAME}{" "}
             through {BRAND_DOMAIN}.
@@ -23,9 +23,9 @@ export default function ShippingPage() {
               1) Processing Time
             </h2>
             <p>
-              Orders placed before 3:00 PM Eastern Time are scheduled to ship the same
-              day. Orders placed at or after 3:00 PM Eastern Time are scheduled to ship
-              the following day.
+              Our goal is to ship orders placed before 3:00 PM Eastern Time the same day
+              and orders placed at or after 3:00 PM Eastern Time the following day.
+              Shipment dates are estimates, not guarantees.
             </p>
             <ul className="mt-2 list-disc space-y-1 pl-6">
               <li>The cutoff refers to shipment, not delivery time.</li>
@@ -42,10 +42,10 @@ export default function ShippingPage() {
               2) Unexpected Shipment Delays
             </h2>
             <p>
-              If we cannot ship within the promised timeframe, we will notify you and
-              offer the choice required by applicable law: consent to the delay or cancel
-              for a full refund. If we cannot fulfill the order, we will cancel it and
-              issue the required refund.
+              Unexpected processing delays on our end may add several days to the
+              estimated shipment date. We will provide delay notices and any option to
+              consent to a delay or cancel for a full refund when required by applicable
+              law. If we cannot fulfill your order, we will cancel it and issue a refund.
             </p>
           </section>
 
@@ -54,8 +54,9 @@ export default function ShippingPage() {
               3) Shipping Rates and Methods
             </h2>
             <p>
-              Available shipping options and rates are displayed at checkout. The shipping
-              method you choose affects carrier transit time, not our processing time.
+              You pay the flat shipping charge displayed at checkout. Sole Sneakers
+              selects the carrier and shipping service. Carrier transit time is separate
+              from order processing time.
             </p>
           </section>
 

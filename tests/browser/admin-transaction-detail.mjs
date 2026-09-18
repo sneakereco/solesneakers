@@ -9,7 +9,10 @@ const bundle = await build({
     contents: `
       import { createRoot } from 'react-dom/client';
       import TransactionDetailPage from './src/app/admin/transactions/[orderId]/page';
-      createRoot(document.getElementById('root')).render(<TransactionDetailPage />);
+      import TransactionsPage from './src/app/admin/transactions/page';
+      createRoot(document.getElementById('root')).render(
+        location.pathname === '/admin/transactions' ? <TransactionsPage /> : <TransactionDetailPage />
+      );
     `,
   },
   bundle: true,
@@ -50,8 +53,32 @@ try {
   });
   await page.route("**/*", async (route) => {
     const url = new URL(route.request().url());
-    if (url.pathname === "/admin/transactions/12345678-test-order") {
+    if (
+      url.pathname === "/admin/transactions/12345678-test-order" ||
+      url.pathname === "/admin/transactions"
+    ) {
       return route.fulfill({ contentType: "text/html", body: '<div id="root"></div>' });
+    }
+    if (url.pathname === "/api/admin/orders") {
+      return route.fulfill({
+        json: {
+          count: 5,
+          orders: ["applePay", "googlePay", "card", "afterpay", "cashAppPay"].map(
+            (method, index) => ({
+              id: `order-${index}`,
+              status: "paid",
+              created_at: "2026-09-18T12:00:00Z",
+              fulfillment: "pickup",
+              total: 10,
+              payment_transaction_id: `payment-${index}`,
+              payment: [
+                { square_payment_id: "older-attempt", card_type: "WRONG" },
+                { square_payment_id: `payment-${index}`, payment_method: method },
+              ],
+            }),
+          ),
+        },
+      });
     }
     if (url.pathname === "/api/admin/transactions/12345678-test-order") {
       return route.fulfill({
@@ -69,7 +96,14 @@ try {
             guest_email: "buyer@example.com",
             items: [],
           },
-          paymentTransaction: { id: "payment-1", card_type: "VISA", card_last4: "1111" },
+          paymentTransaction: {
+            id: "payment-1",
+            payment_method: "applePay",
+            card_type: "VISA",
+            card_last4: "1111",
+            avs_result_code: "AVS_ACCEPTED",
+            cvv2_result_code: "CVV_NOT_CHECKED",
+          },
           paymentEvents: [],
           emailLogs: [],
           trackingEvents: [],
@@ -83,8 +117,25 @@ try {
   await page.goto("https://admin.test/admin/transactions/12345678-test-order");
   await page.addScriptTag({ content: bundle.outputFiles[0].text });
   await page.getByRole("heading", { name: "Payment Method" }).waitFor({ timeout: 5_000 });
+  assert.equal(await page.getByText("Apple Pay", { exact: true }).count(), 1);
+  assert.equal(await page.getByText("Address verified", { exact: true }).count(), 1);
+  assert.equal(await page.getByText("Not checked", { exact: true }).count(), 1);
   assert.equal(await page.getByRole("heading", { name: "Session Activity" }).count(), 0);
   console.log("PASS: transaction detail omits session activity");
+  await page.goto("https://admin.test/admin/transactions");
+  await page.addScriptTag({ content: bundle.outputFiles[0].text });
+  await page.getByRole("cell", { name: "Apple Pay", exact: true }).waitFor();
+  for (const method of [
+    "Apple Pay",
+    "Google Pay",
+    "Credit card",
+    "Afterpay",
+    "Cash App Pay",
+  ]) {
+    assert.equal(await page.getByRole("cell", { name: method, exact: true }).count(), 1);
+  }
+  assert.equal(await page.getByText("WRONG", { exact: true }).count(), 0);
+  console.log("PASS: transaction list shows all five methods from the matching payment");
 } finally {
   await browser.close();
 }

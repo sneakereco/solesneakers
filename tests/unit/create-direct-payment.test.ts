@@ -107,7 +107,12 @@ describe("createDirectPaymentHandler", () => {
     expect(deps.consumePermit.mock.invocationCallOrder[0]).toBeLessThan(
       deps.createPayment.mock.invocationCallOrder[0],
     );
-    expect(deps.savePaymentId).toHaveBeenCalledWith("order-1", "payment-1");
+    expect(deps.savePaymentId).toHaveBeenCalledWith(
+      "order-1",
+      "payment-1",
+      expect.objectContaining({ id: "payment-1" }),
+      "card",
+    );
     expect(deps.createPayment).toHaveBeenCalledWith(
       expect.objectContaining({
         billingAddress: (await deps.loadOrder()).billingAddress,

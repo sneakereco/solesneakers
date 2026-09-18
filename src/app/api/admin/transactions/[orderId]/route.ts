@@ -62,9 +62,15 @@ export async function GET(
       .from("payment_transactions")
       .select("*")
       .eq("order_id", orderId)
-      .order("created_at", { ascending: false })
-      .limit(1);
-    const paymentTx = paymentTxRows?.[0] ?? null;
+      .order("created_at", { ascending: false });
+    const paymentTx =
+      paymentTxRows?.find(
+        (payment: { square_payment_id?: string }) =>
+          order.payment_transaction_id &&
+          payment.square_payment_id === order.payment_transaction_id,
+      ) ??
+      paymentTxRows?.[0] ??
+      null;
     const customerEmail =
       order.profiles?.email ?? order.guest_email ?? paymentTx?.customer_email ?? null;
     const customerName =
