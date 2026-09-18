@@ -1,9 +1,16 @@
+import { pageMetadata } from "@/lib/metadata";
+
 import Link from "next/link";
 import { Clock3, MapPin } from "lucide-react";
 
 import { SUPPORT_EMAIL } from "@/config/constants/mail";
 import { INSTAGRAM_HANDLE, INSTAGRAM_URL } from "@/config/constants/contact";
 import { PICKUP_HOURS, PICKUP_SERVICE_AREAS } from "@/config/pickup";
+
+export const metadata = pageMetadata(
+  "Hours & Pickups",
+  "View local meetup hours and arrange pickup in Winston-Salem, High Point, Kernersville, or Greensboro, North Carolina.",
+);
 
 export default function HoursPage() {
   return (

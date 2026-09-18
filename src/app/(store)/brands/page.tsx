@@ -1,3 +1,5 @@
+import { pageMetadata } from "@/lib/metadata";
+
 import Link from "next/link";
 import { unstable_cache } from "next/cache";
 import { connection } from "next/server";
@@ -42,6 +44,11 @@ function normalizeLetter(label: string) {
   const firstCharacter = label.trim()[0] ?? "";
   return /[a-z]/i.test(firstCharacter) ? firstCharacter.toUpperCase() : "#";
 }
+
+export const metadata = pageMetadata(
+  "Shop by Brand",
+  "Browse sneaker and streetwear brands at Solesneakers and shop the available collection from each brand.",
+);
 
 export default async function BrandsPage() {
   await connection();

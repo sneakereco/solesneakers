@@ -1,1 +1,1 @@
-export { default } from "../legal/refunds/page";
+export { default, metadata } from "../legal/refunds/page";

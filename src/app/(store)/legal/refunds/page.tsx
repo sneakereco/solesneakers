@@ -1,7 +1,14 @@
+import { pageMetadata } from "@/lib/metadata";
+
 import { PolicyPage } from "@/components/legal/PolicyPage";
 import { BRAND_DOMAIN, LEGAL_BUSINESS_NAME } from "@/config/constants/brand";
 import { SUPPORT_EMAIL } from "@/config/constants/mail";
 import { PICKUP_LOCATION_SUMMARY } from "@/config/pickup";
+
+export const metadata = pageMetadata(
+  "Returns & Refunds",
+  "Review the Solesneakers returns and refunds policy, including how to report an issue with your order.",
+);
 
 export default function RefundsPage() {
   return (

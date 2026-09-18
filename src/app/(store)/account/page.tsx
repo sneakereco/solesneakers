@@ -1,9 +1,19 @@
+import { pageMetadata } from "@/lib/metadata";
+
 // app/account/page.tsx
 
 import Link from "next/link";
 
 import { requireUser } from "@/lib/auth/session";
 import { AccountProfile } from "@/components/account/AccountProfile";
+
+export const metadata = {
+  ...pageMetadata(
+    "Your Account",
+    "Sign in to manage your Solesneakers profile and view your orders.",
+  ),
+  robots: { index: false, follow: false },
+};
 
 export default async function AccountPage() {
   let session;

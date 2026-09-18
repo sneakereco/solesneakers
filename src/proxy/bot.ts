@@ -47,6 +47,15 @@ export function checkBot(request: NextRequest, requestId: string): NextResponse 
     return null;
   }
 
+  // Preview fetches may read the public catalog; all other gates still apply.
+  if (
+    (request.method === "GET" || request.method === "HEAD") &&
+    (pathname === "/store" || pathname.startsWith("/store/")) &&
+    /twitterbot|slackbot-linkexpanding|discordbot|telegrambot/i.test(userAgentTrimmed)
+  ) {
+    return null;
+  }
+
   if (userAgentTrimmed.length === 0) {
     return blockBot("bot_block_empty_ua", "Bot blocked (empty user-agent)");
   }

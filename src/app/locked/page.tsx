@@ -1,4 +1,5 @@
 import type { Metadata } from "next";
+import { pageMetadata } from "@/lib/metadata";
 import Image from "next/image";
 import Link from "next/link";
 import { redirect } from "next/navigation";
@@ -12,8 +13,11 @@ import { UnlockTimer } from "./unlock-timer";
 export const dynamic = "force-dynamic";
 
 export const metadata: Metadata = {
-  title: "Store Temporarily Closed | Solesneakers",
-  description: "The Solesneakers storefront is temporarily closed.",
+  ...pageMetadata(
+    "Store Temporarily Closed",
+    "The Solesneakers storefront is temporarily closed. Check back for the next opening.",
+  ),
+  robots: { index: false, follow: false },
 };
 
 const lockAnnouncements = [

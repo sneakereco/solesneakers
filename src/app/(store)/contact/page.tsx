@@ -1,5 +1,12 @@
+import { pageMetadata } from "@/lib/metadata";
+
 import { ContactForm } from "@/components/contact/ContactForm";
 import { SUPPORT_EMAIL } from "@/config/constants/mail";
+
+export const metadata = pageMetadata(
+  "Contact Us",
+  "Get help with products, orders, shipping, or local pickup. Contact the Solesneakers team.",
+);
 
 export default function ContactPage() {
   return (
