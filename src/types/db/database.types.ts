@@ -9,41 +9,6 @@ export type Json =
 export type Database = {
   public: {
     Tables: {
-      admin_audit_log: {
-        Row: {
-          action: string
-          admin_id: string | null
-          created_at: string | null
-          id: string
-          new_value: Json | null
-          old_value: Json | null
-        }
-        Insert: {
-          action: string
-          admin_id?: string | null
-          created_at?: string | null
-          id?: string
-          new_value?: Json | null
-          old_value?: Json | null
-        }
-        Update: {
-          action?: string
-          admin_id?: string | null
-          created_at?: string | null
-          id?: string
-          new_value?: Json | null
-          old_value?: Json | null
-        }
-        Relationships: [
-          {
-            foreignKeyName: "admin_audit_log_admin_id_fkey"
-            columns: ["admin_id"]
-            isOneToOne: false
-            referencedRelation: "profiles"
-            referencedColumns: ["id"]
-          },
-        ]
-      }
       admin_invites: {
         Row: {
           accepted_by: string | null
@@ -88,152 +53,6 @@ export type Database = {
             columns: ["created_by"]
             isOneToOne: false
             referencedRelation: "profiles"
-            referencedColumns: ["id"]
-          },
-        ]
-      }
-      chargeback_evidence: {
-        Row: {
-          avs_result_code: string | null
-          billing_address_snapshot: Json | null
-          carrier: string | null
-          created_at: string
-          customer_ip: unknown
-          cvv_result_code: string | null
-          delivery_confirmed_at: string | null
-          delivery_event_snapshot: Json | null
-          device_fingerprint: string | null
-          id: string
-          order_id: string
-          order_snapshot: Json | null
-          payment_amount: number | null
-          payment_currency: string | null
-          payment_method_last4: string | null
-          payment_method_type: string | null
-          payment_transaction_id: string | null
-          shipping_address_snapshot: Json | null
-          tax_calculation_snapshot: Json | null
-          tenant_id: string
-          tracking_number: string | null
-          updated_at: string
-        }
-        Insert: {
-          avs_result_code?: string | null
-          billing_address_snapshot?: Json | null
-          carrier?: string | null
-          created_at?: string
-          customer_ip?: unknown
-          cvv_result_code?: string | null
-          delivery_confirmed_at?: string | null
-          delivery_event_snapshot?: Json | null
-          device_fingerprint?: string | null
-          id?: string
-          order_id: string
-          order_snapshot?: Json | null
-          payment_amount?: number | null
-          payment_currency?: string | null
-          payment_method_last4?: string | null
-          payment_method_type?: string | null
-          payment_transaction_id?: string | null
-          shipping_address_snapshot?: Json | null
-          tax_calculation_snapshot?: Json | null
-          tenant_id: string
-          tracking_number?: string | null
-          updated_at?: string
-        }
-        Update: {
-          avs_result_code?: string | null
-          billing_address_snapshot?: Json | null
-          carrier?: string | null
-          created_at?: string
-          customer_ip?: unknown
-          cvv_result_code?: string | null
-          delivery_confirmed_at?: string | null
-          delivery_event_snapshot?: Json | null
-          device_fingerprint?: string | null
-          id?: string
-          order_id?: string
-          order_snapshot?: Json | null
-          payment_amount?: number | null
-          payment_currency?: string | null
-          payment_method_last4?: string | null
-          payment_method_type?: string | null
-          payment_transaction_id?: string | null
-          shipping_address_snapshot?: Json | null
-          tax_calculation_snapshot?: Json | null
-          tenant_id?: string
-          tracking_number?: string | null
-          updated_at?: string
-        }
-        Relationships: [
-          {
-            foreignKeyName: "chargeback_evidence_order_id_fkey"
-            columns: ["order_id"]
-            isOneToOne: true
-            referencedRelation: "orders"
-            referencedColumns: ["id"]
-          },
-          {
-            foreignKeyName: "chargeback_evidence_tenant_id_fkey"
-            columns: ["tenant_id"]
-            isOneToOne: false
-            referencedRelation: "tenants"
-            referencedColumns: ["id"]
-          },
-        ]
-      }
-      checkout_api_logs: {
-        Row: {
-          created_at: string
-          duration_ms: number | null
-          error_message: string | null
-          event_label: string | null
-          http_status: number | null
-          id: string
-          method: string
-          order_id: string | null
-          request_id: string | null
-          request_payload: Json | null
-          response_payload: Json | null
-          route: string
-          tenant_id: string | null
-        }
-        Insert: {
-          created_at?: string
-          duration_ms?: number | null
-          error_message?: string | null
-          event_label?: string | null
-          http_status?: number | null
-          id?: string
-          method?: string
-          order_id?: string | null
-          request_id?: string | null
-          request_payload?: Json | null
-          response_payload?: Json | null
-          route: string
-          tenant_id?: string | null
-        }
-        Update: {
-          created_at?: string
-          duration_ms?: number | null
-          error_message?: string | null
-          event_label?: string | null
-          http_status?: number | null
-          id?: string
-          method?: string
-          order_id?: string | null
-          request_id?: string | null
-          request_payload?: Json | null
-          response_payload?: Json | null
-          route?: string
-          tenant_id?: string | null
-        }
-        Relationships: [
-          {
-            foreignKeyName: "checkout_api_logs_order_id_fkey"
-            columns: ["order_id"]
-            isOneToOne: false
-            referencedRelation: "orders"
             referencedColumns: ["id"]
           },
         ]
@@ -518,50 +337,6 @@ export type Database = {
           },
         ]
       }
-      nexus_registrations: {
-        Row: {
-          created_at: string
-          id: string
-          is_registered: boolean
-          registered_at: string | null
-          registration_type: string
-          state_code: string
-          tenant_id: string
-          tracking_started_at: string | null
-          updated_at: string
-        }
-        Insert: {
-          created_at?: string
-          id?: string
-          is_registered?: boolean
-          registered_at?: string | null
-          registration_type: string
-          state_code: string
-          tenant_id: string
-          tracking_started_at?: string | null
-          updated_at?: string
-        }
-        Update: {
-          created_at?: string
-          id?: string
-          is_registered?: boolean
-          registered_at?: string | null
-          registration_type?: string
-          state_code?: string
-          tenant_id?: string
-          tracking_started_at?: string | null
-          updated_at?: string
-        }
-        Relationships: [
-          {
-            foreignKeyName: "nexus_registrations_tenant_id_fkey"
-            columns: ["tenant_id"]
-            isOneToOne: false
-            referencedRelation: "tenants"
-            referencedColumns: ["id"]
-          },
-        ]
-      }
       order_access_tokens: {
         Row: {
           created_at: string
@@ -837,7 +612,6 @@ export type Database = {
           customer_state: string | null
           expires_at: string | null
           failure_reason: string | null
-          fee: number | null
           fulfillment: string | null
           fulfillment_status: string | null
           guest_email: string | null
@@ -851,23 +625,17 @@ export type Database = {
           pickup_location_id: string | null
           pickup_name: string | null
           pickup_phone: string | null
-          public_token: string | null
           refund_amount: number | null
           refunded_at: string | null
-          seller_id: string | null
           shipped_at: string | null
           shipping: number
           shipping_carrier: string | null
           square_order_id: string | null
           square_order_version: number | null
-          square_payment_link_deleted_at: string | null
-          square_payment_link_id: string | null
-          square_payment_link_url: string | null
           status: string | null
           subtotal: number
           tax_amount: number | null
           tax_calculation_id: string | null
-          tax_transaction_id: string | null
           tenant_id: string | null
           total: number
           tracking_number: string | null
@@ -883,7 +651,6 @@ export type Database = {
           customer_state?: string | null
           expires_at?: string | null
           failure_reason?: string | null
-          fee?: number | null
           fulfillment?: string | null
           fulfillment_status?: string | null
           guest_email?: string | null
@@ -897,23 +664,17 @@ export type Database = {
           pickup_location_id?: string | null
           pickup_name?: string | null
           pickup_phone?: string | null
-          public_token?: string | null
           refund_amount?: number | null
           refunded_at?: string | null
-          seller_id?: string | null
           shipped_at?: string | null
           shipping: number
           shipping_carrier?: string | null
           square_order_id?: string | null
           square_order_version?: number | null
-          square_payment_link_deleted_at?: string | null
-          square_payment_link_id?: string | null
-          square_payment_link_url?: string | null
           status?: string | null
           subtotal: number
           tax_amount?: number | null
           tax_calculation_id?: string | null
-          tax_transaction_id?: string | null
           tenant_id?: string | null
           total: number
           tracking_number?: string | null
@@ -929,7 +690,6 @@ export type Database = {
           customer_state?: string | null
           expires_at?: string | null
           failure_reason?: string | null
-          fee?: number | null
           fulfillment?: string | null
           fulfillment_status?: string | null
           guest_email?: string | null
@@ -943,23 +703,17 @@ export type Database = {
           pickup_location_id?: string | null
           pickup_name?: string | null
           pickup_phone?: string | null
-          public_token?: string | null
           refund_amount?: number | null
           refunded_at?: string | null
-          seller_id?: string | null
           shipped_at?: string | null
           shipping?: number
           shipping_carrier?: string | null
           square_order_id?: string | null
           square_order_version?: number | null
-          square_payment_link_deleted_at?: string | null
-          square_payment_link_id?: string | null
-          square_payment_link_url?: string | null
           status?: string | null
           subtotal?: number
           tax_amount?: number | null
           tax_calculation_id?: string | null
-          tax_transaction_id?: string | null
           tenant_id?: string | null
           total?: number
           tracking_number?: string | null
@@ -972,13 +726,6 @@ export type Database = {
             columns: ["label_created_by"]
             isOneToOne: false
             referencedRelation: "profiles"
-            referencedColumns: ["id"]
-          },
-          {
-            foreignKeyName: "orders_seller_id_fkey"
-            columns: ["seller_id"]
-            isOneToOne: false
-            referencedRelation: "sellers"
             referencedColumns: ["id"]
           },
           {
@@ -997,63 +744,10 @@ export type Database = {
           },
         ]
       }
-      payment_events: {
-        Row: {
-          created_at: string
-          event_data: Json
-          event_type: string
-          id: string
-          order_id: string
-          payment_transaction_id: string
-          tenant_id: string | null
-        }
-        Insert: {
-          created_at?: string
-          event_data?: Json
-          event_type: string
-          id?: string
-          order_id: string
-          payment_transaction_id: string
-          tenant_id?: string | null
-        }
-        Update: {
-          created_at?: string
-          event_data?: Json
-          event_type?: string
-          id?: string
-          order_id?: string
-          payment_transaction_id?: string
-          tenant_id?: string | null
-        }
-        Relationships: [
-          {
-            foreignKeyName: "payment_events_order_id_fkey"
-            columns: ["order_id"]
-            isOneToOne: false
-            referencedRelation: "orders"
-            referencedColumns: ["id"]
-          },
-          {
-            foreignKeyName: "payment_events_payment_transaction_id_fkey"
-            columns: ["payment_transaction_id"]
-            isOneToOne: false
-            referencedRelation: "payment_transactions"
-            referencedColumns: ["id"]
-          },
-          {
-            foreignKeyName: "payment_events_tenant_id_fkey"
-            columns: ["tenant_id"]
-            isOneToOne: false
-            referencedRelation: "tenants"
-            referencedColumns: ["id"]
-          },
-        ]
-      }
       payment_transactions: {
         Row: {
           amount_authorized: number | null
           amount_captured: number | null
-          amount_refunded: number
           amount_requested: number
           avs_result_code: string | null
           billing_address: string | null
@@ -1063,7 +757,6 @@ export type Database = {
           billing_phone: string | null
           billing_state: string | null
           billing_zip: string | null
-          card_bin: string | null
           card_expiry_month: number | null
           card_expiry_year: number | null
           card_last4: string | null
@@ -1078,14 +771,12 @@ export type Database = {
           payment_method: string | null
           square_payment_id: string | null
           tenant_id: string | null
-          three_ds_eci: string | null
           three_ds_status: string | null
           updated_at: string
         }
         Insert: {
           amount_authorized?: number | null
           amount_captured?: number | null
-          amount_refunded?: number
           amount_requested: number
           avs_result_code?: string | null
           billing_address?: string | null
@@ -1095,7 +786,6 @@ export type Database = {
           billing_phone?: string | null
           billing_state?: string | null
           billing_zip?: string | null
-          card_bin?: string | null
           card_expiry_month?: number | null
           card_expiry_year?: number | null
           card_last4?: string | null
@@ -1110,14 +800,12 @@ export type Database = {
           payment_method?: string | null
           square_payment_id?: string | null
           tenant_id?: string | null
-          three_ds_eci?: string | null
           three_ds_status?: string | null
           updated_at?: string
         }
         Update: {
           amount_authorized?: number | null
           amount_captured?: number | null
-          amount_refunded?: number
           amount_requested?: number
           avs_result_code?: string | null
           billing_address?: string | null
@@ -1127,7 +815,6 @@ export type Database = {
           billing_phone?: string | null
           billing_state?: string | null
           billing_zip?: string | null
-          card_bin?: string | null
           card_expiry_month?: number | null
           card_expiry_year?: number | null
           card_last4?: string | null
@@ -1142,7 +829,6 @@ export type Database = {
           payment_method?: string | null
           square_payment_id?: string | null
           tenant_id?: string | null
-          three_ds_eci?: string | null
           three_ds_status?: string | null
           updated_at?: string
         }
@@ -1382,35 +1068,6 @@ export type Database = {
           },
         ]
       }
-      sellers: {
-        Row: {
-          created_at: string | null
-          id: string
-          name: string
-          tenant_id: string | null
-        }
-        Insert: {
-          created_at?: string | null
-          id?: string
-          name: string
-          tenant_id?: string | null
-        }
-        Update: {
-          created_at?: string | null
-          id?: string
-          name?: string
-          tenant_id?: string | null
-        }
-        Relationships: [
-          {
-            foreignKeyName: "sellers_tenant_id_fkey"
-            columns: ["tenant_id"]
-            isOneToOne: false
-            referencedRelation: "tenants"
-            referencedColumns: ["id"]
-          },
-        ]
-      }
       shipping_carriers: {
         Row: {
           created_at: string
@@ -1566,63 +1223,6 @@ export type Database = {
           },
         ]
       }
-      shipping_tracking_events: {
-        Row: {
-          carrier: string
-          description: string | null
-          event_timestamp: string
-          id: string
-          location: string | null
-          order_id: string
-          raw_carrier_response: Json | null
-          recorded_at: string
-          status: string
-          tenant_id: string
-          tracking_number: string
-        }
-        Insert: {
-          carrier: string
-          description?: string | null
-          event_timestamp: string
-          id?: string
-          location?: string | null
-          order_id: string
-          raw_carrier_response?: Json | null
-          recorded_at?: string
-          status: string
-          tenant_id: string
-          tracking_number: string
-        }
-        Update: {
-          carrier?: string
-          description?: string | null
-          event_timestamp?: string
-          id?: string
-          location?: string | null
-          order_id?: string
-          raw_carrier_response?: Json | null
-          recorded_at?: string
-          status?: string
-          tenant_id?: string
-          tracking_number?: string
-        }
-        Relationships: [
-          {
-            foreignKeyName: "shipping_tracking_events_order_id_fkey"
-            columns: ["order_id"]
-            isOneToOne: false
-            referencedRelation: "orders"
-            referencedColumns: ["id"]
-          },
-          {
-            foreignKeyName: "shipping_tracking_events_tenant_id_fkey"
-            columns: ["tenant_id"]
-            isOneToOne: false
-            referencedRelation: "tenants"
-            referencedColumns: ["id"]
-          },
-        ]
-      }
       square_disputes: {
         Row: {
           amount_cents: number
@@ -1742,7 +1342,6 @@ export type Database = {
           merchant_id: string | null
           payload_sha256: string
           processed_at: string | null
-          processing_error: string | null
           received_at: string
           square_created_at: string | null
           square_event_id: string
@@ -1754,7 +1353,6 @@ export type Database = {
           merchant_id?: string | null
           payload_sha256: string
           processed_at?: string | null
-          processing_error?: string | null
           received_at?: string
           square_created_at?: string | null
           square_event_id: string
@@ -1766,7 +1364,6 @@ export type Database = {
           merchant_id?: string | null
           payload_sha256?: string
           processed_at?: string | null
-          processing_error?: string | null
           received_at?: string
           square_created_at?: string | null
           square_event_id?: string
@@ -2069,77 +1666,6 @@ export type Database = {
           },
         ]
       }
-      tax_rate_cache: {
-        Row: {
-          breakdown: Json | null
-          cached_at: string
-          city_rate: number | null
-          combined_rate: number
-          county_rate: number | null
-          district_rate: number | null
-          expires_at: string
-          id: string
-          state_code: string | null
-          state_rate: number | null
-          zip_code: string
-        }
-        Insert: {
-          breakdown?: Json | null
-          cached_at?: string
-          city_rate?: number | null
-          combined_rate: number
-          county_rate?: number | null
-          district_rate?: number | null
-          expires_at?: string
-          id?: string
-          state_code?: string | null
-          state_rate?: number | null
-          zip_code: string
-        }
-        Update: {
-          breakdown?: Json | null
-          cached_at?: string
-          city_rate?: number | null
-          combined_rate?: number
-          county_rate?: number | null
-          district_rate?: number | null
-          expires_at?: string
-          id?: string
-          state_code?: string | null
-          state_rate?: number | null
-          zip_code?: string
-        }
-        Relationships: []
-      }
-      tenant_checkout_settings: {
-        Row: {
-          created_at: string
-          flat_shipping_cents: number
-          tenant_id: string
-          updated_at: string
-        }
-        Insert: {
-          created_at?: string
-          flat_shipping_cents: number
-          tenant_id: string
-          updated_at?: string
-        }
-        Update: {
-          created_at?: string
-          flat_shipping_cents?: number
-          tenant_id?: string
-          updated_at?: string
-        }
-        Relationships: [
-          {
-            foreignKeyName: "tenant_checkout_settings_tenant_id_fkey"
-            columns: ["tenant_id"]
-            isOneToOne: true
-            referencedRelation: "tenants"
-            referencedColumns: ["id"]
-          },
-        ]
-      }
       tenant_store_access_settings: {
         Row: {
           checkout_lock_enabled: boolean
@@ -2181,50 +1707,6 @@ export type Database = {
           },
         ]
       }
-      tenant_tax_settings: {
-        Row: {
-          business_name: string | null
-          created_at: string
-          home_state: string
-          id: string
-          tax_code_overrides: Json
-          tax_enabled: boolean
-          tax_id_number: string | null
-          tenant_id: string
-          updated_at: string
-        }
-        Insert: {
-          business_name?: string | null
-          created_at?: string
-          home_state: string
-          id?: string
-          tax_code_overrides?: Json
-          tax_enabled?: boolean
-          tax_id_number?: string | null
-          tenant_id: string
-          updated_at?: string
-        }
-        Update: {
-          business_name?: string | null
-          created_at?: string
-          home_state?: string
-          id?: string
-          tax_code_overrides?: Json
-          tax_enabled?: boolean
-          tax_id_number?: string | null
-          tenant_id?: string
-          updated_at?: string
-        }
-        Relationships: [
-          {
-            foreignKeyName: "tenant_tax_settings_tenant_id_fkey"
-            columns: ["tenant_id"]
-            isOneToOne: true
-            referencedRelation: "tenants"
-            referencedColumns: ["id"]
-          },
-        ]
-      }
       tenants: {
         Row: {
           created_at: string | null
@@ -2243,64 +1725,12 @@ export type Database = {
         }
         Relationships: []
       }
-      transaction_audit_log: {
-        Row: {
-          actor: string
-          created_at: string
-          data: Json | null
-          event_type: string
-          id: string
-          ip_address: unknown
-          order_id: string | null
-          tenant_id: string
-          user_agent: string | null
-        }
-        Insert: {
-          actor: string
-          created_at?: string
-          data?: Json | null
-          event_type: string
-          id?: string
-          ip_address?: unknown
-          order_id?: string | null
-          tenant_id: string
-          user_agent?: string | null
-        }
-        Update: {
-          actor?: string
-          created_at?: string
-          data?: Json | null
-          event_type?: string
-          id?: string
-          ip_address?: unknown
-          order_id?: string | null
-          tenant_id?: string
-          user_agent?: string | null
-        }
-        Relationships: [
-          {
-            foreignKeyName: "transaction_audit_log_order_id_fkey"
-            columns: ["order_id"]
-            isOneToOne: false
-            referencedRelation: "orders"
-            referencedColumns: ["id"]
-          },
-          {
-            foreignKeyName: "transaction_audit_log_tenant_id_fkey"
-            columns: ["tenant_id"]
-            isOneToOne: false
-            referencedRelation: "tenants"
-            referencedColumns: ["id"]
-          },
-        ]
-      }
       user_addresses: {
         Row: {
           city: string | null
           country: string | null
           created_at: string | null
           id: string
-          is_default: boolean | null
           line1: string | null
           line2: string | null
           name: string | null
@@ -2315,7 +1745,6 @@ export type Database = {
           country?: string | null
           created_at?: string | null
           id?: string
-          is_default?: boolean | null
           line1?: string | null
           line2?: string | null
           name?: string | null
@@ -2330,55 +1759,6 @@ export type Database = {
           country?: string | null
           created_at?: string | null
           id?: string
-          is_default?: boolean | null
-          line1?: string | null
-          line2?: string | null
-          name?: string | null
-          phone?: string | null
-          postal_code?: string | null
-          state?: string | null
-          updated_at?: string | null
-          user_id?: string
-        }
-        Relationships: []
-      }
-      user_billing_addresses: {
-        Row: {
-          city: string | null
-          country: string | null
-          created_at: string | null
-          id: string
-          is_default: boolean | null
-          line1: string | null
-          line2: string | null
-          name: string | null
-          phone: string | null
-          postal_code: string | null
-          state: string | null
-          updated_at: string | null
-          user_id: string
-        }
-        Insert: {
-          city?: string | null
-          country?: string | null
-          created_at?: string | null
-          id?: string
-          is_default?: boolean | null
-          line1?: string | null
-          line2?: string | null
-          name?: string | null
-          phone?: string | null
-          postal_code?: string | null
-          state?: string | null
-          updated_at?: string | null
-          user_id: string
-        }
-        Update: {
-          city?: string | null
-          country?: string | null
-          created_at?: string | null
-          id?: string
-          is_default?: boolean | null
           line1?: string | null
           line2?: string | null
           name?: string | null
@@ -2411,19 +1791,6 @@ export type Database = {
         }
         Returns: boolean
       }
-      attach_square_payment_link: {
-        Args: {
-          p_order_id: string
-          p_shipping_cents: number
-          p_square_order_id: string
-          p_square_payment_link_id: string
-          p_square_payment_link_url: string
-          p_tax_calculation_id: string
-          p_tax_cents: number
-          p_total_cents: number
-        }
-        Returns: boolean
-      }
       claim_checkout_notifications: { Args: { p_limit: number }; Returns: Json }
       claim_checkout_notifications_for_order: {
         Args: { p_limit: number; p_order_id: string }
@@ -2442,34 +1809,14 @@ export type Database = {
             }
             Returns: boolean
           }
-      decrement_variant_stock: {
-        Args: { p_quantity: number; p_variant_id: string }
-        Returns: undefined
-      }
       finish_checkout_notification: {
         Args: { p_notification_id: string; p_succeeded: boolean }
         Returns: boolean
-      }
-      increment_variant_stock: {
-        Args: { p_quantity: number; p_variant_id: string }
-        Returns: undefined
       }
       is_admin: { Args: never; Returns: boolean }
       is_admin_for_tenant: { Args: { target_tenant: string }; Returns: boolean }
       is_dev: { Args: never; Returns: boolean }
       is_super_admin: { Args: never; Returns: boolean }
-      mark_order_paid_and_decrement: {
-        Args: {
-          p_items: Json
-          p_order_id: string
-          p_payment_transaction_id: string
-        }
-        Returns: boolean
-      }
-      mark_square_payment_link_deleted: {
-        Args: { p_order_id: string; p_square_payment_link_id: string }
-        Returns: boolean
-      }
       process_square_dispute_event: {
         Args: {
           p_amount_cents: number
@@ -2488,17 +1835,6 @@ export type Database = {
           p_square_payment_id: string
         }
         Returns: Json
-      }
-      record_square_payment_details: {
-        Args: {
-          p_amount_cents: number
-          p_currency: string
-          p_details: Json
-          p_payment_status: string
-          p_square_order_id: string
-          p_square_payment_id: string
-        }
-        Returns: undefined
       }
       process_square_payment_event: {
         Args: {
@@ -2543,6 +1879,17 @@ export type Database = {
           p_tracking_url: string
         }
         Returns: Json
+      }
+      record_square_payment_details: {
+        Args: {
+          p_amount_cents: number
+          p_currency: string
+          p_details: Json
+          p_payment_status: string
+          p_square_order_id: string
+          p_square_payment_id: string
+        }
+        Returns: undefined
       }
       release_square_checkout_reservation: {
         Args: { p_order_id: string; p_reason: string }

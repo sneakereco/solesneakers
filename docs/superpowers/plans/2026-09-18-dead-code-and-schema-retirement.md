@@ -10,7 +10,19 @@
 
 **Spec:** The two audits from this conversation, the user's confirmation that all five conditional feature groups can retire, and the manifests in this document. Source evidence is in the [code audit](C:/Users/dsrus/.codex/visualizations/2026/09/18/01a0b5ab-fd1e-78e1-998e-4d86b0e945c7/dead-code-audit.md) and [database audit](C:/Users/dsrus/.codex/visualizations/2026/09/18/01a0b5ab-fd1e-78e1-998e-4d86b0e945c7/database-retirement-audit.md). The manifests below make execution independent of those machine-local reports.
 
-**Status:** Inline execution in progress. Release A source changes are implemented and locally verified; remote rollout and provider retirement gates remain pending. See `docs/operations/dead-code-retirement.md` for evidence. Baseline audit commit: `25c53b3fc5661eec2d3f260603c948473c98e92f`. Recheck references at execution time.
+**Status:** Inline execution in progress. Release A source changes and Release B schema changes are implemented and locally verified on separate branches; remote rollout and provider retirement gates remain pending. Release B was prepared ahead of rollout in its isolated branch so the complete change is reviewable, and will now proceed to a staging PR as requested by the user. Apply the A-before-B gate separately in each environment; production remains unchanged until a separately approved tag release. See `docs/operations/dead-code-retirement.md` for evidence. Baseline audit commit: `25c53b3fc5661eec2d3f260603c948473c98e92f`. Recheck references at execution time.
+
+**Rollout decision:** The user explicitly requested Release B in staging via a PR. Staging runs Release A from PR #11. Production is deferred; the earlier global both-environments gate is superseded by a per-environment gate.
+
+## Execution checkpoints
+
+| Tasks                                  | State                                                                                    |
+| -------------------------------------- | ---------------------------------------------------------------------------------------- |
+| 1: isolate and refresh baseline        | Done; production backlog identified, baseline rollout pending                            |
+| 2–5: remove application dependencies   | Code complete and locally verified; remaining provider link retirement is a release gate |
+| 6: release A rollout                   | Local verification done; staging deployed via PR #11; production deployment pending      |
+| 7–8: schema migration and verification | Prepared on separate release B branch; clone and full replay checks passed               |
+| 9: release B rollout/configuration     | Pending release A deployments, recoverable backups and reviewed rollout                  |
 
 ## Global constraints
 
@@ -52,11 +64,11 @@ Estimated engineering time: 290–490 minutes, excluding user review, provider a
 
 **Consumes:** This plan and current checkout. **Produces:** Recorded starting SHA, environment migration lists, deployment SHAs, scoped worktree, and refreshed inventories.
 
-- [ ] Create an isolated worktree following the using-git-worktrees skill; preserve the main checkout's unrelated edits. Record `git status --short`, `git rev-parse HEAD`, and runtime versions.
-- [ ] Re-run Knip 6.37.0 in normal and production modes and check callers of the manifest entries. Treat new callers as a reason to adjust that entry, not as authorization to remove the new behavior.
+- [x] Create an isolated worktree following the using-git-worktrees skill; preserve the main checkout's unrelated edits. Record `git status --short`, `git rev-parse HEAD`, and runtime versions.
+- [x] Re-run Knip 6.37.0 in normal and production modes and check callers of the manifest entries. Treat new callers as a reason to adjust that entry, not as authorization to remove the new behavior.
 - [ ] Inspect current local/stg/prd catalogs in read-only transactions and match each endpoint to its environment without printing credentials. Recheck migration versions, legacy hosted-link rows, inbound dependencies and proposed-retirement row counts. Record backup/restore capability before any later destructive rollout.
 - [ ] Verify deployed revisions. The prior audit found local at 20260918140000, staging at 20260918180000, production at 20260723090000 (16 behind staging). Treat those as previous observations. Reconcile production's existing migration backlog as a separate baseline release before cleanup; do not blindly apply it to an unknown older app. The existing marketing migration itself requires the marketing-free app to be deployed first; stage that historical cutover if needed.
-- [ ] Confirm the two-release gate: release A contains no new drop migration; release B cannot merge to auto-deploying main until A has been deployed to both environments. Record a reviewer checkpoint for each release; no new scheduling/automation system is needed.
+- [x] Confirm the two-release gate: release A contains no new drop migration; release B may merge to auto-deploying main once staging runs A and staging migration prerequisites are resolved. Production tags remain gated on production compatibility. Record a reviewer checkpoint for each release; no new scheduling/automation system is needed.
 
 Read-only discovery SQL:
 
@@ -87,11 +99,11 @@ npx --yes knip@6.37.0 --production --no-progress --reporter json
 
 **Consumes:** Verified manifest. **Produces:** Identical active behavior with smaller source surface; old database remains supported.
 
-- [ ] Delete the 22 files in Appendix A; remove the commented SocialButton import from RegisterForm. Do not delete shared ModalPortal, CartDrawer, CheckoutAddressReview or OrderItemDetailsModal.
-- [ ] Remove exactly the 33 methods in Appendix B and newly unused local types/imports. Retain whole repositories and all still-called methods. For example, ProfileRepository.setRole remains required by admin invitations.
-- [ ] Remove AdminSectionHeader, createCartHash/CartItemLike, unused idempotency and guest-address getters/setters, obsolete checkout request/response types and payment-method list. Keep generateIdempotencyKey, clear storage compatibility functions, OrderStatusResponse and its FulfillmentMethod type. Remove isSuperAdminRole/SUPER_ADMIN_ROLES only after AdminService is gone; retain live role/permission checks.
-- [ ] Remove `.rdk-toggle` CSS with ToggleSwitch and the two Lightspeed CI fixture variables. Keep `.rdk-checkbox`, used by StoreAccessSettingsPanel. Narrow export visibility only where obvious; do not delete active same-file helpers flagged by Knip.
-- [ ] Run typecheck/lint and targeted cart/orders/addresses tests. Make one scoped commit, `refactor: remove unreachable source and unused repository methods`, excluding unrelated files. No new deletion-only tests are necessary.
+- [x] Delete the 22 files in Appendix A; remove the commented SocialButton import from RegisterForm. Do not delete shared ModalPortal, CartDrawer, CheckoutAddressReview or OrderItemDetailsModal.
+- [x] Remove exactly the 33 methods in Appendix B and newly unused local types/imports. Retain whole repositories and all still-called methods. For example, ProfileRepository.setRole remains required by admin invitations.
+- [x] Remove AdminSectionHeader, createCartHash/CartItemLike, unused idempotency and guest-address getters/setters, obsolete checkout request/response types and payment-method list. Keep generateIdempotencyKey, clear storage compatibility functions, OrderStatusResponse and its FulfillmentMethod type. Remove isSuperAdminRole/SUPER_ADMIN_ROLES only after AdminService is gone; retain live role/permission checks.
+- [x] Remove `.rdk-toggle` CSS with ToggleSwitch and the two Lightspeed CI fixture variables. Keep `.rdk-checkbox`, used by StoreAccessSettingsPanel. Narrow export visibility only where obvious; do not delete active same-file helpers flagged by Knip.
+- [x] Run typecheck/lint and targeted cart/orders/addresses tests. Make one scoped commit, `refactor: remove unreachable source and unused repository methods`, excluding unrelated files. No new deletion-only tests are necessary.
 
 ```powershell
 npm run typecheck
@@ -107,11 +119,11 @@ npm run test:jest:unit -- --runInBand --runTestsByPath tests/unit/orders-repo.te
 
 **Consumes:** Current SquarePaymentMethods initialization path. **Produces:** A regression check that exercises production card initialization, rather than its unused old helper.
 
-- [ ] Remove the AddressInput import and its single obsolete rendering test. Keep the ModalPortal test in that file.
-- [ ] Replace the initializeSquareCard-only assertion with a failure case through the actual SquarePaymentMethods initialization path: stub `payments.card()` to reject or card.attach() to reject, render/drive the existing browser harness, and assert usable error/retry state and no payment submission. Reuse harness mocks; do not extract a new abstraction solely to keep the old test shape.
-- [ ] Establish that the replacement assertion fails when the production failure handling is deliberately disabled locally, then restore it. No provider request is sent; this is a controlled mocked browser check.
-- [ ] Delete the unused helper and its import, run the unit/browser checks below, and confirm successful card initialization and other method initialization remain covered.
-- [ ] Commit as `test: cover live card initialization and remove obsolete implementations`.
+- [x] Remove the AddressInput import and its single obsolete rendering test. Keep the ModalPortal test in that file.
+- [x] Replace the initializeSquareCard-only assertion with a failure case through the actual SquarePaymentMethods initialization path: stub `payments.card()` to reject or card.attach() to reject, render/drive the existing browser harness, and assert usable error/retry state and no payment submission. Reuse harness mocks; do not extract a new abstraction solely to keep the old test shape.
+- [x] Establish that the replacement assertion fails when the production failure handling is deliberately disabled locally, then restore it. No provider request is sent; this is a controlled mocked browser check.
+- [x] Delete the unused helper and its import, run the unit/browser checks below, and confirm successful card initialization and other method initialization remain covered.
+- [x] Commit as `test: cover live card initialization and remove obsolete implementations`.
 
 ```powershell
 npm run test:jest:unit -- --runInBand --runTestsByPath src/components/ui/hydration.test.tsx tests/unit/square-payment-methods.test.tsx
@@ -126,11 +138,11 @@ node tests/browser/payment-methods.mjs
 
 **Consumes:** Approved feature retirements. **Produces:** No runtime reads of checkout_api_logs, payment_events or shipping_tracking_events; retained admin payment/refund/dispute/email/fulfillment display.
 
-- [ ] Delete snapshot/restore routes and helper; remove cartSnapshotSchema while retaining cartValidateSchema and `/api/cart/validate`. Remove the Google-only callback; verify repository email signup, OTP and recovery use their existing code-verification routes rather than that callback.
-- [ ] Remove checkout-log and legacy shipping-event queries plus their response types/state/rendering. Remove the legacy payment_events query but keep the `paymentEvents` response populated from existing Square refund/dispute lifecycle records so the live timeline continues to work.
-- [ ] Adjust the existing admin browser fixture: no retired tables/properties; assert payment details, Square refund/dispute activity, email history and shipment fields remain visible. Verify no query to retired stores is made in route-level coverage; reuse existing unit harness where possible.
+- [x] Delete snapshot/restore routes and helper; remove cartSnapshotSchema while retaining cartValidateSchema and `/api/cart/validate`. Remove the Google-only callback; verify repository email signup, OTP and recovery use their existing code-verification routes rather than that callback.
+- [x] Remove checkout-log and legacy shipping-event queries plus their response types/state/rendering. Remove the legacy payment_events query but keep the `paymentEvents` response populated from existing Square refund/dispute lifecycle records so the live timeline continues to work.
+- [x] Adjust the existing admin browser fixture: no retired tables/properties; assert payment details, Square refund/dispute activity, email history and shipment fields remain visible. Verify no query to retired stores is made in route-level coverage; reuse existing unit harness where possible.
 - [ ] Run the admin browser check and cart/checkout unit checks. In the built app, confirm retired routes are no longer registered and normal signup/login/OTP/MFA/password recovery/cart flows still work; a generic framework 404 is sufficient, with no new tombstone-route abstraction.
-- [ ] Commit as `refactor: retire disconnected cart auth and admin event paths`. Database tables still exist at this release stage.
+- [x] Commit as `refactor: retire disconnected cart auth and admin event paths`. Database tables still exist at this release stage.
 
 ```powershell
 node tests/browser/admin-transaction-detail.mjs
@@ -146,10 +158,10 @@ npm run test:jest:unit -- --runInBand --runTestsByPath tests/unit/cart-validate-
 **Consumes:** User-approved historical hosted-link retirement, verified legacy data/provider disposition. **Produces:** Direct-order-only expiration and no app selection of hosted-link columns.
 
 - [ ] Before removing the adapter, inventory remaining provider link IDs and linked reservations, retire the confirmed obsolete hosted links through Square, and record successful deletion using the existing path. Resolve paid/reconciliation cases before releasing stock. Do not invent deletion timestamps or automatically release paid/ambiguous reservations. Preserve a restricted record of the retired IDs before dropping their columns.
-- [ ] Remove createSquarePaymentLinksGateway and markPaymentLinkDeleted, all link-only schemas/mappings/select columns, and the two legacy response properties from reserve/prepare. Release A must tolerate extra JSON fields still returned by the old reservation SQL without requiring them.
-- [ ] Simplify ExpiredCheckout and expiration dependencies as shown below. Keep getCancellationState, safe cancellation using the latest version, release-once semantics, and reporting failures. Existing direct-order cancellation/reconciliation tests must stay; replace only hosted-link tests.
-- [ ] Verify release A against the old schema after legacy links are retired: new unpaid direct order cancels then releases; paid, unrecognized, or provider-error cases do not release; never-attached reservations can release. If an order has a Square ID but lacks cancellation evidence/version, fail closed and reconcile rather than assuming it is safe to release.
-- [ ] Run relevant checks and commit as `refactor: retire hosted payment link compatibility`.
+- [x] Remove createSquarePaymentLinksGateway and markPaymentLinkDeleted, all link-only schemas/mappings/select columns, and the two legacy response properties from reserve/prepare. Release A must tolerate extra JSON fields still returned by the old reservation SQL without requiring them.
+- [x] Simplify ExpiredCheckout and expiration dependencies as shown below. Keep getCancellationState, safe cancellation using the latest version, release-once semantics, and reporting failures. Existing direct-order cancellation/reconciliation tests must stay; replace only hosted-link tests.
+- [x] Verify release A against the old schema after legacy links are retired: new unpaid direct order cancels then releases; paid, unrecognized, or provider-error cases do not release; never-attached reservations can release. If an order has a Square ID but lacks cancellation evidence/version, fail closed and reconcile rather than assuming it is safe to release.
+- [x] Run relevant checks and commit as `refactor: retire hosted payment link compatibility`.
 
 Target contract:
 
@@ -185,11 +197,11 @@ npm run test:jest:unit -- --runInBand --runTestsByPath tests/unit/expire-checkou
 
 **Consumes:** Tasks 2–5 passing. **Produces:** Recorded release A commit/deployment evidence for staging and production.
 
-- [ ] Run formatting check, lint, typecheck, both Jest suites, browser suite, and production build. Use existing scripts; do not add a new test framework or broad snapshot suite.
-- [ ] Review the full diff, confirming deleted modules were not replaced with new abstractions and no package was removed without evidence. Re-run normal/production Knip and account for remaining framework/scripts/generated-types and same-file export findings.
+- [x] Run formatting check, lint, typecheck, both Jest suites, browser suite, and production build. Use existing scripts; do not add a new test framework or broad snapshot suite.
+- [x] Review the full diff, confirming deleted modules were not replaced with new abstractions and no package was removed without evidence. Re-run normal/production Knip and account for remaining framework/scripts/generated-types and same-file export findings.
 - [ ] Deploy A to staging through the existing PR/main process. Verify `/api/readyz`, normal authentication, cart, direct checkout/expiration, admin transaction view and retained notification/fulfillment flows. Record provider sandbox evidence separately from local mocks.
 - [ ] Deploy A to production only after the baseline work in Task 1 and staging verification. Record deployed commit, database migration baseline and smoke-test outcome. Do not create a production tag implicitly during planning or local implementation.
-- [ ] Mark the contraction gate satisfied only when BOTH environments run A. Until then, keep B's drop migration off main. After B, the oldest rollback-compatible app is A; an older app would require schema/data restoration.
+- [ ] Apply the contraction gate per environment: staging B may advance once staging runs A and its prerequisites are resolved. Do not tag B for production until production runs A and its separate prerequisites are resolved. After B, the oldest rollback-compatible app is A; an older app would require schema/data restoration.
 
 ```powershell
 npm run format:check
@@ -212,11 +224,11 @@ npx --yes knip@6.37.0 --no-progress
 
 **Consumes:** Appendices C/D and release A's no-legacy-reference contract. **Produces:** Enumerated retired schema removed; active function signatures/ACLs preserved; no current code relies on removed columns.
 
-- [ ] Implement the local-only `pg`/`node:assert` catalog check below. Run against the old schema first to establish the missing cleanup, then apply the migration to a disposable local database and verify. Extend/reuse existing transactional checkout scripts for reserve/reuse/release/consume and notification checks, and the RLS harness for tenant isolation. Do not run mutation tests on remote databases.
-- [ ] In the new migration, use complete current definitions to replace ONLY `reserve_square_checkout_inventory_with_address` (remove hosted-link keys from its reused response) and `release_square_checkout_reservation` (remove the retired hosted-link deletion prerequisite). Preserve every other guard, signature, SECURITY DEFINER/search_path setting and grant. Keep both wrapper functions and both consume overloads. Do not use blind text replacement against all migration history.
-- [ ] Drop the five named legacy RPCs, the sellers FK, 12 retired tables, 12 columns, redundant timestamp triggers and now-unreferenced trigger functions in dependency order. Drop three redundant indexes on kept tables; other redundant indexes disappear with their retired tables. Use the exact DDL inventory in Appendices C/D with transaction/lock timeout and no CASCADE. Existing marketing removal stays in its original migration.
-- [ ] Validate on local/disposable copies from both the current staging baseline and the recorded production baseline with its required prior migrations applied in order. Exercise first-time reserve and idempotent reuse after hosted-link fields are absent; PL/pgSQL can retain broken body references even when DROP succeeds. Compare retained tables' data counts/identities and successful schema replay. Do not reset the user's existing database.
-- [ ] Generate types from the migrated local test schema, update SQL harnesses to test current definitions rather than replay obsolete ones, run local checks, and commit as `refactor(db): retire unused application schema`.
+- [x] Implement the local-only `pg`/`node:assert` catalog check below. Run against the old schema first to establish the missing cleanup, then apply the migration to a disposable local database and verify. Extend/reuse existing transactional checkout scripts for reserve/reuse/release/consume and notification checks, and the RLS harness for tenant isolation. Do not run mutation tests on remote databases.
+- [x] In the new migration, use complete current definitions to replace ONLY `reserve_square_checkout_inventory_with_address` (remove hosted-link keys from its reused response) and `release_square_checkout_reservation` (remove the retired hosted-link deletion prerequisite). Preserve every other guard, signature, SECURITY DEFINER/search_path setting and grant. Keep both wrapper functions and both consume overloads. Do not use blind text replacement against all migration history.
+- [x] Drop the five named legacy RPCs, the sellers FK, 12 retired tables, 12 columns, redundant timestamp triggers and now-unreferenced trigger functions in dependency order. Drop three redundant indexes on kept tables; other redundant indexes disappear with their retired tables. Use the exact DDL inventory in Appendices C/D with transaction/lock timeout and no CASCADE. Existing marketing removal stays in its original migration.
+- [x] Validate on local/disposable copies from both the current staging baseline and the recorded production baseline with its required prior migrations applied in order. Exercise first-time reserve and idempotent reuse after hosted-link fields are absent; PL/pgSQL can retain broken body references even when DROP succeeds. Compare retained tables' data counts/identities and successful schema replay. Do not reset the user's existing database.
+- [x] Generate types from the migrated local test schema, update SQL harnesses to test current definitions rather than replay obsolete ones, run local checks, and commit as `refactor(db): retire unused application schema`.
 
 The standalone rollback script must pin the project. The following runnable catalog check is its starting implementation; existing transactional checkout/RLS scripts provide the behavior checks listed in Task 8. Run this once before migration (expected assertion failure) and again on the migrated local test database (expected success). It does not install or replay migrations:
 
@@ -334,10 +346,10 @@ Existing local regression checks to preserve and run against the resulting schem
 
 **Consumes:** Migrated local schema and release A code. **Produces:** Reviewable release B diff plus local validation results.
 
-- [ ] Verify all retired objects are absent and retained RPC ACLs, RLS helpers/policies, billing/address tables, notification and webhook tables remain. Assert one updated_at trigger remains on each affected table and each retained unique index/constraint still exists.
-- [ ] In transactional fixtures, confirm stock changes once on reserve/retry/release; paid orders are not released; required billing/pickup data persists; tenant mismatch cannot access another tenant's data. Exercise both idempotent and first-time paths.
-- [ ] Run notification retry, Square payment-details replay, shipping-label and address checks. Confirm admin display still shows Square payments/refunds/disputes, email history, current tracking and order details.
-- [ ] Run the full commands from Task 6 again because the schema/types changed. Re-run Knip without forcing zero findings from legitimate framework/test entry points. Inspect generated-type differences to ensure they match only planned schema changes.
+- [x] Verify all retired objects are absent and retained RPC ACLs, RLS helpers/policies, billing/address tables, notification and webhook tables remain. Assert one updated_at trigger remains on each affected table and each retained unique index/constraint still exists.
+- [x] In transactional fixtures, confirm stock changes once on reserve/retry/release; paid orders are not released; required billing/pickup data persists; tenant mismatch cannot access another tenant's data. Exercise both idempotent and first-time paths.
+- [x] Run notification retry, Square payment-details replay, shipping-label and address checks. Confirm admin display still shows Square payments/refunds/disputes, email history, current tracking and order details.
+- [x] Run the full commands from Task 6 again because the schema/types changed. Re-run Knip without forcing zero findings from legitimate framework/test entry points. Inspect generated-type differences to ensure they match only planned schema changes.
 - [ ] Review the exact SQL and resulting data-impact counts, backup/restore procedure and release A compatibility gate before any remote apply. Record expected object absence and retained-flow checks as the rollout checklist.
 
 ## Phase 5 — Apply and verify release B
@@ -356,13 +368,13 @@ Existing local regression checks to preserve and run against the resulting schem
 
 ## Acceptance matrix
 
-| Area                 | Required passing behavior                                                                                                                                                    |
-| -------------------- | ---------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
-| Storefront/cart/auth | Browse/product/cart operations, persistent cart and validation, signup/email verification/login/OTP/MFA/recovery work; retired snapshot and OAuth callback routes are absent |
-| Checkout             | Current supported payment methods, ship/pickup, required billing, quote/prepare/pay, idempotency, cancellation and expiration preserve their contracts                       |
-| Admin/fulfillment    | Product edits and stock, saved/default shipping address, transaction payment/refund/dispute details, label creation/tracking, email history still work                       |
-| Database/security    | Enumerated objects gone; retained unique indexes, RPC grants, tenant RLS, anti-double-release/payment reconciliation and durable notifications still pass                    |
-| Release evidence     | A preceded B in both environments; actual migration/deployment/provider outcomes recorded separately from local tests                                                        |
+| Area                 | Required passing behavior                                                                                                                                                        |
+| -------------------- | -------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| Storefront/cart/auth | Browse/product/cart operations, persistent cart and validation, signup/email verification/login/OTP/MFA/recovery work; retired snapshot and OAuth callback routes are absent     |
+| Checkout             | Current supported payment methods, ship/pickup, required billing, quote/prepare/pay, idempotency, cancellation and expiration preserve their contracts                           |
+| Admin/fulfillment    | Product edits and stock, saved/default shipping address, transaction payment/refund/dispute details, label creation/tracking, email history still work                           |
+| Database/security    | Enumerated objects gone; retained unique indexes, RPC grants, tenant RLS, anti-double-release/payment reconciliation and durable notifications still pass                        |
+| Release evidence     | A precedes B in each target environment; staging-first rollout does not authorize production; actual migration/deployment/provider outcomes recorded separately from local tests |
 
 ## Appendix A — Whole-file deletion manifest
 

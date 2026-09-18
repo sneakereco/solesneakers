@@ -1,5 +1,4 @@
 import assert from "node:assert/strict";
-import { readFile } from "node:fs/promises";
 
 import pg from "pg";
 
@@ -12,19 +11,11 @@ assert(
   "This rollback check only runs against local PostgreSQL.",
 );
 
-const migration = await readFile(
-  new URL(
-    "../supabase/migrations/20260916090000_checkout_notification_delivery.sql",
-    import.meta.url,
-  ),
-  "utf8",
-);
 const client = new pg.Client({ connectionString });
 
 try {
   await client.connect();
   await client.query("begin");
-  await client.query(migration);
 
   const { rows: tenants } = await client.query(
     "insert into public.tenants(name) values ('notification rollback check') returning id",
