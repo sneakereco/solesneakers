@@ -1,4 +1,5 @@
 import Link from "next/link";
+import type { Metadata } from "next";
 
 import { ProductGrid } from "@/components/store/ProductGrid";
 import { StoreControls } from "@/components/store/StoreControls";
@@ -8,6 +9,7 @@ import { storeProductsQuerySchema } from "@/lib/validation/storefront";
 import type { ProductFilters } from "@/repositories/product-repo";
 import { TagTaxonomyRepository } from "@/repositories/tag-taxonomy-repo";
 import { StorefrontService } from "@/services/storefront-service";
+import { pageMetadata } from "@/lib/metadata";
 
 export const revalidate = 60;
 
@@ -51,6 +53,56 @@ const formatPriceLabel = (min?: number, max?: number) => {
   }
   return null;
 };
+
+export async function generateMetadata({
+  searchParams,
+}: {
+  searchParams?: Promise<StoreSearchParams> | StoreSearchParams;
+}): Promise<Metadata> {
+  const params = await searchParams;
+  const query = getStringParam(params, "q")?.trim().slice(0, 100);
+  const brandIds = getArrayParam(params, "brandIds");
+  const modelIds = getArrayParam(params, "modelIds");
+  const sizeIds = getArrayParam(params, "sizeIds");
+  const taxonomy = new TagTaxonomyRepository(createSupabasePublicClient());
+  const [brands, models, sizes] = await Promise.all([
+    brandIds.length ? taxonomy.listBrands() : [],
+    modelIds.length ? taxonomy.listModels() : [],
+    sizeIds.length ? taxonomy.listSizes() : [],
+  ]);
+  const labels = [
+    ...getArrayParam(params, "category")
+      .filter((value) =>
+        ["sneakers", "clothing", "accessories", "electronics"].includes(value),
+      )
+      .map(formatLabel),
+    ...brands
+      .filter((brand) => brandIds.includes(brand.id))
+      .map((brand) => brand.canonical_label),
+    ...models
+      .filter((model) => modelIds.includes(model.id))
+      .map((model) => model.canonical_label),
+    ...sizes
+      .filter((size) => sizeIds.includes(size.id))
+      .map((size) => `Size ${size.canonical_label}`),
+    ...getArrayParam(params, "condition")
+      .filter((value) => ["new", "used"].includes(value))
+      .map((value) => (value === "new" ? "Brand New" : "Pre-Owned")),
+    formatPriceLabel(
+      getNonNegativeInteger(getStringParam(params, "priceMin")),
+      getNonNegativeInteger(getStringParam(params, "priceMax")),
+    ),
+  ].filter(Boolean);
+  const collection = [...new Set(labels)].join(", ");
+  return pageMetadata(
+    query ? `Search: "${query}"` : collection || "Shop All",
+    query
+      ? `Browse results for "${query}"${collection ? `: ${collection}` : ""} at Solesneakers.`
+      : collection
+        ? `Shop ${collection} at Solesneakers. Browse available items for shipping or local pickup.`
+        : "Shop authentic new and pre-owned sneakers, streetwear, and accessories. Explore the latest Solesneakers arrivals.",
+  );
+}
 
 export default async function StorePage({
   searchParams,

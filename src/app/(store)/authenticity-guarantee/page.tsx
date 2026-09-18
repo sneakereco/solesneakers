@@ -1,5 +1,12 @@
+import { pageMetadata } from "@/lib/metadata";
+
 import { PolicyPage } from "@/components/legal/PolicyPage";
 import { SUPPORT_EMAIL } from "@/config/constants/mail";
+
+export const metadata = pageMetadata(
+  "Authenticity Guarantee",
+  "Learn how Solesneakers reviews products for authenticity and how to contact us with a concern about your purchase.",
+);
 
 export default function AuthenticityGuaranteePage() {
   return (

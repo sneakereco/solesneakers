@@ -1,3 +1,5 @@
+import { pageMetadata } from "@/lib/metadata";
+
 import { PolicyPage } from "@/components/legal/PolicyPage";
 import { BRAND_DOMAIN, LEGAL_BUSINESS_NAME } from "@/config/constants/brand";
 import { SUPPORT_EMAIL } from "@/config/constants/mail";
@@ -6,6 +8,11 @@ import {
   PICKUP_INSTRUCTIONS,
   PICKUP_LOCATION_SUMMARY,
 } from "@/config/pickup";
+
+export const metadata = pageMetadata(
+  "Shipping Policy",
+  "Review Solesneakers shipping information, order processing, delivery, tracking, and local pickup options.",
+);
 
 export default function ShippingPage() {
   return (

@@ -29,7 +29,7 @@ it("accepts only the signed destination and checkout identity within ten minutes
     { tenantId: "other" },
     { deviceSessionId: "other" },
     { normalizedEmailHash: "other" },
-    { paymentMethod: "googlePay" },
+    { paymentMethod: "applePay" },
     { address: { ...scope.address, line2: "Apt 3" } },
   ]) {
     expect(verifyShippingConfirmation(token, { ...scope, ...change }, secret, now)).toBe(

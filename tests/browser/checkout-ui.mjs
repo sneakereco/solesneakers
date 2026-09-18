@@ -48,7 +48,6 @@ const bundle = await build({
         }; },
         paymentRequest: () => ({ addEventListener() {}, update: () => true }),
         applePay: async () => ({ tokenize: async () => { test.tokenized.push('apple'); return { status: 'CANCEL' }; } }),
-        googlePay: async () => ({ attach: async selector => { document.querySelector(selector).innerHTML = '<button type="button">Google Pay test</button>'; }, tokenize: async () => { test.tokenized.push('google'); return { status: 'CANCEL' }; } }),
         afterpayClearpay: async () => ({ attach: async () => {}, tokenize: async () => ({ status: 'CANCEL' }) }),
         cashAppPay: async (_, options) => ({ attach: async selector => { document.querySelector(selector).innerHTML = '<button type="button">Cash App test</button>'; test.shouldTokenize = options.shouldTokenize; }, addEventListener() {} }),
       }) };
@@ -240,8 +239,8 @@ try {
     }
     assert.equal(await page.evaluate(() => window.checkoutTest.prepared), 0);
     assert.equal(await email.evaluate((el) => el === document.activeElement), true);
-    await page.getByRole("button", { name: "Google Pay test" }).click();
-    await page.waitForFunction(() => window.checkoutTest.tokenized.includes("google"));
+    await page.getByRole("button", { name: "Pay with Apple Pay" }).click();
+    await page.waitForFunction(() => window.checkoutTest.tokenized.includes("apple"));
     await page.waitForFunction(() => !document.querySelector("dialog")?.open);
     assert.equal(
       await page.evaluate(() => window.checkoutTest.prepared),

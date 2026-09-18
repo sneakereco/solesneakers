@@ -19,11 +19,11 @@ describe("squarePaymentDiagnostic", () => {
   });
 
   it("normalizes non-Error failures", () => {
-    expect(squarePaymentDiagnostic("googlePay", "create", { reason: "hidden" })).toEqual({
+    expect(squarePaymentDiagnostic("applePay", "create", { reason: "hidden" })).toEqual({
       level: "warn",
       layer: "frontend",
       message: "Square payment method unavailable",
-      paymentMethod: "googlePay",
+      paymentMethod: "applePay",
       phase: "create",
       errorName: "UnknownError",
       errorMessage: "Square SDK operation failed",

@@ -1,1 +1,1 @@
-export { default } from "../legal/shipping/page";
+export { default, metadata } from "../legal/shipping/page";

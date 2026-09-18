@@ -47,7 +47,6 @@ describe("production security headers", () => {
     const csp = directives(response.headers.get("content-security-policy"));
     expect(csp.get("script-src")).toEqual(
       expect.arrayContaining([
-        "https://pay.google.com/gp/p/js/pay.js",
         "https://js-sandbox.squarecdn.com",
         "https://js.squarecdn.com",
         "https://sandbox.kit.cash.app/v1/pay.js",
@@ -94,19 +93,17 @@ describe("production security headers", () => {
         "https://pci-connect.squareupsandbox.com",
         "https://o160250.ingest.sentry.io",
         "https://challenges.cloudflare.com",
-        "https://pay.google.com",
         "https://api.lab.amplitude.com/sdk/vardata",
         "https://static.afterpay.com/modal",
       ]),
     );
-    expect(csp.get("connect-src")).toContain("https://google.com/pay");
-    expect(csp.get("connect-src")).toContain("https://www.google.com/pay");
+    expect(response.headers.get("content-security-policy")).not.toContain(
+      "pay.google.com",
+    );
+    expect(csp.get("connect-src")).not.toContain("https://google.com/pay");
+    expect(csp.get("connect-src")).not.toContain("https://www.google.com/pay");
     expect(csp.get("frame-src")).toEqual(
-      expect.arrayContaining([
-        "https://pay.google.com",
-        "https://sandbox.kit.cash.app",
-        "https://kit.cash.app",
-      ]),
+      expect.arrayContaining(["https://sandbox.kit.cash.app", "https://kit.cash.app"]),
     );
   });
 

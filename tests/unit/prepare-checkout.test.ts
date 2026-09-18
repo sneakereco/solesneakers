@@ -278,7 +278,7 @@ describe("shipping deliverability gate", () => {
       }),
     );
   });
-  it.each(["applePay", "googlePay"])(
+  it.each(["applePay"])(
     "prepares %s without Shippo or its quota",
     async (paymentMethod) => {
       const deps = dependencies();

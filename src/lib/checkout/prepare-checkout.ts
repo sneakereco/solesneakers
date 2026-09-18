@@ -207,7 +207,6 @@ export async function prepareCheckoutHandler(
       parsed.data.fulfillment === "ship" &&
       parsed.data.shippingAddress &&
       parsed.data.paymentMethod !== "applePay" &&
-      parsed.data.paymentMethod !== "googlePay" &&
       !confirmed
     ) {
       const validationAttempt = await deps.checkAddressValidationAttempt({

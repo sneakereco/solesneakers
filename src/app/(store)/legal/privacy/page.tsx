@@ -1,7 +1,14 @@
+import { pageMetadata } from "@/lib/metadata";
+
 import { PolicyPage } from "@/components/legal/PolicyPage";
 import { BRAND_DOMAIN, BRAND_NAME, LEGAL_BUSINESS_NAME } from "@/config/constants/brand";
 import { SUPPORT_EMAIL } from "@/config/constants/mail";
 import { PICKUP_LOCATION_SUMMARY } from "@/config/pickup";
+
+export const metadata = pageMetadata(
+  "Privacy Policy",
+  "Learn how Solesneakers collects, uses, and protects information when you browse, create an account, or place an order.",
+);
 
 export default function PrivacyPage() {
   return (

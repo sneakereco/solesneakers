@@ -1,1 +1,1 @@
-export { default } from "../legal/privacy/page";
+export { default, metadata } from "../legal/privacy/page";

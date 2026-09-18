@@ -7,12 +7,13 @@ import { CartProvider } from "@/components/cart/CartProvider";
 import { env } from "@/config/env";
 import { SessionProvider } from "@/contexts/SessionContext";
 import { getServerSession } from "@/lib/auth/session";
+import { pageMetadata } from "@/lib/metadata";
 import "@/styles/site.css";
 
-export const metadata: Metadata = {
-  title: "Solesneakers - Premium Sneakers & Streetwear",
-  description: "Authentic sneakers and streetwear. Quality guaranteed.",
-};
+export const metadata: Metadata = pageMetadata(
+  "Authentic Sneakers & Streetwear",
+  "Shop authentic new and pre-owned sneakers, streetwear, and accessories at Solesneakers. Browse the latest arrivals for shipping or local pickup.",
+);
 
 // OPTIMIZATION: Proper viewport configuration for mobile performance
 export const viewport: Viewport = {

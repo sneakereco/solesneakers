@@ -1,7 +1,14 @@
+import { pageMetadata } from "@/lib/metadata";
+
 import { PolicyPage } from "@/components/legal/PolicyPage";
 import { BRAND_DOMAIN, BRAND_NAME, LEGAL_BUSINESS_NAME } from "@/config/constants/brand";
 import { SUPPORT_EMAIL } from "@/config/constants/mail";
 import { PICKUP_LOCATION_SUMMARY } from "@/config/pickup";
+
+export const metadata = pageMetadata(
+  "Terms of Service",
+  "Read the terms for shopping with Solesneakers, including orders, payments, shipping, and local pickup.",
+);
 
 export default function TermsPage() {
   return (

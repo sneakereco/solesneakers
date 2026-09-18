@@ -23,10 +23,10 @@ const result = await build({
         test.counts[name] = (test.counts[name] || 0) + 1;
         let host;
         return {
-          async attach(selector, attachOptions) { if (name === "googlePay") test.googleAttachOptions = attachOptions; if (name === "cashAppPay") test.cashAttachOptions = attachOptions; host = document.querySelector(selector);
+          async attach(selector, attachOptions) { if (name === "cashAppPay") test.cashAttachOptions = attachOptions; host = document.querySelector(selector);
             if (name === 'card') host.replaceChildren(document.createTextNode('Secure card fields'));
             if (name === 'afterpay') host.replaceChildren(document.createTextNode('SDK owns this node'));
-            if (name === 'googlePay' || name === 'cashAppPay') {
+            if (name === 'cashAppPay') {
               const button = document.createElement('button'); button.type = 'button'; button.textContent = name;
               host.replaceChildren(button);
             }
@@ -132,10 +132,9 @@ try {
       totalCents: 11800,
     },
   };
-  await page.waitForFunction(() => window.paymentTest.counts.googlePay === 1);
-  assert.deepEqual(await page.evaluate(() => window.paymentTest.googleAttachOptions), {
-    buttonSizeMode: "fill",
-  });
+  await page.waitForFunction(() => window.paymentTest.counts.applePay === 1);
+  assert.equal(await page.evaluate(() => window.paymentTest.counts.googlePay || 0), 0);
+  assert.equal(await page.locator("#square-google-pay-container").count(), 0);
   await stableRows();
   await page.getByRole("radio", { name: "Cash App Pay", exact: true }).click();
   assert.equal(
@@ -266,8 +265,8 @@ try {
   );
   if (await page.getByRole("dialog").isVisible())
     await page.getByRole("button", { name: "Return to checkout" }).click();
-  await page.getByRole("button", { name: "googlePay", exact: true }).click();
-  await page.waitForFunction(() => window.paymentTest.lastTokenized === "googlePay");
+  await page.getByRole("button", { name: "Pay with Apple Pay", exact: true }).click();
+  await page.waitForFunction(() => window.paymentTest.lastTokenized === "applePay");
   assert.equal(
     await page.evaluate(() => window.paymentTest.lastRequest.total.amount),
     "120.00",
@@ -303,7 +302,7 @@ try {
   });
   if (await page.getByRole("dialog").isVisible())
     await page.getByRole("button", { name: "Return to checkout" }).click();
-  await page.getByRole("button", { name: "googlePay", exact: true }).click();
+  await page.getByRole("button", { name: "Pay with Apple Pay", exact: true }).click();
   await page.getByRole("heading", { name: "Complete your checkout details" }).waitFor();
   const walletTokenizeCount = await page.evaluate(() => window.paymentTest.tokenizeCalls);
   assert.equal(await page.evaluate(() => window.paymentTest.prepareCalls), 0);
@@ -329,10 +328,7 @@ try {
     await page.evaluate(() => window.paymentTest.lastPrepare[1].buyerEmail),
     "account@example.com",
   );
-  assert.equal(
-    await page.evaluate(() => window.paymentTest.counts.googlePay),
-    beforeContactEdit.googlePay + 1,
-  );
+  assert.equal(await page.evaluate(() => window.paymentTest.counts.googlePay || 0), 0);
   assert.deepEqual(await page.evaluate(() => window.paymentTest.cashAttachOptions), {
     shape: "semiround",
     size: "medium",

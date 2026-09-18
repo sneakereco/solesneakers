@@ -56,13 +56,7 @@ export const checkoutQuoteDestinationSchema = z
   })
   .strict();
 
-export const paymentMethodSchema = z.enum([
-  "card",
-  "afterpay",
-  "applePay",
-  "googlePay",
-  "cashAppPay",
-]);
+export const paymentMethodSchema = z.enum(["card", "afterpay", "applePay", "cashAppPay"]);
 
 export const checkoutBillingAddressSchema = z
   .object({

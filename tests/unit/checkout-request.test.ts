@@ -55,6 +55,28 @@ const billingAddress = {
 };
 
 describe("direct checkout request schemas", () => {
+  it.each(["ship", "pickup"])("rejects Google Pay for %s checkout", (fulfillment) => {
+    expect(
+      prepareCheckoutRequestSchema.safeParse({
+        ...base,
+        fulfillment,
+        shippingAddress: fulfillment === "ship" ? base.shippingAddress : null,
+        pickupContact:
+          fulfillment === "pickup" ? { name: "Buyer", phone: "3365550100" } : null,
+        paymentMethod: "googlePay",
+      }).success,
+    ).toBe(false);
+  });
+
+  it("rejects Google Pay payment authorization requests", () => {
+    expect(
+      paymentPermitRequestSchema.safeParse({
+        orderId: "55555555-5555-4555-8555-555555555555",
+        deviceSessionId: base.deviceSessionId,
+        method: "googlePay",
+      }).success,
+    ).toBe(false);
+  });
   it("requires a valid pickup recipient independently of billing", () => {
     const pickup = { ...base, fulfillment: "pickup", shippingAddress: null };
     expect(prepareCheckoutRequestSchema.safeParse(pickup).success).toBe(false);
@@ -71,7 +93,7 @@ describe("direct checkout request schemas", () => {
       }).pickupContact,
     ).toEqual({ name: "Pickup Buyer", phone: "3365550100" });
   });
-  it.each(["card", "afterpay", "cashAppPay", "applePay", "googlePay"])(
+  it.each(["card", "afterpay", "cashAppPay", "applePay"])(
     "requires and normalizes billing for %s checkout",
     (paymentMethod) => {
       const card = prepareCheckoutRequestSchema.parse({

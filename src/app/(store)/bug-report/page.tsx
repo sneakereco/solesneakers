@@ -1,4 +1,11 @@
+import { pageMetadata } from "@/lib/metadata";
+
 import { ContactForm } from "@/components/contact/ContactForm";
+
+export const metadata = pageMetadata(
+  "Report a Website Issue",
+  "Report a problem with the Solesneakers website so we can investigate and help.",
+);
 
 export default function BugReportPage() {
   return (

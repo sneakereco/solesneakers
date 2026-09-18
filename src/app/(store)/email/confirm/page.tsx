@@ -1,3 +1,5 @@
+import { pageMetadata } from "@/lib/metadata";
+
 import Link from "next/link";
 
 import { BRAND_NAME } from "@/config/constants/brand";
@@ -26,6 +28,14 @@ const STATUS_CONTENT: Record<string, { title: string; message: string }> = {
 };
 
 type SearchParams = { status?: string | string[] };
+
+export const metadata = {
+  ...pageMetadata(
+    "Email Confirmation",
+    "Check the confirmation status of your Solesneakers email subscription.",
+  ),
+  robots: { index: false, follow: false },
+};
 
 export default async function EmailConfirmPage({
   searchParams,

@@ -3,6 +3,7 @@
 import { unstable_cache } from "next/cache";
 import { notFound } from "next/navigation";
 import type { Metadata } from "next";
+import { pageMetadata } from "@/lib/metadata";
 
 import { createSupabasePublicClient } from "@/lib/supabase/public";
 import { ProductRepository } from "@/repositories/product-repo";
@@ -39,7 +40,11 @@ export async function generateMetadata({
 
   if (!isUuid) {
     return {
-      title: "Product Not Found",
+      ...pageMetadata(
+        "Product Not Found",
+        "This product is unavailable. Browse the latest sneakers and streetwear at Solesneakers.",
+      ),
+      robots: { index: false, follow: true },
     };
   }
 
@@ -47,20 +52,19 @@ export async function generateMetadata({
 
   if (!product) {
     return {
-      title: "Product Not Found",
+      ...pageMetadata(
+        "Product Not Found",
+        "This product is unavailable. Browse the latest sneakers and streetwear at Solesneakers.",
+      ),
+      robots: { index: false, follow: true },
     };
   }
-
-  // Get primary image or fallback to first image
-  const primaryImage = product.images.find((img) => img.is_primary) || product.images[0];
-  const imageUrl = primaryImage?.url || "/placeholder.png";
 
   // Get the first variant for pricing
   const firstVariant = product.variants[0];
 
   // Construct title
   const title = product.name;
-  const fullTitle = `${title} | Solesneakers`;
 
   // Construct description
   const conditionText = product.condition === "new" ? "Brand New" : "Pre-Owned";
@@ -69,28 +73,7 @@ export async function generateMetadata({
     : `${conditionText} ${title}. Premium sneakers and streetwear.`;
 
   return {
-    title: fullTitle,
-    description,
-    openGraph: {
-      title: fullTitle,
-      description,
-      images: [
-        {
-          url: imageUrl,
-          width: 1200,
-          height: 1200,
-          alt: title,
-        },
-      ],
-      type: "website",
-      siteName: "Solesneakers",
-    },
-    twitter: {
-      card: "summary_large_image",
-      title: fullTitle,
-      description,
-      images: [imageUrl],
-    },
+    ...pageMetadata(title, description),
     other: {
       // Additional product-specific meta tags
       "product:price:amount": firstVariant

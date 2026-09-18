@@ -17,7 +17,7 @@ describe("createCheckoutCartHash", () => {
       tenantId: "tenant-1",
       buyerEmail: "buyer@example.com",
       fulfillment: "pickup" as const,
-      paymentMethod: "googlePay" as const,
+      paymentMethod: "applePay" as const,
       shippingAddress: null,
       billingAddress: null,
       pickupContact: { name: "Pickup Buyer", phone: "3365550100" },
