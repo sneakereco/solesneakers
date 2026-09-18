@@ -106,8 +106,6 @@ try {
           },
           paymentEvents: [],
           emailLogs: [],
-          trackingEvents: [],
-          checkoutLogs: [],
         },
       });
     }

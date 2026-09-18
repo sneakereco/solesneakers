@@ -107,14 +107,6 @@ export class CartService {
     return items;
   }
 
-  getItemCount(): number {
-    return this.getCart().reduce((sum, item) => sum + item.quantity, 0);
-  }
-
-  getTotal(): number {
-    return this.getCart().reduce((sum, item) => sum + item.priceCents * item.quantity, 0);
-  }
-
   private saveCart(cart: CartItem[]) {
     const scope = this.resolveStorage();
     if (!scope.storage || !scope.key) {

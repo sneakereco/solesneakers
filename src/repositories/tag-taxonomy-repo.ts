@@ -206,18 +206,6 @@ export class TagTaxonomyRepository {
     return data ?? [];
   }
 
-  async createCandidate(input: TablesInsert<"tag_candidates">) {
-    const { data, error } = await this.supabase
-      .from("tag_candidates")
-      .insert(input)
-      .select("*")
-      .single();
-    if (error) {
-      throw error;
-    }
-    return data;
-  }
-
   async updateCandidate(id: string, input: TablesUpdate<"tag_candidates">) {
     const { data, error } = await this.supabase
       .from("tag_candidates")

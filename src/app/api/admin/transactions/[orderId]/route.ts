@@ -1,6 +1,6 @@
 // app/api/admin/transactions/[orderId]/route.ts
 // Returns a complete transaction detail payload for the admin transaction detail page.
-// Aggregates: order + items + payment_transaction + payment_events + email_audit_log + shipping
+// Aggregates: order + items + payment_transaction + Square lifecycle + email_audit_log + shipping
 
 import type { NextRequest } from "next/server";
 import { NextResponse } from "next/server";
@@ -87,14 +87,6 @@ export async function GET(
         ? { kind: "guest" as const, email: customerEmail }
         : null;
 
-    // --- Payment events (checkout activity timeline) ---
-    // eslint-disable-next-line @typescript-eslint/no-explicit-any
-    const { data: paymentEvents } = await (admin as any)
-      .from("payment_events")
-      .select("id, event_type, event_data, created_at")
-      .eq("order_id", orderId)
-      .order("created_at", { ascending: true });
-
     // Square refund and standard dispute records share the checkout timeline.
     // eslint-disable-next-line @typescript-eslint/no-explicit-any
     const { data: squareRefunds, error: squareRefundsError } = await (admin as any)
@@ -161,38 +153,17 @@ export async function GET(
       .eq("order_id", orderId)
       .order("sent_at", { ascending: true });
 
-    // --- Shipping tracking events ---
-    const { data: trackingEvents } = await admin
-      .from("shipping_tracking_events")
-      .select(
-        "id, status, description, location, event_timestamp, carrier, tracking_number",
-      )
-      .eq("order_id", orderId)
-      .order("event_timestamp", { ascending: true });
-
-    // --- Checkout API logs ---
-    // eslint-disable-next-line @typescript-eslint/no-explicit-any
-    const { data: checkoutLogs } = await (admin as any)
-      .from("checkout_api_logs")
-      .select(
-        "id, route, method, http_status, duration_ms, event_label, error_message, request_payload, response_payload, created_at",
-      )
-      .eq("order_id", orderId)
-      .order("created_at", { ascending: true });
-
     return NextResponse.json(
       {
         order,
         paymentTransaction: paymentTx,
-        paymentEvents: [...(paymentEvents ?? []), ...squareLifecycleEvents].sort(
+        paymentEvents: squareLifecycleEvents.sort(
           (left, right) =>
             new Date(left.created_at).getTime() - new Date(right.created_at).getTime(),
         ),
         squareRefunds: squareRefunds ?? [],
         squareDisputes: squareDisputes ?? [],
         emailLogs: emailLogs ?? [],
-        trackingEvents: trackingEvents ?? [],
-        checkoutLogs: checkoutLogs ?? [],
         customer: customerIdentity
           ? {
               displayId: buildCustomerDisplayId(customerIdentity),

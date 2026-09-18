@@ -91,9 +91,7 @@ function dependencies() {
       orderId: "order-1",
       reused: false,
       expiresAt: "2026-09-06T12:15:00.000Z",
-      squarePaymentLinkId: null,
       squareOrderId: null,
-      squarePaymentLinkUrl: null,
     }),
     createGuestAccessToken: jest.fn().mockResolvedValue("guest-token"),
     getSquareClientConfig: jest.fn().mockReturnValue({

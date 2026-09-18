@@ -1,7 +1,6 @@
 import { SquareClient, SquareEnvironment } from "square";
 
 import { getSquareConfig } from "@/lib/square/config";
-import { SquarePaymentLinksGateway } from "@/lib/square/payment-links";
 import { SquareCheckoutOrdersGateway } from "@/lib/square/checkout-orders";
 import { SquarePaymentsGateway } from "@/lib/square/payments";
 
@@ -17,12 +16,6 @@ export function createSquareClient(): SquareClient {
     maxRetries: 2,
     timeoutInSeconds: 10,
   });
-}
-
-export function createSquarePaymentLinksGateway(): SquarePaymentLinksGateway {
-  const client = createSquareClient();
-
-  return new SquarePaymentLinksGateway(client.checkout.paymentLinks);
 }
 
 export function createSquareCheckoutOrdersGateway(): SquareCheckoutOrdersGateway {

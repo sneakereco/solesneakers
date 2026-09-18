@@ -25,8 +25,6 @@ jobs:
       UPSTASH_REDIS_REST_URL: https://example.invalid
       UPSTASH_REDIS_REST_TOKEN: ci-redis-token
       ADMIN_SESSION_SECRET: ci-admin-session-secret
-      LIGHTSPEED_ACCESS_TOKEN: ci-lightspeed-token
-      LIGHTSPEED_DOMAIN_PREFIX: ci-store
       CHECKOUT_IDENTITY_HMAC_SECRET: ci-identity-hmac-secret-at-least-32-characters
       CRON_SECRET: ci-cron-secret-at-least-32-characters
       NEXT_PUBLIC_CLOUDFLARE_WEB_ANALYTICS_TOKEN: ci-analytics-token

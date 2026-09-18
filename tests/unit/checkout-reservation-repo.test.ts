@@ -6,8 +6,6 @@ describe("CheckoutReservationRepository", () => {
       data: [
         {
           id: "order-1",
-          square_payment_link_id: "link-1",
-          square_payment_link_deleted_at: null,
           square_order_id: "square-order-1",
           square_order_version: 4,
         },
@@ -27,8 +25,6 @@ describe("CheckoutReservationRepository", () => {
     expect(result).toEqual([
       {
         orderId: "order-1",
-        squarePaymentLinkId: "link-1",
-        squarePaymentLinkDeletedAt: null,
         squareOrderId: "square-order-1",
         squareOrderVersion: 4,
       },
@@ -51,11 +47,8 @@ describe("CheckoutReservationRepository", () => {
         total: 171,
         fulfillment: "ship",
         guest_email: "buyer@example.com",
-        square_payment_link_id: "link-1",
         square_order_id: "square-order-1",
         square_order_version: 1,
-        square_payment_link_url: "https://square.link/u/example",
-        square_payment_link_deleted_at: null,
         order_items: [],
       },
       error: null,
@@ -238,9 +231,7 @@ describe("CheckoutReservationRepository", () => {
       orderId: "order-1",
       reused: false,
       expiresAt: "2026-08-26T18:15:00.000Z",
-      squarePaymentLinkId: null,
       squareOrderId: null,
-      squarePaymentLinkUrl: null,
     });
 
     expect(rpc).toHaveBeenCalledWith(

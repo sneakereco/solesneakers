@@ -134,19 +134,10 @@ type EmailLog = {
   html_snapshot?: string | null;
 };
 
-type TrackingEvent = {
-  id: string;
-  status: string;
-  description?: string | null;
-  location?: string | null;
-  event_timestamp: string;
-};
-
 type TransactionPayload = {
   order: Order;
   paymentTransaction: PaymentTransaction | null;
   emailLogs: EmailLog[];
-  trackingEvents: TrackingEvent[];
   customer?: {
     displayId: string;
     kind: "account" | "guest";
@@ -182,7 +173,6 @@ async function fetchTransactionData(
     order: data.order,
     paymentTransaction: data.paymentTransaction ?? null,
     emailLogs: data.emailLogs ?? [],
-    trackingEvents: data.trackingEvents ?? [],
   };
 }
 
@@ -363,7 +353,6 @@ export default function TransactionDetailPage() {
   const [order, setOrder] = useState<Order | null>(null);
   const [paymentTx, setPaymentTx] = useState<PaymentTransaction | null>(null);
   const [emailLogs, setEmailLogs] = useState<EmailLog[]>([]);
-  const [trackingEvents, setTrackingEvents] = useState<TrackingEvent[]>([]);
   const [customerSummary, setCustomerSummary] =
     useState<TransactionPayload["customer"]>(null);
   const [isLoading, setIsLoading] = useState(true);
@@ -393,7 +382,6 @@ export default function TransactionDetailPage() {
           setOrder(data.order);
           setPaymentTx(data.paymentTransaction);
           setEmailLogs(data.emailLogs);
-          setTrackingEvents(data.trackingEvents);
           setCustomerSummary(data.customer ?? null);
         })
         .catch((err: unknown) => {
@@ -788,34 +776,6 @@ export default function TransactionDetailPage() {
                   </DetailRow>
                 )}
               </div>
-              {trackingEvents.length > 0 && (
-                <div className="mt-4">
-                  <p className="mb-3 text-xs uppercase tracking-widest text-zinc-500">
-                    Tracking Events
-                  </p>
-                  <ol className="space-y-3">
-                    {trackingEvents.map((event) => (
-                      <li key={event.id} className="flex items-start gap-3">
-                        <Truck className="mt-0.5 h-4 w-4 shrink-0 text-zinc-400" />
-                        <div>
-                          <p className="text-sm capitalize text-white">
-                            {event.status.replace(/_/g, " ")}
-                          </p>
-                          {event.description && (
-                            <p className="text-xs text-zinc-400">{event.description}</p>
-                          )}
-                          {event.location && (
-                            <p className="text-xs text-zinc-500">{event.location}</p>
-                          )}
-                          <p className="mt-0.5 text-xs text-zinc-600">
-                            {fmtDate(event.event_timestamp)}
-                          </p>
-                        </div>
-                      </li>
-                    ))}
-                  </ol>
-                </div>
-              )}
             </SectionCard>
           )}
 

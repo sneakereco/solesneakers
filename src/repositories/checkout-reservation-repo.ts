@@ -69,9 +69,7 @@ export type CheckoutReservationResult = {
   orderId: string;
   reused: boolean;
   expiresAt: string;
-  squarePaymentLinkId: string | null;
   squareOrderId: string | null;
-  squarePaymentLinkUrl: string | null;
 };
 
 export type ExistingCheckout = {
@@ -85,11 +83,8 @@ export type ExistingCheckout = {
   totalCents: number;
   fulfillment: "ship" | "pickup";
   guestEmail: string | null;
-  squarePaymentLinkId: string | null;
   squareOrderId: string | null;
   squareOrderVersion?: number | null;
-  squarePaymentLinkUrl: string | null;
-  squarePaymentLinkDeletedAt: string | null;
   items: CheckoutReservationItem[];
 };
 
@@ -122,9 +117,7 @@ const reservationResultSchema = z.object({
   order_id: z.string().min(1),
   reused: z.boolean(),
   expires_at: z.string().min(1),
-  square_payment_link_id: z.string().min(1).nullable().optional(),
   square_order_id: z.string().min(1).nullable().optional(),
-  square_payment_link_url: z.string().url().nullable().optional(),
 });
 
 const existingCheckoutSchema = z.object({
@@ -138,11 +131,8 @@ const existingCheckoutSchema = z.object({
   total: z.number().positive(),
   fulfillment: z.enum(["ship", "pickup"]),
   guest_email: z.string().email().nullable(),
-  square_payment_link_id: z.string().min(1).nullable(),
   square_order_id: z.string().min(1).nullable(),
   square_order_version: z.number().int().nonnegative().nullable().optional(),
-  square_payment_link_url: z.string().url().nullable(),
-  square_payment_link_deleted_at: z.string().nullable(),
   order_items: z.array(
     z.object({
       product_id: z.string().min(1),
@@ -164,8 +154,6 @@ const existingCheckoutSchema = z.object({
 
 const expiredCheckoutSchema = z.object({
   id: z.string().min(1),
-  square_payment_link_id: z.string().min(1).nullable(),
-  square_payment_link_deleted_at: z.string().nullable(),
   square_order_id: z.string().min(1).nullable(),
   square_order_version: z.number().int().nonnegative().nullable(),
 });
@@ -234,9 +222,7 @@ export class CheckoutReservationRepository {
   async listExpired(nowIso: string, limit: number): Promise<ExpiredCheckout[]> {
     const { data, error } = await this.supabase
       .from("orders")
-      .select(
-        "id, square_payment_link_id, square_payment_link_deleted_at, square_order_id, square_order_version",
-      )
+      .select("id, square_order_id, square_order_version")
       .eq("status", "pending")
       .lte("expires_at", nowIso)
       .order("expires_at", { ascending: true })
@@ -251,8 +237,6 @@ export class CheckoutReservationRepository {
       .parse(data ?? [])
       .map((row) => ({
         orderId: row.id,
-        squarePaymentLinkId: row.square_payment_link_id,
-        squarePaymentLinkDeletedAt: row.square_payment_link_deleted_at,
         squareOrderId: row.square_order_id,
         squareOrderVersion: row.square_order_version,
       }));
@@ -265,7 +249,7 @@ export class CheckoutReservationRepository {
     const { data, error } = await this.supabase
       .from("orders")
       .select(
-        "id, cart_hash, status, expires_at, subtotal, shipping, tax_amount, total, fulfillment, guest_email, square_payment_link_id, square_order_id, square_order_version, square_payment_link_url, square_payment_link_deleted_at, order_items(product_id, variant_id, quantity, unit_price, unit_cost, line_total, variant_sku, product_name, brand, model, category, condition, size_label)",
+        "id, cart_hash, status, expires_at, subtotal, shipping, tax_amount, total, fulfillment, guest_email, square_order_id, square_order_version, order_items(product_id, variant_id, quantity, unit_price, unit_cost, line_total, variant_sku, product_name, brand, model, category, condition, size_label)",
       )
       .eq("tenant_id", tenantId)
       .eq("idempotency_key", idempotencyKey)
@@ -294,11 +278,8 @@ export class CheckoutReservationRepository {
       totalCents: dollarsToCents(parsed.data.total),
       fulfillment: parsed.data.fulfillment,
       guestEmail: parsed.data.guest_email,
-      squarePaymentLinkId: parsed.data.square_payment_link_id,
       squareOrderId: parsed.data.square_order_id,
       squareOrderVersion: parsed.data.square_order_version ?? null,
-      squarePaymentLinkUrl: parsed.data.square_payment_link_url,
-      squarePaymentLinkDeletedAt: parsed.data.square_payment_link_deleted_at,
       items: parsed.data.order_items.map((item) => ({
         productId: item.product_id,
         variantId: item.variant_id,
@@ -466,9 +447,7 @@ export class CheckoutReservationRepository {
       orderId: parsed.data.order_id,
       reused: parsed.data.reused,
       expiresAt: parsed.data.expires_at,
-      squarePaymentLinkId: parsed.data.square_payment_link_id ?? null,
       squareOrderId: parsed.data.square_order_id ?? null,
-      squarePaymentLinkUrl: parsed.data.square_payment_link_url ?? null,
     };
   }
 
@@ -488,20 +467,6 @@ export class CheckoutReservationRepository {
     }
     if (data !== true) {
       throw new Error("checkout_square_order_attach_failed");
-    }
-  }
-
-  async markPaymentLinkDeleted(orderId: string, paymentLinkId: string): Promise<void> {
-    const { data, error } = await this.supabase.rpc("mark_square_payment_link_deleted", {
-      p_order_id: orderId,
-      p_square_payment_link_id: paymentLinkId,
-    });
-
-    if (error) {
-      throw error;
-    }
-    if (data !== true) {
-      throw new Error("checkout_payment_link_delete_evidence_failed");
     }
   }
 

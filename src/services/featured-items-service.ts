@@ -108,18 +108,4 @@ export class FeaturedItemsService {
       userId,
     });
   }
-
-  /**
-   * Check if a product is featured
-   */
-  async isProductFeatured(productId: string, tenantId?: string): Promise<boolean> {
-    return this.repo.isFeatured(productId, tenantId);
-  }
-
-  /**
-   * Get featured items count
-   */
-  async getFeaturedItemsCount(tenantId?: string): Promise<number> {
-    return this.repo.count(tenantId);
-  }
 }

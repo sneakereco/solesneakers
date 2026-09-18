@@ -15,7 +15,6 @@ import {
   walletShippingAddress,
 } from "@/components/checkout/SquarePaymentMethods";
 import { squareCardStyle } from "@/components/checkout/square-card-style";
-import { initializeSquareCard } from "@/components/checkout/square-card-initialization";
 
 const paymentConfig = {
   applicationId: "sandbox-app",
@@ -154,22 +153,6 @@ describe("SquarePaymentMethods", () => {
     expect(JSON.stringify(squareCardStyle)).not.toContain("boxShadow");
     expect(squareCardStyle.input).toEqual(expect.objectContaining({ fontSize: "16px" }));
     expect(squareCardStyle["input::placeholder"]).toEqual({ color: "#737373" });
-  });
-
-  it("publishes Square Payments before a card attachment failure", async () => {
-    const attachError = new Error("card attach failed");
-    const payments = {
-      card: jest.fn().mockResolvedValue({
-        attach: jest.fn().mockRejectedValue(attachError),
-        tokenize: jest.fn(),
-      }),
-    };
-    const onPaymentsReady = jest.fn();
-
-    await expect(initializeSquareCard(payments, onPaymentsReady)).rejects.toBe(
-      attachError,
-    );
-    expect(onPaymentsReady).toHaveBeenCalledWith(payments);
   });
 
   it("starts optional payment methods independently", async () => {

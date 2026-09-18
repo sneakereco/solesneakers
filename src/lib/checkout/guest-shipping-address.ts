@@ -8,20 +8,3 @@ export function clearGuestShippingAddress() {
     // ignore
   }
 }
-
-export function setGuestShippingAddress(address: unknown) {
-  try {
-    sessionStorage.setItem(GUEST_ADDRESS_STORAGE_KEY, JSON.stringify(address));
-  } catch {
-    // ignore
-  }
-}
-
-export function getGuestShippingAddress<T = unknown>(): T | null {
-  try {
-    const raw = sessionStorage.getItem(GUEST_ADDRESS_STORAGE_KEY);
-    return raw ? (JSON.parse(raw) as T) : null;
-  } catch {
-    return null;
-  }
-}
