@@ -212,22 +212,4 @@ export class FeaturedItemsRepository {
 
     return Boolean(data);
   }
-
-  /**
-   * Get featured item count for a tenant
-   */
-  async count(tenantId?: string): Promise<number> {
-    let query = this.supabase
-      .from("featured_items")
-      .select("id", { count: "exact", head: true });
-
-    query = this.applyTenantFilter(query, tenantId);
-
-    const { count, error } = await query;
-    if (error) {
-      throw error;
-    }
-
-    return count ?? 0;
-  }
 }

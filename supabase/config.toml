@@ -105,12 +105,6 @@ enabled = true
 file_size_limit = "50MiB"
 
 # Uncomment to configure local storage buckets
-[storage.buckets.images]
-public = false
-file_size_limit = "5MiB"
-allowed_mime_types = ["image/jpeg", "image/png", "image/webp"]
-objects_path = "./images"
-
 [storage.buckets.products]
 public = true
 file_size_limit = "10MiB"

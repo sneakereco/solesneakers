@@ -1,5 +1,4 @@
 import assert from "node:assert/strict";
-import { readFile } from "node:fs/promises";
 import pg from "pg";
 
 const connectionString =
@@ -13,21 +12,6 @@ const db = new pg.Client({ connectionString });
 try {
   await db.connect();
   await db.query("begin");
-  const migration = await readFile(
-    new URL(
-      "../supabase/migrations/20260918140000_square_payment_details.sql",
-      import.meta.url,
-    ),
-    "utf8",
-  );
-  const {
-    rows: [schema],
-  } = await db.query(
-    "select to_regprocedure('public.record_square_payment_details(text,text,text,bigint,text,jsonb)') is not null as installed",
-  );
-  if (!schema.installed) {
-    await db.query(migration.replace(/^begin;\s*/i, "").replace(/commit;\s*$/i, ""));
-  }
   const {
     rows: [tenant],
   } = await db.query(
