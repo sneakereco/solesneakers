@@ -10,7 +10,9 @@
 
 **Spec:** The two audits from this conversation, the user's confirmation that all five conditional feature groups can retire, and the manifests in this document. Source evidence is in the [code audit](C:/Users/dsrus/.codex/visualizations/2026/09/18/01a0b5ab-fd1e-78e1-998e-4d86b0e945c7/dead-code-audit.md) and [database audit](C:/Users/dsrus/.codex/visualizations/2026/09/18/01a0b5ab-fd1e-78e1-998e-4d86b0e945c7/database-retirement-audit.md). The manifests below make execution independent of those machine-local reports.
 
-**Status:** Inline execution in progress. Release A source changes and Release B schema changes are implemented and locally verified on separate branches; remote rollout and provider retirement gates remain pending. Release B was prepared ahead of rollout in its isolated branch so the complete change is reviewable, and must remain off main until A is deployed to both environments. See `docs/operations/dead-code-retirement.md` for evidence. Baseline audit commit: `25c53b3fc5661eec2d3f260603c948473c98e92f`. Recheck references at execution time.
+**Status:** Inline execution in progress. Release A source changes and Release B schema changes are implemented and locally verified on separate branches; remote rollout and provider retirement gates remain pending. Release B was prepared ahead of rollout in its isolated branch so the complete change is reviewable, and will now proceed to a staging PR as requested by the user. Apply the A-before-B gate separately in each environment; production remains unchanged until a separately approved tag release. See `docs/operations/dead-code-retirement.md` for evidence. Baseline audit commit: `25c53b3fc5661eec2d3f260603c948473c98e92f`. Recheck references at execution time.
+
+**Rollout decision:** The user explicitly requested Release B in staging via a PR. Staging runs Release A from PR #11. Production is deferred; the earlier global both-environments gate is superseded by a per-environment gate.
 
 ## Execution checkpoints
 
@@ -66,7 +68,7 @@ Estimated engineering time: 290–490 minutes, excluding user review, provider a
 - [x] Re-run Knip 6.37.0 in normal and production modes and check callers of the manifest entries. Treat new callers as a reason to adjust that entry, not as authorization to remove the new behavior.
 - [ ] Inspect current local/stg/prd catalogs in read-only transactions and match each endpoint to its environment without printing credentials. Recheck migration versions, legacy hosted-link rows, inbound dependencies and proposed-retirement row counts. Record backup/restore capability before any later destructive rollout.
 - [ ] Verify deployed revisions. The prior audit found local at 20260918140000, staging at 20260918180000, production at 20260723090000 (16 behind staging). Treat those as previous observations. Reconcile production's existing migration backlog as a separate baseline release before cleanup; do not blindly apply it to an unknown older app. The existing marketing migration itself requires the marketing-free app to be deployed first; stage that historical cutover if needed.
-- [x] Confirm the two-release gate: release A contains no new drop migration; release B cannot merge to auto-deploying main until A has been deployed to both environments. Record a reviewer checkpoint for each release; no new scheduling/automation system is needed.
+- [x] Confirm the two-release gate: release A contains no new drop migration; release B may merge to auto-deploying main once staging runs A and staging migration prerequisites are resolved. Production tags remain gated on production compatibility. Record a reviewer checkpoint for each release; no new scheduling/automation system is needed.
 
 Read-only discovery SQL:
 
@@ -199,7 +201,7 @@ npm run test:jest:unit -- --runInBand --runTestsByPath tests/unit/expire-checkou
 - [x] Review the full diff, confirming deleted modules were not replaced with new abstractions and no package was removed without evidence. Re-run normal/production Knip and account for remaining framework/scripts/generated-types and same-file export findings.
 - [ ] Deploy A to staging through the existing PR/main process. Verify `/api/readyz`, normal authentication, cart, direct checkout/expiration, admin transaction view and retained notification/fulfillment flows. Record provider sandbox evidence separately from local mocks.
 - [ ] Deploy A to production only after the baseline work in Task 1 and staging verification. Record deployed commit, database migration baseline and smoke-test outcome. Do not create a production tag implicitly during planning or local implementation.
-- [ ] Mark the contraction gate satisfied only when BOTH environments run A. Until then, keep B's drop migration off main. After B, the oldest rollback-compatible app is A; an older app would require schema/data restoration.
+- [ ] Apply the contraction gate per environment: staging B may advance once staging runs A and its prerequisites are resolved. Do not tag B for production until production runs A and its separate prerequisites are resolved. After B, the oldest rollback-compatible app is A; an older app would require schema/data restoration.
 
 ```powershell
 npm run format:check
@@ -366,13 +368,13 @@ Existing local regression checks to preserve and run against the resulting schem
 
 ## Acceptance matrix
 
-| Area                 | Required passing behavior                                                                                                                                                    |
-| -------------------- | ---------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
-| Storefront/cart/auth | Browse/product/cart operations, persistent cart and validation, signup/email verification/login/OTP/MFA/recovery work; retired snapshot and OAuth callback routes are absent |
-| Checkout             | Current supported payment methods, ship/pickup, required billing, quote/prepare/pay, idempotency, cancellation and expiration preserve their contracts                       |
-| Admin/fulfillment    | Product edits and stock, saved/default shipping address, transaction payment/refund/dispute details, label creation/tracking, email history still work                       |
-| Database/security    | Enumerated objects gone; retained unique indexes, RPC grants, tenant RLS, anti-double-release/payment reconciliation and durable notifications still pass                    |
-| Release evidence     | A preceded B in both environments; actual migration/deployment/provider outcomes recorded separately from local tests                                                        |
+| Area                 | Required passing behavior                                                                                                                                                        |
+| -------------------- | -------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| Storefront/cart/auth | Browse/product/cart operations, persistent cart and validation, signup/email verification/login/OTP/MFA/recovery work; retired snapshot and OAuth callback routes are absent     |
+| Checkout             | Current supported payment methods, ship/pickup, required billing, quote/prepare/pay, idempotency, cancellation and expiration preserve their contracts                           |
+| Admin/fulfillment    | Product edits and stock, saved/default shipping address, transaction payment/refund/dispute details, label creation/tracking, email history still work                           |
+| Database/security    | Enumerated objects gone; retained unique indexes, RPC grants, tenant RLS, anti-double-release/payment reconciliation and durable notifications still pass                        |
+| Release evidence     | A precedes B in each target environment; staging-first rollout does not authorize production; actual migration/deployment/provider outcomes recorded separately from local tests |
 
 ## Appendix A — Whole-file deletion manifest
 
