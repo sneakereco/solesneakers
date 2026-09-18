@@ -458,7 +458,6 @@ export function SquarePaymentMethods({
   > | null>(null);
   const [card, setCard] = useState<SquarePaymentMethod | null>(null);
   const [applePay, setApplePay] = useState<SquarePaymentMethod | null>(null);
-  const [googlePay, setGooglePay] = useState<SquarePaymentMethod | null>(null);
   const [cashAppPay, setCashAppPay] = useState<SquareCashAppPayMethod | null>(null);
   const [afterpay, setAfterpay] = useState<SquarePaymentMethod | null>(null);
   const [selectedMethod, setSelectedMethod] = useState<
@@ -537,12 +536,11 @@ export function SquarePaymentMethods({
   const [lifecycles] = useState(() => ({
     card: createSquareMethodLifecycle<SquarePaymentMethod>(),
     applePay: createSquareMethodLifecycle<SquarePaymentMethod>(),
-    googlePay: createSquareMethodLifecycle<SquarePaymentMethod>(),
     cashAppPay: createSquareMethodLifecycle<SquareCashAppPayMethod>(),
     afterpay: createSquareMethodLifecycle<SquarePaymentMethod>(),
   }));
   const walletRequests = useRef<
-    Partial<Record<"applePay" | "googlePay" | "afterpay", SquarePaymentRequest>>
+    Partial<Record<"applePay" | "afterpay", SquarePaymentRequest>>
   >({});
   const paymentInFlight = useRef(false);
   const latest = useRef({
@@ -640,67 +638,43 @@ export function SquarePaymentMethods({
     let active = true;
     setExpressLoading(true);
     const initialQuote = latest.current.quote;
-    const initialize = (name: "applePay" | "googlePay") => {
-      return lifecycles[name]
-        .replace(
-          () => {
-            const request = payments.paymentRequest({
-              countryCode: "US",
-              currencyCode: "USD",
-              total: walletPaymentTotal(initialQuote),
-              requestShippingContact: latest.current.fulfillment === "ship",
-              requestBillingContact: true,
-            });
-            bindWalletShippingContact(
-              request,
-              (value) => quoteWalletShippingDestinationRef.current(value),
-              (context) => {
-                walletQuote.current = context.quote;
-              },
-              fulfillment,
-            );
-            walletRequests.current[name] = request;
-            return payments[name](request);
-          },
-          async (method) => {
-            if (name === "googlePay") {
-              if (!method.attach) {
-                throw new Error("square_google_pay_attach_unavailable");
-              }
-              await method.attach("#square-google-pay-container", {
-                buttonSizeMode: "fill",
-              });
-            }
-            if (active) {
-              if (name === "applePay") {
-                setApplePay(method);
-              } else {
-                setGooglePay(method);
-              }
-            }
-          },
-        )
-        .catch((methodError) => {
-          reportUnavailable(name, "create", methodError);
-        });
-    };
-    void Promise.allSettled([initialize("applePay"), initialize("googlePay")]).then(
-      () => {
-        if (active) {
-          setExpressLoading(false);
-        }
-      },
-    );
+    void lifecycles.applePay
+      .replace(
+        () => {
+          const request = payments.paymentRequest({
+            countryCode: "US",
+            currencyCode: "USD",
+            total: walletPaymentTotal(initialQuote),
+            requestShippingContact: latest.current.fulfillment === "ship",
+            requestBillingContact: true,
+          });
+          bindWalletShippingContact(
+            request,
+            (value) => quoteWalletShippingDestinationRef.current(value),
+            (context) => {
+              walletQuote.current = context.quote;
+            },
+            fulfillment,
+          );
+          walletRequests.current.applePay = request;
+          return payments.applePay(request);
+        },
+        (method) => {
+          if (active) setApplePay(method);
+          return Promise.resolve();
+        },
+      )
+      .catch((methodError) => reportUnavailable("applePay", "create", methodError))
+      .finally(() => {
+        if (active) setExpressLoading(false);
+      });
     return () => {
       active = false;
       setApplePay(null);
-      setGooglePay(null);
-      for (const name of ["applePay", "googlePay"] as const) {
-        delete walletRequests.current[name];
-        void lifecycles[name]
-          .dispose()
-          .catch((methodError) => reportUnavailable(name, "create", methodError));
-      }
+      delete walletRequests.current.applePay;
+      void lifecycles.applePay
+        .dispose()
+        .catch((methodError) => reportUnavailable("applePay", "create", methodError));
     };
   }, [payments, hasQuote, fulfillment, lifecycles]);
 
@@ -1144,7 +1118,7 @@ export function SquarePaymentMethods({
     });
   }
 
-  function submitWallet(method: "applePay" | "googlePay", wallet: SquarePaymentMethod) {
+  function submitWallet(method: "applePay", wallet: SquarePaymentMethod) {
     if (
       paymentInFlight.current ||
       !quoteReady ||
@@ -1479,11 +1453,9 @@ export function SquarePaymentMethods({
       />
       <ExpressCheckoutMethods
         applePayReady={Boolean(applePay)}
-        googlePayReady={Boolean(googlePay)}
         disabled={isPaying || !quoteReady || (isGuest && !turnstileToken)}
         loading={expressLoading}
         onApplePayClick={() => applePay && submitWallet("applePay", applePay)}
-        onGooglePayClick={() => googlePay && submitWallet("googlePay", googlePay)}
       />
 
       <form

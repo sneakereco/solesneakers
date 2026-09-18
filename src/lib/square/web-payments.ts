@@ -82,7 +82,6 @@ export type SquarePayments = {
   }): Promise<SquarePaymentMethod>;
   paymentRequest(input: Record<string, unknown>): SquarePaymentRequest;
   applePay(request: SquarePaymentRequest): Promise<SquarePaymentMethod>;
-  googlePay(request: SquarePaymentRequest): Promise<SquarePaymentMethod>;
   cashAppPay(
     request: SquarePaymentRequest,
     options: {

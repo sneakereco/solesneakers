@@ -7,34 +7,27 @@ describe("ExpressCheckoutMethods", () => {
     const html = renderToStaticMarkup(
       <ExpressCheckoutMethods
         applePayReady
-        googlePayReady
         disabled
         loading={false}
         onApplePayClick={jest.fn()}
-        onGooglePayClick={jest.fn()}
       />,
     );
     expect(html).toMatch(/id="square-apple-pay-container"[^>]*disabled=""/);
-    expect(html).toMatch(
-      /id="square-google-pay-container"[^>]*inert=""[^>]*aria-disabled="true"/,
-    );
+    expect(html).not.toContain("square-google-pay-container");
     expect(html).not.toMatch(/<section[^>]*hidden/);
   });
-  it("shows only Square-ready wallet controls", () => {
+  it("shows Apple Pay with the express checkout legal notice", () => {
     const html = renderToStaticMarkup(
       <ExpressCheckoutMethods
-        applePayReady={false}
-        googlePayReady
+        applePayReady
         loading={false}
         onApplePayClick={jest.fn()}
-        onGooglePayClick={jest.fn()}
       />,
     );
 
     expect(html).not.toMatch(/<section[^>]*hidden/);
     expect(html).toContain('id="square-apple-pay-container"');
-    expect(html).toContain('id="square-apple-pay-container" type="button" hidden');
-    expect(html).toContain('id="square-google-pay-container" class="h-12 w-full"');
+    expect(html).not.toContain("square-google-pay-container");
     expect(html).not.toContain('id="square-cash-app-pay-container"');
     expect(html).not.toContain("sm:grid-cols-2");
     expect(html).toContain("By using an express payment method");
@@ -46,16 +39,14 @@ describe("ExpressCheckoutMethods", () => {
     const html = renderToStaticMarkup(
       <ExpressCheckoutMethods
         applePayReady={false}
-        googlePayReady={false}
         loading={false}
         onApplePayClick={jest.fn()}
-        onGooglePayClick={jest.fn()}
       />,
     );
 
     expect(html).toMatch(/<section[^>]*hidden/);
     expect(html).toContain('id="square-apple-pay-container"');
-    expect(html).toContain('id="square-google-pay-container"');
+    expect(html).not.toContain('id="square-google-pay-container"');
     expect(html).not.toContain('id="square-cash-app-pay-container"');
   });
 
@@ -63,10 +54,8 @@ describe("ExpressCheckoutMethods", () => {
     const html = renderToStaticMarkup(
       <ExpressCheckoutMethods
         applePayReady={false}
-        googlePayReady={false}
         loading
         onApplePayClick={jest.fn()}
-        onGooglePayClick={jest.fn()}
       />,
     );
 

@@ -32,8 +32,7 @@ const bundle = await build({
     window.Square = { payments: () => ({
       card: async () => ({ attach: async () => {}, tokenize: async (details) => { window.test.tokenized++; window.test.cardDetails = details; return { status: 'OK', token: 'card-test' }; } }),
       paymentRequest: (input) => ({ input, listeners: {}, addEventListener(name, callback) { this.listeners[name] = callback; }, update(value) { Object.assign(this.input, value); return true; } }),
-      applePay: async () => ({ tokenize: async () => ({ status: 'CANCEL' }) }),
-      googlePay: async (request) => ({ attach: async selector => { document.querySelector(selector).innerHTML = '<button type="button">Google test</button>'; }, tokenize: async () => { window.test.walletTokenizations = (window.test.walletTokenizations || 0) + 1; window.test.walletQuote = await request.listeners.shippingcontactchanged({countryCode:'US',state:original.state,postalCode:original.postalCode}); return ({ status: 'OK', token: 'test', details: { billing: { givenName: 'Test', familyName: 'Buyer', email: 'buyer@example.com', addressLines: ['2 Billing St'], city: 'Washington', state: 'DC', postalCode: '20001', countryCode: 'US' }, shipping: { contact: { givenName: 'Test', familyName: 'Buyer', phone: window.test.omitShippingPhone ? undefined : '2025550100', addressLines: [original.line1], city: original.city, state: original.state, postalCode: original.postalCode, countryCode: 'US' } } } }); } }),
+      applePay: async (request) => ({ tokenize: async () => { window.test.walletTokenizations = (window.test.walletTokenizations || 0) + 1; window.test.walletQuote = await request.listeners.shippingcontactchanged({countryCode:'US',state:original.state,postalCode:original.postalCode}); return ({ status: 'OK', token: 'test', details: { billing: { givenName: 'Test', familyName: 'Buyer', email: 'buyer@example.com', addressLines: ['2 Billing St'], city: 'Washington', state: 'DC', postalCode: '20001', countryCode: 'US' }, shipping: { contact: { givenName: 'Test', familyName: 'Buyer', phone: window.test.omitShippingPhone ? undefined : '2025550100', addressLines: [original.line1], city: original.city, state: original.state, postalCode: original.postalCode, countryCode: 'US' } } } }); } }),
       afterpayClearpay: async (request) => ({ attach: async () => {}, tokenize: async () => { window.test.afterpayRequest = request.input; return { status: 'OK', token: 'afterpay-test', details: { shipping: { contact: request.input.shippingContact } } }; } }),
       cashAppPay: async (request) => { let listener; return { attach: async (selector) => { const button = document.createElement('button'); button.type = 'button'; button.textContent = 'Cash test'; button.onclick = () => { window.test.cashTotal = request.input.total.amount; listener({ detail: { tokenResult: { status: 'OK', token: 'cash-' + request.input.total.amount } } }); }; document.querySelector(selector).append(button); }, addEventListener(event, callback) { listener = callback; }, destroy: async () => true }; },
     }) };
@@ -129,7 +128,7 @@ try {
     if (path === "/api/checkout/prepare") {
       const body = route.request().postDataJSON();
       prepares.push(body);
-      if (body.paymentMethod === "googlePay" || body.paymentMethod === "applePay") {
+      if (body.paymentMethod === "applePay") {
         await new Promise((resolve) => {
           releasePrepare = resolve;
         });
@@ -324,7 +323,7 @@ try {
     window.test.original.line1 = "9 Wallet Road";
     window.test.omitShippingPhone = true;
   });
-  await page.getByRole("button", { name: "Google test" }).click();
+  await page.getByRole("button", { name: "Pay with Apple Pay" }).click();
   await page.getByRole("heading", { name: "Complete your checkout details" }).waitFor();
   assert.equal(payCalls, 0);
   await page.getByRole("dialog").getByLabel("Shipping phone").fill("2025550100");
@@ -359,7 +358,7 @@ try {
     window.test.original.line1 = "";
     window.test.omitShippingPhone = true;
   });
-  await page.getByRole("button", { name: "Google test" }).click();
+  await page.getByRole("button", { name: "Pay with Apple Pay" }).click();
   await page
     .getByText("Choose a complete US shipping address in your wallet.", { exact: true })
     .waitFor();

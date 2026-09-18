@@ -90,14 +90,14 @@ try {
     await client.query("rollback to savepoint invalid_contact");
   }
   await rejects(
-    () => reserve("googlePay", null, randomUUID()),
+    () => reserve("applePay", null, randomUUID()),
     /checkout_pickup_contact_required/,
   );
   await rejects(
-    () => reserve("googlePay", { name: "Buyer", phone: "not-a-phone" }, randomUUID()),
+    () => reserve("applePay", { name: "Buyer", phone: "not-a-phone" }, randomUUID()),
     /checkout_pickup_contact_required/,
   );
-  for (const method of ["card", "applePay", "googlePay", "afterpay", "cashAppPay"]) {
+  for (const method of ["card", "applePay", "afterpay", "cashAppPay"]) {
     const key = randomUUID();
     const order = await reserve(method, pickup, key);
     const {

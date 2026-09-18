@@ -167,7 +167,7 @@ describe("final shipping verification", () => {
     expect(deps.validateShippingAddress).not.toHaveBeenCalled();
     expect(deps.createPayment).toHaveBeenCalledTimes(1);
   });
-  it.each(["applePay", "googlePay"])(
+  it.each(["applePay"])(
     "charges %s using the stored wallet address without Shippo",
     async (method) => {
       const deps = dependencies();

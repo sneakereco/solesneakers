@@ -182,12 +182,12 @@ describe("SquarePaymentMethods", () => {
           finishApplePay = resolve;
         }),
       () => {
-        started.push("googlePay");
+        started.push("afterpay");
         return Promise.resolve();
       },
     ]);
 
-    expect(started).toEqual(["applePay", "googlePay"]);
+    expect(started).toEqual(["applePay", "afterpay"]);
     finishApplePay?.();
     await pending;
   });
@@ -374,7 +374,7 @@ describe("SquarePaymentMethods", () => {
     );
 
     expect(html).toContain('id="square-apple-pay-container"');
-    expect(html).toContain('id="square-google-pay-container"');
+    expect(html).not.toContain('id="square-google-pay-container"');
     expect(html).toContain('id="square-cash-app-pay-container"');
     expect(html).toContain('id="square-card-container"');
     expect(html).toContain('id="square-afterpay-container"');

@@ -5,7 +5,7 @@ import { Redis } from "@upstash/redis";
 
 import { env } from "@/config/env";
 
-export type PaymentMethod = "card" | "afterpay" | "applePay" | "googlePay" | "cashAppPay";
+export type PaymentMethod = "card" | "afterpay" | "applePay" | "cashAppPay";
 
 export type PaymentPermitPayload = {
   tenantId: string;
@@ -29,7 +29,7 @@ const permitSchema = z
     orderId: z.string().min(1),
     cartHash: z.string().min(1),
     totalCents: z.number().int().positive(),
-    method: z.enum(["card", "afterpay", "applePay", "googlePay", "cashAppPay"]),
+    method: z.enum(["card", "afterpay", "applePay", "cashAppPay"]),
     deviceSessionId: z.string().min(1),
     normalizedEmailHash: z.string().min(1),
     squareIdempotencyKey: z.string().uuid(),

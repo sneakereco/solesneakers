@@ -15,6 +15,15 @@ const payload: PaymentPermitPayload = {
 };
 
 describe("PaymentPermitStore", () => {
+  it("rejects a Google Pay permit issued before removal", async () => {
+    const store = new PaymentPermitStore({
+      set: jest.fn(),
+      eval: jest.fn().mockResolvedValue({ ...payload, method: "googlePay" }),
+    });
+    await expect(store.consume("old-google-permit")).rejects.toThrow(
+      "checkout_protection_unavailable",
+    );
+  });
   it("stores an opaque permit for two minutes", async () => {
     const redis = {
       set: jest.fn().mockResolvedValue("OK"),
