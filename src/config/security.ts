@@ -22,11 +22,6 @@ export const security = {
       window: "10 m",
       blockStatus: 429,
     },
-    attachments: {
-      maxFiles: 5,
-      maxBytes: 5 * 1024 * 1024,
-      allowedTypes: ["image/jpeg", "image/png", "image/webp"],
-    },
   },
   proxy: {
     requestIdHeader: "x-request-id",

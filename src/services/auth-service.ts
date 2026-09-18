@@ -2,26 +2,16 @@
 import type { TypedSupabaseClient } from "@/lib/supabase/server";
 import { createSupabaseAdminClient } from "@/lib/supabase/service-role";
 import { ProfileRepository } from "@/repositories/profile-repo";
-import { EmailSubscriberRepository } from "@/repositories/email-subscriber-repo";
 
 export type VerificationFlow = "signup" | "signin";
-
-interface UserMetadata {
-  updatesOptIn?: boolean | string;
-}
 
 export class AuthService {
   constructor(private readonly supabase: TypedSupabaseClient) {}
 
-  async signUp(email: string, password: string, updatesOptIn: boolean) {
+  async signUp(email: string, password: string) {
     const { error } = await this.supabase.auth.signUp({
       email,
       password,
-      options: {
-        data: {
-          updatesOptIn,
-        },
-      },
     });
 
     if (error) {
@@ -144,9 +134,6 @@ export class AuthService {
     }
 
     const user = data.user;
-    const raw = (user.user_metadata as UserMetadata)?.updatesOptIn;
-    const updatesOptIn = raw === true || raw === "true";
-
     const adminClient = createSupabaseAdminClient();
 
     const { data: firstTenant, error: tenantError } = await adminClient
@@ -166,17 +153,12 @@ export class AuthService {
     const profileRepo = new ProfileRepository(adminClient);
     await profileRepo.ensureProfile(user.id, user.email!, firstTenant.id);
 
-    if (updatesOptIn) {
-      const emailRepo = new EmailSubscriberRepository(adminClient);
-      await emailRepo.subscribe(user.email!, "signup").catch(() => {});
-    }
-
     // ✅ Use minimal select
     const profile = await profileRepo.getAuthViewByUserId(user.id);
     return { user, profile };
   }
 
-  async ensureProfileForCurrentUser(defaultUpdatesOptIn: boolean) {
+  async ensureProfileForCurrentUser() {
     const {
       data: { user },
     } = await this.supabase.auth.getUser();
@@ -196,13 +178,6 @@ export class AuthService {
 
     const repo = new ProfileRepository(adminClient);
     await repo.ensureProfile(user.id, user.email, tenantId);
-
-    const emailRepo = new EmailSubscriberRepository(adminClient);
-    const wasSubscribed = await emailRepo.isSubscribed(user.email);
-
-    if (wasSubscribed || defaultUpdatesOptIn) {
-      await emailRepo.subscribe(user.email, "oauth").catch(() => {});
-    }
 
     const profile = await repo.getAuthViewByUserId(user.id);
     return { user, profile };

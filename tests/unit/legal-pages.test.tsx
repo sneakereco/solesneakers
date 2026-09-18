@@ -12,7 +12,7 @@ describe("storefront legal policies", () => {
     expect(privacy).toContain("Solesneakers LLC");
     expect(privacy).toContain("Cloudflare Web Analytics");
     expect(privacy).toContain("do not sell personal information");
-    expect(privacy).toContain("September 16, 2026");
+    expect(privacy).toContain("September 18, 2026");
     expect(privacy).not.toContain("if your implementation");
   });
 

@@ -297,7 +297,6 @@ export type Database = {
       }
       contact_messages: {
         Row: {
-          attachments: Json | null
           created_at: string
           email: string
           id: string
@@ -308,7 +307,6 @@ export type Database = {
           user_id: string | null
         }
         Insert: {
-          attachments?: Json | null
           created_at?: string
           email: string
           id?: string
@@ -319,7 +317,6 @@ export type Database = {
           user_id?: string | null
         }
         Update: {
-          attachments?: Json | null
           created_at?: string
           email?: string
           id?: string
@@ -411,54 +408,6 @@ export type Database = {
             referencedColumns: ["id"]
           },
         ]
-      }
-      email_subscribers: {
-        Row: {
-          email: string
-          id: string
-          source: string | null
-          subscribed_at: string
-        }
-        Insert: {
-          email: string
-          id?: string
-          source?: string | null
-          subscribed_at?: string
-        }
-        Update: {
-          email?: string
-          id?: string
-          source?: string | null
-          subscribed_at?: string
-        }
-        Relationships: []
-      }
-      email_subscription_tokens: {
-        Row: {
-          created_at: string
-          email: string
-          expires_at: string
-          id: string
-          source: string | null
-          token: string
-        }
-        Insert: {
-          created_at?: string
-          email: string
-          expires_at: string
-          id?: string
-          source?: string | null
-          token: string
-        }
-        Update: {
-          created_at?: string
-          email?: string
-          expires_at?: string
-          id?: string
-          source?: string | null
-          token?: string
-        }
-        Relationships: []
       }
       featured_items: {
         Row: {

@@ -4,20 +4,11 @@ import nodemailer, { type Transporter } from "nodemailer";
 import { env } from "@/config/env";
 import { MAIL_FROM_EMAIL, MAIL_FROM_NAME } from "@/config/constants/mail";
 
-type EmailAttachment = {
-  filename: string;
-  content: Buffer;
-  contentType?: string;
-  cid?: string;
-  contentDisposition?: "inline" | "attachment";
-};
-
 type SendEmailInput = {
   to: string;
   subject: string;
   html: string;
   text?: string;
-  attachments?: EmailAttachment[];
   replyTo?: string;
 };
 
@@ -47,15 +38,6 @@ const getTransporter = () => {
 
 const buildFrom = () => `"${MAIL_FROM_NAME}" <${MAIL_FROM_EMAIL}>`;
 
-const mapAttachments = (attachments?: EmailAttachment[]) =>
-  attachments?.map((attachment) => ({
-    filename: attachment.filename,
-    content: attachment.content,
-    contentType: attachment.contentType,
-    cid: attachment.cid,
-    contentDisposition: attachment.contentDisposition ?? "attachment",
-  }));
-
 const sendWithTransport = async (input: SendEmailInput) => {
   const result = await getTransporter().sendMail({
     from: buildFrom(),
@@ -64,9 +46,6 @@ const sendWithTransport = async (input: SendEmailInput) => {
     html: input.html,
     text: input.text,
     ...(input.replyTo ? { replyTo: input.replyTo } : {}),
-    ...(input.attachments?.length
-      ? { attachments: mapAttachments(input.attachments) }
-      : {}),
   });
 
   return { messageId: result.messageId };

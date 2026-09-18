@@ -19,7 +19,6 @@ export const registerSchema = z
   .object({
     email: emailSchema,
     password: passwordSchema,
-    updatesOptIn: z.boolean().optional().default(false),
   })
   .strict();
 

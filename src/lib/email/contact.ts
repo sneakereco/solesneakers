@@ -2,20 +2,11 @@ import { emailFooterText } from "@/lib/email/footer";
 import { renderEmailLayout } from "@/lib/email/template";
 import { EMAIL_COLORS, emailStyles } from "@/lib/email/theme";
 
-type ContactSource = "contact_form" | "bug_report";
-
-type ContactAttachmentPreview = {
-  filename: string;
-  cid?: string | null;
-};
-
 type ContactEmailInput = {
   name: string;
   email: string;
   subject: string;
   message: string;
-  source: ContactSource;
-  attachments: ContactAttachmentPreview[];
 };
 
 const escapeHtml = (value: string) =>
@@ -31,44 +22,11 @@ export const buildContactSubmissionEmail = (input: ContactEmailInput) => {
   const safeEmail = escapeHtml(input.email);
   const safeSubject = escapeHtml(input.subject);
   const safeMessage = escapeHtml(input.message);
-  const heading = input.source === "bug_report" ? "Bug Report" : "Contact Form";
-  const headline =
-    input.source === "bug_report" ? "New bug report received" : "New message received";
-  const textHeading =
-    input.source === "bug_report"
-      ? "New Bug Report Submission"
-      : "New Contact Form Submission";
-  const attachmentsHtml =
-    input.attachments.length > 0
-      ? `
-        <tr>
-          <td class="email-pad" style="padding:0 40px 40px;">
-            <div style="${emailStyles.labelAccent}">Attachments</div>
-            <div style="margin-top:14px;">
-              ${input.attachments
-                .map((file) =>
-                  file.cid
-                    ? `<div style="margin-top:12px;">
-                        <img
-                          src="cid:${file.cid}"
-                          alt=""
-                          style="display:block;width:100%;max-width:420px;border:1px solid ${EMAIL_COLORS.panelBorder};background:${EMAIL_COLORS.surface};"
-                        />
-                      </div>`
-                    : "",
-                )
-                .join("")}
-            </div>
-          </td>
-        </tr>
-      `
-      : "";
-
   const contentHtml = `
       <tr>
         <td class="email-hero" style="${emailStyles.heroCell}">
-          <div style="${emailStyles.eyebrow}">${heading}</div>
-          <h1 class="email-heading" style="${emailStyles.heading}">${headline}</h1>
+          <div style="${emailStyles.eyebrow}">Contact Form</div>
+          <h1 class="email-heading" style="${emailStyles.heading}">New message received</h1>
         </td>
       </tr>
       <tr>
@@ -102,16 +60,15 @@ export const buildContactSubmissionEmail = (input: ContactEmailInput) => {
           </div>
         </td>
       </tr>
-      ${attachmentsHtml}
     `;
 
   const html = renderEmailLayout({
-    title: headline,
-    preheader: textHeading,
+    title: "New message received",
+    preheader: "New Contact Form Submission",
     contentHtml,
   });
 
-  const text = `${textHeading}
+  const text = `New Contact Form Submission
 Name: ${input.name}
 Email: ${input.email}
 Subject: ${input.subject}
@@ -120,7 +77,7 @@ ${input.message}
 ${emailFooterText()}
 `;
 
-  const subjectPrefix = input.source === "bug_report" ? "Bug report" : "Contact";
+  const subjectPrefix = "Contact";
 
   return { html, text, subjectPrefix };
 };

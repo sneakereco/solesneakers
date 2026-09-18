@@ -60,8 +60,7 @@ export async function GET(request: NextRequest) {
   }
 
   // 2) Ensure profile exists for this (now authenticated) user.
-  // For OAuth we default email marketing opt-in to FALSE, user can enable later.
-  await authService.ensureProfileForCurrentUser(false);
+  await authService.ensureProfileForCurrentUser();
 
   // 3) Redirect to final destination
   const redirectUrl = `${siteUrl}${next}`;
