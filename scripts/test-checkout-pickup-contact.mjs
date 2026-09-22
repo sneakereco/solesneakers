@@ -1,6 +1,5 @@
 import assert from "node:assert/strict";
 import { randomUUID } from "node:crypto";
-import { readFile } from "node:fs/promises";
 import pg from "pg";
 
 const connectionString =
@@ -14,14 +13,6 @@ const client = new pg.Client({ connectionString });
 try {
   await client.connect();
   await client.query("begin");
-  const migration = await readFile(
-    new URL(
-      "../supabase/migrations/20260916091000_checkout_pickup_contact.sql",
-      import.meta.url,
-    ),
-    "utf8",
-  );
-  await client.query(migration.replace(/^begin;/, "").replace(/commit;\s*$/, ""));
   const {
     rows: [item],
   } =
@@ -29,7 +20,7 @@ try {
     from public.products p join public.product_variants v on v.product_id=p.id
     where p.is_active and not p.is_out_of_stock and p.go_live_at <= now() and v.stock > 0 limit 1`);
   assert(item, "Seed one in-stock local product before running this check.");
-  // All inventory changes and migration DDL roll back at the end.
+  // All inventory changes roll back at the end.
   await client.query("update public.product_variants set stock=20 where id=$1", [
     item.variant_id,
   ]);
@@ -43,9 +34,15 @@ try {
     country: "US",
   };
   const pickup = { name: "Pickup Recipient", phone: "3365550100" };
-  async function reserve(method, contact, key, fulfillment = "pickup") {
+  async function reserve(
+    method,
+    contact,
+    key,
+    fulfillment = "pickup",
+    tenantId = item.tenant_id,
+  ) {
     const args = [
-      item.tenant_id,
+      tenantId,
       null,
       "buyer@example.com",
       "USD",
@@ -97,9 +94,35 @@ try {
     () => reserve("applePay", { name: "Buyer", phone: "not-a-phone" }, randomUUID()),
     /checkout_pickup_contact_required/,
   );
+  await rejects(
+    () => reserve("card", pickup, randomUUID(), "pickup", randomUUID()),
+    /checkout_inventory_unavailable/,
+  );
+  async function stock() {
+    return (
+      await client.query("select stock from public.product_variants where id=$1", [
+        item.variant_id,
+      ])
+    ).rows[0].stock;
+  }
+  async function release(orderId) {
+    return (
+      await client.query(
+        "select public.release_square_checkout_reservation($1,$2) as released",
+        [orderId, "retirement_check"],
+      )
+    ).rows[0].released;
+  }
   for (const method of ["card", "applePay", "afterpay", "cashAppPay"]) {
+    const before = await stock();
     const key = randomUUID();
     const order = await reserve(method, pickup, key);
+    assert.equal(await stock(), before - 1, "Reserve deducts once");
+    const { rows: bills } = await client.query(
+      "select line1 from public.order_billing where order_id=$1",
+      [order.order_id],
+    );
+    assert.equal(bills[0]?.line1, billing.line1, "Order billing remains required");
     const {
       rows: [saved],
     } = await client.query(
@@ -108,17 +131,40 @@ try {
     );
     assert.deepEqual(saved, { pickup_name: pickup.name, pickup_phone: pickup.phone });
     assert.equal((await reserve(method, pickup, key)).reused, true);
+    assert.equal(await stock(), before - 1, "Idempotent reuse does not deduct twice");
     await rejects(
       () => reserve(method, { ...pickup, phone: "3365550199" }, key),
       /checkout_pickup_contact_conflict/,
     );
+    assert.equal(await release(order.order_id), true);
+    assert.equal(await release(order.order_id), false);
+    assert.equal(await stock(), before, "Release restores exactly once");
     const shipping = await reserve(method, null, randomUUID(), "ship");
     assert.equal(shipping.reused, false);
+    const consumeSql =
+      method === "card"
+        ? "select public.consume_square_checkout_reservation($1,$2) as consumed"
+        : "select public.consume_square_checkout_reservation($1,$2,now()) as consumed";
+    const paymentId = `retirement-${randomUUID()}`;
+    for (let retry = 0; retry < 2; retry++) {
+      const { rows } = await client.query(consumeSql, [shipping.order_id, paymentId]);
+      assert.equal(rows[0].consumed, true);
+    }
+    assert.equal(
+      await release(shipping.order_id),
+      false,
+      "Paid order cannot be released",
+    );
+    assert.equal(
+      await stock(),
+      before - 1,
+      "Consume/retry does not deduct or restore again",
+    );
   }
   await client.query("set local role authenticated");
   await assert.rejects(() => reserve("card", pickup, randomUUID()), /permission denied/);
   console.log(
-    "PASS: pickup persistence for all five payment methods, shipping compatibility, idempotency, missing contact rejection and RPC permissions",
+    "PASS: pickup/billing persistence for all four active payment methods, shipping, stock reserve/reuse/release/consume, paid protection, contact rejection and RPC permissions",
   );
 } finally {
   await client.query("rollback").catch(() => undefined);
