@@ -18,6 +18,7 @@ import type { ShippingAddressValidationError } from "@/lib/checkout/shipping-add
 type PaymentDialogProps = {
   open: boolean;
   providerActive?: boolean;
+  loadingProvider?: "Afterpay" | "Cash App Pay" | null;
   addressReview?: ShippingAddressValidationError | null;
   onAcceptAddress?: (
     address: ShippingAddress,
@@ -58,6 +59,7 @@ export function CheckoutPaymentDialog(props: PaymentDialogProps) {
 function PaymentDialogContent({
   open,
   providerActive = false,
+  loadingProvider = null,
   error,
   onDismiss,
   addressReview,
@@ -132,7 +134,9 @@ function PaymentDialogContent({
                   ? "Confirm in Cash App"
                   : error
                     ? "Payment could not be completed"
-                    : "Processing your payment"}
+                    : loadingProvider
+                      ? `Loading ${loadingProvider}…`
+                      : "Processing your payment"}
         </h2>
         {addressReview && (
           <p className="mt-3 text-sm font-semibold">
@@ -153,7 +157,9 @@ function PaymentDialogContent({
                 : cashAppReapproval
                   ? "Approve the updated total with Cash App to finish your order."
                   : error) ||
-            "This may take a few seconds. Please keep this page open while we process your payment and confirm your order. Don't submit another payment."}
+            (loadingProvider
+              ? `Complete your payment approval in ${loadingProvider}.`
+              : "This may take a few seconds. Please keep this page open while we process your payment and confirm your order. Don't submit another payment.")}
         </p>
         {walletReview}
         {addressReview && onAcceptAddress && (
