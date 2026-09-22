@@ -43,6 +43,8 @@ import type {
 } from "@/lib/checkout/checkout-page-data";
 import { ShippingAddressValidationError } from "@/lib/checkout/shipping-address-validation";
 import { clearIdempotencyKeyFromStorage } from "@/lib/checkout/idempotency";
+import { captureCheckoutStarted } from "@/lib/measurement/client";
+import { hasUsableCheckout } from "@/lib/measurement/triggers";
 
 type Fulfillment = "ship" | "pickup";
 
@@ -104,6 +106,18 @@ export function CheckoutClient({ initialData }: { initialData: CheckoutPageData 
   const [resolvedQuoteKey, setResolvedQuoteKey] = useState<string | null>(null);
   const [quoteRevision, setQuoteRevision] = useState(0);
   const requestSequence = useRef(0);
+  const didCaptureCheckoutStart = useRef(false);
+
+  useEffect(() => {
+    if (
+      didCaptureCheckoutStart.current ||
+      !hasUsableCheckout({ cartReady: isReady, itemCount: items.length, isRedirecting })
+    ) {
+      return;
+    }
+    didCaptureCheckoutStart.current = true;
+    captureCheckoutStarted();
+  }, [isReady, items.length, isRedirecting]);
 
   const checkoutItems = useMemo(
     () =>

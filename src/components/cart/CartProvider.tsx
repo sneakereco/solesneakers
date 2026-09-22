@@ -14,6 +14,7 @@ import {
 import { CartService } from "@/services/cart-service";
 import type { CartItem } from "@/types/domain/cart";
 import { useSession } from "@/contexts/SessionContext";
+import { captureProductAddedToCart } from "@/lib/measurement/client";
 
 interface CartContextType {
   items: CartItem[];
@@ -131,7 +132,26 @@ export function CartProvider({
 
   const addItem = useCallback(
     (item: Omit<CartItem, "quantity">) => {
+      const beforeQuantity =
+        cart
+          .getCart()
+          .find(
+            (existing) =>
+              existing.productId === item.productId &&
+              existing.variantId === item.variantId,
+          )?.quantity ?? 0;
       cart.addItem(item);
+      const afterQuantity =
+        cart
+          .getCart()
+          .find(
+            (existing) =>
+              existing.productId === item.productId &&
+              existing.variantId === item.variantId,
+          )?.quantity ?? 0;
+      if (afterQuantity > beforeQuantity) {
+        captureProductAddedToCart(item.productId, item.variantId);
+      }
     },
     [cart],
   );

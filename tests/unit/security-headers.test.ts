@@ -95,6 +95,8 @@ describe("production security headers", () => {
         "https://challenges.cloudflare.com",
         "https://api.lab.amplitude.com/sdk/vardata",
         "https://static.afterpay.com/modal",
+        "https://us.i.posthog.com",
+        "https://eu.i.posthog.com",
       ]),
     );
     expect(response.headers.get("content-security-policy")).not.toContain(

@@ -7,6 +7,7 @@ import { ChevronDown } from "lucide-react";
 
 import { useCart } from "@/components/cart/CartProvider";
 import { Toast } from "@/components/ui/Toast";
+import { captureProductViewed } from "@/lib/measurement/client";
 import type { ProductWithDetails } from "@/types/domain/product";
 
 interface ProductDetailProps {
@@ -31,6 +32,7 @@ const getConditionLabel = (condition: string) => {
 
 export function ProductDetail({ product }: ProductDetailProps) {
   const { addItem, items } = useCart();
+  const viewedProductId = useRef<string | null>(null);
   const initialVariant =
     product.variants.find((variant) => variant.stock > 0) ?? product.variants[0];
   const initialImageIndex = Math.max(
@@ -61,6 +63,14 @@ export function ProductDetail({ product }: ProductDetailProps) {
   const inCartQuantity = inCartItem?.quantity ?? 0;
   const canAddMore = selectedVariant ? selectedVariant.stock > inCartQuantity : false;
   const conditionLabel = getConditionLabel(product.condition);
+
+  useEffect(() => {
+    if (viewedProductId.current === product.id) {
+      return;
+    }
+    viewedProductId.current = product.id;
+    captureProductViewed(product.id);
+  }, [product.id]);
 
   useEffect(() => {
     const current = product.variants.find((variant) => variant.id === selectedVariantId);
