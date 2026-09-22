@@ -207,6 +207,26 @@ try {
     await page.evaluate(() => window.paymentTest.cashOptions.shouldTokenize()),
     true,
   );
+  await page
+    .getByRole("heading", { name: "Loading Cash App Pay…", exact: true })
+    .waitFor();
+  assert.equal(
+    await page.locator("#checkout-payment-description").textContent(),
+    "Complete your payment approval in Cash App Pay.",
+  );
+  assert.equal(
+    await page.evaluate(() => document.querySelector("dialog").matches(":modal")),
+    false,
+  );
+  await page.evaluate(() =>
+    window.paymentTest.cashCallback({ detail: { tokenResult: { status: "CANCEL" } } }),
+  );
+  await page.waitForFunction(() => !document.querySelector("dialog")?.open);
+  assert.equal(await page.evaluate(() => window.paymentTest.prepareCalls), 0);
+  await page.evaluate(() => window.paymentTest.cashOptions.shouldTokenize());
+  await page
+    .getByRole("heading", { name: "Loading Cash App Pay…", exact: true })
+    .waitFor();
   await page.evaluate(() => {
     window.paymentTest.holdPrepare = true;
   });
@@ -218,8 +238,12 @@ try {
   await page.waitForFunction(() => Boolean(window.paymentTest.resolvePrepare));
   assert.equal(
     await page.locator("dialog[open]").count(),
-    0,
-    "Cash App address preparation finishes before processing is shown",
+    1,
+    "Cash App keeps its loading dialog through preparation",
+  );
+  assert.equal(
+    await page.locator("#checkout-payment-title").textContent(),
+    "Loading Cash App Pay…",
   );
   await page.evaluate(() => {
     window.paymentTest.holdPrepare = false;
@@ -395,6 +419,12 @@ try {
   await page.getByRole("button", { name: "Continue with Afterpay" }).click();
   await page.waitForFunction(() => Boolean(window.paymentTest.resolvePrepare));
   assert.equal(
+    await page
+      .getByRole("button", { name: "Loading Afterpay…", exact: true })
+      .isDisabled(),
+    true,
+  );
+  assert.equal(
     await page.locator("dialog[open]").count(),
     0,
     "Afterpay address preparation finishes before processing is shown",
@@ -410,12 +440,31 @@ try {
       totals: { totalCents: 11800 },
     }),
   );
-  await page
-    .getByRole("heading", { name: "Processing your payment", exact: true })
-    .waitFor();
+  await page.getByRole("heading", { name: "Loading Afterpay…", exact: true }).waitFor();
+  assert.equal(
+    await page.locator("#checkout-payment-description").textContent(),
+    "Complete your payment approval in Afterpay.",
+  );
   await page.evaluate(() => {
     window.paymentTest.spinner = document.querySelector("dialog .animate-spin");
   });
+  await page.waitForFunction(() => Boolean(window.paymentTest.resolveToken));
+  await page.evaluate(() => window.paymentTest.resolveToken({ status: "CANCEL" }));
+  await page.waitForFunction(() => !document.querySelector("dialog")?.open);
+  await page.evaluate(() => {
+    window.paymentTest.resolvePrepare = null;
+    window.paymentTest.resolveToken = null;
+  });
+  await page.getByRole("button", { name: "Continue with Afterpay" }).click();
+  await page.waitForFunction(() => Boolean(window.paymentTest.resolvePrepare));
+  await page.evaluate(() =>
+    window.paymentTest.resolvePrepare({
+      orderId: "test",
+      deviceSessionId: "test",
+      totals: { totalCents: 11800 },
+    }),
+  );
+  await page.getByRole("heading", { name: "Loading Afterpay…", exact: true }).waitFor();
   await page.waitForFunction(() => Boolean(window.paymentTest.resolveToken));
   const afterpayResults = await page.evaluate(() => {
     const req = window.paymentTest.requests.findLast(
@@ -458,6 +507,58 @@ try {
   await page
     .getByRole("heading", { name: "Processing your payment", exact: true })
     .waitFor();
+  assert.equal(
+    await page.evaluate(
+      () => window.paymentTest.spinner === document.querySelector("dialog .animate-spin"),
+    ),
+    true,
+  );
+  assert.equal(
+    await page.getByRole("button", { name: "Processing…", exact: true }).isDisabled(),
+    true,
+  );
+
+  // Cash App remains loading until its authorized token is submitted for payment.
+  await page.goto("http://checkout.test/checkout");
+  await page.addScriptTag({ content: result.outputFiles[0].text });
+  await page.getByText("Secure card fields", { exact: true }).waitFor();
+  await change({ quote: exact, shippingAddress: address });
+  await page.getByRole("radio", { name: "Cash App Pay", exact: true }).click();
+  await page.getByRole("button", { name: "cashAppPay", exact: true }).waitFor();
+  await page.evaluate(() => {
+    window.paymentTest.holdPrepare = true;
+    window.paymentTest.cashOptions.shouldTokenize();
+  });
+  await page
+    .getByRole("heading", { name: "Loading Cash App Pay…", exact: true })
+    .waitFor();
+  await page.evaluate(() => {
+    window.paymentTest.spinner = document.querySelector("dialog .animate-spin");
+    window.paymentTest.cashCallback({
+      detail: { tokenResult: { status: "OK", token: "test" } },
+    });
+  });
+  await page.waitForFunction(() => Boolean(window.paymentTest.resolvePrepare));
+  assert.equal(
+    await page.locator("#checkout-payment-title").textContent(),
+    "Loading Cash App Pay…",
+  );
+  await page.evaluate(() =>
+    window.paymentTest.resolvePrepare({
+      orderId: "test",
+      deviceSessionId: "test",
+      totals: { totalCents: 11800 },
+    }),
+  );
+  await page
+    .getByRole("heading", { name: "Processing your payment", exact: true })
+    .waitFor();
+  assert.equal(
+    await page.evaluate(
+      () => window.paymentTest.spinner === document.querySelector("dialog .animate-spin"),
+    ),
+    true,
+  );
   assert.deepEqual(errors, []);
   for (const phase of ["create", "attach"]) {
     await page.goto(`http://checkout.test/checkout?cardFailure=${phase}`);

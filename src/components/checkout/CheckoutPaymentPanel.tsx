@@ -28,6 +28,7 @@ export function CheckoutPaymentPanel({
   cardholderName,
   billingAddress,
   isPaying,
+  loadingProvider,
   payDisabled,
   payLabel,
   error,
@@ -53,6 +54,7 @@ export function CheckoutPaymentPanel({
   cardholderName: string;
   billingAddress: CheckoutBillingAddressForm;
   isPaying: boolean;
+  loadingProvider?: "Afterpay" | "Cash App Pay" | null;
   payDisabled: boolean;
   payLabel: string;
   error: string | null;
@@ -280,7 +282,9 @@ export function CheckoutPaymentPanel({
           className="mt-5 flex h-12 w-full items-center justify-center rounded-xl bg-zinc-950 px-6 text-sm font-semibold text-white disabled:cursor-not-allowed disabled:bg-zinc-400"
         >
           {isPaying
-            ? "Processing…"
+            ? loadingProvider
+              ? `Loading ${loadingProvider}…`
+              : "Processing…"
             : selectedMethod === "cashAppPay"
               ? "Continue with Cash App Pay"
               : payLabel}

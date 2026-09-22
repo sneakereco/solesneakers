@@ -473,6 +473,9 @@ export function SquarePaymentMethods({
   const [paymentDialogOpen, setPaymentDialogOpen] = useState(false);
   const router = useRouter();
   const [providerActive, setProviderActive] = useState(false);
+  const [loadingProvider, setLoadingProvider] = useState<
+    "Afterpay" | "Cash App Pay" | null
+  >(null);
   const [walletReview, setWalletReview] = useState<WalletDetailsReview | null>(null);
   const walletContinuation = useRef<((value: WalletDetails | null) => void) | null>(null);
   const [paymentFailureMessage, setError] = useState<string | null>(null);
@@ -767,16 +770,25 @@ export function SquarePaymentMethods({
           return payments.cashAppPay(request, {
             redirectURL: window.location.href,
             referenceId: cashAppQuoteKey.slice(0, 40),
-            shouldTokenize: () =>
-              active &&
-              !paymentInFlight.current &&
-              latest.current.exactQuote?.quoteFingerprint === cashAppQuoteKey &&
-              Boolean(latest.current.buyerEmail.trim()) &&
-              Boolean(latest.current.resolvedBillingAddress) &&
-              (latest.current.fulfillment === "pickup" ||
-                Boolean(latest.current.shippingAddress)) &&
-              (!latest.current.isGuest || Boolean(turnstileTokenRef.current)) &&
-              validateCheckoutFields(regularForm.current),
+            shouldTokenize: () => {
+              const ready =
+                active &&
+                !paymentInFlight.current &&
+                latest.current.exactQuote?.quoteFingerprint === cashAppQuoteKey &&
+                Boolean(latest.current.buyerEmail.trim()) &&
+                Boolean(latest.current.resolvedBillingAddress) &&
+                (latest.current.fulfillment === "pickup" ||
+                  Boolean(latest.current.shippingAddress)) &&
+                (!latest.current.isGuest || Boolean(turnstileTokenRef.current)) &&
+                validateCheckoutFields(regularForm.current);
+              if (ready) {
+                setError(null);
+                setLoadingProvider("Cash App Pay");
+                setProviderActive(true);
+                setPaymentDialogOpen(true);
+              }
+              return ready;
+            },
           });
         },
         async (method) => {
@@ -784,10 +796,12 @@ export function SquarePaymentMethods({
             if (!active) {
               return;
             }
+            setProviderActive(false);
             const detail = (
               event as { detail?: { tokenResult?: SquareTokenResult; error?: unknown } }
             ).detail;
             if (detail?.error) {
+              setLoadingProvider(null);
               reportUnavailable("cashAppPay", "tokenize", detail.error);
               setError(
                 "Cash App Pay could not authorize this payment. Please try again.",
@@ -801,6 +815,7 @@ export function SquarePaymentMethods({
                 );
                 void submitCashAppRef.current("cashAppPay", detail.tokenResult);
               } catch (methodError) {
+                setLoadingProvider(null);
                 setError(
                   methodError instanceof Error
                     ? methodError.message
@@ -879,6 +894,7 @@ export function SquarePaymentMethods({
   }, [isGuest]);
 
   async function pay(authorization: { permit: string; sourceId: string }) {
+    setLoadingProvider(null);
     setPaymentDialogOpen(true);
     const response = await fetch("/api/checkout/pay", {
       method: "POST",
@@ -950,6 +966,7 @@ export function SquarePaymentMethods({
       setIsPaying(false);
     } finally {
       paymentInFlight.current = false;
+      setLoadingProvider(null);
       updateTurnstileToken(null);
       if (turnstileWidget && window.turnstile && !turnstileTerminalError.current) {
         window.turnstile.reset(turnstileWidget);
@@ -1095,6 +1112,8 @@ export function SquarePaymentMethods({
 
   async function submitTokenizedWallet(method: PaymentMethod, result: SquareTokenResult) {
     if (!validateCheckoutFields(regularForm.current)) {
+      setLoadingProvider(null);
+      setPaymentDialogOpen(false);
       setError("Check the highlighted fields before continuing.");
       return;
     }
@@ -1277,6 +1296,7 @@ export function SquarePaymentMethods({
     payment: SquarePaymentMethod,
   ) {
     void runPayment(async () => {
+      setLoadingProvider(method === "afterpay" ? "Afterpay" : null);
       if (method === "card" && !cardholderName.trim()) {
         cardholderNameInput.current?.reportValidity();
         throw new Error("Enter the name shown on the card.");
@@ -1416,6 +1436,7 @@ export function SquarePaymentMethods({
       <CheckoutPaymentDialog
         open={paymentDialogOpen}
         providerActive={providerActive}
+        loadingProvider={loadingProvider}
         walletReview={
           walletReview ? (
             <CheckoutWalletDetails
@@ -1472,6 +1493,7 @@ export function SquarePaymentMethods({
         </div>
 
         <CheckoutPaymentPanel
+          loadingProvider={loadingProvider}
           selectedMethod={selectedMethod}
           cardBrand={cardState.brand}
           cardErrors={cardState.errors}
