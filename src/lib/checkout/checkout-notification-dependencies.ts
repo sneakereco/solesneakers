@@ -20,6 +20,7 @@ const notificationsSchema = z.array(
       "order_confirmation",
       "pickup_instructions",
       "refund_confirmation",
+      "label_created",
       "shipping_update",
       "delivery_confirmation",
     ]),
@@ -74,7 +75,9 @@ async function sendShippingUpdate(
   }
   const email = new OrderEmailService(admin, order.tenant_id, notification.id);
   const input = { ...payload, to: recipient, orderId: order.id, orderUrl };
-  if (notification.kind === "shipping_update") {
+  if (notification.kind === "label_created") {
+    await email.sendOrderLabelCreated(input);
+  } else if (notification.kind === "shipping_update") {
     await email.sendOrderInTransit(input);
   } else {
     await email.sendOrderDelivered(input);
@@ -244,6 +247,7 @@ export function createCheckoutNotificationDependencies(
           return sendPickupInstructions(admin, notification);
         case "refund_confirmation":
           return sendRefundConfirmation(admin, notification);
+        case "label_created":
         case "shipping_update":
         case "delivery_confirmation":
           return sendShippingUpdate(admin, notification);

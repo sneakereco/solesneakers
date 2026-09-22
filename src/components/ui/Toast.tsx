@@ -41,6 +41,9 @@ export function Toast({
   return (
     <div className="fixed bottom-6 right-4 z-50 w-fit max-w-[calc(100vw-2rem)] sm:right-6 sm:max-w-xs">
       <div
+        data-ui-toast
+        data-tone={tone}
+        role={tone === "error" ? "alert" : "status"}
         className={`border border-zinc-800 bg-zinc-900 ${toneStyles[tone]} px-4 py-3 shadow-lg`}
       >
         <div className="flex items-start gap-3">

@@ -639,6 +639,7 @@ export type Database = {
           tenant_id: string | null
           total: number
           tracking_number: string | null
+          tracking_url: string | null
           updated_at: string | null
           user_id: string | null
         }
@@ -678,6 +679,7 @@ export type Database = {
           tenant_id?: string | null
           total: number
           tracking_number?: string | null
+          tracking_url?: string | null
           updated_at?: string | null
           user_id?: string | null
         }
@@ -717,6 +719,7 @@ export type Database = {
           tenant_id?: string | null
           total?: number
           tracking_number?: string | null
+          tracking_url?: string | null
           updated_at?: string | null
           user_id?: string | null
         }

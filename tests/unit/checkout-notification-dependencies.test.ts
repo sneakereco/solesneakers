@@ -9,7 +9,7 @@ jest.mock("@/repositories/order-events-repo");
 
 beforeEach(() => jest.clearAllMocks());
 
-it.each(["shipping_update", "delivery_confirmation"] as const)(
+it.each(["label_created", "shipping_update", "delivery_confirmation"] as const)(
   "sends queued %s from the persisted carrier payload",
   async (kind) => {
     const query = {
@@ -43,9 +43,11 @@ it.each(["shipping_update", "delivery_confirmation"] as const)(
       payload: { trackingNumber: "tracking-1", carrier: "usps", trackingUrl: null },
     });
     const send =
-      kind === "shipping_update"
-        ? OrderEmailService.prototype.sendOrderInTransit
-        : OrderEmailService.prototype.sendOrderDelivered;
+      kind === "label_created"
+        ? OrderEmailService.prototype.sendOrderLabelCreated
+        : kind === "shipping_update"
+          ? OrderEmailService.prototype.sendOrderInTransit
+          : OrderEmailService.prototype.sendOrderDelivered;
     expect(send).toHaveBeenCalledWith(
       expect.objectContaining({
         to: "buyer@example.com",
@@ -56,22 +58,28 @@ it.each(["shipping_update", "delivery_confirmation"] as const)(
   },
 );
 
-it("does not resend an accepted shipping email after queue completion failed", async () => {
-  const query = {
-    select: jest.fn().mockReturnThis(),
-    eq: jest.fn().mockReturnThis(),
-    limit: jest.fn().mockReturnThis(),
-    maybeSingle: jest.fn().mockResolvedValue({ data: { id: "sent-audit" }, error: null }),
-  };
-  const admin = { from: () => query } as unknown as AdminSupabaseClient;
-  await createCheckoutNotificationDependencies(admin).send({
-    id: "notification-1",
-    orderId: "order-1",
-    kind: "delivery_confirmation",
-    payload: { trackingNumber: "tracking-1", carrier: null, trackingUrl: null },
-  });
-  expect(OrderEmailService.prototype.sendOrderDelivered).not.toHaveBeenCalled();
-});
+it.each(["label_created", "delivery_confirmation"] as const)(
+  "does not resend an accepted %s email after queue completion failed",
+  async (kind) => {
+    const query = {
+      select: jest.fn().mockReturnThis(),
+      eq: jest.fn().mockReturnThis(),
+      limit: jest.fn().mockReturnThis(),
+      maybeSingle: jest
+        .fn()
+        .mockResolvedValue({ data: { id: "sent-audit" }, error: null }),
+    };
+    const admin = { from: () => query } as unknown as AdminSupabaseClient;
+    await createCheckoutNotificationDependencies(admin).send({
+      id: "notification-1",
+      orderId: "order-1",
+      kind,
+      payload: { trackingNumber: "tracking-1", carrier: null, trackingUrl: null },
+    });
+    expect(OrderEmailService.prototype.sendOrderDelivered).not.toHaveBeenCalled();
+    expect(OrderEmailService.prototype.sendOrderLabelCreated).not.toHaveBeenCalled();
+  },
+);
 
 it("sends pickup instructions as their own notification", async () => {
   const auditQuery = {

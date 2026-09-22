@@ -216,6 +216,7 @@ export class OrdersRepository {
     input: {
       carrier?: string | null;
       trackingNumber?: string | null;
+      trackingUrl?: string | null;
       labelUrl?: string | null;
       labelCreatedBy?: string | null;
       actualShippingCost?: number | null;
@@ -225,6 +226,7 @@ export class OrdersRepository {
       fulfillment_status: "ready_to_ship",
       shipping_carrier: input.carrier ?? null,
       tracking_number: input.trackingNumber ?? null,
+      tracking_url: input.trackingUrl ?? null,
       shipped_at: null,
     };
 

@@ -739,7 +739,7 @@ export default function ShippingPage() {
         </tr>
 
         {itemsExpanded && (
-          <tr className="hidden bg-zinc-900/40 md:table-row">
+          <tr className="hidden bg-zinc-50 md:table-row">
             <td colSpan={colSpan} className="border-b border-zinc-800/70 p-0">
               <div className="flex flex-col">
                 {(order.items ?? []).map((item: OrderItem) => {
@@ -853,7 +853,7 @@ export default function ShippingPage() {
         )}
 
         {detailsExpanded && (
-          <tr className="border-b border-zinc-800/70 bg-zinc-900/40 md:hidden">
+          <tr className="border-b border-zinc-800/70 bg-zinc-50 md:hidden">
             <td colSpan={colSpan} className="px-3 pb-3 pt-3 sm:px-4 sm:pb-4">
               <div className="space-y-3 text-sm">
                 <div className="flex items-center justify-between gap-4">
