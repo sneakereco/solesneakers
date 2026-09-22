@@ -106,6 +106,39 @@ describe("Phase A measurement client", () => {
     ).toBeNull();
     expect(
       filterOutgoingEvent(
+        {
+          event: "checkout_started",
+          properties: {
+            storefront: "sole",
+            environment: "staging",
+            schema_version: 1,
+            pathname: "/checkout",
+            token: projectKey,
+            distinct_id: "not-a-uuid",
+            $session_id: sessionId,
+          },
+        },
+        projectKey,
+      ),
+    ).toBeNull();
+    expect(
+      filterOutgoingEvent(
+        {
+          event: "checkout_started",
+          properties: {
+            storefront: "sole",
+            environment: "staging",
+            schema_version: 1,
+            pathname: "/checkout",
+            token: projectKey,
+            distinct_id: distinctId,
+          },
+        },
+        projectKey,
+      ),
+    ).toBeNull();
+    expect(
+      filterOutgoingEvent(
         { event: "$pageview", properties: { token: projectKey } },
         projectKey,
       ),

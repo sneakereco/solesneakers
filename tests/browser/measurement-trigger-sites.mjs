@@ -15,6 +15,7 @@ const bundle = await build({
       import { CartProvider, useCart } from "./src/components/cart/CartProvider";
       import { ProductDetail } from "./src/components/store/ProductDetail";
       import { CheckoutClient } from "./src/components/checkout/CheckoutClient";
+      import { CheckoutLockedNotice } from "./src/components/checkout/CheckoutLockedNotice";
 
       const test = window.measurementTriggerTest = { events: [] };
       const assert = {
@@ -90,6 +91,13 @@ const bundle = await build({
       assert.deepEqual(test.events, ["product_viewed"], "product mount must emit once");
       await render(<CartProvider><ProductDetail product={{ ...product }} /></CartProvider>);
       assert.deepEqual(test.events, ["product_viewed"], "product rerender must not duplicate");
+      await resetRoot();
+      await render(<CartProvider><ProductDetail product={product} /></CartProvider>);
+      assert.deepEqual(
+        test.events,
+        ["product_viewed", "product_viewed"],
+        "true product remount must emit a new view",
+      );
 
       await resetRoot();
       test.events = [];
@@ -142,6 +150,18 @@ const bundle = await build({
       await pause();
       Storage.prototype.setItem = originalSetItem;
       assert.deepEqual(test.events, [], "failed persisted add must emit zero");
+
+      await resetRoot();
+      test.events = [];
+      sessionStorage.clear();
+      await render(<CheckoutLockedNotice message="Checkout paused for maintenance" />);
+      assert.deepEqual(test.events, [], "locked checkout must emit zero");
+
+      await resetRoot();
+      test.events = [];
+      sessionStorage.clear();
+      await render(<CartProvider><CheckoutClient initialData={initialData} /></CartProvider>);
+      assert.deepEqual(test.events, [], "ready empty checkout must emit zero");
 
       await resetRoot();
       test.events = [];
