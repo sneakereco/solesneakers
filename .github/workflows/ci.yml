@@ -71,5 +71,11 @@ jobs:
       - name: Integration tests
         run: npm run test:jest:integration -- --runInBand
 
+      - name: Install browser for measurement tests
+        run: npx playwright install --with-deps chromium
+
+      - name: Measurement browser suites
+        run: npm run test:measurement:browser
+
       - name: Build without deployment credentials
         run: npx next build

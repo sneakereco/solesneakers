@@ -1,6 +1,7 @@
 // Run: node tests/browser/measurement-sdk-boundary.mjs
 // Uses the installed PostHog SDK and intercepts its real browser transport.
 import assert from "node:assert/strict";
+import { gunzipSync } from "node:zlib";
 import { build } from "esbuild";
 import { chromium } from "playwright";
 
@@ -99,6 +100,7 @@ const bundle = await build({
 
         const originalCapture = posthog.capture;
         posthog.capture = () => {
+          test.failedCaptures = (test.failedCaptures || 0) + 1;
           throw new Error("simulated SDK transport failure");
         };
 
@@ -139,6 +141,7 @@ const bundle = await build({
           await pause();
         }
 
+        test.finalCart = JSON.parse(sessionStorage.getItem("rdk_cart_session") || "[]");
         posthog.capture = originalCapture;
         test.complete = true;
       })().catch(error => {
@@ -244,7 +247,10 @@ try {
   const transportRequests = [];
   page.on("pageerror", (error) => errors.push(error.stack ?? error.message));
   await page.route("https://us.i.posthog.com/**", async (route) => {
-    const postData = route.request().postData();
+    const bytes = route.request().postDataBuffer();
+    const postData = (
+      bytes?.[0] === 0x1f && bytes?.[1] === 0x8b ? gunzipSync(bytes) : bytes
+    )?.toString("utf8");
     let payload = null;
     try {
       payload = postData ? JSON.parse(postData) : null;
@@ -266,7 +272,26 @@ try {
     }),
   );
   await page.route("**/api/cart/validate", (route) =>
-    route.fulfill({ status: 200, contentType: "application/json", body: '{"items":[]}' }),
+    route.fulfill({
+      status: 200,
+      contentType: "application/json",
+      body: JSON.stringify({
+        items: [
+          {
+            productId: "123e4567-e89b-42d3-a456-426614174000",
+            variantId: "123e4567-e89b-42d3-a456-426614174001",
+            sizeLabel: "10",
+            brand: "Sole",
+            name: "Air Runner",
+            titleDisplay: "Air Runner",
+            priceCents: 10000,
+            imageUrl: "/shoe.png",
+            maxStock: 1,
+            quantity: 1,
+          },
+        ],
+      }),
+    }),
   );
   await page.route("**/api/checkout/quote", (route) =>
     route.fulfill({
@@ -305,9 +330,13 @@ try {
   assert.equal(result.checkoutRendered, true);
   assert.equal(result.persistedCart.length, 1);
   assert.equal(result.persistedCart[0].quantity, 1);
+  assert.equal(result.finalCart.length, 1);
+  assert.equal(result.finalCart[0].quantity, 1);
+  assert.equal(result.failedCaptures, 2);
   const checkoutRequest = transportRequests.find(
     (request) =>
-      request.method === "POST" && request.payload?.event === "checkout_started",
+      request.method === "POST" &&
+      request.payload?.batch?.some((event) => event.event === "checkout_started"),
   );
   assert.ok(
     checkoutRequest,
@@ -338,7 +367,9 @@ try {
   assert.equal(JSON.stringify(result.boundaryEvent).includes("sensitive"), false);
   assert.equal(JSON.stringify(result.boundaryEvent).includes("$current_url"), false);
   assert.equal(JSON.stringify(result.boundaryEvent).includes("$referrer"), false);
-  assert.deepEqual(checkoutRequest.payload.properties, properties);
+  assert.equal(checkoutRequest.payload.api_key, projectKey);
+  assert.equal(checkoutRequest.payload.batch.length, 1);
+  assert.deepEqual(checkoutRequest.payload.batch[0].properties, properties);
 
   console.log(
     "PASS installed PostHog boundary: sanitized event dispatched; SDK failure preserved cart and checkout",

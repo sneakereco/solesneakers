@@ -15,7 +15,7 @@ const bundle = await build({
       import { CartProvider, useCart } from "./src/components/cart/CartProvider";
       import { ProductDetail } from "./src/components/store/ProductDetail";
       import { CheckoutClient } from "./src/components/checkout/CheckoutClient";
-      import { CheckoutLockedNotice } from "./src/components/checkout/CheckoutLockedNotice";
+      import CheckoutPage from "./src/app/checkout/page";
 
       const test = window.measurementTriggerTest = { events: [] };
       const assert = {
@@ -154,7 +154,23 @@ const bundle = await build({
       await resetRoot();
       test.events = [];
       sessionStorage.clear();
-      await render(<CheckoutLockedNotice message="Checkout paused for maintenance" />);
+      sessionStorage.setItem("rdk_cart_session", JSON.stringify([{
+        productId: product.id,
+        variantId: product.variants[0].id,
+        sizeLabel: "10",
+        brand: "Sole",
+        name: product.name,
+        titleDisplay: product.name,
+        priceCents: 10000,
+        imageUrl: "/shoe.png",
+        maxStock: 1,
+        quantity: 1,
+      }]));
+      const lockedPage = await CheckoutPage();
+      await render(lockedPage);
+      if (!document.body.textContent.includes("Checkout Locked")) {
+        throw new Error("real checkout page did not take its locked branch");
+      }
       assert.deepEqual(test.events, [], "locked checkout must emit zero");
 
       await resetRoot();
@@ -231,6 +247,15 @@ const bundle = await build({
             "export const StorefrontHeader = () => null;",
           ],
           ["@/components/ui/Toast", "export const Toast = () => null;"],
+          [
+            "@/lib/checkout/checkout-page-access",
+            "export const loadCheckoutPageAccess = async () => ({ open: false, message: 'Checkout paused for maintenance' });",
+          ],
+          [
+            "@/lib/checkout/checkout-page-data",
+            "export const loadCheckoutPageData = async () => { throw new Error('locked page must not load checkout data'); };",
+          ],
+          ["@/lib/utils/log", "export const logError = () => {};"],
           [
             "@/contexts/SessionContext",
             "export const useSession = () => ({ user: null });",
