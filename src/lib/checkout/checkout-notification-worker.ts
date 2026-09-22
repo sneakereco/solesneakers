@@ -7,6 +7,7 @@ export type CheckoutNotification = {
     | "order_confirmation"
     | "pickup_instructions"
     | "refund_confirmation"
+    | "label_created"
     | "shipping_update"
     | "delivery_confirmation";
   payload: Json;

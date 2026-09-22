@@ -1,3 +1,7 @@
+jest.mock("@/lib/checkout/checkout-notification-scheduler", () => ({
+  scheduleCheckoutNotifications: jest.fn(),
+}));
+import { scheduleCheckoutNotifications } from "@/lib/checkout/checkout-notification-scheduler";
 jest.mock("@/lib/auth/session", () => ({
   requireAdminApi: jest.fn(),
 }));
@@ -124,6 +128,20 @@ describe("POST /api/admin/shipping/labels", () => {
       currency: "USD",
       messages: [],
     });
+  });
+
+  it("schedules the persisted label notification without claiming email was sent", async () => {
+    const response = await POST(request());
+    expect(response.status).toBe(200);
+    expect(mockMarkReadyToShip).toHaveBeenCalledWith(
+      orderId,
+      expect.objectContaining({
+        trackingNumber: "tracking-1",
+        trackingUrl: "https://tracking.example.com/1",
+      }),
+    );
+    expect(scheduleCheckoutNotifications).toHaveBeenCalledWith(orderId);
+    expect((await response.json()).message).toContain("queued");
   });
 
   it("does not purchase a label for an order under review", async () => {

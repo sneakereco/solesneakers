@@ -1,4 +1,5 @@
 import assert from "node:assert/strict";
+import { readFile } from "node:fs/promises";
 
 import pg from "pg";
 
@@ -16,6 +17,17 @@ const client = new pg.Client({ connectionString });
 try {
   await client.connect();
   await client.query("begin");
+  if (process.argv.includes("--with-label-migration")) {
+    await client.query(
+      await readFile(
+        new URL(
+          "../supabase/migrations/20260922120000_label_created_notification.sql",
+          import.meta.url,
+        ),
+        "utf8",
+      ),
+    );
+  }
 
   const { rows: tenants } = await client.query(
     "insert into public.tenants(name) values ('notification rollback check') returning id",
@@ -87,6 +99,44 @@ try {
     await client.query("rollback to savepoint permission_check");
   }
   assert.equal(denied, true, "Authenticated callers must not claim notifications.");
+
+  await client.query(
+    "update public.orders set fulfillment = 'ship', fulfillment_status = 'ready_to_ship', tracking_number = 'notification-test-tracking', shipping_carrier = 'usps', tracking_url = 'https://example.com/track', label_url = 'https://example.com/label.pdf' where id = $1",
+    [orderId],
+  );
+  await client.query("update public.orders set label_url = label_url where id = $1", [
+    orderId,
+  ]);
+  const { rows: labels } = await client.query(
+    "select kind, payload from public.checkout_notification_outbox where order_id = $1 and kind = 'label_created'",
+    [orderId],
+  );
+  assert.equal(
+    labels.length,
+    1,
+    "Saving a label must atomically queue exactly one notification.",
+  );
+  assert.equal(labels[0].payload.trackingNumber, "notification-test-tracking");
+  assert.equal(labels[0].payload.trackingUrl, "https://example.com/track");
+  for (const status of ["shipped", "shipped", "delivered", "delivered", "shipped"]) {
+    await client.query(
+      "select public.record_shippo_tracking_update($1, $2, 'usps', null)",
+      ["notification-test-tracking", status],
+    );
+  }
+  const { rows: milestones } = await client.query(
+    "select kind from public.checkout_notification_outbox where order_id = $1 and kind in ('label_created', 'shipping_update', 'delivery_confirmation') order by kind",
+    [orderId],
+  );
+  assert.deepEqual(
+    milestones.map((row) => row.kind),
+    ["delivery_confirmation", "label_created", "shipping_update"],
+  );
+  const { rows: finalOrder } = await client.query(
+    "select fulfillment_status from public.orders where id = $1",
+    [orderId],
+  );
+  assert.equal(finalOrder[0].fulfillment_status, "delivered");
 
   console.info("checkout notification delivery SQL check passed");
 } finally {

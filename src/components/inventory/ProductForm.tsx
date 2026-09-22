@@ -1125,7 +1125,6 @@ export function ProductForm({
                   { value: "accessories", label: "Accessories" },
                   { value: "electronics", label: "Electronics" },
                 ]}
-                buttonClassName="bg-zinc-800"
               />
             </div>
 
@@ -1140,7 +1139,6 @@ export function ProductForm({
                   { value: "new", label: "New" },
                   { value: "used", label: "Pre-owned" },
                 ]}
-                buttonClassName="bg-zinc-800"
               />
             </div>
           </div>
@@ -1345,7 +1343,6 @@ export function ProductForm({
                             searchable={sizeType !== "none"}
                             searchPlaceholder="Search sizes..."
                             options={sizeSelectOptions(sizeType)}
-                            buttonClassName="bg-zinc-900"
                           />
                         </div>
 
