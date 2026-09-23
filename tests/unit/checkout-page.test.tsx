@@ -10,12 +10,16 @@ jest.mock("@/lib/checkout/checkout-page-data", () => ({
 jest.mock("@/lib/utils/log", () => ({
   logError: jest.fn(),
 }));
+jest.mock("@/lib/measurement/client", () => ({
+  captureCheckoutStarted: jest.fn(),
+}));
 
 import { CheckoutClient } from "@/components/checkout/CheckoutClient";
 import { CheckoutLockedNotice } from "@/components/checkout/CheckoutLockedNotice";
 import { CheckoutUnavailable } from "@/components/checkout/CheckoutUnavailable";
 import { loadCheckoutPageAccess } from "@/lib/checkout/checkout-page-access";
 import { loadCheckoutPageData } from "@/lib/checkout/checkout-page-data";
+import { captureCheckoutStarted } from "@/lib/measurement/client";
 
 import CheckoutPage from "../../src/app/checkout/page";
 
@@ -74,6 +78,7 @@ describe("src/app/checkout/page", () => {
     expect(result.type).toBe(CheckoutLockedNotice);
     expect(result.props.message).toBe("Checkout paused for maintenance");
     expect(loadCheckoutPageData).not.toHaveBeenCalled();
+    expect(captureCheckoutStarted).not.toHaveBeenCalled();
   });
 
   it("fails closed when safe checkout page data cannot load", async () => {
@@ -85,5 +90,6 @@ describe("src/app/checkout/page", () => {
     const result = await CheckoutPage();
 
     expect(result.type).toBe(CheckoutUnavailable);
+    expect(captureCheckoutStarted).not.toHaveBeenCalled();
   });
 });
