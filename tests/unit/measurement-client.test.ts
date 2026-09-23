@@ -4,6 +4,7 @@ jest.mock("posthog-js", () => ({
 }));
 
 import posthog from "posthog-js";
+import { isApprovedMeasurementHostname } from "@/lib/measurement/host-gate";
 
 import {
   captureCheckoutStarted,
@@ -24,13 +25,25 @@ const capture = jest.mocked(posthog.capture);
 const init = jest.mocked(posthog.init);
 
 describe("Phase A measurement client", () => {
-  it("is disabled unless staging and valid project config are explicitly supplied", () => {
+  it("is disabled unless an approved environment and valid project config are supplied", () => {
     expect(resolveMeasurementConfig({})).toBeNull();
     expect(
       resolveMeasurementConfig({
         enabled: "true",
         environment: "production",
         projectKey: `phc_${"a".repeat(24)}`,
+        host: "https://us.i.posthog.com",
+      }),
+    ).toEqual({
+      environment: "production",
+      projectKey,
+      host: "https://us.i.posthog.com",
+    });
+    expect(
+      resolveMeasurementConfig({
+        enabled: "true",
+        environment: "preview",
+        projectKey,
         host: "https://us.i.posthog.com",
       }),
     ).toBeNull();
@@ -55,6 +68,35 @@ describe("Phase A measurement client", () => {
     expect(init).not.toHaveBeenCalled();
   });
 
+  it("uses exact environment-specific hostnames, never deployment or preview URLs", () => {
+    expect(isApprovedMeasurementHostname("soles-stg.vercel.app", "staging")).toBe(true);
+    expect(isApprovedMeasurementHostname("soles-stg.vercel.app", "production")).toBe(
+      false,
+    );
+    expect(isApprovedMeasurementHostname("shopsolesneakers.com", "production")).toBe(
+      true,
+    );
+    expect(isApprovedMeasurementHostname("shopsolesneakers.com", "staging")).toBe(false);
+    expect(isApprovedMeasurementHostname("soles-pro-rose.vercel.app", "production")).toBe(
+      true,
+    );
+    expect(isApprovedMeasurementHostname("soles-pro-rose.vercel.app", "staging")).toBe(
+      false,
+    );
+    expect(isApprovedMeasurementHostname("www.shopsolesneakers.com", "production")).toBe(
+      false,
+    );
+    expect(isApprovedMeasurementHostname("soles-pro.vercel.app", "production")).toBe(
+      false,
+    );
+    expect(isApprovedMeasurementHostname("soles-preview.vercel.app", "staging")).toBe(
+      false,
+    );
+    expect(isApprovedMeasurementHostname("soles-preview.vercel.app", "production")).toBe(
+      false,
+    );
+  });
+
   it("preserves only validated SDK ingestion and anonymous correlation fields", () => {
     const approved = filterOutgoingEvent(
       {
@@ -76,12 +118,14 @@ describe("Phase A measurement client", () => {
         },
       },
       projectKey,
+      "staging",
     );
     expect(approved?.properties).toEqual({
       storefront: "sole",
       environment: "staging",
       schema_version: 1,
       pathname: "/checkout",
+      $geoip_disable: true,
       token: projectKey,
       distinct_id: distinctId,
       $session_id: sessionId,
@@ -102,6 +146,7 @@ describe("Phase A measurement client", () => {
           },
         },
         projectKey,
+        "staging",
       ),
     ).toBeNull();
     expect(
@@ -119,6 +164,7 @@ describe("Phase A measurement client", () => {
           },
         },
         projectKey,
+        "staging",
       ),
     ).toBeNull();
     expect(
@@ -135,12 +181,14 @@ describe("Phase A measurement client", () => {
           },
         },
         projectKey,
+        "staging",
       ),
     ).toBeNull();
     expect(
       filterOutgoingEvent(
         { event: "$pageview", properties: { token: projectKey } },
         projectKey,
+        "staging",
       ),
     ).toBeNull();
   });

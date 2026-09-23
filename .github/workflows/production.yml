@@ -107,7 +107,23 @@ jobs:
         id: deploy
         shell: bash
         run: |
-          deployment_url="$(npx --yes vercel@59.16.0 deploy --prod --yes --token="$VERCEL_TOKEN")"
+          # The production environment's Doppler token injects values on this runner, while Vercel
+          # builds remotely. An incomplete measurement config must release with it off.
+          measurement_build_env=(--build-env "NEXT_PUBLIC_POSTHOG_ENABLED=false")
+          if [ -n "${NEXT_PUBLIC_POSTHOG_ENABLED:-}" ] &&
+             [ -n "${NEXT_PUBLIC_MEASUREMENT_ENVIRONMENT:-}" ] &&
+             [ -n "${NEXT_PUBLIC_POSTHOG_PROJECT_KEY:-}" ] &&
+             [ -n "${NEXT_PUBLIC_POSTHOG_HOST:-}" ]; then
+            measurement_build_env=(
+              --build-env "NEXT_PUBLIC_POSTHOG_ENABLED=$NEXT_PUBLIC_POSTHOG_ENABLED"
+              --build-env "NEXT_PUBLIC_MEASUREMENT_ENVIRONMENT=$NEXT_PUBLIC_MEASUREMENT_ENVIRONMENT"
+              --build-env "NEXT_PUBLIC_POSTHOG_PROJECT_KEY=$NEXT_PUBLIC_POSTHOG_PROJECT_KEY"
+              --build-env "NEXT_PUBLIC_POSTHOG_HOST=$NEXT_PUBLIC_POSTHOG_HOST"
+            )
+          else
+            echo "::notice::Production measurement config incomplete; deploying with measurement disabled"
+          fi
+          deployment_url="$(npx --yes vercel@59.16.0 deploy --prod --yes --token="$VERCEL_TOKEN" "${measurement_build_env[@]}")"
           echo "deployment_url=$deployment_url" >> "$GITHUB_OUTPUT"
 
   verify:
