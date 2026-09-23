@@ -92,7 +92,18 @@ jobs:
         id: deploy
         shell: bash
         run: |
-          deployment_url="$(npx --yes vercel@59.16.0 deploy --prod --yes --token="$VERCEL_TOKEN")"
+          for key in NEXT_PUBLIC_POSTHOG_ENABLED NEXT_PUBLIC_MEASUREMENT_ENVIRONMENT NEXT_PUBLIC_POSTHOG_PROJECT_KEY NEXT_PUBLIC_POSTHOG_HOST; do
+            if [ -z "${!key:-}" ]; then
+              echo "::error::Missing $key from staging Doppler config"
+              exit 1
+            fi
+          done
+
+          deployment_url="$(npx --yes vercel@59.16.0 deploy --prod --yes --token="$VERCEL_TOKEN" \
+            --build-env "NEXT_PUBLIC_POSTHOG_ENABLED=$NEXT_PUBLIC_POSTHOG_ENABLED" \
+            --build-env "NEXT_PUBLIC_MEASUREMENT_ENVIRONMENT=$NEXT_PUBLIC_MEASUREMENT_ENVIRONMENT" \
+            --build-env "NEXT_PUBLIC_POSTHOG_PROJECT_KEY=$NEXT_PUBLIC_POSTHOG_PROJECT_KEY" \
+            --build-env "NEXT_PUBLIC_POSTHOG_HOST=$NEXT_PUBLIC_POSTHOG_HOST")"
           echo "deployment_url=$deployment_url" >> "$GITHUB_OUTPUT"
 
   verify:
