@@ -7,11 +7,17 @@ import {
   MEASUREMENT_SCHEMA_VERSION,
   safePathname,
   sanitizeMeasurementEvent,
+  type MeasurementEnvironment,
   type MeasurementEventName,
   type SafeAttribution,
 } from "@/lib/measurement/contract";
+import { isApprovedMeasurementHostname } from "@/lib/measurement/host-gate";
 
-type MeasurementConfig = { projectKey: string; host: string };
+type MeasurementConfig = {
+  projectKey: string;
+  host: string;
+  environment: MeasurementEnvironment;
+};
 type OutgoingEvent = { event: string; properties?: Record<string, unknown> };
 
 const ATTRIBUTION_STORAGE_KEY = "sole_phase_a_attribution_v1";
@@ -25,7 +31,10 @@ export function resolveMeasurementConfig(input: {
   projectKey?: string;
   host?: string;
 }): MeasurementConfig | null {
-  if (input.enabled !== "true" || input.environment !== "staging") {
+  if (
+    input.enabled !== "true" ||
+    (input.environment !== "staging" && input.environment !== "production")
+  ) {
     return null;
   }
   const projectKey = input.projectKey?.trim() ?? "";
@@ -33,7 +42,7 @@ export function resolveMeasurementConfig(input: {
   if (!/^phc_[a-z0-9]{20,}$/i.test(projectKey) || !CLOUD_HOSTS.has(host)) {
     return null;
   }
-  return { projectKey, host };
+  return { projectKey, host, environment: input.environment };
 }
 
 function configuredMeasurement(): MeasurementConfig | null {
@@ -51,9 +60,14 @@ const SDK_CORRELATION_ID =
 export function filterOutgoingEvent<T extends OutgoingEvent>(
   event: T,
   expectedProjectKey: string,
+  expectedEnvironment: MeasurementEnvironment,
 ): T | null {
   const safe = sanitizeMeasurementEvent(event.event, event.properties);
-  if (!safe || !/^phc_[a-z0-9]{20,}$/i.test(expectedProjectKey)) {
+  if (
+    !safe ||
+    safe.properties.environment !== expectedEnvironment ||
+    !/^phc_[a-z0-9]{20,}$/i.test(expectedProjectKey)
+  ) {
     return null;
   }
   const input = event.properties ?? {};
@@ -114,11 +128,11 @@ export function initializeMeasurement(): void {
   if (initialized || typeof window === "undefined") {
     return;
   }
-  if (window.location.hostname !== "soles-stg.vercel.app") {
-    return;
-  }
   const config = configuredMeasurement();
-  if (!config) {
+  if (
+    !config ||
+    !isApprovedMeasurementHostname(window.location.hostname, config.environment)
+  ) {
     return;
   }
   try {
@@ -143,7 +157,7 @@ export function initializeMeasurement(): void {
       persistence: "sessionStorage",
       cross_subdomain_cookie: false,
       before_send: (event) =>
-        event ? filterOutgoingEvent(event, config.projectKey) : null,
+        event ? filterOutgoingEvent(event, config.projectKey, config.environment) : null,
     });
     initialized = true;
   } catch {
@@ -155,6 +169,13 @@ function capture(event: MeasurementEventName, properties: Record<string, unknown
   if (!initialized || typeof window === "undefined") {
     return;
   }
+  const config = configuredMeasurement();
+  if (
+    !config ||
+    !isApprovedMeasurementHostname(window.location.hostname, config.environment)
+  ) {
+    return;
+  }
   const pathname = safePathname(window.location.pathname);
   if (!pathname) {
     return;
@@ -163,7 +184,7 @@ function capture(event: MeasurementEventName, properties: Record<string, unknown
     ...getAttribution(),
     ...properties,
     storefront: "sole",
-    environment: "staging",
+    environment: config.environment,
     schema_version: MEASUREMENT_SCHEMA_VERSION,
     pathname,
   });

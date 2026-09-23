@@ -15,6 +15,7 @@ const bundle = await build({
       import React from "react";
       import { createRoot } from "react-dom/client";
       import posthog from "posthog-js";
+      import { isApprovedMeasurementHostname } from "./src/lib/measurement/host-gate";
       import { CartProvider, useCart } from "./src/components/cart/CartProvider";
       import { CheckoutClient } from "./src/components/checkout/CheckoutClient";
       import {
@@ -52,6 +53,15 @@ const bundle = await build({
       }
 
       (async () => {
+        test.hostMatrix = [
+          isApprovedMeasurementHostname("soles-stg.vercel.app", "staging"),
+          isApprovedMeasurementHostname("soles-stg.vercel.app", "production"),
+          isApprovedMeasurementHostname("shopsolesneakers.com", "production"),
+          isApprovedMeasurementHostname("shopsolesneakers.com", "staging"),
+          isApprovedMeasurementHostname("soles-pro-rose.vercel.app", "production"),
+          isApprovedMeasurementHostname("www.shopsolesneakers.com", "production"),
+          isApprovedMeasurementHostname("soles-pro-preview.vercel.app", "production"),
+        ];
         const originalInit = posthog.init.bind(posthog);
         posthog.init = (...args) => {
           try {
@@ -327,6 +337,7 @@ try {
     }),
   );
   assert.deepEqual(errors, []);
+  assert.deepEqual(result.hostMatrix, [true, false, true, false, true, false, false]);
   assert.equal(result.checkoutRendered, true);
   assert.equal(result.persistedCart.length, 1);
   assert.equal(result.persistedCart[0].quantity, 1);
@@ -345,6 +356,7 @@ try {
 
   const properties = result.boundaryEvent.properties;
   assert.deepEqual(Object.keys(properties).sort(), [
+    "$geoip_disable",
     "$session_id",
     "distinct_id",
     "environment",
@@ -356,6 +368,7 @@ try {
     "utm_source",
   ]);
   assert.equal(properties.storefront, "sole");
+  assert.equal(properties.$geoip_disable, true);
   assert.equal(properties.environment, "staging");
   assert.equal(properties.schema_version, 1);
   assert.equal(properties.pathname, "/checkout");
@@ -370,6 +383,7 @@ try {
   assert.equal(checkoutRequest.payload.api_key, projectKey);
   assert.equal(checkoutRequest.payload.batch.length, 1);
   assert.deepEqual(checkoutRequest.payload.batch[0].properties, properties);
+  assert.equal(checkoutRequest.payload.batch[0].properties.$geoip_disable, true);
 
   console.log(
     "PASS installed PostHog boundary: sanitized event dispatched; SDK failure preserved cart and checkout",

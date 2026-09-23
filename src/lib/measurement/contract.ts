@@ -1,6 +1,7 @@
 // Phase A intentionally accepts only these four behavioral events and a small,
 // validated set of properties. This filter is also used as PostHog's before_send.
 export const MEASUREMENT_SCHEMA_VERSION = 1;
+export type MeasurementEnvironment = "staging" | "production";
 
 export type MeasurementEventName =
   | "storefront_viewed"
@@ -20,7 +21,8 @@ export type SafeAttribution = Partial<{
 
 export type MeasurementProperties = SafeAttribution & {
   storefront: "sole";
-  environment: "staging";
+  environment: MeasurementEnvironment;
+  $geoip_disable: true;
   schema_version: typeof MEASUREMENT_SCHEMA_VERSION;
   pathname: string;
   product_id?: string;
@@ -136,7 +138,7 @@ export function sanitizeMeasurementEvent(
   const input = properties as Record<string, unknown>;
   if (
     input.storefront !== "sole" ||
-    input.environment !== "staging" ||
+    (input.environment !== "staging" && input.environment !== "production") ||
     input.schema_version !== MEASUREMENT_SCHEMA_VERSION
   ) {
     return null;
@@ -161,7 +163,8 @@ export function sanitizeMeasurementEvent(
 
   const output: MeasurementProperties = {
     storefront: "sole",
-    environment: "staging",
+    environment: input.environment,
+    $geoip_disable: true,
     schema_version: MEASUREMENT_SCHEMA_VERSION,
     pathname,
   };

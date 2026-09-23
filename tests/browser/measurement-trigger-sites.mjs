@@ -16,6 +16,8 @@ const bundle = await build({
       import { ProductDetail } from "./src/components/store/ProductDetail";
       import { CheckoutClient } from "./src/components/checkout/CheckoutClient";
       import CheckoutPage from "./src/app/checkout/page";
+      import { isApprovedMeasurementHostname } from "./src/lib/measurement/host-gate";
+      import { sanitizeMeasurementEvent } from "./src/lib/measurement/contract";
 
       const test = window.measurementTriggerTest = { events: [] };
       const assert = {
@@ -26,6 +28,26 @@ const bundle = await build({
         },
       };
       (async () => {
+      assert.deepEqual([
+        isApprovedMeasurementHostname("soles-stg.vercel.app", "staging"),
+        isApprovedMeasurementHostname("soles-stg.vercel.app", "production"),
+        isApprovedMeasurementHostname("shopsolesneakers.com", "production"),
+        isApprovedMeasurementHostname("shopsolesneakers.com", "staging"),
+        isApprovedMeasurementHostname("soles-pro-rose.vercel.app", "production"),
+        isApprovedMeasurementHostname("www.shopsolesneakers.com", "production"),
+        isApprovedMeasurementHostname("soles-pro-preview.vercel.app", "production"),
+      ], [true, false, true, false, true, false, false], "exact host/environment matrix");
+      const privacyProbe = sanitizeMeasurementEvent("storefront_viewed", {
+        storefront: "sole", environment: "production", schema_version: 1,
+        pathname: "/store", $geoip_disable: false, $current_url: "https://unsafe.example/",
+      });
+      if (!privacyProbe || privacyProbe.properties.$geoip_disable !== true) {
+        throw new Error("production contract must force GeoIP opt-out");
+      }
+      await fetch("/measurement-probe", {
+        method: "POST", headers: { "content-type": "application/json" },
+        body: JSON.stringify(privacyProbe),
+      });
       const pause = () => new Promise(resolve => setTimeout(resolve, 40));
       const rootElement = document.getElementById("root");
       let root = createRoot(rootElement);
@@ -327,7 +349,12 @@ try {
 try {
   const page = await browser.newPage();
   const errors = [];
+  let outgoingProbe = null;
   page.on("pageerror", (error) => errors.push(error.message));
+  await page.route("http://measurement.test/measurement-probe", (route) => {
+    outgoingProbe = JSON.parse(route.request().postData());
+    return route.fulfill({ status: 200, contentType: "application/json", body: "{}" });
+  });
   await page.route("**/api/cart/validate", (route) =>
     route.fulfill({ status: 200, contentType: "application/json", body: '{"items":[]}' }),
   );
@@ -358,6 +385,9 @@ try {
   await page.addScriptTag({ content: bundle.outputFiles[0].text });
   await page.waitForFunction(() => window.measurementTriggerTest?.complete === true);
   assert.deepEqual(errors, []);
+  assert.equal(outgoingProbe.event, "storefront_viewed");
+  assert.equal(outgoingProbe.properties.$geoip_disable, true);
+  assert.equal("$current_url" in outgoingProbe.properties, false);
   console.log("PASS browser trigger sites: storefront, product, cart, checkout");
 } finally {
   await browser.close();

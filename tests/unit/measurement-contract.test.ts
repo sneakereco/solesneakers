@@ -62,6 +62,7 @@ describe("Phase A event contract", () => {
     });
     expect(result?.properties).toEqual({
       ...common,
+      $geoip_disable: true,
       pathname: `/store/${productId}`,
       product_id: productId,
     });
@@ -71,10 +72,18 @@ describe("Phase A event contract", () => {
     expect(
       sanitizeMeasurementEvent("checkout_started", {
         ...common,
-        environment: "production",
+        environment: "preview",
         pathname: "/checkout",
       }),
     ).toBeNull();
+    expect(
+      sanitizeMeasurementEvent("checkout_started", {
+        ...common,
+        environment: "production",
+        pathname: "/checkout",
+        $geoip_disable: false,
+      })?.properties,
+    ).toMatchObject({ environment: "production", $geoip_disable: true });
     expect(
       sanitizeMeasurementEvent("product_viewed", {
         ...common,
