@@ -17,6 +17,7 @@ import {
   type WalletDetailsReview,
 } from "@/components/checkout/CheckoutWalletDetails";
 import {
+  afterpayAddressDiagnostic,
   afterpayShippingUpdate,
   matchesAfterpayAddress,
   type AfterpayCheckoutContext,
@@ -709,6 +710,16 @@ export function SquarePaymentMethods({
           });
           request.addEventListener("afterpay_shippingaddresschanged", (value) => {
             const context = afterpayContext.current;
+            if (paymentConfig.environment === "sandbox") {
+              log({
+                level: "info",
+                layer: "frontend",
+                message: "Afterpay address diagnostic",
+                phase: "shipping_callback",
+                contextPresent: Boolean(context),
+                ...afterpayAddressDiagnostic(value, context?.shippingAddress ?? null),
+              });
+            }
             if (context)
               context.fullAddressConfirmed = Boolean(
                 context.shippingAddress &&
@@ -747,7 +758,14 @@ export function SquarePaymentMethods({
         .dispose()
         .catch((methodError) => reportUnavailable("afterpay", "create", methodError));
     };
-  }, [payments, hasAfterpayQuote, fulfillment, methodRetries.afterpay, lifecycles]);
+  }, [
+    payments,
+    hasAfterpayQuote,
+    fulfillment,
+    methodRetries.afterpay,
+    lifecycles,
+    paymentConfig.environment,
+  ]);
 
   useEffect(() => {
     if (!payments || !cashAppQuoteKey) {
@@ -1355,6 +1373,17 @@ export function SquarePaymentMethods({
                   result.status === "OK"
                 ) {
                   const returnedAddress = result.details?.shipping?.contact;
+                  if (paymentConfig.environment === "sandbox") {
+                    log({
+                      level: "info",
+                      layer: "frontend",
+                      message: "Afterpay address diagnostic",
+                      phase: "token_result",
+                      fullAddressConfirmed:
+                        afterpayContext.current?.fullAddressConfirmed === true,
+                      ...afterpayAddressDiagnostic(returnedAddress, prepared.address),
+                    });
+                  }
                   const addressMatches = returnedAddress
                     ? Boolean(
                         prepared.address &&

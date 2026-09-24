@@ -69,16 +69,14 @@ const result = await build({
       name: "external-service-boundaries",
       setup(builder) {
         builder.onResolve(
-          { filter: /^next\/navigation$|^@\/config\/client-env$|^@\/lib\/utils\/log$/ },
+          { filter: /^next\/navigation$|^@\/config\/client-env$/ },
           (args) => ({ path: args.path, namespace: "test" }),
         );
         builder.onLoad({ filter: /.*/, namespace: "test" }, (args) => ({
           contents:
             args.path === "next/navigation"
               ? "const router = { replace: url => window.location.replace(url) }; export const useRouter = () => router;"
-              : args.path.endsWith("client-env")
-                ? "export const clientEnv = {};"
-                : "export const log = () => {};",
+              : "export const clientEnv = {};",
           loader: "js",
         }));
       },
@@ -91,6 +89,12 @@ try {
   const page = await browser.newPage();
   page.setDefaultTimeout(5000);
   const errors = [];
+  const addressDiagnostics = [];
+  page.on("console", (message) => {
+    if (message.text().includes('"message":"Afterpay address diagnostic"')) {
+      addressDiagnostics.push(JSON.parse(message.text()));
+    }
+  });
   page.on(
     "pageerror",
     (error) => (errors.push(error.message), console.error(error.message)),
@@ -484,6 +488,8 @@ try {
   });
   assert.ok(afterpayResults.wrong.error);
   assert.equal(afterpayResults.right.shippingOptions[0].total.amount, "118.00");
+  assert.deepEqual(addressDiagnostics.at(-2).mismatchedFields, ["line1"]);
+  assert.equal(addressDiagnostics.at(-1).fullAddressMatches, true);
   assert.equal(await page.getByRole("dialog").isVisible(), true);
   assert.equal(
     await page.evaluate(() => {
@@ -507,6 +513,9 @@ try {
   await page
     .getByRole("heading", { name: "Processing your payment", exact: true })
     .waitFor();
+  assert.equal(addressDiagnostics.at(-1).phase, "token_result");
+  assert.equal(addressDiagnostics.at(-1).contactPresent, false);
+  assert.equal(addressDiagnostics.at(-1).fullAddressConfirmed, true);
   assert.equal(
     await page.evaluate(
       () => window.paymentTest.spinner === document.querySelector("dialog .animate-spin"),
