@@ -92,7 +92,10 @@ try {
   const addressDiagnostics = [];
   page.on("console", (message) => {
     if (message.text().includes('"message":"Afterpay address diagnostic"')) {
-      addressDiagnostics.push(JSON.parse(message.text()));
+      addressDiagnostics.push({
+        ...JSON.parse(message.text()),
+        consoleType: message.type(),
+      });
     }
   });
   page.on(
@@ -490,6 +493,7 @@ try {
   assert.equal(afterpayResults.right.shippingOptions[0].total.amount, "118.00");
   assert.deepEqual(addressDiagnostics.at(-2).mismatchedFields, ["line1"]);
   assert.equal(addressDiagnostics.at(-1).fullAddressMatches, true);
+  assert.equal(addressDiagnostics.at(-1).consoleType, "warning");
   assert.equal(await page.getByRole("dialog").isVisible(), true);
   assert.equal(
     await page.evaluate(() => {
@@ -516,6 +520,7 @@ try {
   assert.equal(addressDiagnostics.at(-1).phase, "token_result");
   assert.equal(addressDiagnostics.at(-1).contactPresent, false);
   assert.equal(addressDiagnostics.at(-1).fullAddressConfirmed, true);
+  assert.equal(addressDiagnostics.at(-1).consoleType, "warning");
   assert.equal(
     await page.evaluate(
       () => window.paymentTest.spinner === document.querySelector("dialog .animate-spin"),
