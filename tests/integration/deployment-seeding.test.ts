@@ -13,6 +13,40 @@ function job(workflow: string, name: string): string {
 }
 
 describe("deployment configuration", () => {
+  it("accepts stable, alpha, and beta production tags with canonical version numbers", () => {
+    const workflow = readFileSync(resolve(".github/workflows/production.yml"), "utf8");
+    const pattern = workflow.match(/"\$GITHUB_REF_NAME" =~ (\S+) \]\]/)?.[1];
+    expect(pattern).toBeDefined();
+    const releaseTag = new RegExp(pattern!);
+    for (const tag of [
+      "v0.0.0",
+      "v1.2.3",
+      "v12.34.56",
+      "v1.0.0-alpha.0",
+      "v1.0.0-alpha.1",
+      "v1.0.0-beta.1",
+      "v1.0.0-beta.12",
+    ]) {
+      expect({ tag, accepted: releaseTag.test(tag) }).toEqual({ tag, accepted: true });
+    }
+    for (const tag of [
+      "1.2.3",
+      "v1.2",
+      "v01.2.3",
+      "v1.02.3",
+      "v1.2.03",
+      "v1.2.3-beta",
+      "v1.2.3-beta.01",
+      "v1.2.3-alpha.-1",
+      "v1.2.3-rc.1",
+      "v1.2.3-BETA.1",
+      "v1.2.3-beta.1.extra",
+      "v1.2.3+build.1",
+    ]) {
+      expect({ tag, accepted: releaseTag.test(tag) }).toEqual({ tag, accepted: false });
+    }
+  });
+
   it("builds remote source without requiring the local Doppler CLI", () => {
     const config = JSON.parse(readFileSync(resolve("vercel.json"), "utf8"));
     expect(config.buildCommand).toBe("next build");
