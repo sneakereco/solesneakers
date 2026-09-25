@@ -17,9 +17,9 @@ import {
   type WalletDetailsReview,
 } from "@/components/checkout/CheckoutWalletDetails";
 import {
-  afterpayAddressDiagnostic,
   afterpayShippingUpdate,
   matchesAfterpayAddress,
+  matchesAfterpayTokenAddress,
   type AfterpayCheckoutContext,
 } from "@/components/checkout/afterpay-shipping";
 import { ExpressCheckoutMethods } from "@/components/checkout/ExpressCheckoutMethods";
@@ -710,16 +710,6 @@ export function SquarePaymentMethods({
           });
           request.addEventListener("afterpay_shippingaddresschanged", (value) => {
             const context = afterpayContext.current;
-            if (paymentConfig.environment === "sandbox") {
-              log({
-                level: "warn",
-                layer: "frontend",
-                message: "Afterpay address diagnostic",
-                phase: "shipping_callback",
-                contextPresent: Boolean(context),
-                ...afterpayAddressDiagnostic(value, context?.shippingAddress ?? null),
-              });
-            }
             if (context)
               context.fullAddressConfirmed = Boolean(
                 context.shippingAddress &&
@@ -758,14 +748,7 @@ export function SquarePaymentMethods({
         .dispose()
         .catch((methodError) => reportUnavailable("afterpay", "create", methodError));
     };
-  }, [
-    payments,
-    hasAfterpayQuote,
-    fulfillment,
-    methodRetries.afterpay,
-    lifecycles,
-    paymentConfig.environment,
-  ]);
+  }, [payments, hasAfterpayQuote, fulfillment, methodRetries.afterpay, lifecycles]);
 
   useEffect(() => {
     if (!payments || !cashAppQuoteKey) {
@@ -1373,23 +1356,14 @@ export function SquarePaymentMethods({
                   result.status === "OK"
                 ) {
                   const returnedAddress = result.details?.shipping?.contact;
-                  if (paymentConfig.environment === "sandbox") {
-                    log({
-                      level: "warn",
-                      layer: "frontend",
-                      message: "Afterpay address diagnostic",
-                      phase: "token_result",
-                      fullAddressConfirmed:
+                  const addressMatches = Boolean(
+                    prepared.address &&
+                      matchesAfterpayTokenAddress(
+                        returnedAddress,
+                        prepared.address,
                         afterpayContext.current?.fullAddressConfirmed === true,
-                      ...afterpayAddressDiagnostic(returnedAddress, prepared.address),
-                    });
-                  }
-                  const addressMatches = returnedAddress
-                    ? Boolean(
-                        prepared.address &&
-                          matchesAfterpayAddress(returnedAddress, prepared.address),
-                      )
-                    : afterpayContext.current?.fullAddressConfirmed;
+                      ),
+                  );
                   if (!addressMatches)
                     throw new Error(
                       "Afterpay did not confirm your shipping address. Return to checkout and review it. You have not been charged.",

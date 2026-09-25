@@ -57,59 +57,34 @@ export function matchesAfterpayAddress(
   return true;
 }
 
-// Temporary Sandbox diagnostics: return only fixed field names and booleans.
-export function afterpayAddressDiagnostic(
+export function matchesAfterpayTokenAddress(
   value: unknown,
-  expected: CheckoutPaymentAddress | null,
-) {
-  const contact =
-    value && typeof value === "object" ? (value as Record<string, unknown>) : null;
-  const lines =
-    Array.isArray(contact?.addressLines) &&
-    contact.addressLines.every((line) => typeof line === "string")
-      ? (contact.addressLines as string[])
-      : [];
-  const state = normalized(contact?.state);
-  const stateCode = US_STATE_OPTIONS.find(
-    ([code, name]) => code === state || name.toUpperCase() === state,
-  )?.[0];
-  const postalCode = normalized(contact?.postalCode);
-  const fields = {
-    countryCode: normalized(contact?.countryCode) === expected?.country,
-    state: Boolean(stateCode && stateCode === expected?.state),
-    postalCode: Boolean(
-      expected &&
-        /^\d{5}(-\d{4})?$/.test(postalCode) &&
-        postalCode.slice(0, 5) === expected.postalCode.slice(0, 5) &&
-        !(
-          postalCode.length > 5 &&
-          expected.postalCode.length > 5 &&
-          postalCode !== expected.postalCode
-        ),
-    ),
-    line1: normalized(lines[0]) === normalized(expected?.line1),
-    line2: normalized(lines.slice(1).join(" ")) === normalized(expected?.line2),
-    city: normalized(contact?.city) === normalized(expected?.city),
-  };
-  return {
-    contactPresent: Boolean(contact),
-    expectedPresent: Boolean(expected),
-    missingFields: ["addressLines", "city", "state", "postalCode", "countryCode"].filter(
-      (field) =>
-        contact?.[field] === undefined ||
-        contact?.[field] === null ||
-        contact?.[field] === "",
-    ),
-    mismatchedFields: expected
-      ? Object.entries(fields)
-          .filter(([, matches]) => !matches)
-          .map(([field]) => field)
-      : [],
-    fullAddressMatches: Boolean(expected && matchesAfterpayAddress(value, expected)),
-    redactedAddressMatches: Boolean(
-      expected && matchesAfterpayAddress(value, expected, true),
-    ),
-  };
+  expected: CheckoutPaymentAddress,
+  fullAddressConfirmed: boolean,
+): boolean {
+  if (value === null || value === undefined) return fullAddressConfirmed;
+  if (typeof value !== "object" || Array.isArray(value)) return false;
+  const contact = value as Record<string, unknown>;
+  // Square may omit geography at tokenization after confirming the full address.
+  // Only fill absent fields after confirmation in this payment attempt.
+  return matchesAfterpayAddress(
+    {
+      ...contact,
+      state:
+        fullAddressConfirmed &&
+        (contact.state === null || contact.state === undefined || contact.state === "")
+          ? expected.state
+          : contact.state,
+      countryCode:
+        fullAddressConfirmed &&
+        (contact.countryCode === null ||
+          contact.countryCode === undefined ||
+          contact.countryCode === "")
+          ? expected.country
+          : contact.countryCode,
+    },
+    expected,
+  );
 }
 
 export function afterpayShippingUpdate(
