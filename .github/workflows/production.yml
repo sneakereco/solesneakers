@@ -25,8 +25,8 @@ jobs:
       - name: Validate semantic version and main ancestry
         shell: bash
         run: |
-          if [[ ! "$GITHUB_REF_NAME" =~ ^v(0|[1-9][0-9]*)\.(0|[1-9][0-9]*)\.(0|[1-9][0-9]*)$ ]]; then
-            echo "Tag must use canonical vMAJOR.MINOR.PATCH format." >&2
+          if [[ ! "$GITHUB_REF_NAME" =~ ^v(0|[1-9][0-9]*)\.(0|[1-9][0-9]*)\.(0|[1-9][0-9]*)(-(alpha|beta)\.(0|[1-9][0-9]*))?$ ]]; then
+            echo "Tag must use vMAJOR.MINOR.PATCH, optionally followed by -alpha.N or -beta.N; numbers must not have leading zeros." >&2
             exit 1
           fi
           git fetch origin main --no-tags
