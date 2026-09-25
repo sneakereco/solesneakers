@@ -89,15 +89,6 @@ try {
   const page = await browser.newPage();
   page.setDefaultTimeout(5000);
   const errors = [];
-  const addressDiagnostics = [];
-  page.on("console", (message) => {
-    if (message.text().includes('"message":"Afterpay address diagnostic"')) {
-      addressDiagnostics.push({
-        ...JSON.parse(message.text()),
-        consoleType: message.type(),
-      });
-    }
-  });
   page.on(
     "pageerror",
     (error) => (errors.push(error.message), console.error(error.message)),
@@ -491,9 +482,6 @@ try {
   });
   assert.ok(afterpayResults.wrong.error);
   assert.equal(afterpayResults.right.shippingOptions[0].total.amount, "118.00");
-  assert.deepEqual(addressDiagnostics.at(-2).mismatchedFields, ["line1"]);
-  assert.equal(addressDiagnostics.at(-1).fullAddressMatches, true);
-  assert.equal(addressDiagnostics.at(-1).consoleType, "warning");
   assert.equal(await page.getByRole("dialog").isVisible(), true);
   assert.equal(
     await page.evaluate(() => {
@@ -512,15 +500,23 @@ try {
     "Provider approval can take focus without replacing the payment spinner",
   );
   await page.evaluate(() =>
-    window.paymentTest.resolveToken({ status: "OK", token: "test" }),
+    window.paymentTest.resolveToken({
+      status: "OK",
+      token: "test",
+      details: {
+        shipping: {
+          contact: {
+            addressLines: ["1 Test St"],
+            city: "Wilmington",
+            postalCode: "19801-1234",
+          },
+        },
+      },
+    }),
   );
   await page
     .getByRole("heading", { name: "Processing your payment", exact: true })
     .waitFor();
-  assert.equal(addressDiagnostics.at(-1).phase, "token_result");
-  assert.equal(addressDiagnostics.at(-1).contactPresent, false);
-  assert.equal(addressDiagnostics.at(-1).fullAddressConfirmed, true);
-  assert.equal(addressDiagnostics.at(-1).consoleType, "warning");
   assert.equal(
     await page.evaluate(
       () => window.paymentTest.spinner === document.querySelector("dialog .animate-spin"),

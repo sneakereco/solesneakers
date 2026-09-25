@@ -1,7 +1,7 @@
 import {
-  afterpayAddressDiagnostic,
   afterpayShippingUpdate,
   matchesAfterpayAddress,
+  matchesAfterpayTokenAddress,
 } from "@/components/checkout/afterpay-shipping";
 
 const address = {
@@ -28,40 +28,42 @@ const quote = {
 };
 
 describe("Afterpay shipping contract", () => {
-  it("reports missing and mismatched fields without exposing contact or token data", () => {
-    const result = afterpayAddressDiagnostic(
-      {
-        ...contact,
-        addressLines: ["123 Main St", "2"],
-        token: "private-token",
-        email: "private@example.com",
-      },
-      address,
-    );
-    expect(result).toEqual({
-      contactPresent: true,
-      expectedPresent: true,
-      missingFields: [],
-      mismatchedFields: ["line2"],
-      fullAddressMatches: false,
-      redactedAddressMatches: false,
-    });
-    expect(
-      afterpayAddressDiagnostic(
-        { countryCode: "US", state: "NC", postalCode: "27101" },
-        address,
-      ),
-    ).toEqual({
-      contactPresent: true,
-      expectedPresent: true,
-      missingFields: ["addressLines", "city"],
-      mismatchedFields: ["line1", "line2", "city"],
-      fullAddressMatches: false,
-      redactedAddressMatches: true,
-    });
-    expect(afterpayAddressDiagnostic(undefined, address).contactPresent).toBe(false);
-    expect(afterpayAddressDiagnostic(contact, null).expectedPresent).toBe(false);
-    expect(afterpayAddressDiagnostic(contact, address).fullAddressMatches).toBe(true);
+  it.each([undefined, null, ""])(
+    "uses confirmed geography only for missing token fields (%s)",
+    (missing) => {
+      const partial = { ...contact, state: missing, countryCode: missing };
+      expect(matchesAfterpayTokenAddress(partial, address, true)).toBe(true);
+      expect(matchesAfterpayTokenAddress(partial, address, false)).toBe(false);
+      expect(matchesAfterpayTokenAddress(contact, address, false)).toBe(true);
+    },
+  );
+  it.each([
+    { state: "DE" },
+    { countryCode: "CA" },
+    { state: 42 },
+    { addressLines: ["999 Main St", "Apt 2"] },
+    { addressLines: ["123 Main St", "Apt 3"] },
+    { addressLines: undefined },
+    { city: "Other City" },
+    { city: undefined },
+    { postalCode: "90210" },
+    { postalCode: "27101-5678" },
+  ])(
+    "rejects conflicting or incomplete token addresses despite confirmation: %j",
+    (override) => {
+      expect(
+        matchesAfterpayTokenAddress(
+          { ...contact, state: undefined, countryCode: undefined, ...override },
+          address,
+          true,
+        ),
+      ).toBe(false);
+    },
+  );
+  it("requires this attempt's full confirmation when the token has no contact", () => {
+    expect(matchesAfterpayTokenAddress(undefined, address, true)).toBe(true);
+    expect(matchesAfterpayTokenAddress(undefined, address, false)).toBe(false);
+    expect(matchesAfterpayTokenAddress({}, address, true)).toBe(false);
   });
   it("accepts equivalent ZIP/state formatting while preserving apartment and street identity", () => {
     expect(matchesAfterpayAddress(contact, address)).toBe(true);
