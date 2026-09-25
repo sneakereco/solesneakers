@@ -712,7 +712,7 @@ export function SquarePaymentMethods({
             const context = afterpayContext.current;
             if (paymentConfig.environment === "sandbox") {
               log({
-                level: "info",
+                level: "warn",
                 layer: "frontend",
                 message: "Afterpay address diagnostic",
                 phase: "shipping_callback",
@@ -1375,7 +1375,7 @@ export function SquarePaymentMethods({
                   const returnedAddress = result.details?.shipping?.contact;
                   if (paymentConfig.environment === "sandbox") {
                     log({
-                      level: "info",
+                      level: "warn",
                       layer: "frontend",
                       message: "Afterpay address diagnostic",
                       phase: "token_result",
