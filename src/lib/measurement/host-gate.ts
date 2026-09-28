@@ -1,6 +1,6 @@
 import type { MeasurementEnvironment } from "@/lib/measurement/contract";
 
-// Exact Vercel-assigned storefront domains only. Deployment and preview URLs stay inert.
+// Match the configured canonical site; deployment and preview URLs stay inert.
 export function isApprovedMeasurementHostname(
   hostname: string,
   environment: MeasurementEnvironment,
@@ -8,5 +8,8 @@ export function isApprovedMeasurementHostname(
   if (environment === "staging") {
     return hostname === "soles-stg.vercel.app";
   }
-  return hostname === "shopsolesneakers.com" || hostname === "soles-pro-rose.vercel.app";
+  return (
+    !hostname.endsWith(".vercel.app") &&
+    process.env.NEXT_PUBLIC_SITE_URL === `https://${hostname}`
+  );
 }

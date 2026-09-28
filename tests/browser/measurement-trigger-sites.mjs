@@ -31,12 +31,15 @@ const bundle = await build({
       assert.deepEqual([
         isApprovedMeasurementHostname("soles-stg.vercel.app", "staging"),
         isApprovedMeasurementHostname("soles-stg.vercel.app", "production"),
+        isApprovedMeasurementHostname("www.solesneakersnc.com", "production"),
+        isApprovedMeasurementHostname("www.solesneakersnc.com", "staging"),
+        isApprovedMeasurementHostname("solesneakersnc.com", "production"),
+        isApprovedMeasurementHostname("www.solesneakers.com", "production"),
         isApprovedMeasurementHostname("shopsolesneakers.com", "production"),
-        isApprovedMeasurementHostname("shopsolesneakers.com", "staging"),
         isApprovedMeasurementHostname("soles-pro-rose.vercel.app", "production"),
         isApprovedMeasurementHostname("www.shopsolesneakers.com", "production"),
         isApprovedMeasurementHostname("soles-pro-preview.vercel.app", "production"),
-      ], [true, false, true, false, true, false, false], "exact host/environment matrix");
+      ], [true, false, true, false, false, false, false, false, false, false], "exact host/environment matrix");
       const privacyProbe = sanitizeMeasurementEvent("storefront_viewed", {
         storefront: "sole", environment: "production", schema_version: 1,
         pathname: "/store", $geoip_disable: false, $current_url: "https://unsafe.example/",
@@ -232,7 +235,11 @@ const bundle = await build({
   write: false,
   platform: "browser",
   jsx: "automatic",
-  define: { "process.env.NODE_ENV": '"test"', "process.env": "{}" },
+  define: {
+    "process.env.NODE_ENV": '"test"',
+    "process.env.NEXT_PUBLIC_SITE_URL": '"https://www.solesneakersnc.com"',
+    "process.env": "{}",
+  },
   plugins: [
     {
       name: "measurement-trigger-test-boundaries",
