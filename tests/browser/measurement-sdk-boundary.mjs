@@ -56,8 +56,11 @@ const bundle = await build({
         test.hostMatrix = [
           isApprovedMeasurementHostname("soles-stg.vercel.app", "staging"),
           isApprovedMeasurementHostname("soles-stg.vercel.app", "production"),
+          isApprovedMeasurementHostname("www.solesneakersnc.com", "production"),
+          isApprovedMeasurementHostname("www.solesneakersnc.com", "staging"),
+          isApprovedMeasurementHostname("solesneakersnc.com", "production"),
+          isApprovedMeasurementHostname("www.solesneakers.com", "production"),
           isApprovedMeasurementHostname("shopsolesneakers.com", "production"),
-          isApprovedMeasurementHostname("shopsolesneakers.com", "staging"),
           isApprovedMeasurementHostname("soles-pro-rose.vercel.app", "production"),
           isApprovedMeasurementHostname("www.shopsolesneakers.com", "production"),
           isApprovedMeasurementHostname("soles-pro-preview.vercel.app", "production"),
@@ -337,7 +340,18 @@ try {
     }),
   );
   assert.deepEqual(errors, []);
-  assert.deepEqual(result.hostMatrix, [true, false, true, false, true, false, false]);
+  assert.deepEqual(result.hostMatrix, [
+    true,
+    false,
+    true,
+    false,
+    false,
+    false,
+    false,
+    false,
+    false,
+    false,
+  ]);
   assert.equal(result.checkoutRendered, true);
   assert.equal(result.persistedCart.length, 1);
   assert.equal(result.persistedCart[0].quantity, 1);

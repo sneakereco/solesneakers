@@ -73,12 +73,21 @@ describe("Phase A measurement client", () => {
     expect(isApprovedMeasurementHostname("soles-stg.vercel.app", "production")).toBe(
       false,
     );
-    expect(isApprovedMeasurementHostname("shopsolesneakers.com", "production")).toBe(
+    expect(isApprovedMeasurementHostname("www.solesneakersnc.com", "production")).toBe(
       true,
     );
-    expect(isApprovedMeasurementHostname("shopsolesneakers.com", "staging")).toBe(false);
+    expect(isApprovedMeasurementHostname("www.solesneakersnc.com", "staging")).toBe(
+      false,
+    );
+    expect(isApprovedMeasurementHostname("solesneakersnc.com", "production")).toBe(false);
+    expect(isApprovedMeasurementHostname("www.solesneakers.com", "production")).toBe(
+      false,
+    );
+    expect(isApprovedMeasurementHostname("shopsolesneakers.com", "production")).toBe(
+      false,
+    );
     expect(isApprovedMeasurementHostname("soles-pro-rose.vercel.app", "production")).toBe(
-      true,
+      false,
     );
     expect(isApprovedMeasurementHostname("soles-pro-rose.vercel.app", "staging")).toBe(
       false,
@@ -200,7 +209,7 @@ describe("Phase A measurement client", () => {
     process.env.NEXT_PUBLIC_POSTHOG_HOST = "https://us.i.posthog.com";
     const storage = new Map<string, string>();
     const browser = {
-      location: new URL("https://shopsolesneakers.com/store"),
+      location: new URL("https://www.solesneakersnc.com/store"),
       sessionStorage: {
         getItem: (key: string) => storage.get(key) ?? null,
         setItem: (key: string, value: string) => storage.set(key, value),

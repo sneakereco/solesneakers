@@ -8,5 +8,5 @@ export function isApprovedMeasurementHostname(
   if (environment === "staging") {
     return hostname === "soles-stg.vercel.app";
   }
-  return hostname === "shopsolesneakers.com" || hostname === "soles-pro-rose.vercel.app";
+  return hostname === "www.solesneakersnc.com";
 }
