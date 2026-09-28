@@ -1,32 +1,15 @@
 import type { MeasurementEnvironment } from "@/lib/measurement/contract";
 
-// Match the canonical site URL baked into this build, never a deployment URL.
+// Match the configured canonical site; deployment and preview URLs stay inert.
 export function isApprovedMeasurementHostname(
   hostname: string,
   environment: MeasurementEnvironment,
-  siteUrl = process.env.NEXT_PUBLIC_MEASUREMENT_SITE_URL,
 ): boolean {
   if (environment === "staging") {
     return hostname === "soles-stg.vercel.app";
   }
-  if (!siteUrl) {
-    return false;
-  }
-  try {
-    const configured = new URL(siteUrl);
-    return (
-      configured.protocol === "https:" &&
-      configured.username === "" &&
-      configured.password === "" &&
-      configured.port === "" &&
-      configured.pathname === "/" &&
-      configured.search === "" &&
-      configured.hash === "" &&
-      configured.hostname !== "vercel.app" &&
-      !configured.hostname.endsWith(".vercel.app") &&
-      hostname === configured.hostname
-    );
-  } catch {
-    return false;
-  }
+  return (
+    !hostname.endsWith(".vercel.app") &&
+    process.env.NEXT_PUBLIC_SITE_URL === `https://${hostname}`
+  );
 }
