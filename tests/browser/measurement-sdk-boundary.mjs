@@ -64,6 +64,8 @@ const bundle = await build({
           isApprovedMeasurementHostname("soles-pro-rose.vercel.app", "production"),
           isApprovedMeasurementHostname("www.shopsolesneakers.com", "production"),
           isApprovedMeasurementHostname("soles-pro-preview.vercel.app", "production"),
+          isApprovedMeasurementHostname("soles-pro-preview.vercel.app", "production", "https://soles-pro-preview.vercel.app"),
+          isApprovedMeasurementHostname("www.solesneakersnc.com", "production", "http://www.solesneakersnc.com"),
         ];
         const originalInit = posthog.init.bind(posthog);
         posthog.init = (...args) => {
@@ -174,6 +176,7 @@ const bundle = await build({
     "process.env.NEXT_PUBLIC_MEASUREMENT_ENVIRONMENT": '"staging"',
     "process.env.NEXT_PUBLIC_POSTHOG_PROJECT_KEY": JSON.stringify(projectKey),
     "process.env.NEXT_PUBLIC_POSTHOG_HOST": '"https://us.i.posthog.com"',
+    "process.env.NEXT_PUBLIC_MEASUREMENT_SITE_URL": '"https://www.solesneakersnc.com"',
   },
   plugins: [
     {
@@ -344,6 +347,8 @@ try {
     true,
     false,
     true,
+    false,
+    false,
     false,
     false,
     false,

@@ -69,26 +69,40 @@ describe("Phase A measurement client", () => {
   });
 
   it("uses exact environment-specific hostnames, never deployment or preview URLs", () => {
+    const canonicalSite = "https://www.solesneakersnc.com";
     expect(isApprovedMeasurementHostname("soles-stg.vercel.app", "staging")).toBe(true);
     expect(isApprovedMeasurementHostname("soles-stg.vercel.app", "production")).toBe(
       false,
     );
     expect(isApprovedMeasurementHostname("www.solesneakersnc.com", "production")).toBe(
-      true,
+      false,
     );
+    expect(
+      isApprovedMeasurementHostname(
+        "www.solesneakersnc.com",
+        "production",
+        canonicalSite,
+      ),
+    ).toBe(true);
     expect(isApprovedMeasurementHostname("www.solesneakersnc.com", "staging")).toBe(
       false,
     );
-    expect(isApprovedMeasurementHostname("solesneakersnc.com", "production")).toBe(false);
-    expect(isApprovedMeasurementHostname("www.solesneakers.com", "production")).toBe(
-      false,
-    );
-    expect(isApprovedMeasurementHostname("shopsolesneakers.com", "production")).toBe(
-      false,
-    );
-    expect(isApprovedMeasurementHostname("soles-pro-rose.vercel.app", "production")).toBe(
-      false,
-    );
+    expect(
+      isApprovedMeasurementHostname("solesneakersnc.com", "production", canonicalSite),
+    ).toBe(false);
+    expect(
+      isApprovedMeasurementHostname("www.solesneakers.com", "production", canonicalSite),
+    ).toBe(false);
+    expect(
+      isApprovedMeasurementHostname("shopsolesneakers.com", "production", canonicalSite),
+    ).toBe(false);
+    expect(
+      isApprovedMeasurementHostname(
+        "soles-pro-rose.vercel.app",
+        "production",
+        canonicalSite,
+      ),
+    ).toBe(false);
     expect(isApprovedMeasurementHostname("soles-pro-rose.vercel.app", "staging")).toBe(
       false,
     );
@@ -104,6 +118,30 @@ describe("Phase A measurement client", () => {
     expect(isApprovedMeasurementHostname("soles-preview.vercel.app", "production")).toBe(
       false,
     );
+    expect(
+      isApprovedMeasurementHostname(
+        "soles-preview.vercel.app",
+        "production",
+        "https://soles-preview.vercel.app",
+      ),
+    ).toBe(false);
+    expect(
+      isApprovedMeasurementHostname(
+        "www.solesneakersnc.com",
+        "production",
+        "http://www.solesneakersnc.com",
+      ),
+    ).toBe(false);
+    expect(
+      isApprovedMeasurementHostname(
+        "www.solesneakersnc.com",
+        "production",
+        "https://www.solesneakersnc.com/other",
+      ),
+    ).toBe(false);
+    expect(
+      isApprovedMeasurementHostname("www.solesneakersnc.com", "production", "not a url"),
+    ).toBe(false);
   });
 
   it("preserves only validated SDK ingestion and anonymous correlation fields", () => {

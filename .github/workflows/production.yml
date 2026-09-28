@@ -113,12 +113,16 @@ jobs:
           if [ -n "${NEXT_PUBLIC_POSTHOG_ENABLED:-}" ] &&
              [ -n "${NEXT_PUBLIC_MEASUREMENT_ENVIRONMENT:-}" ] &&
              [ -n "${NEXT_PUBLIC_POSTHOG_PROJECT_KEY:-}" ] &&
-             [ -n "${NEXT_PUBLIC_POSTHOG_HOST:-}" ]; then
+             [ -n "${NEXT_PUBLIC_POSTHOG_HOST:-}" ] &&
+             [ -n "${NEXT_PUBLIC_SITE_URL:-}" ]; then
             measurement_build_env=(
               --build-env "NEXT_PUBLIC_POSTHOG_ENABLED=$NEXT_PUBLIC_POSTHOG_ENABLED"
               --build-env "NEXT_PUBLIC_MEASUREMENT_ENVIRONMENT=$NEXT_PUBLIC_MEASUREMENT_ENVIRONMENT"
               --build-env "NEXT_PUBLIC_POSTHOG_PROJECT_KEY=$NEXT_PUBLIC_POSTHOG_PROJECT_KEY"
               --build-env "NEXT_PUBLIC_POSTHOG_HOST=$NEXT_PUBLIC_POSTHOG_HOST"
+              # Keep the measurement gate tied to Doppler's canonical site URL without
+              # overriding the app-wide NEXT_PUBLIC_SITE_URL in Vercel's remote build.
+              --build-env "NEXT_PUBLIC_MEASUREMENT_SITE_URL=$NEXT_PUBLIC_SITE_URL"
             )
           else
             echo "::notice::Production measurement config incomplete; deploying with measurement disabled"
