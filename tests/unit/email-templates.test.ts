@@ -17,7 +17,10 @@ import {
 } from "@/lib/email/orders";
 
 const expectBrandedShell = (html: string) => {
-  expect(html).toContain("https://example.com/images/email-logo.png");
+  expect(html).toContain(
+    "https://jxwulwjbtjtcqmyrzqiv.supabase.co/storage/v1/object/sign/images/sole_sneakers_transparent.png?token=",
+  );
+  expect(html).not.toContain("https://example.com/images/email-logo.png");
   expect(html).toContain('class="email-shell"');
   expect(html).toContain("https://example.com/store");
   expect(html).toContain("https://example.com/shipping");
@@ -162,7 +165,10 @@ describe("Supabase auth email templates", () => {
 
     expect(html).toContain('class="email-shell"');
     expect(html).toContain('class="email-logo"');
-    expect(html).toContain("{{ .SiteURL }}/images/email-logo.png");
+    expect(html).toContain(
+      "https://jxwulwjbtjtcqmyrzqiv.supabase.co/storage/v1/object/sign/images/sole_sneakers_transparent.png?token=",
+    );
+    expect(html).not.toContain("{{ .SiteURL }}/images/email-logo.png");
     expect(html).toContain("{{ .Token }}");
     expect(html).toContain("mailto:SolesneakersLLC@yahoo.com");
     expect(html).not.toContain("Jmanrule15@gmail.com");
