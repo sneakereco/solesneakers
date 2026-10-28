@@ -53,6 +53,7 @@ const bundle = await build({
 const browser = await chromium.launch({ headless: true });
 try {
   const page = await browser.newPage({ viewport: { width: 1440, height: 1000 } });
+  page.setDefaultTimeout(10_000);
   await page.route("**/*", async (route) => {
     const url = new URL(route.request().url());
     if (url.pathname === "/") {
@@ -60,6 +61,9 @@ try {
     }
     if (url.pathname === "/api/featured-items") {
       return route.fulfill({ json: { featured } });
+    }
+    if (url.pathname === "/api/store/taxonomy") {
+      return route.fulfill({ json: { brands: [{ id: "prada", label: "Prada" }] } });
     }
     if (url.hostname === "images.test") {
       return route.fulfill({ status: 204 });
@@ -71,7 +75,25 @@ try {
   await page.addScriptTag({ content: bundle.outputFiles[0].text });
   await page.getByRole("heading", { name: "Featured Items", exact: true }).waitFor();
 
-  assert.equal(await page.getByText("Shop by category", { exact: true }).count(), 0);
+  const categories = page.getByRole("region", { name: "Shop by Category" });
+  await categories
+    .getByRole("link", { name: "Designer Sneakers", exact: true })
+    .waitFor();
+  assert.equal(await categories.getByRole("link").count(), 6);
+  assert.equal(
+    await page
+      .locator("section")
+      .evaluateAll(
+        (sections) =>
+          sections.findIndex((section) =>
+            section.textContent.includes("Featured Items"),
+          ) <
+          sections.findIndex((section) =>
+            section.textContent.includes("Shop by Category"),
+          ),
+      ),
+    true,
+  );
   assert.equal(await page.getByRole("link", { name: /View All/i }).count(), 0);
   assert.equal(await page.getByText("Sole", { exact: true }).count(), 0);
   assert.equal(await page.getByText(/From \$/).count(), 0);

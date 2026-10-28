@@ -2,6 +2,7 @@ import Image from "next/image";
 import Link from "next/link";
 
 import { FeaturedItems } from "@/components/home/FeaturedItems";
+import { HomepageCategories } from "@/components/home/HomepageCategories";
 
 export default function HomePage() {
   return (
@@ -45,6 +46,7 @@ export default function HomePage() {
       </section>
 
       <FeaturedItems />
+      <HomepageCategories />
     </div>
   );
 }

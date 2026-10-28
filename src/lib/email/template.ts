@@ -53,7 +53,7 @@ export const renderEmailLayout = ({
               <tr>
                 <td class="email-logo-cell" style="${emailStyles.logoCell}">
                   <a href="${env.NEXT_PUBLIC_SITE_URL}" aria-label="Visit ${EMAIL_BRAND.name}" style="display:inline-block;text-decoration:none;">
-                    <img class="email-logo" src="${env.NEXT_PUBLIC_SITE_URL}${BRAND_LOGO_URL}" width="156" alt="${EMAIL_BRAND.name}" style="${emailStyles.logo}" />
+                    <img class="email-logo" src="${BRAND_LOGO_URL}" width="156" alt="${EMAIL_BRAND.name}" style="${emailStyles.logo}" />
                   </a>
                 </td>
               </tr>
