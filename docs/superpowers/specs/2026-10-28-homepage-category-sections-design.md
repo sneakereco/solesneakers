@@ -1,6 +1,6 @@
 # Homepage category sections
 
-Status: Design awaiting approval. Layout B and image positions selected by the user.
+Status: Approved for implementation by the user on 2026-10-28. Layout B and image positions selected by the user.
 
 ## Intent and scope
 
@@ -27,14 +27,14 @@ Preserve these focal points across responsive sizes. Cropping is intentional; do
 
 ## Cards and destinations
 
-| Label | Image under public/images/homepage_categories | Store filters |
-| --- | --- | --- |
-| Brand New | brand_new_shoes.jpg | category=sneakers, condition=new |
-| Pre-Owned | preowned_shoes_2.jpg | category=sneakers, condition=used |
-| Designer Sneakers | designer_shoes_1.jpg | category=sneakers plus the designer brand IDs |
-| Designer Bags & Accessories | designer_bags.jpg | category=accessories plus the designer brand IDs |
-| Clothing | clothing_1.jpg | category=clothing |
-| Electronics | electronics.jpg | category=electronics |
+| Label                       | Image under public/images/homepage_categories | Store filters                                    |
+| --------------------------- | --------------------------------------------- | ------------------------------------------------ |
+| Brand New                   | brand_new_shoes.jpg                           | category=sneakers, condition=new                 |
+| Pre-Owned                   | preowned_shoes_2.jpg                          | category=sneakers, condition=used                |
+| Designer Sneakers           | designer_shoes_1.jpg                          | category=sneakers plus the designer brand IDs    |
+| Designer Bags & Accessories | designer_bags.jpg                             | category=accessories plus the designer brand IDs |
+| Clothing                    | clothing_1.jpg                                | category=clothing                                |
+| Electronics                 | electronics.jpg                               | category=electronics                             |
 
 The Brand New and Pre-Owned destinations are sneaker-specific, as proposed in the mockup. Designer collections have no condition restriction.
 
