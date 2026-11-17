@@ -14,7 +14,8 @@ concurrency:
 
 jobs:
   validate:
-    runs-on: ubuntu-latest
+    # Playwright 1.56.1 supports Ubuntu 24.04 browser dependencies.
+    runs-on: ubuntu-24.04
     timeout-minutes: 20
     env:
       NEXT_PUBLIC_SITE_URL: http://localhost:3000
