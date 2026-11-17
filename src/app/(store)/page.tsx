@@ -3,6 +3,7 @@ import Link from "next/link";
 
 import { FeaturedItems } from "@/components/home/FeaturedItems";
 import { HomepageCategories } from "@/components/home/HomepageCategories";
+import { OutfitSlideshow } from "@/components/home/OutfitSlideshow";
 
 export default function HomePage() {
   return (
@@ -46,6 +47,8 @@ export default function HomePage() {
       </section>
 
       <FeaturedItems />
+      <OutfitSlideshow />
+      <FeaturedItems category="clothing" />
       <HomepageCategories />
     </div>
   );

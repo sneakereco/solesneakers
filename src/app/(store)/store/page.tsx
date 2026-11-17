@@ -230,7 +230,7 @@ export default async function StorePage({
           <span>{browseLabel}</span>
         </nav>
         <div className="flex justify-center px-4 pb-12 pt-9 text-center">
-          <h1 className="text-3xl font-medium uppercase tracking-[0.025em] text-zinc-950 sm:text-[2rem]">
+          <h1 className="text-3xl font-bold uppercase tracking-[0.025em] text-zinc-950 sm:text-[2rem]">
             {browseLabel}
           </h1>
         </div>
