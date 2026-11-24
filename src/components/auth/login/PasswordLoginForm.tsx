@@ -165,9 +165,8 @@ export function PasswordLoginForm({
       <button
         type="button"
         onClick={onSwitchToOtp}
-        className="hidden"
-        tabIndex={-1}
-        aria-hidden="true"
+        disabled={state.isSubmitting}
+        className={`block w-full text-center ${authStyles.neutralLink}`}
       >
         Sign in with email code instead
       </button>

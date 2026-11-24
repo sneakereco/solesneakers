@@ -5,7 +5,10 @@ import {
   checkoutPickupContactSchema,
   directPaymentRequestSchema,
 } from "@/lib/checkout/checkout-request";
-import type { PaymentPermitPayload } from "@/lib/checkout/payment-permit";
+import {
+  permitMatchesLegacyTenant,
+  type ConsumedPaymentPermit,
+} from "@/Modules/Checkout/Source/Features/ContractCompatibility/payment-permit-reader";
 import type { CheckoutAttemptDecision } from "@/lib/checkout/checkout-attempt-limit";
 import type { DirectPaymentInput, DirectPaymentResult } from "@/lib/square/payments";
 import type {
@@ -16,14 +19,14 @@ import type { PaymentCheckout } from "@/repositories/checkout-reservation-repo";
 
 export type CreateDirectPaymentDependencies = {
   validateShippingAddress(address: ShippingAddress): Promise<ShippingValidationResult>;
-  consumePermit(token: string): Promise<PaymentPermitPayload | null>;
+  consumePermit(token: string): Promise<ConsumedPaymentPermit | null>;
   loadOrder(orderId: string): Promise<PaymentCheckout | null>;
   createPayment(input: DirectPaymentInput): Promise<DirectPaymentResult>;
   savePaymentId(
     orderId: string,
     paymentId: string,
     payment: DirectPaymentResult,
-    method: PaymentPermitPayload["method"],
+    method: ConsumedPaymentPermit["method"],
   ): Promise<void>;
   recordDecline(input: {
     tenantId: string;
@@ -42,10 +45,11 @@ function statusUrl(orderId: string): string {
   return `/checkout/processing?orderId=${encodeURIComponent(orderId)}`;
 }
 
-function matches(order: PaymentCheckout, permit: PaymentPermitPayload, now: Date) {
+function matches(order: PaymentCheckout, permit: ConsumedPaymentPermit, now: Date) {
   const expiresAt = new Date(order.expiresAt).getTime();
   return (
-    order.tenantId === permit.tenantId &&
+    permitMatchesLegacyTenant(permit, order.tenantId) &&
+    order.orderId === permit.orderId &&
     order.cartHash === permit.cartHash &&
     order.totalCents === permit.totalCents &&
     order.deviceSessionId === permit.deviceSessionId &&
@@ -68,7 +72,7 @@ export async function createDirectPaymentHandler(
     return json({ error: "Invalid payment request" }, 400);
   }
 
-  let permit: PaymentPermitPayload | null;
+  let permit: ConsumedPaymentPermit | null;
   try {
     permit = await deps.consumePermit(parsed.data.permit);
   } catch (error) {
@@ -79,11 +83,16 @@ export async function createDirectPaymentHandler(
     return json({ error: "Payment authorization expired" }, 403);
   }
 
+  let declineIdentity: { tenantId: string; deviceSessionId: string } | null = null;
   try {
     const order = await deps.loadOrder(permit.orderId);
     if (!order || !matches(order, permit, deps.now())) {
       return json({ error: "Checkout details changed; start again" }, 409);
     }
+    declineIdentity = {
+      tenantId: order.tenantId,
+      deviceSessionId: permit.deviceSessionId,
+    };
 
     if (
       order.fulfillment === "pickup" &&
@@ -148,10 +157,7 @@ export async function createDirectPaymentHandler(
       billingAddress: order.billingAddress,
     });
     if (payment.status === "CANCELED" || payment.status === "FAILED") {
-      await deps.recordDecline({
-        tenantId: permit.tenantId,
-        deviceSessionId: permit.deviceSessionId,
-      });
+      await deps.recordDecline(declineIdentity);
       return json(
         { error: "Payment was declined. Check your details and try again." },
         402,
@@ -169,11 +175,8 @@ export async function createDirectPaymentHandler(
     );
   } catch (error) {
     deps.reportError(error);
-    if (deps.isDefiniteDecline(error)) {
-      await deps.recordDecline({
-        tenantId: permit.tenantId,
-        deviceSessionId: permit.deviceSessionId,
-      });
+    if (deps.isDefiniteDecline(error) && declineIdentity) {
+      await deps.recordDecline(declineIdentity);
       return json(
         { error: "Payment was declined. Check your details and try again." },
         402,

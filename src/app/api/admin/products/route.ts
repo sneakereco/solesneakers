@@ -149,7 +149,6 @@ export async function POST(request: NextRequest) {
     const product = await service.createProduct(payload, {
       userId: session.user.id,
       tenantId,
-      sellerId: null,
     });
     try {
       revalidateTag(`product:${product.id}`, "max");

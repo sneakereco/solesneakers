@@ -1,5 +1,11 @@
 # Dead Code and Database Retirement Implementation Plan
 
+> **Scope update (November 23, 2026):** The confirmed
+> [single-store scope](../specs/2026-11-23-single-store-retirement-design.md) supersedes
+> tenant/seller assumptions in this historical document. Preserve the remaining
+> applicable business rules and follow the current design's review status and
+> data-preservation requirements when planning new changes.
+
 > **For agentic workers:** Use `superpowers:executing-plans` to implement this plan task by task. Use `superpowers:subagent-driven-development` only if the user selects delegated execution. Steps use checkboxes for tracking.
 
 **Goal:** Remove the audited dead application code and retired database objects while preserving current storefront, authentication, checkout, fulfillment, notifications, and tenant isolation.

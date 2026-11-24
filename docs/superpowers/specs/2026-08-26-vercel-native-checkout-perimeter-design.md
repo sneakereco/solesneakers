@@ -1,5 +1,11 @@
 # Vercel-Native Checkout Perimeter Design
 
+> **Scope update (November 23, 2026):** The confirmed
+> [single-store scope](2026-11-23-single-store-retirement-design.md) supersedes
+> tenant/seller assumptions in this historical document. Preserve the remaining
+> applicable business rules and follow the current design's review status and
+> data-preservation requirements when planning new changes.
+
 **Status:** Approved adjustment to the Square checkout/security plan  
 **Date:** 2026-08-26
 
