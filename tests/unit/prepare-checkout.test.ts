@@ -1,5 +1,10 @@
 import { prepareCheckoutHandler } from "@/lib/checkout/prepare-checkout";
 import { createCheckoutQuoteFingerprint } from "@/lib/checkout/checkout-quote-fingerprint";
+import {
+  futureCartHashFixture,
+  futureShippingFixture,
+} from "@/Modules/Checkout/Tests/Features/ContractCompatibility/fixtures";
+import { createCheckoutCartHash } from "@/lib/checkout/checkout-cart-hash";
 
 const PRODUCT_ID = "11111111-1111-4111-8111-111111111111";
 const VARIANT_ID = "22222222-2222-4222-8222-222222222222";
@@ -117,6 +122,151 @@ function dependencies() {
 }
 
 describe("prepareCheckoutHandler", () => {
+  async function existingCheckout(version: 3 | 4, changes: Record<string, unknown> = {}) {
+    const deps = dependencies();
+    const body = await (request() as Request).json();
+    const input = { ...body, tenantId: "tenant-1" };
+    const hash =
+      version === 3 ? createCheckoutCartHash(input) : futureCartHashFixture(input);
+    const existing = {
+      orderId: "order-1",
+      cartHash: hash,
+      status: "pending",
+      expiresAt: "2026-09-06T12:15:00.000Z",
+      squareOrderId: "square-order-1",
+      squareOrderVersion: 1,
+      subtotalCents: 10000,
+      shippingCents: 1000,
+      taxCents: 800,
+      totalCents: 11800,
+      items: (await deps.resolveCart()).items,
+      ...changes,
+    };
+    deps.resolveCart.mockClear();
+    deps.findExisting.mockResolvedValue(existing);
+    return { deps, body, existing };
+  }
+
+  it.each([3, 4] as const)(
+    "reuses a persisted v%s checkout without rewriting or creating a Square order",
+    async (version) => {
+      const { deps, existing } = await existingCheckout(version);
+      const before = JSON.stringify(existing);
+      const response = await prepareCheckoutHandler(request(), deps);
+      expect(response.status).toBe(200);
+      expect(await response.json()).toMatchObject({
+        orderId: "order-1",
+        reused: true,
+        guestAccessToken: "guest-token",
+        totals: { totalCents: 11800 },
+      });
+      expect(JSON.stringify(existing)).toBe(before);
+      expect(deps.reserve).not.toHaveBeenCalled();
+      expect(deps.createSquareOrder).not.toHaveBeenCalled();
+      expect(deps.attachSquareOrder).not.toHaveBeenCalled();
+    },
+  );
+
+  it.each([
+    { buyerEmail: "other@example.com" },
+    { paymentMethod: "afterpay" },
+    {
+      shippingAddress: {
+        name: "Buyer",
+        phone: "5555555555",
+        line1: "2 Main Street",
+        line2: null,
+        city: "Charleston",
+        state: "SC",
+        postalCode: "29401",
+        country: "US",
+      },
+    },
+    {
+      billingAddress: {
+        givenName: "Buyer",
+        familyName: "Example",
+        phone: null,
+        line1: "2 Billing Street",
+        line2: null,
+        city: "Charleston",
+        state: "SC",
+        postalCode: "29401",
+        country: "US",
+      },
+    },
+    { items: [{ productId: PRODUCT_ID, variantId: VARIANT_ID, quantity: 2 }] },
+  ])(
+    "rejects changed v4 checkout identity %j without replacing the stored hash",
+    async (change) => {
+      const { deps, body, existing } = await existingCheckout(4);
+      const hash = existing.cartHash;
+      const response = await prepareCheckoutHandler(
+        new Request("https://shop.example.com/api/checkout/prepare", {
+          method: "POST",
+          body: JSON.stringify({ ...body, ...change }),
+        }) as never,
+        deps,
+      );
+      expect(response.status).toBe(409);
+      expect(existing.cartHash).toBe(hash);
+      expect(deps.reserve).not.toHaveBeenCalled();
+      expect(deps.createSquareOrder).not.toHaveBeenCalled();
+    },
+  );
+
+  it.each([{ status: "paid" }, { expiresAt: "2026-09-06T12:00:00.000Z" }])(
+    "refuses unusable v4 pending checkout %j",
+    async (change) => {
+      const { deps } = await existingCheckout(4, change);
+      expect((await prepareCheckoutHandler(request(), deps)).status).toBe(409);
+      expect(deps.createSquareOrder).not.toHaveBeenCalled();
+    },
+  );
+
+  it("validates Square totals when reusing v4", async () => {
+    const { deps } = await existingCheckout(4, { totalCents: 11801 });
+    expect((await prepareCheckoutHandler(request(), deps)).status).toBe(409);
+    expect(deps.createSquareOrder).not.toHaveBeenCalled();
+  });
+
+  it("accepts v2 shipping confirmation through preparation without a second address check", async () => {
+    const deps = dependencies();
+    const body = await (request() as Request).json();
+    const shippingConfirmation = futureShippingFixture(
+      {
+        deviceSessionId: body.deviceSessionId,
+        normalizedEmailHash: "email-hash",
+        paymentMethod: body.paymentMethod,
+        address: body.shippingAddress,
+      },
+      deps.shippingConfirmationSecret(),
+      deps.now().getTime() + 600000,
+    );
+    deps.validateShippingAddress.mockResolvedValue({ status: "invalid" });
+    const response = await prepareCheckoutHandler(
+      new Request("https://shop.example.com/api/checkout/prepare", {
+        method: "POST",
+        body: JSON.stringify({
+          ...body,
+          shippingConfirmation,
+          shippingAddressOverride: true,
+        }),
+      }) as never,
+      deps,
+    );
+    expect(response.status).toBe(201);
+    expect(deps.validateShippingAddress).not.toHaveBeenCalled();
+    expect(deps.checkAddressValidationAttempt).not.toHaveBeenCalled();
+    expect(deps.reserve).toHaveBeenCalledWith(
+      expect.objectContaining({
+        protectionEvidence: expect.objectContaining({
+          shipping_address_override_confirmed: true,
+        }),
+      }),
+    );
+  });
+
   it("reserves server-priced inventory and attaches Square authoritative tax", async () => {
     const deps = dependencies();
     const response = await prepareCheckoutHandler(request(), deps);

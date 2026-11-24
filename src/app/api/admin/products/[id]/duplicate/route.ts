@@ -40,7 +40,6 @@ export async function POST(
     const product = await service.duplicateProduct(paramsParsed.data.id, {
       userId: session.user.id,
       tenantId,
-      sellerId: null,
     });
 
     try {

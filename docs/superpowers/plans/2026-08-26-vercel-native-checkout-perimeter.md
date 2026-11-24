@@ -1,5 +1,11 @@
 # Vercel-Native Checkout Perimeter Implementation Plan
 
+> **Scope update (November 23, 2026):** The confirmed
+> [single-store scope](../specs/2026-11-23-single-store-retirement-design.md) supersedes
+> tenant/seller assumptions in this historical document. Preserve the remaining
+> applicable business rules and follow the current design's review status and
+> data-preservation requirements when planning new changes.
+
 > **For agentic workers:** REQUIRED SUB-SKILL: Use superpowers:subagent-driven-development (recommended) or superpowers:executing-plans to implement this plan task-by-task. Steps use checkbox (`- [ ]`) syntax for tracking.
 
 **Goal:** Establish Vercel as the sole HTTP security edge, keep Cloudflare DNS-only, and ensure that only a bot-checked, tightly limited application endpoint can create Square-hosted checkout links.

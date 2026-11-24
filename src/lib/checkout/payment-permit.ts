@@ -1,9 +1,13 @@
 import { randomUUID } from "node:crypto";
 
-import { z } from "zod";
 import { Redis } from "@upstash/redis";
 
 import { env } from "@/config/env";
+import {
+  legacyPaymentPermitSchema,
+  readPaymentPermit,
+  type ConsumedPaymentPermit,
+} from "@/Modules/Checkout/Source/Features/ContractCompatibility/payment-permit-reader";
 
 export type PaymentMethod = "card" | "afterpay" | "applePay" | "cashAppPay";
 
@@ -22,19 +26,6 @@ type RedisPermitClient = {
   set(key: string, value: string, options: { nx: true; ex: number }): Promise<unknown>;
   eval(script: string, keys: string[], args: string[]): Promise<unknown>;
 };
-
-const permitSchema = z
-  .object({
-    tenantId: z.string().min(1),
-    orderId: z.string().min(1),
-    cartHash: z.string().min(1),
-    totalCents: z.number().int().positive(),
-    method: z.enum(["card", "afterpay", "applePay", "cashAppPay"]),
-    deviceSessionId: z.string().min(1),
-    normalizedEmailHash: z.string().min(1),
-    squareIdempotencyKey: z.string().uuid(),
-  })
-  .strict();
 
 const CONSUME_SCRIPT = `
 local value = redis.call("GET", KEYS[1])
@@ -56,7 +47,7 @@ export class PaymentPermitStore {
   async issue(
     payload: PaymentPermitPayload,
   ): Promise<{ token: string; expiresInSeconds: number }> {
-    const parsed = permitSchema.parse(payload);
+    const parsed = legacyPaymentPermitSchema.parse(payload);
     const token = this.createToken();
 
     try {
@@ -73,7 +64,7 @@ export class PaymentPermitStore {
     }
   }
 
-  async consume(token: string): Promise<PaymentPermitPayload | null> {
+  async consume(token: string): Promise<ConsumedPaymentPermit | null> {
     if (!token || token.length > 200) {
       return null;
     }
@@ -84,11 +75,7 @@ export class PaymentPermitStore {
         return null;
       }
       const decoded = typeof value === "string" ? JSON.parse(value) : value;
-      const parsed = permitSchema.safeParse(decoded);
-      if (!parsed.success) {
-        throw new Error("payment_permit_invalid");
-      }
-      return parsed.data;
+      return readPaymentPermit(decoded);
     } catch {
       throw new Error("checkout_protection_unavailable");
     }

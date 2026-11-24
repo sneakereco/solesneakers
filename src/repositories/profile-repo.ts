@@ -1,7 +1,6 @@
 // src/repositories/profile-repo.ts
 import type { Database } from "@/types/db/database.types";
 import type { TypedSupabaseClient } from "@/lib/supabase/server";
-import type { ProfileRole } from "@/config/constants/roles";
 
 export type Profile = Database["public"]["Tables"]["profiles"]["Row"];
 
@@ -88,16 +87,6 @@ export class ProfileRepository {
       throw error;
     }
     return data;
-  }
-
-  async setRole(userId: string, role: ProfileRole) {
-    const { error } = await this.supabase
-      .from("profiles")
-      .update({ role })
-      .eq("id", userId);
-    if (error) {
-      throw error;
-    }
   }
 
   async setTenantId(userId: string, tenantId: string) {

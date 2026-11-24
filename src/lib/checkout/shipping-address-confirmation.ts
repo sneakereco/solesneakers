@@ -1,4 +1,5 @@
-import { createHmac, timingSafeEqual } from "node:crypto";
+import { createHmac } from "node:crypto";
+import { verifyCompatibleShippingConfirmation } from "@/Modules/Checkout/Source/Features/ContractCompatibility/shipping-confirmation-reader";
 
 import {
   shippingAddressKey,
@@ -47,16 +48,5 @@ export function verifyShippingConfirmation(
   secret: string,
   now: Date,
 ): boolean {
-  const match = /^(\d{13})\.([a-f0-9]{64})$/.exec(token);
-  if (!match) {
-    return false;
-  }
-  const expires = Number(match[1]);
-  if (expires <= now.getTime() || expires > now.getTime() + 10 * 60 * 1000) {
-    return false;
-  }
-  return timingSafeEqual(
-    Buffer.from(match[2], "hex"),
-    Buffer.from(signature(scope, expires, secret), "hex"),
-  );
+  return verifyCompatibleShippingConfirmation(token, scope, secret, now);
 }

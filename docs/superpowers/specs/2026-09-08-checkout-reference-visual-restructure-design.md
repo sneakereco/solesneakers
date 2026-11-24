@@ -1,5 +1,11 @@
 # Checkout Reference Visual Restructure Design
 
+> **Scope update (November 23, 2026):** The confirmed
+> [single-store scope](2026-11-23-single-store-retirement-design.md) supersedes
+> tenant/seller assumptions in this historical document. Preserve the remaining
+> applicable business rules and follow the current design's review status and
+> data-preservation requirements when planning new changes.
+
 **Status:** Approved
 **Date:** 2026-09-08
 **Extends:** `2026-09-07-single-page-checkout-overhaul-design.md`, `2026-09-08-checkout-payment-billing-design.md`, and `2026-09-08-express-wallet-address-design.md`

@@ -17,6 +17,7 @@ import type {
 } from "@/lib/checkout/checkout-attempt-limit";
 import type { ResolvedCheckoutCart } from "@/lib/checkout/checkout-cart-resolver";
 import { createCheckoutCartHash } from "@/lib/checkout/checkout-cart-hash";
+import { matchesCheckoutCartHash } from "@/Modules/Checkout/Source/Features/ContractCompatibility/cart-hash-reader";
 import { createCheckoutQuoteFingerprint } from "@/lib/checkout/checkout-quote-fingerprint";
 import type {
   CheckoutPricingQuote,
@@ -261,7 +262,7 @@ export async function prepareCheckoutHandler(
       }
     }
 
-    const cartHash = createCheckoutCartHash({
+    const cartHashInput = {
       tenantId,
       buyerEmail,
       fulfillment: parsed.data.fulfillment,
@@ -270,10 +271,11 @@ export async function prepareCheckoutHandler(
       billingAddress: parsed.data.billingAddress,
       pickupContact: parsed.data.pickupContact,
       items: parsed.data.items,
-    });
+    };
+    const cartHash = createCheckoutCartHash(cartHashInput);
     const existing = await deps.findExisting(tenantId, parsed.data.idempotencyKey);
     if (existing) {
-      if (existing.cartHash !== cartHash) {
+      if (!matchesCheckoutCartHash(existing.cartHash, cartHash, cartHashInput)) {
         return json({ error: "Checkout key conflicts with another cart" }, 409);
       }
       if (existing.status !== "pending" || !isFuture(existing.expiresAt, deps.now())) {

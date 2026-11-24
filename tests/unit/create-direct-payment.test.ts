@@ -1,5 +1,10 @@
 import { createDirectPaymentHandler } from "@/lib/checkout/create-direct-payment";
 import { validateShippingAddress } from "@/lib/shipping/validate-shipping-address";
+import { PaymentPermitStore } from "@/lib/checkout/payment-permit";
+import {
+  futurePermitFixture,
+  permitRedisFixture,
+} from "@/Modules/Checkout/Tests/Features/ContractCompatibility/fixtures";
 
 function request() {
   return new Request("https://shop.example.com/api/checkout/pay", {
@@ -59,6 +64,122 @@ function dependencies() {
 }
 
 describe("createDirectPaymentHandler", () => {
+  async function storeBackedDependencies(change: Record<string, unknown> = {}) {
+    const deps = dependencies();
+    const legacy = await deps.consumePermit();
+    const redis = permitRedisFixture();
+    redis.seed("permit-1", { ...futurePermitFixture(legacy), ...change });
+    const store = new PaymentPermitStore(redis);
+    return { ...deps, consumePermit: (token: string) => store.consume(token), redis };
+  }
+
+  it("charges once through a real v2 reader and preserves authorized idempotency/method", async () => {
+    const deps = await storeBackedDependencies();
+    const response = await createDirectPaymentHandler(request(), deps);
+    expect(response.status).toBe(202);
+    expect(await response.json()).toMatchObject({
+      paymentId: "payment-1",
+      status: "COMPLETED",
+    });
+    expect(deps.createPayment).toHaveBeenCalledWith(
+      expect.objectContaining({
+        localOrderId: "order-1",
+        squareOrderId: "square-order-1",
+        totalCents: 11800,
+        idempotencyKey: "11111111-1111-4111-8111-111111111111",
+      }),
+    );
+    expect(deps.savePaymentId).toHaveBeenCalledWith(
+      "order-1",
+      "payment-1",
+      expect.any(Object),
+      "card",
+    );
+    const replay = await createDirectPaymentHandler(request(), deps);
+    expect(replay.status).toBe(403);
+    expect(deps.createPayment).toHaveBeenCalledTimes(1);
+  });
+
+  it.each([
+    { cartHash: "other" },
+    { totalCents: 11801 },
+    { deviceSessionId: "other" },
+    { orderId: "other" },
+  ])("rejects a v2 permit binding mismatch %j before Square", async (change) => {
+    const deps = await storeBackedDependencies(change);
+    const response = await createDirectPaymentHandler(request(), deps);
+    expect(response.status).toBe(409);
+    expect(deps.createPayment).not.toHaveBeenCalled();
+  });
+
+  it.each([
+    { status: "paid" },
+    { expiresAt: "2026-09-06T12:00:00.000Z" },
+    { squareOrderId: null },
+    { billingAddress: null },
+    { pickupContact: null },
+  ])("preserves v2 stored order prerequisites %j", async (change) => {
+    const deps = await storeBackedDependencies();
+    deps.loadOrder.mockResolvedValue({ ...(await deps.loadOrder()), ...change });
+    const response = await createDirectPaymentHandler(request(), deps);
+    expect(response.status).toBe(409);
+    expect(deps.createPayment).not.toHaveBeenCalled();
+  });
+
+  it("does not charge an expired v2 permit", async () => {
+    const deps = await storeBackedDependencies();
+    deps.redis.advance(120000);
+    expect((await createDirectPaymentHandler(request(), deps)).status).toBe(403);
+    expect(deps.createPayment).not.toHaveBeenCalled();
+  });
+
+  it.each(["FAILED", "exception"])(
+    "keeps the loaded order's legacy decline counter for v2 %s",
+    async (outcome) => {
+      const deps = await storeBackedDependencies();
+      deps.loadOrder.mockResolvedValue({
+        ...(await deps.loadOrder()),
+        tenantId: "authoritative-tenant",
+      });
+      if (outcome === "exception") {
+        deps.createPayment.mockRejectedValue(new Error("declined"));
+        deps.isDefiniteDecline.mockReturnValue(true);
+      } else {
+        deps.createPayment.mockResolvedValue({
+          ...(await deps.createPayment()),
+          status: outcome,
+        });
+        deps.createPayment.mockClear();
+      }
+      expect((await createDirectPaymentHandler(request(), deps)).status).toBe(402);
+      expect(deps.recordDecline).toHaveBeenCalledWith({
+        tenantId: "authoritative-tenant",
+        deviceSessionId: "device-1",
+      });
+      expect(deps.savePaymentId).not.toHaveBeenCalled();
+    },
+  );
+
+  it("keeps v2 unknown-payment recovery without a second charge or decline", async () => {
+    const deps = await storeBackedDependencies();
+    deps.savePaymentId.mockRejectedValue(new Error("write failed"));
+    const response = await createDirectPaymentHandler(request(), deps);
+    expect(response.status).toBe(202);
+    expect(await response.json()).toMatchObject({
+      status: "UNKNOWN",
+      statusUrl: "/checkout/processing?orderId=order-1",
+    });
+    expect(deps.createPayment).toHaveBeenCalledTimes(1);
+    expect(deps.recordDecline).not.toHaveBeenCalled();
+  });
+
+  it("still rejects legacy cross-tenant permits", async () => {
+    const deps = dependencies();
+    deps.loadOrder.mockResolvedValue({ ...(await deps.loadOrder()), tenantId: "other" });
+    expect((await createDirectPaymentHandler(request(), deps)).status).toBe(409);
+    expect(deps.createPayment).not.toHaveBeenCalled();
+  });
+
   it("does not charge a pickup order without a complete recipient", async () => {
     const deps = dependencies();
     deps.loadOrder.mockResolvedValue({

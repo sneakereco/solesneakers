@@ -505,8 +505,8 @@ export default function TransactionDetailPage() {
     return sum + financials.unitCost * financials.quantity;
   }, 0);
   const effectiveItemCost = Math.max(0, totalItemCost - refundedItemCost);
-  const sellerRevenue = Math.max(total - refundedAmount, 0);
-  const totalProfit = sellerRevenue - effectiveItemCost;
+  const storeRevenue = Math.max(total - refundedAmount, 0);
+  const totalProfit = storeRevenue - effectiveItemCost;
 
   const customerEmail =
     order.profiles?.email ?? order.guest_email ?? paymentTx?.customer_email ?? null;
@@ -678,7 +678,7 @@ export default function TransactionDetailPage() {
 
                 <div className="space-y-2 rounded border border-zinc-800/70 bg-zinc-950/50 p-4">
                   <p className="text-[11px] uppercase tracking-[0.18em] text-zinc-500">
-                    Seller breakdown
+                    Store breakdown
                   </p>
                   {isOrderPlaced ? (
                     <>
@@ -690,7 +690,7 @@ export default function TransactionDetailPage() {
                       )}
                       <div className="flex justify-between text-zinc-300">
                         <span>Revenue before processor fees</span>
-                        <span>{fmtMoney(sellerRevenue)}</span>
+                        <span>{fmtMoney(storeRevenue)}</span>
                       </div>
                       {showOrderProfit ? (
                         <>
@@ -712,8 +712,8 @@ export default function TransactionDetailPage() {
                         </>
                       ) : (
                         <div className="flex justify-between text-zinc-500">
-                          <span>Seller total before cost</span>
-                          <span>{fmtMoney(sellerRevenue)}</span>
+                          <span>Store total before cost</span>
+                          <span>{fmtMoney(storeRevenue)}</span>
                         </div>
                       )}
                     </>

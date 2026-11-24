@@ -87,7 +87,6 @@ export class ProductService {
     ctx: {
       userId: string;
       tenantId: string;
-      sellerId?: string | null;
     },
   ) {
     if (!input.name?.trim()) {
@@ -290,7 +289,6 @@ export class ProductService {
     ctx: {
       userId: string;
       tenantId: string;
-      sellerId?: string | null;
     },
   ) {
     const original = await this.repo.getById(productId, {

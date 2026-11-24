@@ -1,13 +1,5 @@
 import { z } from "zod";
 
-export const adminInviteCreateSchema = z
-  .object({ role: z.enum(["admin", "super_admin"]) })
-  .strict();
-
-export const adminInviteAcceptSchema = z
-  .object({ token: z.string().trim().min(32) })
-  .strict();
-
 export const storeAccessSettingsSchema = z
   .object({
     siteLockEnabled: z.boolean(),

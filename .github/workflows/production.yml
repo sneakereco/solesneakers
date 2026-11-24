@@ -62,11 +62,24 @@ jobs:
       - name: Checkout tag
         uses: actions/checkout@11d5960a326750d5838078e36cf38b85af677262 # v4
 
+      - name: Setup Node
+        uses: actions/setup-node@49933ea5288caeca8642d1e84afbd3f7d6820020 # v4
+        with:
+          node-version: 24.14.1
+          cache: npm
+
+      - name: Install migration gate dependencies
+        run: npm ci --ignore-scripts
+
       - name: Fetch production deployment secrets
         uses: dopplerhq/secrets-fetch-action@451892f16195f9ac360e1a5bcbf0b5fd0e957534 # v2.0.0
         with:
           doppler-token: ${{ secrets.DOPPLER_TOKEN }}
           inject-env-vars: true
+
+      - name: Verify historical baseline and single-store preconditions
+        shell: bash
+        run: SINGLE_STORE_DATABASE_URL="$SUPABASE_DB_URL" node scripts/single-store/check-migration-baseline.mjs
 
       - name: Setup Supabase CLI
         uses: supabase/setup-cli@46f7f98c7f948ad727d22c1e67fab04c223a0520 # v3.0.0
