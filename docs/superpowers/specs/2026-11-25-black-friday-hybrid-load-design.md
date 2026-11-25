@@ -23,6 +23,10 @@ The user confirmed:
 - Staging as the execution environment.
 - 10,000 active shoppers doing ordinary shopping activities.
 - A separate opening rush against the same limited-stock items.
+- A hands-off operator experience: the user expects to deploy to staging and
+  install k6, while the delivered tooling handles seeding and routine test setup,
+  execution, reporting, and cleanup. Identify unavoidable account/access or
+  resource decisions explicitly rather than leaving manual setup hidden.
 
 All numerical mixes, durations, latency budgets, runner choices, and test-adapter
 details below are the author's proposed defaults. They are not previously agreed
@@ -331,6 +335,64 @@ adapter control APIs inaccessible without the run credential. A normal PR can
 run static/small isolated harness validation; full staging runs are explicit
 operator actions, not automatic on every push.
 
+## Hands-off setup and operator experience
+
+Deliver an orchestration entry point suitable for the user's Windows development
+environment, plus an equivalent runner entry point. A selected test profile must
+perform preflight, fixture seeding, session preparation, a smoke gate, coordinated
+HTTP/browser execution, durable outcome assertions, report generation, and scoped
+cleanup without the user manually executing SQL or creating accounts/products.
+Selecting the full acceptance profile runs its required profiles in order and
+stops escalation after a failed gate. Expose an explicit stop command and a
+repeatable recovery/cleanup command for an interrupted process.
+
+Seeding includes verified synthetic customer accounts through the staging admin
+interface, application profiles, guest identities, addresses, ordinary products
+and stock, limited-stock products, and any campaign-specific fixture records.
+Create authenticated sessions programmatically and preserve real ownership
+checks. Do not create one registered account for every guest VU, send thousands
+of verification emails, or ask the user to log in as each test shopper. Allocate
+enough distinct identities for session rotation during the longest profile.
+Store temporary credentials/cookies in ignored, access-restricted local/runner
+artifacts; provide only scrubbed identifiers in reports.
+
+Prepare the staging configuration contract, a secret-manager/environment
+template, and exact validation messages as implementation deliverables. Reuse
+authorized existing secret-manager access when available. Never ask the user to
+paste secrets into chat or assume that deploying application code provisions
+database/Redis isolation, sets environment variables, or installs runner tools.
+Generate scoped run credentials automatically after the staging prerequisites
+are verified; do not make the operator manually assemble signed requests.
+
+The user's routine steps should be deployment, initial tool installation, and
+starting the selected profile (or asking the agent to start it), then reading
+the report. Deployment remains the user's responsibility as requested. The
+orchestrator verifies the deployed commit and compatible schema/configuration
+before any seeding and fails with a concrete remediation if they do not match.
+Do not silently deploy/promote an application or apply unrelated migrations.
+
+Potential one-time user involvement is limited to account authorization or
+entering unavailable credentials into the secure configuration system, enabling
+isolated staging resources when existing access cannot do it, and accepting a
+specific paid-runner or service-tier cost if required. A Chromium-compatible
+browser/runtime is required for browser probes; detect an existing supported
+runtime or prepare a pinned runner image/bootstrap. Report an unavailable runtime
+clearly rather than silently omit browser coverage. Do not promise that local k6
+installation alone makes a laptop suitable for the 10,000-session exercise.
+
+Package runner setup, test adapters, notification sinks, browser startup, telemetry
+collection, seed/reset, and report aggregation so they require no recurring
+dashboard changes. Where privileged external access is unavailable, identify the
+exact remaining step and prepare everything else first. Bounded native-wallet
+verification may still need the user's compatible device/provider approval;
+that manual check is separate from the automated bulk-capacity profiles.
+
+Normal completion runs assertions and captures the report before automatic
+cleanup. On failure, retain scrubbed diagnostic evidence and a manifest of
+unresolved holds/jobs; reconcile them before deleting their fixtures. A forced
+shutdown must remain recoverable through the idempotent cleanup command. The
+report distinguishes test failure, harness/setup failure, and incomplete cleanup.
+
 ## Readiness dependencies and execution gates
 
 On November 25, #25 (real Postgres races), #26 (cart identity), #33 (receipt cart
@@ -356,6 +418,9 @@ fixtures and scoped cleanup, the narrow staging-only integration/admission
 adapters if needed, browser probes, a runbook, repeatable operator commands, and
 machine-readable plus readable results. Keep result files/secrets out of commits;
 commit only scrubbed evidence summaries deliberately selected for the report.
+The hands-off orchestrator, automated account/session/catalog seeding, secure
+configuration template, runtime checks/bootstrap, and interrupted-run cleanup
+are required deliverables, not optional operator documentation.
 
 The implementation plan should sequence the smallest safe smoke path first,
 then complete shopping/stock correctness, telemetry and generator proof, and
