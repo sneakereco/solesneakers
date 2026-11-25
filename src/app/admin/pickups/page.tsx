@@ -118,6 +118,7 @@ export default function PickupsPage() {
   const [expandedDetails, setExpandedDetails] = useState<Record<string, boolean>>({});
   const [markingId, setMarkingId] = useState<string | null>(null);
   const [selectedItem, setSelectedItem] = useState<OrderItem | null>(null);
+  const [itemInvoker, setItemInvoker] = useState<HTMLElement | null>(null);
   const [toast, setToast] = useState<{
     message: string;
     tone: "success" | "error" | "info";
@@ -277,7 +278,8 @@ export default function PickupsPage() {
     setExpandedDetails((prev) => ({ ...prev, [orderId]: nextExpanded }));
   };
 
-  const openItemDetails = (item: OrderItem) => {
+  const openItemDetails = (item: OrderItem, invoker: HTMLElement) => {
+    setItemInvoker(invoker);
     setSelectedItem(item);
   };
 
@@ -632,9 +634,10 @@ export default function PickupsPage() {
                               return (
                                 <div
                                   key={item.id}
+                                  tabIndex={-1}
                                   onClick={(event) => {
                                     event.stopPropagation();
-                                    openItemDetails(item);
+                                    openItemDetails(item, event.currentTarget);
                                   }}
                                   className={`group relative cursor-pointer px-6 py-4 transition-colors ${
                                     isRefunded
@@ -809,7 +812,10 @@ export default function PickupsPage() {
                                 return (
                                   <div
                                     key={item.id}
-                                    onClick={() => openItemDetails(item)}
+                                    tabIndex={-1}
+                                    onClick={(event) =>
+                                      openItemDetails(item, event.currentTarget)
+                                    }
                                     className={`relative flex cursor-pointer items-start gap-3 rounded-sm p-2 text-base transition ${
                                       isRefunded
                                         ? "border border-red-900/40 bg-red-950/20"
@@ -855,7 +861,7 @@ export default function PickupsPage() {
                                         type="button"
                                         onClick={(event) => {
                                           event.stopPropagation();
-                                          openItemDetails(item);
+                                          openItemDetails(item, event.currentTarget);
                                         }}
                                         className="mt-1 text-xs text-red-400 hover:text-red-300"
                                       >
@@ -890,6 +896,7 @@ export default function PickupsPage() {
       <AdminOrderItemDetailsModal
         open={Boolean(selectedItem)}
         item={selectedItem}
+        invoker={itemInvoker}
         onClose={() => setSelectedItem(null)}
       />
       <Toast

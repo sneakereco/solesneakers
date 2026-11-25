@@ -12,6 +12,7 @@ type MenuPanel = "brand" | "size" | "category";
 type StoreMenuDrawerProps = {
   isOpen: boolean;
   onClose: () => void;
+  invoker?: HTMLElement | null;
 };
 
 type SizeOption = {
@@ -169,7 +170,7 @@ function PanelHeader({
   );
 }
 
-export function StoreMenuDrawer({ isOpen, onClose }: StoreMenuDrawerProps) {
+export function StoreMenuDrawer({ isOpen, onClose, invoker }: StoreMenuDrawerProps) {
   const { present, visible } = useOverlayTransition(isOpen, DRAWER_TRANSITION_MS);
   const [isNarrow, setIsNarrow] = useState(false);
   const [activePanel, setActivePanel] = useState<MenuPanel | null>(null);
@@ -325,6 +326,7 @@ export function StoreMenuDrawer({ isOpen, onClose }: StoreMenuDrawerProps) {
   return (
     <ModalPortal
       open={present}
+      invoker={invoker}
       onClose={() => {
         if (isOpen) onClose();
       }}

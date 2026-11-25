@@ -104,6 +104,7 @@ export default function ShippingSettingsPage() {
   const [originErrors, setOriginErrors] = useState<OriginErrors>({});
   const [carriersMessage, setCarriersMessage] = useState("");
   const [isDefaultsModalOpen, setIsDefaultsModalOpen] = useState(false);
+  const [modalInvoker, setModalInvoker] = useState<HTMLButtonElement | null>(null);
   const [activeCategory, setActiveCategory] = useState<string | null>(null);
   const [defaultsDraft, setDefaultsDraft] = useState<ShippingDefaultValues | null>(null);
 
@@ -217,7 +218,8 @@ export default function ShippingSettingsPage() {
     void loadData();
   }, []);
 
-  const openDefaultsModal = (categoryKey: string) => {
+  const openDefaultsModal = (categoryKey: string, invoker: HTMLButtonElement) => {
+    setModalInvoker(invoker);
     const current = shippingDefaults[categoryKey] ?? defaultPackage;
     setActiveCategory(categoryKey);
     setDefaultsDraft({ ...current });
@@ -241,7 +243,8 @@ export default function ShippingSettingsPage() {
     setHeightInput("12");
   };
 
-  const openOriginModal = () => {
+  const openOriginModal = (invoker: HTMLButtonElement) => {
+    setModalInvoker(invoker);
     setOriginDraft({ ...originAddress });
     setIsOriginModalOpen(true);
     setOriginMessage("");
@@ -484,7 +487,7 @@ export default function ShippingSettingsPage() {
             </div>
             <button
               type="button"
-              onClick={openOriginModal}
+              onClick={(event) => openOriginModal(event.currentTarget)}
               aria-haspopup="dialog"
               className="border border-zinc-800/70 bg-zinc-900 px-3 py-1.5 text-[12px] text-white hover:border-zinc-700 sm:px-4 sm:py-2 sm:text-sm"
             >
@@ -564,7 +567,9 @@ export default function ShippingSettingsPage() {
                     <button
                       type="button"
                       aria-haspopup="dialog"
-                      onClick={() => openDefaultsModal(category.key)}
+                      onClick={(event) =>
+                        openDefaultsModal(category.key, event.currentTarget)
+                      }
                       className="border border-zinc-800/70 bg-zinc-900 px-3 py-1.5 text-[11px] font-semibold text-white hover:border-zinc-700 sm:py-2 sm:text-xs"
                     >
                       Edit
@@ -580,6 +585,7 @@ export default function ShippingSettingsPage() {
       {isDefaultsModalOpen && defaultsDraft && (
         <ModalPortal
           open={isDefaultsModalOpen}
+          invoker={modalInvoker}
           onClose={closeDefaultsModal}
           label="Edit package defaults"
         >
@@ -701,6 +707,7 @@ export default function ShippingSettingsPage() {
       {isOriginModalOpen && (
         <ModalPortal
           open={isOriginModalOpen}
+          invoker={modalInvoker}
           onClose={() => setIsOriginModalOpen(false)}
           label="Edit origin"
         >

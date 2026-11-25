@@ -13,6 +13,7 @@ import { ShippingEstimate } from "./ShippingEstimate";
 interface CartDrawerProps {
   isOpen: boolean;
   onClose: () => void;
+  invoker?: HTMLElement | null;
 }
 
 const formatPrice = (priceCents: number) =>
@@ -23,7 +24,7 @@ const formatPrice = (priceCents: number) =>
     maximumFractionDigits: 2,
   }).format(priceCents / 100);
 
-export function CartDrawer({ isOpen, onClose }: CartDrawerProps) {
+export function CartDrawer({ isOpen, onClose, invoker }: CartDrawerProps) {
   const { items, itemCount, removeItem, updateQuantity, total } = useCart();
   const titleId = useId();
   const { present, visible } = useOverlayTransition(isOpen, 240);
@@ -31,6 +32,7 @@ export function CartDrawer({ isOpen, onClose }: CartDrawerProps) {
   return (
     <ModalPortal
       open={present}
+      invoker={invoker}
       onClose={() => {
         if (isOpen) onClose();
       }}

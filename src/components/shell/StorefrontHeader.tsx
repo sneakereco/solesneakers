@@ -13,17 +13,28 @@ type StorefrontHeaderProps = {
   role?: ProfileRole | null;
 };
 
+function readInvoker(event: Event): HTMLElement | null {
+  const invoker = event instanceof CustomEvent ? event.detail?.invoker : null;
+  return invoker instanceof HTMLElement ? invoker : null;
+}
+
 export function StorefrontHeader({
   isAuthenticated = false,
   userEmail,
   role = null,
 }: StorefrontHeaderProps) {
-  const [searchOpen, setSearchOpen] = useState(false);
-  const [cartOpen, setCartOpen] = useState(false);
+  const [search, setSearch] = useState<{ invoker: HTMLElement | null } | null>(null);
+  const [cart, setCart] = useState<{ invoker: HTMLElement | null } | null>(null);
 
   useEffect(() => {
-    const handleOpenSearch = () => setSearchOpen(true);
-    const handleOpenCart = () => setCartOpen(true);
+    const handleOpenSearch = (event: Event) => {
+      const invoker = readInvoker(event);
+      setSearch((current) => current ?? { invoker });
+    };
+    const handleOpenCart = (event: Event) => {
+      const invoker = readInvoker(event);
+      setCart((current) => current ?? { invoker });
+    };
 
     window.addEventListener("openSearch", handleOpenSearch);
     window.addEventListener("openCart", handleOpenCart);
@@ -37,8 +48,16 @@ export function StorefrontHeader({
   return (
     <>
       <ScrollHeader isAuthenticated={isAuthenticated} userEmail={userEmail} role={role} />
-      <SearchOverlay isOpen={searchOpen} onClose={() => setSearchOpen(false)} />
-      <CartDrawer isOpen={cartOpen} onClose={() => setCartOpen(false)} />
+      <SearchOverlay
+        isOpen={search !== null}
+        invoker={search?.invoker}
+        onClose={() => setSearch(null)}
+      />
+      <CartDrawer
+        isOpen={cart !== null}
+        invoker={cart?.invoker}
+        onClose={() => setCart(null)}
+      />
     </>
   );
 }

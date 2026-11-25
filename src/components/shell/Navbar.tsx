@@ -1,6 +1,6 @@
 "use client";
 
-import { useMemo, useState } from "react";
+import { useMemo, useState, type MouseEvent } from "react";
 import Image from "next/image";
 import Link from "next/link";
 import { usePathname } from "next/navigation";
@@ -41,7 +41,7 @@ export function Navbar({
     isAuthenticated: sessionIsAuthenticated,
     isLoading,
   } = useSession();
-  const [isMenuOpen, setIsMenuOpen] = useState(false);
+  const [menuInvoker, setMenuInvoker] = useState<HTMLButtonElement | null>(null);
 
   const loginUrl = useMemo(() => {
     if (pathname === "/" || pathname.startsWith("/auth")) {
@@ -50,8 +50,14 @@ export function Navbar({
     return `/auth/login?next=${encodeURIComponent(pathname)}`;
   }, [pathname]);
 
-  const handleSearchClick = () => window.dispatchEvent(new CustomEvent("openSearch"));
-  const handleCartClick = () => window.dispatchEvent(new CustomEvent("openCart"));
+  const handleSearchClick = (event: MouseEvent<HTMLButtonElement>) =>
+    window.dispatchEvent(
+      new CustomEvent("openSearch", { detail: { invoker: event.currentTarget } }),
+    );
+  const handleCartClick = (event: MouseEvent<HTMLButtonElement>) =>
+    window.dispatchEvent(
+      new CustomEvent("openCart", { detail: { invoker: event.currentTarget } }),
+    );
 
   const handleLogout = async () => {
     await fetch("/api/auth/logout", { method: "POST" });
@@ -99,7 +105,7 @@ export function Navbar({
         <div className="absolute left-5 top-1/2 -translate-y-1/2 sm:left-8 lg:left-14">
           <button
             type="button"
-            onClick={() => setIsMenuOpen(true)}
+            onClick={(event) => setMenuInvoker(event.currentTarget)}
             className="inline-flex h-11 w-11 items-center justify-start text-zinc-800 transition-colors hover:text-black"
             aria-label="Open menu"
           >
@@ -234,7 +240,11 @@ export function Navbar({
         </div>
       </div>
 
-      <StoreMenuDrawer isOpen={isMenuOpen} onClose={() => setIsMenuOpen(false)} />
+      <StoreMenuDrawer
+        isOpen={menuInvoker !== null}
+        invoker={menuInvoker}
+        onClose={() => setMenuInvoker(null)}
+      />
     </nav>
   );
 }

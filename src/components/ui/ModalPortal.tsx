@@ -27,6 +27,7 @@ type Props = {
   labelledBy?: string;
   describedBy?: string;
   placement?: keyof typeof placements;
+  invoker?: HTMLElement | null;
   initialFocusRef?: RefObject<HTMLElement | null>;
   focusDialog?: boolean;
   role?: "alertdialog";
@@ -88,6 +89,7 @@ function ModalSurface({
   labelledBy,
   describedBy,
   placement = "center",
+  invoker,
   initialFocusRef,
   focusDialog,
   role,
@@ -98,14 +100,20 @@ function ModalSurface({
 }: Omit<Props, "open">) {
   const dialogRef = useRef<HTMLDialogElement>(null);
   const backdropRef = useRef<HTMLDivElement>(null);
-  const pointerStartedOnBackdrop = useRef(false);
+  const backdropPointer = useRef<{ id: number; released: boolean } | null>(null);
+  const previousFocus = useRef<Element | null | undefined>(undefined);
+  const [openingInvoker] = useState(invoker);
   const useAdminTheme =
     placement === "center" && Boolean(document.querySelector("[data-admin-shell]"));
+
+  const isBackdrop = (target: EventTarget | null) =>
+    target !== null && (target === backdropRef.current || target === dialogRef.current);
 
   useLayoutEffect(() => {
     const dialog = dialogRef.current;
     if (!dialog) return;
-    const trigger = document.activeElement;
+    if (previousFocus.current === undefined)
+      previousFocus.current = document.activeElement;
     const unlock = lockBodyScroll();
     dialog.showModal();
     const initialFocus = focusDialog ? dialog : initialFocusRef?.current;
@@ -114,11 +122,14 @@ function ModalSurface({
     return () => {
       dialog.close();
       unlock();
-      if (trigger instanceof HTMLElement && trigger.isConnected) {
-        trigger.focus({ preventScroll: true });
+      for (const target of [openingInvoker, previousFocus.current]) {
+        if (target instanceof HTMLElement && target.isConnected) {
+          target.focus({ preventScroll: true });
+          if (document.activeElement === target) break;
+        }
       }
     };
-  }, [focusDialog, initialFocusRef]);
+  }, [focusDialog, initialFocusRef, openingInvoker]);
 
   return (
     <dialog
@@ -140,22 +151,36 @@ function ModalSurface({
         onClose();
       }}
       onPointerDown={(event) => {
-        pointerStartedOnBackdrop.current =
-          event.button === 0 &&
-          (event.target === backdropRef.current || event.target === event.currentTarget);
+        const pointer = backdropPointer.current;
+        if (pointer && !pointer.released && pointer.id !== event.pointerId) return;
+        backdropPointer.current =
+          event.button === 0 && isBackdrop(event.target)
+            ? { id: event.pointerId, released: false }
+            : null;
       }}
-      onPointerCancel={() => {
-        pointerStartedOnBackdrop.current = false;
+      onPointerUp={(event) => {
+        const pointer = backdropPointer.current;
+        if (pointer?.id !== event.pointerId) return;
+        // Touch capture can keep the backdrop as the event target after leaving it.
+        const releaseTarget = document.elementFromPoint(event.clientX, event.clientY);
+        backdropPointer.current = isBackdrop(releaseTarget)
+          ? { id: event.pointerId, released: true }
+          : null;
+      }}
+      onPointerCancel={(event) => {
+        if (backdropPointer.current?.id === event.pointerId)
+          backdropPointer.current = null;
       }}
       onClick={(event) => {
         event.stopPropagation();
-        if (
-          pointerStartedOnBackdrop.current &&
-          (event.target === backdropRef.current || event.target === event.currentTarget)
-        ) {
+        const pointer = backdropPointer.current;
+        if (!pointer?.released || event.detail === 0) return;
+        const click = event.nativeEvent;
+        if ("pointerId" in click && click.pointerId !== pointer.id) return;
+        backdropPointer.current = null;
+        if (isBackdrop(event.target)) {
           onClose();
         }
-        pointerStartedOnBackdrop.current = false;
       }}
     >
       <div

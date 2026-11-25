@@ -154,6 +154,7 @@ const StatCard = ({
 
 type AdminOrderItemDetailsModalProps = {
   open: boolean;
+  invoker?: HTMLElement | null;
   item: AdminOrderItem | null;
   onClose: () => void;
   showProfit?: boolean;
@@ -161,6 +162,7 @@ type AdminOrderItemDetailsModalProps = {
 
 export function AdminOrderItemDetailsModal({
   open,
+  invoker,
   item,
   onClose,
   showProfit = true,
@@ -206,6 +208,7 @@ export function AdminOrderItemDetailsModal({
       open={open}
       onClose={onClose}
       label={productTitle}
+      invoker={invoker}
       zIndexClassName="z-[10000]"
     >
       <div className="flex max-h-[80vh] w-full max-w-4xl flex-col overflow-hidden rounded-lg border border-zinc-800 bg-zinc-950 shadow-2xl">

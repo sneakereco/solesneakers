@@ -19,6 +19,7 @@ import { logError } from "@/lib/utils/log";
 interface SearchOverlayProps {
   isOpen: boolean;
   onClose: () => void;
+  invoker?: HTMLElement | null;
 }
 
 type SearchResult = {
@@ -117,7 +118,7 @@ function buildSuggestions(results: SearchResult[], query: string) {
   return Array.from(suggestions.values()).slice(0, 6);
 }
 
-export function SearchOverlay({ isOpen, onClose }: SearchOverlayProps) {
+export function SearchOverlay({ isOpen, onClose, invoker }: SearchOverlayProps) {
   const router = useRouter();
   const inputRef = useRef<HTMLInputElement>(null);
   const closeTimerRef = useRef<number | null>(null);
@@ -235,6 +236,7 @@ export function SearchOverlay({ isOpen, onClose }: SearchOverlayProps) {
   return (
     <ModalPortal
       open={isOpen}
+      invoker={invoker}
       onClose={closeSearch}
       label="Search products"
       initialFocusRef={inputRef}

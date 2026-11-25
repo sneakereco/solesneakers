@@ -364,6 +364,7 @@ export default function TransactionDetailPage() {
   } | null>(null);
   const [resendingEmail, setResendingEmail] = useState<string | null>(null);
   const [selectedItem, setSelectedItem] = useState<AdminOrderItem | null>(null);
+  const [itemInvoker, setItemInvoker] = useState<HTMLButtonElement | null>(null);
   const [itemModalOpen, setItemModalOpen] = useState(false);
 
   const [previousOrderId, setPreviousOrderId] = useState(orderId);
@@ -518,7 +519,8 @@ export default function TransactionDetailPage() {
     ...(refundedCents > 0 ? [REFUND_EMAIL_TYPE] : []),
   ];
 
-  const openItemModal = (item: OrderItem) => {
+  const openItemModal = (item: OrderItem, invoker: HTMLButtonElement) => {
+    setItemInvoker(invoker);
     setSelectedItem(item as unknown as AdminOrderItem);
     setItemModalOpen(true);
   };
@@ -579,7 +581,7 @@ export default function TransactionDetailPage() {
                     <button
                       key={item.id}
                       type="button"
-                      onClick={() => openItemModal(item)}
+                      onClick={(event) => openItemModal(item, event.currentTarget)}
                       className={`group -mx-2 flex w-full items-start gap-4 rounded-sm border border-transparent px-2 py-3 text-left transition-colors hover:border-zinc-700/80 hover:bg-zinc-800/50 ${isRefunded ? "opacity-50" : ""}`}
                     >
                       <div className="h-10 w-10 shrink-0 overflow-hidden border border-zinc-800 bg-zinc-950">
@@ -1020,6 +1022,7 @@ export default function TransactionDetailPage() {
       <AdminOrderItemDetailsModal
         open={itemModalOpen}
         item={selectedItem}
+        invoker={itemInvoker}
         showProfit={showOrderProfit && !Boolean(selectedItem?.refunded_at)}
         onClose={() => {
           setItemModalOpen(false);

@@ -269,6 +269,7 @@ export default function ShippingPage() {
     null,
   );
   const [selectedItem, setSelectedItem] = useState<OrderItem | null>(null);
+  const [modalInvoker, setModalInvoker] = useState<HTMLElement | null>(null);
   const [originAddress, setOriginAddress] = useState<ShippingOrigin | null>(null);
   const [originModalOpen, setOriginModalOpen] = useState(false);
   const [originMessage, setOriginMessage] = useState("");
@@ -413,7 +414,8 @@ export default function ShippingPage() {
     setExpandedDetails((prev) => ({ ...prev, [orderId]: nextExpanded }));
   };
 
-  const openItemDetails = (item: OrderItem) => {
+  const openItemDetails = (item: OrderItem, invoker: HTMLElement) => {
+    setModalInvoker(invoker);
     setSelectedItem(item);
   };
 
@@ -616,6 +618,7 @@ export default function ShippingPage() {
           aria-haspopup="dialog"
           onClick={(event) => {
             event.stopPropagation();
+            setModalInvoker(event.currentTarget);
             setLabelOrder(order);
           }}
           className="admin-button-primary"
@@ -628,6 +631,7 @@ export default function ShippingPage() {
           aria-haspopup="dialog"
           onClick={(event) => {
             event.stopPropagation();
+            setModalInvoker(event.currentTarget);
             setConfirmMarkShipped(order);
           }}
           disabled={markingShippedId === order.id}
@@ -754,9 +758,10 @@ export default function ShippingPage() {
                   return (
                     <div
                       key={item.id}
+                      tabIndex={-1}
                       onClick={(event) => {
                         event.stopPropagation();
-                        openItemDetails(item);
+                        openItemDetails(item, event.currentTarget);
                       }}
                       className={`group relative cursor-pointer px-6 py-4 transition-colors ${
                         isRefunded
@@ -927,7 +932,8 @@ export default function ShippingPage() {
                     return (
                       <div
                         key={item.id}
-                        onClick={() => openItemDetails(item)}
+                        tabIndex={-1}
+                        onClick={(event) => openItemDetails(item, event.currentTarget)}
                         className={`relative flex cursor-pointer items-start gap-3 rounded-sm p-2 text-base transition ${
                           isRefunded
                             ? "border border-red-900/40 bg-red-950/20"
@@ -969,7 +975,7 @@ export default function ShippingPage() {
                             type="button"
                             onClick={(event) => {
                               event.stopPropagation();
-                              openItemDetails(item);
+                              openItemDetails(item, event.currentTarget);
                             }}
                             className="mt-1 text-xs text-red-400 hover:text-red-300"
                           >
@@ -1060,7 +1066,8 @@ export default function ShippingPage() {
         <button
           type="button"
           aria-haspopup="dialog"
-          onClick={() => {
+          onClick={(event) => {
+            setModalInvoker(event.currentTarget);
             setOriginError("");
             setOriginMessage("");
             setOriginFieldErrors({});
@@ -1127,9 +1134,11 @@ export default function ShippingPage() {
       <AdminOrderItemDetailsModal
         open={Boolean(selectedItem)}
         item={selectedItem}
+        invoker={modalInvoker}
         onClose={() => setSelectedItem(null)}
       />
       <CreateLabelForm
+        invoker={modalInvoker}
         open={!!labelOrder}
         order={labelOrder}
         originLine={originLine}
@@ -1148,6 +1157,7 @@ export default function ShippingPage() {
       />
 
       <ConfirmDialog
+        invoker={modalInvoker}
         isOpen={!!confirmMarkShipped}
         title="Mark as shipped manually?"
         description="Important: This should only be used if the carrier hasn't scanned the package yet. Normally, Shippo automatically updates tracking status and sends customer emails when the carrier scans the package. Using this button will manually update the status without waiting for carrier confirmation."
@@ -1161,6 +1171,7 @@ export default function ShippingPage() {
       />
 
       <OriginModal
+        invoker={modalInvoker}
         open={originModalOpen}
         originAddress={originAddress}
         emptyOrigin={EMPTY_ORIGIN}

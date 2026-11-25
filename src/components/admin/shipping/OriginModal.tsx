@@ -8,6 +8,7 @@ type OriginErrors = Partial<Record<keyof ShippingOrigin, string>>;
 
 type OriginModalProps = {
   open: boolean;
+  invoker?: HTMLElement | null;
   originAddress: ShippingOrigin | null;
   emptyOrigin: ShippingOrigin;
   originError: string;
@@ -21,6 +22,7 @@ type OriginModalProps = {
 
 export function OriginModal({
   open,
+  invoker,
   originAddress,
   emptyOrigin,
   originError,
@@ -35,7 +37,12 @@ export function OriginModal({
   const errors = originFieldErrors ?? {};
 
   return (
-    <ModalPortal open={open} onClose={onClose} label="Change origin address">
+    <ModalPortal
+      open={open}
+      invoker={invoker}
+      onClose={onClose}
+      label="Change origin address"
+    >
       <div className="w-full max-w-3xl rounded-sm border border-zinc-800/70 bg-zinc-950 p-3 sm:p-6">
         <div className="mb-2 flex items-center justify-between gap-3 sm:mb-4">
           <div>

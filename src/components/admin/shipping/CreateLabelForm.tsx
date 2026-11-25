@@ -53,6 +53,7 @@ type OrderSummary = {
 
 type Props = {
   open: boolean;
+  invoker?: HTMLElement | null;
   order: OrderSummary | null;
   originLine?: string | null;
   initialPackage?: ParcelDraft | null;
@@ -163,6 +164,7 @@ const getErrorMessage = (error: string): string => {
 
 export function CreateLabelForm({
   open,
+  invoker,
   order,
   originLine,
   initialPackage,
@@ -409,7 +411,12 @@ export function CreateLabelForm({
   const hasAddressErrors = Object.keys(addressErrors).length > 0;
 
   return (
-    <ModalPortal open={open} onClose={onClose} label="Create shipping label">
+    <ModalPortal
+      open={open}
+      invoker={invoker}
+      onClose={onClose}
+      label="Create shipping label"
+    >
       <div className="max-h-[90vh] w-full max-w-6xl overflow-y-auto rounded-lg border border-zinc-800/70 bg-zinc-950">
         <div className="sticky top-0 z-10 flex items-start justify-between gap-4 border-b border-zinc-800/70 bg-zinc-950 p-5">
           <div>

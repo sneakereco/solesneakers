@@ -8,6 +8,7 @@ import { ModalPortal } from "./ModalPortal";
 
 interface ConfirmDialogProps {
   isOpen: boolean;
+  invoker?: HTMLElement | null;
   title: string;
   description?: string;
   confirmLabel?: string;
@@ -18,6 +19,7 @@ interface ConfirmDialogProps {
 
 export function ConfirmDialog({
   isOpen,
+  invoker,
   title,
   description,
   confirmLabel = "Confirm",
@@ -32,6 +34,7 @@ export function ConfirmDialog({
   return (
     <ModalPortal
       open={isOpen}
+      invoker={invoker}
       onClose={onCancel}
       role="alertdialog"
       labelledBy={titleId}

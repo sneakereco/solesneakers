@@ -13,13 +13,17 @@ const bundle = await compileUxHarness(
     import { SessionProvider } from "./src/contexts/SessionContext";
     import { SearchOverlay } from "./src/components/search/SearchOverlay";
     import { StoreMenuDrawer } from "./src/components/shell/StoreMenuDrawer";
+    import { StorefrontHeader } from "./src/components/shell/StorefrontHeader";
     import { ConfirmDialog } from "./src/components/ui/ConfirmDialog";
     import { ModalPortal } from "./src/components/ui/ModalPortal";
     import { RdkSelect } from "./src/components/ui/Select";
 
-    function OverlayFixture({ admin = false }) {
+    function OverlayFixture({ admin = false, storefront = false }) {
       const [open, setOpen] = useState("");
       const [confirm, setConfirm] = useState(false);
+      const [invoker, setInvoker] = useState(null);
+      const [confirmInvoker, setConfirmInvoker] = useState(null);
+      const [showRemovableLauncher, setShowRemovableLauncher] = useState(true);
       const [value, setValue] = useState("ground");
       const [submits, setSubmits] = useState(0);
       const [backgroundClicks, setBackgroundClicks] = useState(0);
@@ -30,7 +34,9 @@ const bundle = await compileUxHarness(
           <button onClick={() => setBackgroundClicks(backgroundClicks + 1)}>
             Background clicks {backgroundClicks}
           </button>
-          {admin ? (
+          {storefront ? (
+            <StorefrontHeader />
+          ) : admin ? (
             <div data-admin-shell>
               <AdminSidebar userEmail="admin@example.test" role="admin" />
               <main data-admin-content className="md:ml-72">
@@ -42,11 +48,18 @@ const bundle = await compileUxHarness(
               <button onClick={() => setOpen("cart")}>Open cart</button>
               <button onClick={() => setOpen("search")}>Open search</button>
               <button onClick={() => setOpen("menu")}>Open store menu</button>
-              <button onClick={() => setOpen("example")}>Open example editor</button>
+              <button onClick={(event) => {
+                setInvoker(event.currentTarget);
+                setOpen("example");
+              }}>Open example editor</button>
+              {showRemovableLauncher && <button onClick={(event) => {
+                setInvoker(event.currentTarget);
+                setOpen("removable");
+              }}>Open and remove launcher</button>}
               <CartDrawer isOpen={open === "cart"} onClose={close} />
               <SearchOverlay isOpen={open === "search"} onClose={close} />
               <StoreMenuDrawer isOpen={open === "menu"} onClose={close} />
-              <ModalPortal open={open === "example"} onClose={close} label="Example editor">
+              <ModalPortal open={open === "example" || open === "removable"} onClose={close} invoker={invoker} label="Example editor">
                 <form className="w-72 bg-white p-4" onSubmit={(event) => {
                   event.preventDefault();
                   setSubmits(submits + 1);
@@ -64,10 +77,17 @@ const bundle = await compileUxHarness(
                     ]}
                   />
                   <output>{value} / {submits} submissions</output>
-                  <button type="button" onClick={() => setConfirm(true)}>Review change</button>
+                  <button type="button" onClick={(event) => {
+                    setConfirmInvoker(event.currentTarget);
+                    setConfirm(true);
+                  }}>Review change</button>
                   <button type="submit">Submit</button>
+                  {open === "removable" && <button type="button" onClick={() => setShowRemovableLauncher(false)}>
+                    Remove launcher
+                  </button>}
                   <ConfirmDialog
                     isOpen={confirm}
+                    invoker={confirmInvoker}
                     title="Confirm service change"
                     description="The new service will apply to this order."
                     onCancel={() => setConfirm(false)}
@@ -86,7 +106,10 @@ const bundle = await compileUxHarness(
       <StrictMode>
         <SessionProvider initialUser={null} initialRole={null}>
           <CartProvider>
-            <OverlayFixture admin={location.pathname === "/admin"} />
+            <OverlayFixture
+              admin={location.pathname === "/admin"}
+              storefront={location.pathname === "/storefront"}
+            />
           </CartProvider>
         </SessionProvider>
       </StrictMode>
@@ -113,7 +136,7 @@ const bundle = await compileUxHarness(
                    export const useRouter = () => ({push() {}});`
                 : path === "next/link"
                   ? "export default function Link(props) { return <a {...props} />; }"
-                  : "export default function Image(props) { return <img {...props} />; }",
+                  : "export default function Image({ priority, unoptimized, ...props }) { return <img {...props} />; }",
           }));
         },
       },
@@ -128,12 +151,49 @@ const fixtures = {
   "/api/store/taxonomy": { brands: [], sizes: [] },
 };
 
-async function openPage(page, admin = false) {
+async function openPage(page, path = "") {
   await page.route("**/api/**", (route) => {
     const payload = fixtures[new URL(route.request().url()).pathname];
     return payload ? route.fulfill({ json: payload }) : route.abort();
   });
-  await openUxHarness(page, bundle, `https://ux.test/${admin ? "admin" : ""}`);
+  await openUxHarness(page, bundle, `https://ux.test/${path}`);
+}
+
+async function pointerOpenWithoutFocus(trigger, previouslyFocused) {
+  await previouslyFocused.focus();
+  await trigger.evaluate((element) => {
+    element.addEventListener("mousedown", (event) => event.preventDefault(), {
+      once: true,
+    });
+  });
+  await trigger.click();
+}
+
+async function dragAcross(page, start, end) {
+  await page.mouse.move(...start);
+  await page.mouse.down();
+  await page.mouse.move(...end, { steps: 5 });
+  await page.mouse.up();
+}
+
+async function pointerSequence(dialog, events) {
+  await dialog.evaluate((element, steps) => {
+    const backdrop = document.elementFromPoint(4, 4);
+    if (!element.contains(backdrop)) throw new Error("No modal backdrop at (4, 4)");
+    for (const [type, pointerId, point = [4, 4]] of steps) {
+      backdrop.dispatchEvent(
+        new PointerEvent(type, {
+          bubbles: true,
+          pointerId,
+          pointerType: "touch",
+          button: 0,
+          clientX: point[0],
+          clientY: point[1],
+          detail: type === "click" ? 1 : 0,
+        }),
+      );
+    }
+  }, events);
 }
 
 async function verifyNativeDialog(page, dialog) {
@@ -359,7 +419,7 @@ try {
       viewport,
       "shipping editor traps focus and closes via Escape or backdrop",
       async (page) => {
-        await openPage(page, true);
+        await openPage(page, "admin");
         const trigger = page.getByRole("button", { name: "Edit", exact: true }).first();
         const dialog = page.getByRole("dialog", { name: "Edit package defaults" });
         for (const dismiss of [
@@ -422,7 +482,7 @@ try {
         await expect(select).toBeFocused();
 
         const review = dialog.getByRole("button", { name: "Review change" });
-        await review.press("Enter");
+        await pointerOpenWithoutFocus(review, select);
         const confirmation = page.getByRole("alertdialog", {
           name: "Confirm service change",
         });
@@ -445,10 +505,11 @@ try {
     { width: 390, height: 844 },
     "mobile admin menu traps focus and closes on desktop resize",
     async (page) => {
-      await openPage(page, true);
+      await openPage(page, "admin");
       const trigger = page.getByRole("button", { name: "Open admin menu" });
       await verifyTouchTarget(trigger);
-      await trigger.press("Enter");
+      const background = page.getByRole("button", { name: "Background clicks 0" });
+      await pointerOpenWithoutFocus(trigger, background);
       const dialog = page.getByRole("dialog", { name: "Admin menu" });
       await verifyNativeDialog(page, dialog);
       const close = dialog.getByRole("button", { name: "Close admin menu" });
@@ -473,6 +534,129 @@ try {
         .poll(() => page.evaluate(() => document.body.style.overflow))
         .toBe("scroll");
       await verifySidebarContrast(page.getByRole("complementary"));
+    },
+  );
+
+  const wide = { width: 1440, height: 1000 };
+  for (const scenario of [
+    {
+      trigger: "Edit",
+      dialog: "Edit package defaults",
+      path: "admin",
+      inside: [720, 470],
+    },
+    { trigger: "Open cart", dialog: /^My cart/, path: "", inside: [1190, 470] },
+  ]) {
+    await check(
+      wide,
+      `${scenario.trigger} ignores drags across the backdrop boundary`,
+      async (page) => {
+        await openPage(page, scenario.path);
+        const trigger = page
+          .getByRole("button", { name: scenario.trigger, exact: true })
+          .first();
+        const dialog = page.getByRole("dialog", { name: scenario.dialog });
+        await trigger.press("Enter");
+        await expect(dialog).toBeVisible();
+        if (!scenario.path) {
+          await verifyPlacement(dialog.getByRole("complementary"), 896, 0, 544, 1000);
+        }
+        await dragAcross(page, scenario.inside, [4, 4]);
+        await expect(dialog.getByRole("button", { name: /Close/ })).toBeEnabled();
+        await dragAcross(page, [4, 4], scenario.inside);
+        await expect(dialog).toBeVisible();
+        if (!scenario.path) {
+          await expect(dialog.getByRole("complementary")).not.toHaveAttribute("inert");
+        }
+        await page.mouse.click(4, 4);
+        await verifyClosed(page, dialog, trigger);
+      },
+    );
+  }
+
+  await check(
+    wide,
+    "only a matching uncancelled backdrop pointer can dismiss",
+    async (page) => {
+      await openPage(page);
+      const trigger = page.getByRole("button", { name: "Open example editor" });
+      const dialog = page.getByRole("dialog", { name: "Example editor" });
+      await trigger.press("Enter");
+      await expect(dialog).toBeVisible();
+      await pointerSequence(dialog, [
+        ["pointerdown", 8],
+        ["pointerup", 9],
+        ["click", 9],
+      ]);
+      await expect(dialog).toBeVisible();
+      await pointerSequence(dialog, [
+        ["pointerdown", 8],
+        ["pointercancel", 8],
+        ["pointerup", 8],
+        ["click", 8],
+      ]);
+      await expect(dialog).toBeVisible();
+      await pointerSequence(dialog, [
+        ["pointerdown", 8],
+        ["pointerup", 8, [720, 500]],
+        ["click", 8, [720, 500]],
+      ]);
+      await expect(dialog).toBeVisible();
+      await pointerSequence(dialog, [
+        ["pointerdown", 8],
+        ["pointercancel", 9],
+        ["pointerup", 8],
+        ["click", 8],
+      ]);
+      await verifyClosed(page, dialog, trigger);
+    },
+  );
+
+  for (const scenario of [
+    { trigger: "Search", dialog: "Search products", path: "storefront" },
+    { trigger: "Cart (0)", dialog: /^My cart/, path: "storefront" },
+    { trigger: "Open menu", dialog: "Store menu", path: "storefront" },
+    { trigger: "Edit", dialog: "Edit package defaults", path: "admin" },
+  ]) {
+    await check(
+      wide,
+      `${scenario.trigger} restores its real launcher after unfocused pointer activation`,
+      async (page) => {
+        await openPage(page, scenario.path);
+        const trigger = page
+          .getByRole("button", { name: scenario.trigger, exact: true })
+          .first();
+        const background = page.getByRole("button", { name: "Background clicks 0" });
+        const dialog = page.getByRole("dialog", { name: scenario.dialog });
+        await pointerOpenWithoutFocus(trigger, background);
+        await expect(dialog).toBeVisible();
+        await page.keyboard.press("Escape");
+        await verifyClosed(page, dialog, trigger);
+        if (scenario.trigger === "Cart (0)") {
+          await background.focus();
+          await page.evaluate(() => window.dispatchEvent(new Event("openCart")));
+          await expect(dialog).toBeVisible();
+          await page.keyboard.press("Escape");
+          await verifyClosed(page, dialog, background);
+        }
+      },
+    );
+  }
+
+  await check(
+    wide,
+    "falls back to the earlier focus when the launcher is removed",
+    async (page) => {
+      await openPage(page);
+      const trigger = page.getByRole("button", { name: "Open and remove launcher" });
+      const background = page.getByRole("button", { name: "Background clicks 0" });
+      const dialog = page.getByRole("dialog", { name: "Example editor" });
+      await pointerOpenWithoutFocus(trigger, background);
+      await expect(dialog).toBeVisible();
+      await dialog.getByRole("button", { name: "Remove launcher" }).click();
+      await expect(trigger).toHaveCount(0);
+      await page.keyboard.press("Escape");
+      await verifyClosed(page, dialog, background);
     },
   );
 } finally {
