@@ -42,7 +42,7 @@ async function addProduct(page, baseUrl, product) {
   await add.click();
   await page.keyboard.press("Escape");
 }
-async function emptyOwnedCart(page, baseUrl, identity, fixtures) {
+export async function emptyOwnedCart(page, baseUrl, identity, fixtures) {
   await goto(page, baseUrl, "/cart");
   const items = await readCart(page, identity.accountId);
   if (
@@ -51,6 +51,13 @@ async function emptyOwnedCart(page, baseUrl, identity, fixtures) {
     )
   )
     throw Error("Browser cart contains an unowned fixture");
+  await expect
+    .poll(
+      async () =>
+        (await readCart(page, identity.accountId)).length === 0 ||
+        (await page.getByRole("button", { name: /^Remove .+ from cart$/i }).count()) > 0,
+    )
+    .toBe(true);
   for (let index = 0; index < 30; index++) {
     const remove = page.getByRole("button", { name: /^Remove .+ from cart$/i });
     if (!(await remove.count())) break;
@@ -67,8 +74,10 @@ function deferred() {
   });
   return { promise, resolve };
 }
-async function validationRace(page, options, product) {
+export async function validationRace(page, options, product) {
   await addProduct(page, options.baseUrl, product);
+  await goto(page, options.baseUrl, "/cart");
+  await page.waitForLoadState("networkidle");
   const fetched = deferred(),
     release = deferred();
   let intercepted = false;
@@ -86,7 +95,6 @@ async function validationRace(page, options, product) {
   };
   await page.route("**/api/cart/validate", handler);
   try {
-    await goto(page, options.baseUrl, "/cart");
     await page.reload({ waitUntil: "domcontentloaded" });
     await Promise.race([
       fetched.promise,
@@ -295,6 +303,38 @@ export async function runRenderedJourney(page, context, options) {
       });
     }
   }
+  if (options.mode !== "perimeter")
+    for (const [operation, path, method, body] of [
+      ["catalog", "/api/store/products?page=1&limit=20", "GET"],
+      [
+        "cart_validate",
+        "/api/cart/validate",
+        "POST",
+        { items: [{ productId: product.id, variantId: product.variantId, quantity: 1 }] },
+      ],
+    ]) {
+      const at = Date.now();
+      let outcome = "technical";
+      try {
+        const response = await context.request.fetch(options.baseUrl + path, {
+          method,
+          data: body,
+          maxRedirects: 0,
+          timeout: 15000,
+        });
+        const value = await response.json();
+        if (
+          response.ok() &&
+          (operation === "catalog"
+            ? Array.isArray(value.products)
+            : Array.isArray(value.items))
+        )
+          outcome = "success";
+      } catch {
+        /* Recorded as an unexpected technical outcome. */
+      }
+      options.emit({ operation, outcome, at, durationMs: Date.now() - at });
+    }
   await goto(page, options.baseUrl, "/store");
   await goto(page, options.baseUrl, `/store?q=${encodeURIComponent(product.name)}`);
   await goto(page, options.baseUrl, `/store/${product.id}`);

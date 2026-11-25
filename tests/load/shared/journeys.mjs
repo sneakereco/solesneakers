@@ -16,10 +16,15 @@ export async function requestOperation(
   path,
   body,
   validate,
-  { stockConflict = false, page = false } = {},
+  { stockConflict = false, page = false, headers } = {},
 ) {
-  transport.emit("operation_offered", 1, { operation });
   const started = transport.nowMs();
+  const tags = {
+    operation,
+    route: path.split("?")[0].replace(/[a-f0-9]{8}-[a-f0-9-]{27}/gi, ":id"),
+    phase: transport.measurementPhase?.(started) ?? "hold",
+  };
+  transport.emit("operation_offered", 1, tags);
   let response;
   let outcome = "technical";
   try {
@@ -28,6 +33,8 @@ export async function requestOperation(
       path,
       body,
       operation,
+      headers,
+      phase: tags.phase,
     });
     const value = page ? response.body : json(response);
     if (
@@ -40,16 +47,18 @@ export async function requestOperation(
     }
     if (response.status < 200 || response.status >= 300)
       fail(`${operation} HTTP ${response.status}`);
-    if (!validate(value)) fail(`${operation} response schema invalid`);
+    if (!validate(value, response)) fail(`${operation} response schema invalid`);
     outcome = "success";
     return value;
   } finally {
     transport.emit("operation_ms", response?.timing ?? transport.nowMs() - started, {
-      operation,
+      ...tags,
       outcome,
     });
-    transport.emit("technical_failure", outcome === "technical" ? 1 : 0, { operation });
-    transport.emit("operation_completed", 1, { operation, outcome });
+    transport.emit("technical_failure", outcome === "technical" ? 1 : 0, tags);
+    transport.emit("technical_attempts", 1, tags);
+    if (outcome === "technical") transport.emit("technical_errors", 1, tags);
+    transport.emit("operation_completed", 1, { ...tags, outcome });
   }
 }
 const pause = async (plan, transport, key) => {
@@ -110,6 +119,22 @@ export async function runCartJourney(session, plan, transport) {
   return value;
 }
 export async function runCheckoutJourney(session, plan, transport) {
+  const phase = transport.measurementPhase?.(transport.nowMs()) ?? "hold";
+  try {
+    const result = await executeCheckoutJourney(session, plan, transport);
+    if (!["stock-conflict", "stock-unavailable"].includes(result.classification))
+      transport.emit(
+        "eligible_checkout_completed",
+        result.classification === "completed" ? 1 : 0,
+        { phase },
+      );
+    return result;
+  } catch (error) {
+    transport.emit("eligible_checkout_completed", 0, { phase });
+    throw error;
+  }
+}
+async function executeCheckoutJourney(session, plan, transport) {
   if (!session.items?.length)
     return { status: "not-started", classification: "stock-unavailable" };
   const started = transport.nowMs();
@@ -209,18 +234,16 @@ export async function runCheckoutJourney(session, plan, transport) {
         "delivered",
       ].includes(status.status)
     ) {
-      transport.emit("eligible_checkout_completed", 1, {});
       transport.emit("session_checkout_ms", transport.nowMs() - started, {});
       return {
         orderId: prepared.orderId,
         paymentId: payment.paymentId,
         status: status.status,
-        classification: "completed",
+        classification: transport.nowMs() <= deadline ? "completed" : "completed-late",
         durationMs: transport.nowMs() - started,
       };
     }
     if (["canceled", "cancelled", "expired", "failed"].includes(status.status)) {
-      transport.emit("eligible_checkout_completed", 0, {});
       return {
         orderId: prepared.orderId,
         status: status.status,
@@ -230,7 +253,6 @@ export async function runCheckoutJourney(session, plan, transport) {
     if (transport.nowMs() + 2000 > deadline) break;
     await transport.pause(2);
   }
-  transport.emit("eligible_checkout_completed", 0, {});
   return {
     orderId: prepared.orderId,
     paymentId: payment.paymentId,

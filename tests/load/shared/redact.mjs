@@ -1,7 +1,8 @@
 const sensitive =
-  /(?:authorization|cookie|password|secret|token|credential|signing.?key|email|address|instagram|handle|sourceId|^mac$)/i;
+  /(?:authorization|cookie|password|secret|token|credential|signing.?key|email|address|instagram|handle|sourceId|^mac$|^stack$)/i;
 export function redactString(value) {
   return value
+    .replace(/\b((?:https?|postgres(?:ql)?|rediss?):\/\/)[^/\s@]+@/gi, "$1[REDACTED]@")
     .replace(
       /([?&](?:token|guestAccessToken|access_token|refresh_token|permit|secret|signature)=)[^&\s"'<>]+/gi,
       "$1[REDACTED]",
@@ -19,13 +20,17 @@ export function redactArtifact(value, seen = new WeakSet()) {
     return typeof value === "bigint" ? String(value) : value;
   if (seen.has(value)) return "[CIRCULAR]";
   seen.add(value);
-  if (value instanceof Error)
-    return { name: value.name, message: redactString(value.message) };
-  if (Array.isArray(value)) return value.map((item) => redactArtifact(item, seen));
-  return Object.fromEntries(
-    Object.entries(value).map(([key, item]) => [
-      key,
-      sensitive.test(key) ? "[REDACTED]" : redactArtifact(item, seen),
-    ]),
-  );
+  try {
+    if (value instanceof Error)
+      return { name: value.name, message: redactString(value.message) };
+    if (Array.isArray(value)) return value.map((item) => redactArtifact(item, seen));
+    return Object.fromEntries(
+      Object.entries(value).map(([key, item]) => [
+        key,
+        sensitive.test(key) ? "[REDACTED]" : redactArtifact(item, seen),
+      ]),
+    );
+  } finally {
+    seen.delete(value);
+  }
 }

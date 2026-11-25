@@ -1,5 +1,9 @@
 import { Counter, Rate, Trend } from "k6/metrics";
 const metrics = {
+  technical_attempts: new Counter("technical_attempts"),
+  technical_errors: new Counter("technical_errors"),
+  http_response: new Counter("http_response"),
+  session_requests: new Trend("session_requests"),
   operation_ms: new Trend("operation_ms", true),
   technical_failure: new Rate("technical_failure"),
   operation_offered: new Counter("operation_offered"),

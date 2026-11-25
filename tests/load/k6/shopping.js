@@ -23,6 +23,8 @@ export const sessions = new SharedArray(
 );
 export const options = JSON.parse(JSON.stringify(config.options));
 export function setup() {
+  emit("technical_attempts", 0);
+  emit("technical_errors", 0);
   if (!config.baseUrl || !config.credential || !config.shard)
     throw Error("Missing enrolled worker config");
   console.log("LOAD_WORKER_READY");
@@ -84,9 +86,21 @@ export async function shopperSession() {
   } catch {
     emit("session_interrupted", 1);
     succeeded = false;
+    const remaining =
+      Math.min(started + duration * 1000, Date.parse(config.plan.deadline)) - Date.now();
+    if (remaining > 0) sleep(remaining / 1000);
   } finally {
     emit("active_delta", -1);
-    emit("session_duration_ms", Date.now() - started);
+    const tags = {
+      outcome: succeeded ? "success" : "technical",
+      full_sample:
+        transport.measurementPhase(started) === "hold" &&
+        transport.measurementPhase(Date.now()) === "hold"
+          ? "1"
+          : "0",
+    };
+    emit("session_duration_ms", Date.now() - started, tags);
+    emit("session_requests", transport.requests, tags);
     if (succeeded) emit("session_completed", 1);
   }
 }

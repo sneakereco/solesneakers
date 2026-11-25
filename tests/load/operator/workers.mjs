@@ -90,7 +90,7 @@ export async function launchWorkers(plan, fixtures, options) {
       options: scenarioOptions(plan, shard),
       phaseStart: options.phaseStart,
     });
-    const output = join(options.artifactDir, `${shard.workerId}-metrics.jsonl`);
+    const output = join(options.artifactDir, `${shard.workerId}-metrics.json.gz`);
     const script = join(
       root,
       "tests/load/k6",
@@ -140,6 +140,7 @@ export async function launchWorkers(plan, fixtures, options) {
       child.once("exit", (code, signal) =>
         resolveDone({
           exitCode: code ?? 1,
+          finishedAt: Date.now(),
           signal,
           output,
           workerId: shard.workerId,

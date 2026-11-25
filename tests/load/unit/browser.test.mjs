@@ -1,4 +1,67 @@
 import test from "node:test";
+import { emptyOwnedCart, validationRace } from "../browser/journeys.mjs";
+test("validation race probe detects a stale response in the current document", async () => {
+  const id = "22222222-2222-4222-8222-222222222222",
+    item = { productId: id, variantId: id, quantity: 1 };
+  const server = createServer((request, response) => {
+    if (request.url.startsWith("/api/cart/validate")) {
+      response.setHeader("content-type", "application/json");
+      response.end(JSON.stringify({ items: [item], removed: [] }));
+      return;
+    }
+    response.setHeader("content-type", "text/html");
+    response.end(
+      `<!doctype html><html><body><h1>Fixture</h1>${request.url.startsWith("/cart") ? `<button onclick="sessionStorage.setItem('rdk_cart_session','[]')">Remove fixture from cart</button><script>fetch('/api/cart/validate',{method:'POST',body:'{}'}).then(r=>r.json()).then(data=>sessionStorage.setItem('rdk_cart_session',JSON.stringify(data.items)));</script>` : `<button onclick='sessionStorage.setItem("rdk_cart_session",JSON.stringify([${JSON.stringify(item)}]))'>Add to Cart</button>`}</body></html>`,
+    );
+  });
+  server.listen(0, "127.0.0.1");
+  await once(server, "listening");
+  const browser = await chromium.launch({ headless: true });
+  try {
+    const page = await browser.newPage();
+    await assert.rejects(
+      validationRace(
+        page,
+        {
+          baseUrl: `http://127.0.0.1:${server.address().port}`,
+          identity: { accountId: null },
+        },
+        { id, variantId: id },
+      ),
+    );
+  } finally {
+    await browser.close();
+    server.close();
+  }
+});
+test("cart cleanup waits for real asynchronous hydration before removing owned items", async () => {
+  const id = "22222222-2222-4222-8222-222222222222";
+  const server = createServer((_request, response) => {
+    response.setHeader("content-type", "text/html");
+    response.end(
+      `<!doctype html><html><body><h1>Loading</h1><script>sessionStorage.setItem('rdk_cart_session',JSON.stringify([{productId:'${id}',variantId:'${id}',quantity:1}]));setTimeout(()=>{const button=document.createElement('button');button.textContent='Remove fixture from cart';button.onclick=()=>{sessionStorage.setItem('rdk_cart_session','[]');button.remove();};document.body.append(button);},200);</script></body></html>`,
+    );
+  });
+  server.listen(0, "127.0.0.1");
+  await once(server, "listening");
+  const browser = await chromium.launch({ headless: true });
+  try {
+    const page = await browser.newPage();
+    await emptyOwnedCart(
+      page,
+      `http://127.0.0.1:${server.address().port}`,
+      { accountId: null },
+      { products: [{ id }] },
+    );
+    assert.equal(
+      await page.evaluate(() => sessionStorage.getItem("rdk_cart_session")),
+      "[]",
+    );
+  } finally {
+    await browser.close();
+    server.close();
+  }
+});
 import assert from "node:assert/strict";
 import {
   ensureBrowserRuntime,

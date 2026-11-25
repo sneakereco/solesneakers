@@ -1,4 +1,16 @@
 import test from "node:test";
+test("live emergency counters preserve exact attempted and unexpected-error counts", async (t) => {
+  const f = await fixture(t, { status: 503 });
+  await assert.rejects(runCheckoutJourney(f.session, f.plan, f.transport));
+  assert.equal(
+    f.metrics.filter((x) => x[0] === "technical_attempts").reduce((n, x) => n + x[1], 0),
+    2,
+  );
+  assert.equal(
+    f.metrics.filter((x) => x[0] === "technical_errors").reduce((n, x) => n + x[1], 0),
+    1,
+  );
+});
 import assert from "node:assert/strict";
 import { createServer } from "node:http";
 import { once } from "node:events";
@@ -170,4 +182,28 @@ test("cart validation removes unavailable stock without invented cart writes", a
   assert.ok(f.calls.every((x) => !x.path.includes("add-to-cart")));
   await runCatalogJourney(f.session, f.plan, f.transport);
   assert.ok(f.calls.some((x) => x.path === "/store"));
+});
+test("eligible checkout denominator includes failed quotes or preparations", async (t) => {
+  const f = await fixture(t, { status: 503 });
+  await assert.rejects(runCheckoutJourney(f.session, f.plan, f.transport));
+  assert.deepEqual(
+    f.metrics.filter((x) => x[0] === "eligible_checkout_completed").map((x) => x[1]),
+    [0],
+  );
+});
+test("a durable payment observed after the 30 second deadline is recorded as late", async (t) => {
+  const f = await fixture(t),
+    request = f.transport.request;
+  f.transport.request = async (input) => {
+    const response = await request(input);
+    if (input.path.startsWith("/api/orders/")) await f.transport.pause(31);
+    return response;
+  };
+  const result = await runCheckoutJourney(f.session, f.plan, f.transport);
+  assert.equal(result.status, "paid");
+  assert.equal(result.classification, "completed-late");
+  assert.deepEqual(
+    f.metrics.filter((x) => x[0] === "eligible_checkout_completed").map((x) => x[1]),
+    [0],
+  );
 });

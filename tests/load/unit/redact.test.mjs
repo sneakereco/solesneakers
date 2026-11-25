@@ -1,6 +1,25 @@
 import assert from "node:assert/strict";
 import test from "node:test";
 import { redactArtifact } from "../shared/redact.mjs";
+test("shared report reasons remain arrays while actual cycles are scrubbed", () => {
+  const reasons = ["slow operation"],
+    input = { first: reasons, second: reasons };
+  input.self = input;
+  const output = redactArtifact(input);
+  assert.deepEqual(output.first, reasons);
+  assert.deepEqual(output.second, reasons);
+  assert.equal(output.self, "[CIRCULAR]");
+});
+test("database URI credentials and arbitrary stack fields cannot enter exported artifacts", () => {
+  const output = JSON.stringify(
+    redactArtifact({
+      stack: "private-stack",
+      url: "postgresql://admin:private-password@db.test/catalog",
+    }),
+  );
+  assert.ok(!output.includes("private-stack"));
+  assert.ok(!output.includes("private-password"));
+});
 test("redact tokens nested in URLs/errors without deleting useful operation evidence", () => {
   const result = redactArtifact({
     operation: "order_poll",

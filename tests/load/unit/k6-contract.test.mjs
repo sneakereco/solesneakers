@@ -1,4 +1,5 @@
 import test from "node:test";
+import { readWorkerResult } from "../operator/report.mjs";
 import assert from "node:assert/strict";
 import { createServer } from "node:http";
 import { once } from "node:events";
@@ -23,7 +24,8 @@ test(
   { skip: !available },
   async (t) => {
     const directory = await mkdtemp(join(tmpdir(), "sole-k6-contract-"));
-    let forced = 0;
+    let forced = 0,
+      preparations = 0;
     const id = "22222222-2222-4222-8222-222222222222";
     const server = createServer(async (req, res) => {
       for await (const chunk of req) {
@@ -39,6 +41,7 @@ test(
           totals: { totalCents: 1000 },
         };
       else if (path.endsWith("/prepare")) {
+        preparations++;
         res.statusCode = forced || 201;
         data = {
           orderId: id,
@@ -74,7 +77,7 @@ test(
         shard,
         baseUrl: `http://127.0.0.1:${server.address().port}`,
         credential: "local-fixture-only",
-        phaseStart: 0,
+        phaseStart: Date.now(),
         fixtures: {
           products: [{ id, variantId: id, name: "Local fixture", hot: false }],
           addresses: [
@@ -113,16 +116,29 @@ test(
         ["inspect", "--env", `LOAD_RUN_CONFIG=${file}`, resolve("tests/load/k6", script)],
         { env, windowsHide: true },
       );
+    const nativeOutput = join(directory, "native-metrics.gz");
     await exec(
       binary,
       [
         "run",
         "--quiet",
+        "--out",
+        `json=${nativeOutput}`,
         "--env",
         `LOAD_RUN_CONFIG=${file}`,
         resolve("tests/load/k6/shopping.js"),
       ],
       { env, windowsHide: true, timeout: 45000 },
+    );
+    const native = await readWorkerResult(
+      { output: nativeOutput, workerId: "http-0", exitCode: 0, finishedAt: Date.now() },
+      plan,
+    );
+    assert.equal(native.errors.length, 0);
+    assert.equal(native.offered, 8);
+    assert.equal(native.completed, 8);
+    assert.ok(
+      native.operations.some((x) => x.operation === "prepare" && x.histogram.count > 0),
     );
     for (const code of [403, 429]) {
       forced = code;
@@ -141,6 +157,42 @@ test(
         (error) => error.code === 99,
       );
     }
+    const normal = JSON.parse(JSON.stringify(config));
+    config.plan.httpSlots = 1;
+    config.plan.totalSlots = 2;
+    config.plan.sessionSeconds = [0.2, 0.2];
+    config.shard.end = 1;
+    config.fixtures.sessions = config.fixtures.sessions.slice(0, 1);
+    config.phaseStart = Date.now();
+    config.options.scenarios.shoppers = {
+      executor: "constant-vus",
+      vus: 1,
+      duration: "1s",
+      gracefulStop: "1s",
+      exec: "shopperSession",
+    };
+    preparations = 0;
+    forced = 403;
+    await writeFile(file, JSON.stringify(config), { mode: 0o600 });
+    await assert.rejects(
+      exec(
+        binary,
+        [
+          "run",
+          "--quiet",
+          "--env",
+          `LOAD_RUN_CONFIG=${file}`,
+          resolve("tests/load/k6/shopping.js"),
+        ],
+        { env, windowsHide: true, timeout: 15000 },
+      ),
+      (error) => error.code === 99,
+    );
+    assert.ok(
+      preparations <= 6,
+      `Failed sessions multiplied intended load: ${preparations} attempts`,
+    );
+    Object.assign(config, normal);
     forced = 0;
     config.plan.profile = "rush";
     config.plan.contenders = 3;
