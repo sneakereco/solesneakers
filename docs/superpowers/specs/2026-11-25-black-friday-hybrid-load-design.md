@@ -1,7 +1,8 @@
 # Black Friday hybrid load testing design
 
-Status: proposed; the user selected the hybrid approach on November 25, 2026.
-This document requires approval before implementation.
+Status: approved by the user on November 25, 2026, including the hands-off setup
+and seeding requirements. The user authorized writing the implementation plan;
+implementation and measured runs follow the execution handoff.
 
 ## Intent and size
 
@@ -209,11 +210,18 @@ Verify duplicate submissions, lost responses, changed carts, and payment-versus-
 expiry races without duplicate captures or lost accepted outcomes. Browser
 observers verify stock feedback, progress, and the eventual receipt.
 
-Preserve the existing campaign cases from #41: fully free and mixed paid/free
-baskets, one giveaway per normalized delivery address across identities, and
-pickup's separate eligibility address. Use the actual implemented claim contract
-when available; do not invent a new claim API. Missing campaign functionality is
-an explicit failed/unmet gate, not a successful simulated claim.
+Campaign coverage follows the separately approved
+[specialty giveaway design](2026-11-25-specialty-giveaway-claims-design.md): prizes
+use atomic claims, with one win per normalized address or Instagram handle, and
+do not create cart lines, payments, ordinary orders, or pickup/shipping tasks.
+Include its 1,000-submission contention baseline, then higher rush profiles within
+this design's aggregate shopper ceiling when the lower gates pass. Preserve
+normal paid shipping/pickup coverage independently. Reconcile #41 and historical
+#37-#39 checkout-giveaway cases with that explicit superseding decision; do not
+implement a second free-prize checkout flow to satisfy obsolete cases. Use the
+actual implemented claim contract when available, without inventing its API.
+Missing required campaign functionality is an explicit failed/unmet gate, not a
+successful simulated claim.
 
 ## Execution profiles
 
