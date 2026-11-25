@@ -79,7 +79,8 @@ export async function executePostHogQuery(
         "Content-Type": "application/json",
         Authorization: `Bearer ${config.queryApiKey}`,
       },
-      body: JSON.stringify({ version, variables, limit, offset }),
+      // Reports use inline endpoints so an app cache miss can fetch fresh data.
+      body: JSON.stringify({ version, variables, limit, offset, refresh: "force" }),
     },
     deps,
     QUERY_TIMEOUT_MS,

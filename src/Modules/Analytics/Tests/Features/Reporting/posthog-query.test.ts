@@ -28,7 +28,7 @@ const payload = {
   hasMore: true,
 };
 
-it("executes a versioned saved SQL endpoint with explicit pagination", async () => {
+it("forces a fresh versioned SQL endpoint read with explicit pagination", async () => {
   const fetch = mockFetch().mockResolvedValue(
     Response.json({ ...payload, debug: privateQueryKey }),
   );
@@ -60,6 +60,7 @@ it("executes a versioned saved SQL endpoint with explicit pagination", async () 
     variables: { dataset_id: "sole-staging-v2", status: "paid" },
     limit: 1,
     offset: 2,
+    refresh: "force",
   });
 });
 
@@ -74,6 +75,7 @@ it.each([
   ["nested variable input", { variables: { dataset_id: { dataset: 1 } } }],
   ["non-finite variable input", { variables: { x: Number.POSITIVE_INFINITY } }],
   ["debug override", { debug: true }],
+  ["refresh override", { refresh: "cache" }],
   ["arbitrary SQL", { query: "SELECT 1" }],
 ])("rejects %s without requesting provider", async (_label, patch) => {
   const fetch = mockFetch();
