@@ -150,6 +150,35 @@ if (process.env.CHECKOUT_HARDENING_SELF_TEST_MODE) {
 }
 
 if (process.env.CHECKOUT_HARDENING_SELF_TEST_MODE === "populated") {
+  test("detects a changed historical Square receipt during populated replay", async () => {
+    await withCheckoutDatabase("populated", async ({ admin, populated }) => {
+      const read = () => populatedRows(admin, populated, populated);
+      const before = await read();
+      const { processed, unprocessed } = populated.legacySquareEvents;
+      await admin.query("begin");
+      try {
+        assert.equal(
+          (
+            await admin.query(
+              "update public.square_webhook_events set processed_at = null where square_event_id = $1",
+              [processed],
+            )
+          ).rowCount,
+          1,
+        );
+        const after = await read();
+        assert.equal(after["unprocessed Square event"].square_event_id, unprocessed);
+        assert.throws(
+          () => assertPopulatedRowsPreserved(before, after),
+          /Populated fixture changed its processed Square event/,
+        );
+      } finally {
+        await admin.query("rollback");
+      }
+      assertPopulatedRowsPreserved(before, await read());
+    });
+  });
+
   test("detects a mutation of the seeded auth user while the profile stays intact", async () => {
     await withCheckoutDatabase("populated", async ({ admin, populated }) => {
       const read = () => populatedRows(admin, populated, populated);

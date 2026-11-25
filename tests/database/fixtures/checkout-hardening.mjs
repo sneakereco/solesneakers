@@ -756,6 +756,28 @@ async function seedOrder(
   return { orderId, userId };
 }
 
+async function seedLegacySquareEvents(client) {
+  const processed = randomUUID();
+  const unprocessed = randomUUID();
+  await client.query(
+    "insert into public.square_webhook_events " +
+      "(square_event_id,event_type,merchant_id,location_id,square_created_at,payload_sha256,event_data,received_at,processed_at) " +
+      "values ($1,'payment.updated','fixture-merchant','fixture-location',$3,$5,$6,$3,$4), " +
+      "($2,'payment.updated','fixture-merchant','fixture-location',$3,$7,$8,$3,null)",
+    [
+      processed,
+      unprocessed,
+      "2026-09-21T12:00:00.000Z",
+      "2026-09-21T12:01:00.000Z",
+      "a".repeat(64),
+      { paymentStatus: "COMPLETED", paymentId: "fixture-processed" },
+      "b".repeat(64),
+      { paymentStatus: "PENDING", paymentId: "fixture-unprocessed" },
+    ],
+  );
+  return { processed, unprocessed };
+}
+
 export async function populatedRows(client, catalog, order) {
   return (
     await client.query(
@@ -763,8 +785,17 @@ export async function populatedRows(client, catalog, order) {
         "(select to_jsonb(v) from product_variants v where id = $2) as variant, " +
         '(select to_jsonb(o) from orders o where id = $3) as "order", ' +
         "(select to_jsonb(p) from profiles p where id = $4) as profile, " +
-        '(select to_jsonb(u) from auth.users u where id = $4) as "auth user"',
-      [catalog.productId, catalog.variantId, order.orderId, order.userId],
+        '(select to_jsonb(u) from auth.users u where id = $4) as "auth user", ' +
+        '(select to_jsonb(e) from public.square_webhook_events e where e.square_event_id = $5) as "processed Square event", ' +
+        '(select to_jsonb(e) from public.square_webhook_events e where e.square_event_id = $6) as "unprocessed Square event"',
+      [
+        catalog.productId,
+        catalog.variantId,
+        order.orderId,
+        order.userId,
+        order.legacySquareEvents.processed,
+        order.legacySquareEvents.unprocessed,
+      ],
     )
   ).rows[0];
 }
@@ -803,7 +834,10 @@ async function replay(client, { migrations }, lease) {
     await applyMigrations(client, prefix);
     await verifyRegistry(client, prefix);
     const catalog = await seedCatalog(client, { stock: 3 });
-    const order = await seedOrder(client, { status: "paid", totalCents: 1987 });
+    const order = {
+      ...(await seedOrder(client, { status: "paid", totalCents: 1987 })),
+      legacySquareEvents: await seedLegacySquareEvents(client),
+    };
     const before = await populatedRows(client, catalog, order);
     await applyMigrations(client, migrations.slice(prefix.length));
     const after = await populatedRows(client, catalog, order);
