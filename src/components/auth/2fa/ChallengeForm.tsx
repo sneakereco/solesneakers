@@ -3,6 +3,7 @@
 
 import { useMemo, useState } from "react";
 import { useRouter } from "next/navigation";
+import { useSession } from "@/contexts/SessionContext";
 
 import { SixDigitCodeField } from "@/components/auth/ui/SixDigitCodeField";
 import { AuthHeader } from "@/components/auth/ui/AuthHeader";
@@ -11,6 +12,7 @@ import { mfaVerifyChallenge } from "@/services/mfa-service";
 
 export function ChallengeForm() {
   const router = useRouter();
+  const { refreshSession } = useSession();
 
   const [code, setCode] = useState("");
   const [msg, setMsg] = useState<string | null>(null);
@@ -34,6 +36,7 @@ export function ChallengeForm() {
         setMsg(res.error);
         return;
       }
+      void refreshSession();
       router.push("/admin");
     } finally {
       setIsSubmitting(false);

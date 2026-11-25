@@ -10,6 +10,12 @@ const bundle = await compileUxHarness(
   import { FeaturedItems } from "./src/components/home/FeaturedItems";
   import { HomepageCategories } from "./src/components/home/HomepageCategories";
   import { SearchOverlay } from "./src/components/search/SearchOverlay";
+  import { PasswordLoginForm } from "./src/components/auth/login/PasswordLoginForm";
+  import { OtpLoginForm } from "./src/components/auth/login/OtpLoginForm";
+  import { VerifyEmailForm } from "./src/components/auth/login/VerifyEmailForm";
+  import { EnrollmentForm } from "./src/components/auth/2fa/EnrollmentForm";
+  import { ChallengeForm } from "./src/components/auth/2fa/ChallengeForm";
+  import { ClientShell } from "./src/components/shell/ClientShell";
   import { CartProvider } from "./src/components/cart/CartProvider";
   import CartPage from "./src/app/(store)/cart/page";
   import { CartDrawer } from "./src/components/cart/CartDrawer";
@@ -29,7 +35,7 @@ const bundle = await compileUxHarness(
   };
 
   function CatalogFixture() {
-    const [remote, setRemote] = useState({name: "Initial product", path: "/store"});
+    const [remote, setRemote] = useState({name: "Initial product", path: "/store" + location.search});
     const result = remote instanceof Promise ? use(remote) : remote;
     const params = new URL(result.path, location.origin).searchParams;
     window.fixtureSearch = params.toString();
@@ -59,9 +65,28 @@ const bundle = await compileUxHarness(
     );
   }
 
+  function AuthFixture() {
+    const [path, setPath] = useState(location.pathname);
+    window.fixturePath = path;
+    window.fixturePush = setPath;
+    const flow = path.split("/").at(-1);
+    const handleVerification = () => setPath("/auth/fixture/verify");
+    if (path === "/store") return <ClientShell><h1>Storefront after sign-in</h1></ClientShell>;
+    if (path === "/admin") return <>
+      <h1>Admin destination</h1>
+      <button onClick={() => setPath("/store")}>Visit storefront</button>
+    </>;
+    if (flow === "otp") return <OtpLoginForm onRequiresEmailVerification={handleVerification} />;
+    if (flow === "verify") return <VerifyEmailForm email="hello@example.test" onVerified={(next) => setPath(next ?? "/store")} />;
+    if (flow === "setup") return <EnrollmentForm />;
+    if (flow === "challenge") return <ChallengeForm />;
+    return <PasswordLoginForm onRequiresEmailVerification={handleVerification} onSwitchToOtp={() => {}} onForgotPassword={() => {}} />;
+  }
+
   function Fixture() {
     const [searchOpen, setSearchOpen] = useState(false);
     const [cartOpen, setCartOpen] = useState(false);
+    if (location.pathname.startsWith("/auth/fixture/")) return <AuthFixture />;
     switch (location.pathname) {
       case "/search":
         return <><button onClick={() => setSearchOpen(true)}>Search</button>
@@ -111,7 +136,7 @@ const bundle = await compileUxHarness(
               resolveDir: process.cwd(),
               contents:
                 path === "next/navigation"
-                  ? "export const useRouter = () => ({push(path) {window.fixturePush?.(path);}, refresh() {window.fixturePush?.(window.fixturePath);}}); export const useSearchParams = () => new URLSearchParams(window.fixtureSearch ?? location.search);"
+                  ? "export const usePathname = () => window.fixturePath ?? location.pathname; export const useRouter = () => ({push(path) {window.fixturePush?.(path);}, refresh() {window.fixturePush?.(window.fixturePath);}}); export const useSearchParams = () => new URLSearchParams(window.fixtureSearch ?? location.search);"
                   : path === "next/link"
                     ? "export const useLinkStatus = () => ({pending: false}); export default function Link({onNavigate, ...props}) { return <a {...props} />; }"
                     : "export default function Image({ fill, quality, priority, sizes, ...props }) { return <img {...props} />; }",
@@ -512,6 +537,154 @@ async function checkCatalog(page) {
   }
 }
 
+async function checkPageReversal(page) {
+  const forward = holdResponse();
+  const reverse = holdResponse();
+  await page.route("**/fixture/catalog**", (route) => {
+    const requested = new URL(route.request().url()).searchParams.get("page");
+    return (requested === "3" ? forward : reverse).fulfill(route);
+  });
+  await openUxHarness(page, bundle, "https://ux.test/catalog?page=2");
+  const products = page.getByTestId("product-card");
+  const pagination = page.getByRole("navigation", { name: "Product pagination" });
+  const next = pagination.getByRole("button", { name: "Next" });
+  const previous = pagination.getByRole("button", { name: "Previous" });
+  try {
+    await expect(
+      pagination.getByRole("button", { name: "2", exact: true }),
+    ).toHaveAttribute("aria-current", "page");
+    await next.press("Enter");
+    await forward.received;
+    await expect(next).toBeDisabled(options);
+    await expect(products).toContainText("Initial product");
+    await previous.press("Enter");
+    const request = await reverse.received;
+    assert.equal(new URL(request.url()).searchParams.get("page"), "2");
+    reverse.release({ json: { name: "Page two stays selected" } });
+    await expect(products).toContainText("Page two stays selected");
+    forward.release({ json: { name: "Superseded page three" } });
+    await expect(
+      pagination.getByRole("button", { name: "2", exact: true }),
+    ).toHaveAttribute("aria-current", "page");
+    await expect(products).not.toContainText("Superseded page three");
+  } finally {
+    forward.release({ json: { name: "Superseded page three" } });
+    reverse.release({ json: { name: "Page two stays selected" } });
+  }
+}
+
+const authEmail = "hello@example.test";
+
+async function checkAuthHandoff(page, flow) {
+  const session = holdResponse();
+  const admin = flow === "challenge" || flow === "setup";
+  let sessionReadCount = 0;
+  await page.route("**/api/auth/session", (route) => {
+    sessionReadCount += 1;
+    return session.fulfill(route);
+  });
+  await page.route("**/api/auth/login", (route) =>
+    route.fulfill({
+      json: admin
+        ? {
+            ok: true,
+            isAdmin: true,
+            [flow === "setup" ? "requiresTwoFASetup" : "requiresTwoFAChallenge"]: true,
+          }
+        : { ok: true, isAdmin: false },
+    }),
+  );
+  await page.route("**/api/auth/otp/request", (route) =>
+    route.fulfill({ json: { ok: true } }),
+  );
+  await page.route("**/api/auth/otp/verify", (route) =>
+    route.fulfill({ json: { ok: true, isAdmin: false } }),
+  );
+  await page.route("**/api/auth/verify-email", (route) =>
+    route.fulfill({ json: { ok: true, nextPath: "/store" } }),
+  );
+  await page.route("**/api/auth/2fa/enroll*", (route) =>
+    route.fulfill({
+      json: {
+        factorId: "example-factor",
+        qrCode:
+          "data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' width='1' height='1'/%3E",
+      },
+    }),
+  );
+  await page.route("**/api/auth/2fa/verify-enrollment", (route) =>
+    route.fulfill({ json: { ok: true } }),
+  );
+  await page.route("**/api/auth/2fa/challenge/verify", (route) =>
+    route.fulfill({ json: { ok: true } }),
+  );
+  await page.route("**/images/**", (route) => route.fulfill({ status: 204 }));
+
+  const entry = admin ? "password" : flow;
+  await openUxHarness(page, bundle, `https://ux.test/auth/fixture/${entry}?next=/store`);
+
+  if (entry === "password") {
+    await page.getByTestId("login-email").fill(authEmail);
+    await page.getByTestId("login-password").fill("sample-secret");
+    await page.getByTestId("login-submit").press("Enter");
+  } else if (flow === "otp") {
+    await page.locator('input[name="email"]').fill(authEmail);
+    await page.getByRole("button", { name: "Send code", exact: true }).press("Enter");
+    await page.getByLabel("Verification code", { exact: true }).fill("123456");
+    await page.getByRole("button", { name: "Sign in", exact: true }).press("Enter");
+  } else {
+    await page.getByLabel("Verification code", { exact: true }).fill("123456");
+    await page
+      .getByRole("button", { name: "Verify & continue", exact: true })
+      .press("Enter");
+  }
+
+  if (flow === "challenge") {
+    await expect(
+      page.getByRole("heading", { name: "Verify your identity" }),
+    ).toBeVisible();
+    assert.equal(sessionReadCount, 0);
+    await page.getByLabel("Authentication code").fill("123456");
+    await page.getByRole("button", { name: "Verify", exact: true }).press("Enter");
+  } else if (flow === "setup") {
+    await expect(page.getByRole("heading", { name: "Set up 2FA" })).toBeVisible();
+    assert.equal(sessionReadCount, 0);
+    await page
+      .getByRole("button", { name: "Generate QR code", exact: true })
+      .press("Enter");
+    await page.getByLabel("Verification code").fill("123456");
+    await page
+      .getByRole("button", { name: "Verify & continue", exact: true })
+      .press("Enter");
+  }
+
+  if (admin) await page.getByRole("button", { name: "Visit storefront" }).press("Enter");
+
+  const header = page.locator("[data-storefront-header]");
+  try {
+    await expect(
+      page.getByRole("heading", { name: "Storefront after sign-in" }),
+    ).toBeVisible();
+    await expect(header.getByRole("link", { name: "Login", exact: true })).toHaveCount(
+      0,
+      options,
+    );
+    await session.received;
+    await expect(header.getByTestId("navbar-auth-loading")).toBeVisible();
+  } finally {
+    session.release({
+      json: {
+        user: { id: "sample-user", email: authEmail },
+        role: admin ? "admin" : "customer",
+      },
+    });
+  }
+  await expect(
+    header.getByRole("button", { name: "Account", exact: true }),
+  ).toContainText(authEmail);
+  await expect(header.getByRole("link", { name: "Login", exact: true })).toHaveCount(0);
+}
+
 async function checkMenu(page) {
   await emulateOlderAbortSignal(page);
   const loading = holdResponse();
@@ -561,6 +734,12 @@ try {
       checkCatalog,
     );
     await check(width, "menu taxonomy shows scoped loading and retry", checkMenu);
+    await check(width, "pagination reverses from latest intent", checkPageReversal);
+  }
+  for (const flow of ["password", "otp", "verify", "challenge", "setup"]) {
+    await check(1440, `session follows soft navigation after ${flow}`, (page) =>
+      checkAuthHandoff(page, flow),
+    );
   }
 } finally {
   await browser.close();

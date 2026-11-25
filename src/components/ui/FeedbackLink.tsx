@@ -21,6 +21,8 @@ function NavigationStatus() {
 }
 
 export function FeedbackLink({ children, ...props }: ComponentPropsWithRef<typeof Link>) {
+  if (props.legacyBehavior) return <Link {...props}>{children}</Link>;
+
   return (
     <Link {...props} data-feedback-link>
       {children}

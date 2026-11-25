@@ -4,6 +4,7 @@ import {
   createContext,
   useContext,
   useEffect,
+  useOptimistic,
   useRef,
   useState,
   useTransition,
@@ -16,6 +17,7 @@ import { RequestError } from "@/components/ui/RequestError";
 
 type StoreNavigationValue = {
   isPending: boolean;
+  intendedQuery: string;
   updateQuery: (update: (params: URLSearchParams) => void, scroll?: boolean) => void;
 };
 
@@ -33,6 +35,7 @@ export function StoreNavigation({
   const committedQuery = searchParams.toString();
   const requestedQuery = useRef<string | null>(null);
   const [isPending, startTransition] = useTransition();
+  const [intendedQuery, setIntendedQuery] = useOptimistic(committedQuery);
   const [lastResults, setLastResults] = useState(children);
 
   if (!loadFailed && children !== lastResults) setLastResults(children);
@@ -50,11 +53,14 @@ export function StoreNavigation({
     if (next === current) return;
 
     requestedQuery.current = next;
-    startTransition(() => router.push(next ? `/store?${next}` : "/store", { scroll }));
+    startTransition(() => {
+      setIntendedQuery(next);
+      router.push(next ? `/store?${next}` : "/store", { scroll });
+    });
   };
 
   return (
-    <CatalogNavigationContext.Provider value={{ isPending, updateQuery }}>
+    <CatalogNavigationContext.Provider value={{ isPending, intendedQuery, updateQuery }}>
       {isPending && <LoadingAnnouncement label="Updating products" />}
       {loadFailed && (
         <div className="mx-auto max-w-[90rem] px-5 py-5 sm:px-8">

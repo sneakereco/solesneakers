@@ -36,7 +36,7 @@ export function StoreControls({
   showSortControls = true,
   showPagination = true,
 }: StoreControlsProps) {
-  const { isPending, updateQuery } = useStoreNavigation();
+  const { isPending, intendedQuery, updateQuery } = useStoreNavigation();
   const sortTriggerRef = useRef<HTMLButtonElement>(null);
   const sortContainerRef = useRef<HTMLDivElement>(null);
   const [sortOpen, setSortOpen] = useState(false);
@@ -70,6 +70,24 @@ export function StoreControls({
     updateQuery((params) => {
       Object.entries(updates).forEach(([key, value]) => params.set(key, String(value)));
     }, scroll);
+  };
+
+  const pageFromQuery = (query: URLSearchParams) => {
+    const requestedPage = Number.parseInt(query.get("page") ?? "", 10);
+    return Number.isFinite(requestedPage) && requestedPage > 0
+      ? Math.min(requestedPage, pageCount)
+      : page;
+  };
+  const intendedPage = isPending
+    ? pageFromQuery(new URLSearchParams(intendedQuery))
+    : page;
+
+  const movePage = (direction: -1 | 1) => {
+    updateQuery((query) => {
+      const targetPage = pageFromQuery(query) + direction;
+      if (targetPage >= 1 && targetPage <= pageCount)
+        query.set("page", String(targetPage));
+    }, true);
   };
 
   const pageNumbers = (() => {
@@ -187,8 +205,8 @@ export function StoreControls({
         >
           <ActionButton
             type="button"
-            onClick={() => updateParams({ page: page - 1 }, true)}
-            disabled={page <= 1}
+            onClick={() => movePage(-1)}
+            disabled={intendedPage <= 1}
             className="inline-flex h-11 items-center gap-1 border border-zinc-300 px-4 text-xs uppercase text-zinc-700 transition-colors hover:border-black hover:text-black disabled:cursor-not-allowed disabled:opacity-35"
           >
             <ChevronLeft className="h-4 w-4" />
@@ -211,8 +229,8 @@ export function StoreControls({
           ))}
           <ActionButton
             type="button"
-            onClick={() => updateParams({ page: page + 1 }, true)}
-            disabled={page >= pageCount}
+            onClick={() => movePage(1)}
+            disabled={intendedPage >= pageCount}
             className="inline-flex h-11 items-center gap-1 border border-zinc-300 px-4 text-xs uppercase text-zinc-700 transition-colors hover:border-black hover:text-black disabled:cursor-not-allowed disabled:opacity-35"
           >
             Next

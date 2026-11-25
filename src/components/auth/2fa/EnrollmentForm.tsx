@@ -4,6 +4,7 @@
 import Link from "next/link";
 import { createElement, lazy, Suspense, useEffect, useReducer, useRef } from "react";
 import { useRouter } from "next/navigation";
+import { useSession } from "@/contexts/SessionContext";
 
 import { SixDigitCodeField } from "@/components/auth/ui/SixDigitCodeField";
 import { AuthHeader } from "@/components/auth/ui/AuthHeader";
@@ -110,6 +111,7 @@ function reducer(state: EnrollState, action: Action): EnrollState {
 
 export function EnrollmentForm() {
   const router = useRouter();
+  const { refreshSession } = useSession();
   const [state, dispatch] = useReducer(reducer, {
     factorId: null,
     qrCode: null,
@@ -225,6 +227,7 @@ export function EnrollmentForm() {
         dispatch({ type: "VERIFY_ERROR", error: res.error });
         return;
       }
+      void refreshSession();
       router.push("/admin");
     } catch {
       dispatch({ type: "VERIFY_ERROR", error: "Verification failed" });

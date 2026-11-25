@@ -3,6 +3,7 @@
 
 import { useReducer } from "react";
 import { useRouter, useSearchParams } from "next/navigation";
+import { useSession } from "@/contexts/SessionContext";
 import Link from "next/link";
 
 import { AuthHeader } from "@/components/auth/ui/AuthHeader";
@@ -47,6 +48,7 @@ export function PasswordLoginForm({
   onForgotPassword,
 }: PasswordLoginFormProps) {
   const router = useRouter();
+  const { refreshSession } = useSession();
   const searchParams = useSearchParams();
   const [state, dispatch] = useReducer(reducer, {
     password: "",
@@ -94,6 +96,7 @@ export function PasswordLoginForm({
       }
 
       const destination = json.isAdmin ? "/admin" : nextUrl;
+      void refreshSession();
       router.push(destination);
     } catch (err: unknown) {
       const message = err instanceof Error ? err.message : "Login failed";

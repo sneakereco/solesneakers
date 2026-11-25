@@ -2,6 +2,7 @@
 "use client";
 
 import { useRouter, useSearchParams } from "next/navigation";
+import { useSession } from "@/contexts/SessionContext";
 import Link from "next/link";
 
 import { authStyles } from "@/components/auth/ui/authStyles";
@@ -18,6 +19,7 @@ export function OtpLoginForm({
   onBackToLogin,
 }: OtpLoginFormProps) {
   const router = useRouter();
+  const { refreshSession } = useSession();
   const searchParams = useSearchParams();
   const nextUrl = searchParams.get("next") || "/";
 
@@ -61,6 +63,7 @@ export function OtpLoginForm({
 
     // Redirect to where they came from or admin/home
     const destination = json.isAdmin ? "/admin" : nextUrl;
+    void refreshSession();
     router.push(destination);
   }
 

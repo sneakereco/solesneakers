@@ -2,6 +2,7 @@
 "use client";
 
 import { useRouter, useSearchParams } from "next/navigation";
+import { useSession } from "@/contexts/SessionContext";
 
 import { EmailCodeFlow } from "./EmailCodeFlow";
 
@@ -21,6 +22,7 @@ export function VerifyEmailForm({
   onBackToLogin,
 }: VerifyEmailFormProps) {
   const router = useRouter();
+  const { refreshSession } = useSession();
   const searchParams = useSearchParams();
   const nextUrl = searchParams.get("next") || "/";
 
@@ -63,6 +65,7 @@ export function VerifyEmailForm({
 
     // After successful verification, redirect to where they came from
     const destination = json.nextPath || nextUrl;
+    void refreshSession();
     if (onVerified) {
       onVerified(destination);
     } else {
