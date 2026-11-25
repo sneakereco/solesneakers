@@ -1,9 +1,11 @@
 "use client";
 
-import { useEffect } from "react";
+import { useId } from "react";
 import Image from "next/image";
 import Link from "next/link";
 import { Minus, Plus, ShoppingBag, Trash2, X } from "lucide-react";
+
+import { ModalPortal, useOverlayTransition } from "@/components/ui/ModalPortal";
 
 import { useCart } from "./CartProvider";
 import { ShippingEstimate } from "./ShippingEstimate";
@@ -23,60 +25,37 @@ const formatPrice = (priceCents: number) =>
 
 export function CartDrawer({ isOpen, onClose }: CartDrawerProps) {
   const { items, itemCount, removeItem, updateQuantity, total } = useCart();
-
-  useEffect(() => {
-    if (!isOpen) {
-      return;
-    }
-
-    const previousOverflow = document.body.style.overflow;
-    const handleKeyDown = (event: KeyboardEvent) => {
-      if (event.key === "Escape") {
-        onClose();
-      }
-    };
-
-    document.body.style.overflow = "hidden";
-    window.addEventListener("keydown", handleKeyDown);
-
-    return () => {
-      document.body.style.overflow = previousOverflow;
-      window.removeEventListener("keydown", handleKeyDown);
-    };
-  }, [isOpen, onClose]);
+  const titleId = useId();
+  const { present, visible } = useOverlayTransition(isOpen, 240);
 
   return (
-    <div
-      className={`fixed inset-0 z-[80] ${isOpen ? "pointer-events-auto" : "pointer-events-none"}`}
-      inert={!isOpen}
+    <ModalPortal
+      open={present}
+      onClose={() => {
+        if (isOpen) onClose();
+      }}
+      labelledBy={titleId}
+      placement="right"
+      zIndexClassName="z-[80]"
+      contentClassName="contents"
+      backdropClassName={`bg-black/40 transition-opacity duration-[240ms] ease-out motion-reduce:transition-none ${
+        visible ? "opacity-100" : "opacity-0"
+      }`}
     >
-      <button
-        type="button"
-        className={`absolute inset-0 cursor-default bg-black/40 transition-opacity duration-[240ms] ease-out motion-reduce:transition-none ${
-          isOpen ? "opacity-100" : "opacity-0"
-        }`}
-        onClick={onClose}
-        tabIndex={isOpen ? 0 : -1}
-        aria-label="Close cart"
-      />
-
       <aside
-        role="dialog"
-        aria-modal="true"
-        aria-labelledby="cart-drawer-title"
         inert={!isOpen}
-        className={`absolute inset-y-0 right-0 flex w-full flex-col bg-white text-black shadow-2xl transition-transform duration-[240ms] ease-out motion-reduce:transition-none sm:max-w-[34rem] ${
-          isOpen ? "translate-x-0" : "translate-x-full"
+        className={`relative flex h-full w-full flex-col bg-white text-black shadow-2xl transition-transform duration-[240ms] ease-out motion-reduce:transition-none sm:max-w-[34rem] ${
+          visible ? "translate-x-0" : "translate-x-full"
         }`}
       >
         <header className="relative flex min-h-16 shrink-0 items-center justify-center border-b border-zinc-200 px-14">
-          <h2 id="cart-drawer-title" className="text-xl font-normal">
+          <h2 id={titleId} className="text-xl font-normal">
             My cart <span aria-hidden="true">&#8226;</span> {itemCount}
           </h2>
           <button
             type="button"
             onClick={onClose}
-            className="absolute right-5 top-1/2 -translate-y-1/2 cursor-pointer p-2 text-black transition-colors hover:text-zinc-500"
+            className="absolute right-5 top-1/2 flex h-11 w-11 -translate-y-1/2 cursor-pointer items-center justify-center text-black transition-colors hover:text-zinc-500"
             aria-label="Close cart"
           >
             <X className="h-6 w-6" strokeWidth={1.7} />
@@ -229,6 +208,6 @@ export function CartDrawer({ isOpen, onClose }: CartDrawerProps) {
           </>
         )}
       </aside>
-    </div>
+    </ModalPortal>
   );
 }

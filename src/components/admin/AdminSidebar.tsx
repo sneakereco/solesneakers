@@ -20,6 +20,7 @@ import {
 } from "lucide-react";
 
 import type { ProfileRole } from "@/config/constants/roles";
+import { ModalPortal } from "@/components/ui/ModalPortal";
 
 type NavLink = { type: "link"; href: string; label: string; icon: LucideIcon };
 type GroupKey = "commerce" | "settings";
@@ -94,19 +95,19 @@ export function AdminSidebar({
   }
 
   useEffect(() => {
-    if (!isOpen) {
-      return;
-    }
-    const previousOverflow = document.body.style.overflow;
-    document.body.style.overflow = "hidden";
-    return () => {
-      document.body.style.overflow = previousOverflow;
+    if (!isOpen) return;
+    const desktop = window.matchMedia("(min-width: 768px)");
+    const closeOnDesktop = () => {
+      if (desktop.matches) setIsOpen(false);
     };
+    closeOnDesktop();
+    desktop.addEventListener("change", closeOnDesktop);
+    return () => desktop.removeEventListener("change", closeOnDesktop);
   }, [isOpen]);
 
   const isActive = (href: string) => pathname === href || pathname.startsWith(`${href}/`);
   const itemClass = (active: boolean) =>
-    `group flex w-full items-center gap-3 rounded-lg px-3 py-2.5 text-[0.78rem] font-medium transition-all ${
+    `group flex min-h-11 w-full items-center gap-3 rounded-lg px-3 py-2.5 text-[0.78rem] font-medium transition-all ${
       active
         ? "bg-white text-black shadow-sm"
         : "text-zinc-400 hover:bg-white/10 hover:text-white"
@@ -115,8 +116,13 @@ export function AdminSidebar({
   const navigation = (
     <div className="flex h-full min-h-0 flex-col">
       <div className="border-b border-white/10 px-5 py-6">
-        <Link href="/" className="group block" aria-label="Solesneakers storefront">
-          <span className="block text-[0.58rem] font-semibold uppercase tracking-[0.38em] text-zinc-500">
+        <Link
+          href="/"
+          onClick={() => setIsOpen(false)}
+          className="group block"
+          aria-label="Solesneakers storefront"
+        >
+          <span className="block text-[0.58rem] font-semibold uppercase tracking-[0.38em] text-zinc-400">
             Management
           </span>
           <span className="mt-2 block text-xl font-bold uppercase italic tracking-[-0.045em] text-white">
@@ -126,7 +132,7 @@ export function AdminSidebar({
       </div>
 
       <div className="admin-sidebar-scroll min-h-0 flex-1 overflow-y-auto px-4 py-5">
-        <p className="mb-2 px-3 text-[0.58rem] font-semibold uppercase tracking-[0.24em] text-zinc-600">
+        <p className="mb-2 px-3 text-[0.58rem] font-semibold uppercase tracking-[0.24em] text-zinc-400">
           Operations
         </p>
         <nav className="space-y-1">
@@ -134,7 +140,12 @@ export function AdminSidebar({
             if (item.type === "link") {
               const active = isActive(item.href);
               return (
-                <Link key={item.href} href={item.href} className={itemClass(active)}>
+                <Link
+                  key={item.href}
+                  href={item.href}
+                  onClick={() => setIsOpen(false)}
+                  className={itemClass(active)}
+                >
                   {createElement(item.icon, {
                     className: `h-4 w-4 ${active ? "text-black" : "text-zinc-500 group-hover:text-white"}`,
                   })}
@@ -174,10 +185,11 @@ export function AdminSidebar({
                       <Link
                         key={child.href}
                         href={child.href}
-                        className={`flex items-center gap-2.5 rounded-md px-3 py-2 text-[0.72rem] transition ${
+                        onClick={() => setIsOpen(false)}
+                        className={`flex min-h-11 items-center gap-2.5 rounded-md px-3 py-2 text-[0.72rem] transition ${
                           isActive(child.href)
                             ? "bg-white/10 text-white"
-                            : "text-zinc-500 hover:text-white"
+                            : "text-zinc-400 hover:text-white"
                         }`}
                       >
                         {createElement(child.icon, { className: "h-3.5 w-3.5" })}
@@ -195,6 +207,7 @@ export function AdminSidebar({
       <div className="border-t border-white/10 p-4">
         <Link
           href="/admin/profile"
+          onClick={() => setIsOpen(false)}
           className={`flex items-center gap-3 rounded-lg p-3 transition ${
             isActive("/admin/profile") ? "bg-white text-black" : "hover:bg-white/10"
           }`}
@@ -218,7 +231,7 @@ export function AdminSidebar({
             </span>
             <span
               className={`mt-0.5 block text-[0.6rem] uppercase tracking-wider ${
-                isActive("/admin/profile") ? "text-zinc-500" : "text-zinc-600"
+                isActive("/admin/profile") ? "text-zinc-500" : "text-zinc-400"
               }`}
             >
               {roleLabel(role)}
@@ -227,7 +240,8 @@ export function AdminSidebar({
         </Link>
         <Link
           href="/"
-          className="mt-2 flex items-center gap-2 px-3 py-2 text-[0.66rem] font-medium uppercase tracking-[0.14em] text-zinc-500 transition hover:text-white"
+          onClick={() => setIsOpen(false)}
+          className="mt-2 flex min-h-11 items-center gap-2 px-3 py-2 text-[0.66rem] font-medium uppercase tracking-[0.14em] text-zinc-400 transition hover:text-white"
         >
           View storefront <ExternalLink className="h-3 w-3" />
         </Link>
@@ -240,27 +254,34 @@ export function AdminSidebar({
       <button
         type="button"
         onClick={() => setIsOpen(true)}
-        className="fixed right-4 top-4 z-50 flex h-10 w-10 items-center justify-center rounded-full bg-black text-white shadow-xl md:hidden"
+        className="fixed right-4 top-4 z-50 flex h-11 w-11 items-center justify-center rounded-full bg-black text-white shadow-xl md:hidden"
         aria-label="Open admin menu"
+        aria-haspopup="dialog"
       >
         <Menu className="h-4.5 w-4.5" />
       </button>
 
-      {isOpen && (
-        <div className="fixed inset-0 z-[60] bg-black/50 backdrop-blur-sm md:hidden">
-          <aside className="h-full w-[min(88vw,19rem)] bg-[#0a0a0a] shadow-2xl">
-            <button
-              type="button"
-              onClick={() => setIsOpen(false)}
-              className="absolute right-4 top-4 flex h-10 w-10 items-center justify-center rounded-full bg-white text-black"
-              aria-label="Close admin menu"
-            >
-              <X className="h-4 w-4" />
-            </button>
-            {navigation}
-          </aside>
-        </div>
-      )}
+      <ModalPortal
+        open={isOpen}
+        onClose={() => setIsOpen(false)}
+        label="Admin menu"
+        placement="left"
+        zIndexClassName="z-[60]"
+        contentClassName="contents"
+        backdropClassName="bg-black/50 backdrop-blur-sm"
+      >
+        <aside className="h-full w-[min(88vw,19rem)] bg-[#0a0a0a] shadow-2xl">
+          <button
+            type="button"
+            onClick={() => setIsOpen(false)}
+            className="absolute right-4 top-4 flex h-11 w-11 items-center justify-center rounded-full bg-white text-black"
+            aria-label="Close admin menu"
+          >
+            <X className="h-4 w-4" />
+          </button>
+          {navigation}
+        </aside>
+      </ModalPortal>
 
       <aside className="fixed inset-y-0 left-0 z-40 hidden w-[17.5rem] border-r border-white/10 bg-[#0a0a0a] md:block">
         {navigation}

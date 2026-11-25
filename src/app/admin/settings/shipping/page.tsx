@@ -485,6 +485,7 @@ export default function ShippingSettingsPage() {
             <button
               type="button"
               onClick={openOriginModal}
+              aria-haspopup="dialog"
               className="border border-zinc-800/70 bg-zinc-900 px-3 py-1.5 text-[12px] text-white hover:border-zinc-700 sm:px-4 sm:py-2 sm:text-sm"
             >
               Edit origin
@@ -562,6 +563,7 @@ export default function ShippingSettingsPage() {
                     </div>
                     <button
                       type="button"
+                      aria-haspopup="dialog"
                       onClick={() => openDefaultsModal(category.key)}
                       className="border border-zinc-800/70 bg-zinc-900 px-3 py-1.5 text-[11px] font-semibold text-white hover:border-zinc-700 sm:py-2 sm:text-xs"
                     >
@@ -576,11 +578,12 @@ export default function ShippingSettingsPage() {
       </div>
 
       {isDefaultsModalOpen && defaultsDraft && (
-        <ModalPortal open={isDefaultsModalOpen} onClose={closeDefaultsModal}>
-          <div
-            className="max-h-[calc(100dvh-2rem)] w-full max-w-2xl space-y-5 overflow-y-auto rounded-lg border border-zinc-800/70 bg-zinc-900 p-6"
-            onClick={(event) => event.stopPropagation()}
-          >
+        <ModalPortal
+          open={isDefaultsModalOpen}
+          onClose={closeDefaultsModal}
+          label="Edit package defaults"
+        >
+          <div className="max-h-[calc(100dvh-2rem)] w-full max-w-2xl space-y-5 overflow-y-auto rounded-lg border border-zinc-800/70 bg-zinc-900 p-6">
             <div className="flex items-start justify-between">
               <div>
                 <h3 className="text-lg font-semibold text-white">
@@ -591,7 +594,7 @@ export default function ShippingSettingsPage() {
               <button
                 type="button"
                 onClick={closeDefaultsModal}
-                className="text-gray-400 hover:text-white"
+                className="min-h-11 px-2 text-gray-400 hover:text-white"
               >
                 Close
               </button>
@@ -696,7 +699,11 @@ export default function ShippingSettingsPage() {
       )}
 
       {isOriginModalOpen && (
-        <ModalPortal open={isOriginModalOpen} onClose={() => setIsOriginModalOpen(false)}>
+        <ModalPortal
+          open={isOriginModalOpen}
+          onClose={() => setIsOriginModalOpen(false)}
+          label="Edit origin"
+        >
           <div className="w-full max-w-3xl rounded-sm border border-zinc-800/70 bg-zinc-950 p-3 sm:p-6">
             <div className="mb-2 flex items-center justify-between gap-3 sm:mb-4">
               <div>
@@ -710,7 +717,7 @@ export default function ShippingSettingsPage() {
               <button
                 type="button"
                 onClick={() => setIsOriginModalOpen(false)}
-                className="text-[11px] text-zinc-400 hover:text-white sm:text-sm"
+                className="min-h-11 px-2 text-[11px] text-zinc-400 hover:text-white sm:text-sm"
               >
                 Close
               </button>

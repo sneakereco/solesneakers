@@ -13,6 +13,7 @@ import Link from "next/link";
 import { useRouter } from "next/navigation";
 import { Search, X } from "lucide-react";
 
+import { ModalPortal } from "@/components/ui/ModalPortal";
 import { logError } from "@/lib/utils/log";
 
 interface SearchOverlayProps {
@@ -164,30 +165,6 @@ export function SearchOverlay({ isOpen, onClose }: SearchOverlayProps) {
   }, []);
 
   useEffect(() => {
-    if (!isOpen) {
-      return;
-    }
-
-    const previousOverflow = document.body.style.overflow;
-    document.body.style.overflow = "hidden";
-    const focusFrame = window.requestAnimationFrame(() => inputRef.current?.focus());
-
-    const handleKeyDown = (event: KeyboardEvent) => {
-      if (event.key === "Escape") {
-        closeSearch();
-      }
-    };
-
-    window.addEventListener("keydown", handleKeyDown);
-
-    return () => {
-      window.cancelAnimationFrame(focusFrame);
-      window.removeEventListener("keydown", handleKeyDown);
-      document.body.style.overflow = previousOverflow;
-    };
-  }, [isOpen, closeSearch]);
-
-  useEffect(() => {
     if (!isOpen || !normalizedQuery) {
       return;
     }
@@ -256,24 +233,20 @@ export function SearchOverlay({ isOpen, onClose }: SearchOverlayProps) {
   const hasResults = results.length > 0;
 
   return (
-    <div
-      className="fixed inset-x-0 bottom-0 z-[60]"
-      style={{ top: "var(--rdk-header-offset, 8rem)" }}
-      role="dialog"
-      aria-modal="true"
-      aria-label="Search products"
+    <ModalPortal
+      open={isOpen}
+      onClose={closeSearch}
+      label="Search products"
+      initialFocusRef={inputRef}
+      zIndexClassName="z-[60]"
+      contentClassName="contents"
+      backdropClassName={`search-overlay-backdrop bg-black/40 !top-[var(--rdk-header-offset,8rem)] ${
+        isClosing ? "search-overlay-backdrop--closing" : ""
+      }`}
     >
-      <button
-        type="button"
-        className={`search-overlay-backdrop absolute inset-0 bg-black/40 ${
-          isClosing ? "search-overlay-backdrop--closing" : ""
-        }`}
-        onClick={closeSearch}
-        aria-label="Close search"
-      />
-
       <div
-        className={`search-drop-panel relative ${
+        inert={isClosing}
+        className={`search-drop-panel absolute inset-x-0 top-[var(--rdk-header-offset,8rem)] ${
           isClosing ? "search-drop-panel--closing" : ""
         }`}
       >
@@ -304,7 +277,7 @@ export function SearchOverlay({ isOpen, onClose }: SearchOverlayProps) {
           <button
             type="button"
             onClick={closeSearch}
-            className="flex h-10 w-10 shrink-0 items-center justify-center text-zinc-900 transition-colors hover:text-zinc-500"
+            className="flex h-11 w-11 shrink-0 items-center justify-center text-zinc-900 transition-colors hover:text-zinc-500"
             aria-label="Close search"
           >
             <X className="h-7 w-7 sm:h-8 sm:w-8" strokeWidth={1.5} />
@@ -436,6 +409,6 @@ export function SearchOverlay({ isOpen, onClose }: SearchOverlayProps) {
           </section>
         ) : null}
       </div>
-    </div>
+    </ModalPortal>
   );
 }

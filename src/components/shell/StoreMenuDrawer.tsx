@@ -1,11 +1,10 @@
 "use client";
 
-import { useEffect, useEffectEvent, useRef, useState } from "react";
-import { useHydrated } from "@/components/ui/useHydrated";
-import { createPortal } from "react-dom";
+import { useEffect, useLayoutEffect, useRef, useState, type Ref } from "react";
 import Link from "next/link";
 import { ChevronLeft, ChevronRight, Minus, Plus, X } from "lucide-react";
 
+import { ModalPortal, useOverlayTransition } from "@/components/ui/ModalPortal";
 import { TOP_BRAND_SHORTCUTS } from "@/config/constants/storefront";
 
 type MenuPanel = "brand" | "size" | "category";
@@ -59,7 +58,7 @@ function DrawerLink({
       className={
         variant === "row"
           ? "flex min-h-[61px] items-center border-b border-zinc-200 text-[13px] font-normal uppercase tracking-[0.02em] text-zinc-800 transition-colors hover:text-black"
-          : "block py-3 text-[0.9rem] text-zinc-700 transition-colors hover:text-black"
+          : "flex min-h-11 items-center py-3 text-[0.9rem] text-zinc-700 transition-colors hover:text-black"
       }
     >
       {children}
@@ -76,7 +75,8 @@ function CollapsibleContent({
 }) {
   return (
     <div
-      className="grid transition-[grid-template-rows,opacity]"
+      inert={!isOpen}
+      className="grid transition-[grid-template-rows,opacity] motion-reduce:transition-none"
       style={{
         gridTemplateRows: isOpen ? "1fr" : "0fr",
         opacity: isOpen ? 1 : 0,
@@ -85,7 +85,7 @@ function CollapsibleContent({
       }}
     >
       <div
-        className="min-h-0 overflow-hidden transition-transform"
+        className="min-h-0 overflow-hidden transition-transform motion-reduce:transition-none"
         style={{
           transform: isOpen ? "none" : "translateY(-0.75rem)",
           transitionDuration: `${COLLAPSIBLE_TRANSITION_MS}ms`,
@@ -142,13 +142,22 @@ function SizeGroup({
   );
 }
 
-function PanelHeader({ title, onBack }: { title: string; onBack: () => void }) {
+function PanelHeader({
+  title,
+  onBack,
+  backRef,
+}: {
+  title: string;
+  onBack: () => void;
+  backRef: Ref<HTMLButtonElement>;
+}) {
   return (
     <div className="flex h-20 items-center gap-4 border-b border-zinc-200 px-7 md:border-b-0 md:px-8">
       <button
+        ref={backRef}
         type="button"
         onClick={onBack}
-        className="inline-flex h-10 w-10 items-center justify-center text-zinc-700 md:hidden"
+        className="inline-flex h-11 w-11 items-center justify-center text-zinc-700 md:hidden"
         aria-label="Back to main menu"
       >
         <ChevronLeft className="h-5 w-5" />
@@ -161,10 +170,8 @@ function PanelHeader({ title, onBack }: { title: string; onBack: () => void }) {
 }
 
 export function StoreMenuDrawer({ isOpen, onClose }: StoreMenuDrawerProps) {
-  const isMounted = useHydrated();
-  const [previousOpen, setPreviousOpen] = useState(isOpen);
-  const [shouldRender, setShouldRender] = useState(isOpen);
-  const [isVisible, setIsVisible] = useState(false);
+  const { present, visible } = useOverlayTransition(isOpen, DRAWER_TRANSITION_MS);
+  const [isNarrow, setIsNarrow] = useState(false);
   const [activePanel, setActivePanel] = useState<MenuPanel | null>(null);
   const [isPanelVisible, setIsPanelVisible] = useState(false);
   const [expandedSizes, setExpandedSizes] = useState<Record<string, boolean>>({});
@@ -173,65 +180,40 @@ export function StoreMenuDrawer({ isOpen, onClose }: StoreMenuDrawerProps) {
   >({});
   const [brands, setBrands] = useState<BrandOption[]>([]);
   const [sizes, setSizes] = useState<SizeOption[]>([]);
-  const drawerRef = useRef<HTMLElement>(null);
+  const panelTriggerRef = useRef<HTMLButtonElement | null>(null);
+  const panelBackRef = useRef<HTMLButtonElement>(null);
   const panelTimeoutRef = useRef<number | null>(null);
-  const closeFromEffect = useEffectEvent(onClose);
+  const panelFrameRef = useRef<number | null>(null);
+
+  useLayoutEffect(() => {
+    if (!present) return;
+    const desktop = window.matchMedia("(min-width: 768px)");
+    const updateViewport = () => setIsNarrow(!desktop.matches);
+    updateViewport();
+    desktop.addEventListener("change", updateViewport);
+    return () => desktop.removeEventListener("change", updateViewport);
+  }, [present]);
+
+  useLayoutEffect(() => {
+    if (!isOpen || !isNarrow) return;
+    if (isPanelVisible) panelBackRef.current?.focus({ preventScroll: true });
+    else panelTriggerRef.current?.focus({ preventScroll: true });
+  }, [isNarrow, isOpen, isPanelVisible]);
 
   useEffect(() => {
+    if (!present) return;
     return () => {
       if (panelTimeoutRef.current !== null) {
         window.clearTimeout(panelTimeoutRef.current);
+        panelTimeoutRef.current = null;
       }
-    };
-  }, []);
-
-  if (previousOpen !== isOpen) {
-    setPreviousOpen(isOpen);
-    if (isOpen) setShouldRender(true);
-    else setIsVisible(false);
-  }
-
-  useEffect(() => {
-    if (isOpen) {
-      let secondFrame = 0;
-      const firstFrame = window.requestAnimationFrame(() => {
-        secondFrame = window.requestAnimationFrame(() => setIsVisible(true));
-      });
-      return () => {
-        window.cancelAnimationFrame(firstFrame);
-        window.cancelAnimationFrame(secondFrame);
-      };
-    }
-
-    const timeout = window.setTimeout(() => {
-      setShouldRender(false);
-      setActivePanel(null);
-      setIsPanelVisible(false);
-    }, DRAWER_TRANSITION_MS);
-    return () => window.clearTimeout(timeout);
-  }, [isOpen]);
-
-  useEffect(() => {
-    if (!shouldRender) {
-      return;
-    }
-
-    const previousOverflow = document.body.style.overflow;
-    document.body.style.overflow = "hidden";
-    drawerRef.current?.focus({ preventScroll: true });
-
-    const handleKeyDown = (event: KeyboardEvent) => {
-      if (event.key === "Escape") {
-        closeFromEffect();
+      if (panelFrameRef.current !== null) {
+        window.cancelAnimationFrame(panelFrameRef.current);
+        panelFrameRef.current = null;
       }
+      panelTriggerRef.current = null;
     };
-
-    window.addEventListener("keydown", handleKeyDown);
-    return () => {
-      document.body.style.overflow = previousOverflow;
-      window.removeEventListener("keydown", handleKeyDown);
-    };
-  }, [shouldRender]);
+  }, [present]);
 
   useEffect(() => {
     if (!isOpen || (brands.length > 0 && sizes.length > 0)) {
@@ -253,15 +235,15 @@ export function StoreMenuDrawer({ isOpen, onClose }: StoreMenuDrawerProps) {
     return () => controller.abort();
   }, [brands.length, isOpen, sizes.length]);
 
-  if (!isMounted || !shouldRender) {
-    return null;
+  if (!present && activePanel) {
+    setActivePanel(null);
+    setIsPanelVisible(false);
   }
 
-  const closeMenu = () => {
-    onClose();
-  };
+  if (!present) return null;
 
-  const openPanel = (panel: MenuPanel) => {
+  const openPanel = (panel: MenuPanel, trigger: HTMLButtonElement) => {
+    panelTriggerRef.current = trigger;
     if (panelTimeoutRef.current !== null) {
       window.clearTimeout(panelTimeoutRef.current);
       panelTimeoutRef.current = null;
@@ -274,7 +256,12 @@ export function StoreMenuDrawer({ isOpen, onClose }: StoreMenuDrawerProps) {
     }
 
     setActivePanel(panel);
-    window.requestAnimationFrame(() => setIsPanelVisible(true));
+    if (panelFrameRef.current === null) {
+      panelFrameRef.current = window.requestAnimationFrame(() => {
+        setIsPanelVisible(true);
+        panelFrameRef.current = null;
+      });
+    }
   };
 
   const closePanel = () => {
@@ -282,10 +269,14 @@ export function StoreMenuDrawer({ isOpen, onClose }: StoreMenuDrawerProps) {
     if (panelTimeoutRef.current !== null) {
       window.clearTimeout(panelTimeoutRef.current);
     }
-    panelTimeoutRef.current = window.setTimeout(() => {
-      setActivePanel(null);
-      panelTimeoutRef.current = null;
-    }, PANEL_TRANSITION_MS);
+    const reducedMotion = window.matchMedia("(prefers-reduced-motion: reduce)").matches;
+    panelTimeoutRef.current = window.setTimeout(
+      () => {
+        setActivePanel(null);
+        panelTimeoutRef.current = null;
+      },
+      reducedMotion ? 0 : PANEL_TRANSITION_MS,
+    );
   };
 
   const toggleSize = (key: string) => {
@@ -331,42 +322,40 @@ export function StoreMenuDrawer({ isOpen, onClose }: StoreMenuDrawerProps) {
     };
   });
 
-  const drawer = (
-    <div
-      className="fixed inset-0 z-[9999] transition-opacity"
-      style={{
-        backgroundColor: "rgba(0,0,0,0.46)",
-        opacity: isVisible ? 1 : 0,
-        transitionDuration: `${DRAWER_TRANSITION_MS}ms`,
-        transitionTimingFunction: MENU_EASING,
+  return (
+    <ModalPortal
+      open={present}
+      onClose={() => {
+        if (isOpen) onClose();
       }}
-      onMouseDown={(event) => {
-        if (event.target === event.currentTarget) {
-          closeMenu();
-        }
-      }}
+      label="Store menu"
+      placement="left"
+      focusDialog
+      contentClassName="contents"
+      backdropClassName={`bg-black/[0.46] transition-opacity duration-[460ms] ease-[cubic-bezier(0.76,0,0.24,1)] motion-reduce:transition-none ${
+        visible ? "opacity-100" : "opacity-0"
+      }`}
     >
       <aside
-        ref={drawerRef}
-        tabIndex={-1}
-        className="relative flex h-[100dvh] w-full overflow-hidden bg-white text-black shadow-2xl transition-[max-width,transform]"
+        inert={!isOpen}
+        className="relative flex h-[100dvh] w-full overflow-hidden bg-white text-black shadow-2xl transition-[max-width,opacity,transform] motion-reduce:transition-none"
         style={{
-          outline: "none",
           maxWidth: isPanelVisible ? "784px" : "392px",
-          transform: isVisible ? "none" : "translate3d(-100%,0,0)",
+          opacity: visible ? 1 : 0,
+          transform: visible ? "none" : "translate3d(-100%,0,0)",
           transitionDuration: `${DRAWER_TRANSITION_MS}ms`,
           transitionTimingFunction: MENU_EASING,
         }}
-        role="dialog"
-        aria-modal="true"
-        aria-label="Store menu"
       >
-        <div className="h-full w-full shrink-0 overflow-y-auto overscroll-contain bg-white md:w-[392px] md:border-r md:border-zinc-200">
+        <div
+          inert={isNarrow && isPanelVisible}
+          className="h-full w-full shrink-0 overflow-y-auto overscroll-contain bg-white md:w-[392px] md:border-r md:border-zinc-200"
+        >
           <div className="flex h-20 items-center px-6 md:px-8">
             <button
               type="button"
-              onClick={closeMenu}
-              className="inline-flex h-10 w-10 items-center justify-start text-zinc-800 transition-colors hover:text-black"
+              onClick={onClose}
+              className="inline-flex h-11 w-11 items-center justify-start text-zinc-800 transition-colors hover:text-black"
               aria-label="Close menu"
             >
               <X className="h-6 w-6" strokeWidth={1.5} />
@@ -387,7 +376,7 @@ export function StoreMenuDrawer({ isOpen, onClose }: StoreMenuDrawerProps) {
               <button
                 key={panel}
                 type="button"
-                onClick={() => openPanel(panel)}
+                onClick={(event) => openPanel(panel, event.currentTarget)}
                 className="flex min-h-[61px] w-full items-center justify-between border-b border-zinc-200 text-left text-[13px] font-normal uppercase tracking-[0.02em] text-zinc-800 transition-colors hover:text-black"
                 aria-expanded={activePanel === panel && isPanelVisible}
               >
@@ -398,7 +387,7 @@ export function StoreMenuDrawer({ isOpen, onClose }: StoreMenuDrawerProps) {
 
             <Link
               href="/store"
-              onClick={closeMenu}
+              onClick={onClose}
               className="flex min-h-[61px] items-center border-b border-zinc-200 text-[13px] font-normal uppercase tracking-[0.02em] text-zinc-800 transition-colors hover:text-black"
             >
               Shop All
@@ -407,22 +396,24 @@ export function StoreMenuDrawer({ isOpen, onClose }: StoreMenuDrawerProps) {
         </div>
 
         <section
-          className="absolute inset-0 z-10 h-full w-full bg-white md:static md:w-[392px] md:shrink-0"
+          inert={!isPanelVisible}
+          className="absolute inset-0 z-10 h-full w-full bg-white transition-[opacity,transform] motion-reduce:transition-none md:static md:w-[392px] md:shrink-0"
           style={{
             opacity: isPanelVisible ? 1 : 0,
             transform: isPanelVisible ? "none" : "translate3d(2rem,0,0)",
             pointerEvents: isPanelVisible ? "auto" : "none",
-            transitionProperty: "opacity, transform",
             transitionDuration: `${PANEL_TRANSITION_MS}ms`,
             transitionTimingFunction: MENU_EASING,
           }}
         >
-          {activePanel && <PanelHeader title={panelTitle} onBack={closePanel} />}
+          {activePanel && (
+            <PanelHeader title={panelTitle} onBack={closePanel} backRef={panelBackRef} />
+          )}
 
           <div className="h-[calc(100dvh-5rem)] overflow-y-auto overscroll-contain px-7 pb-10 md:px-8">
             {activePanel === "brand" ? (
               <div key="brand" className="store-menu-content">
-                <DrawerLink href="/brands" onNavigate={closeMenu} variant="row">
+                <DrawerLink href="/brands" onNavigate={onClose} variant="row">
                   All Brands
                 </DrawerLink>
                 <section className="border-b border-zinc-200">
@@ -446,7 +437,7 @@ export function StoreMenuDrawer({ isOpen, onClose }: StoreMenuDrawerProps) {
                         <DrawerLink
                           key={brand.label}
                           href={brand.href}
-                          onNavigate={closeMenu}
+                          onNavigate={onClose}
                         >
                           {brand.label}
                         </DrawerLink>
@@ -461,7 +452,7 @@ export function StoreMenuDrawer({ isOpen, onClose }: StoreMenuDrawerProps) {
                   <DrawerLink
                     key={category.value}
                     href={buildStoreHref({ category: category.value })}
-                    onNavigate={closeMenu}
+                    onNavigate={onClose}
                     variant="row"
                   >
                     {category.label}
@@ -476,7 +467,7 @@ export function StoreMenuDrawer({ isOpen, onClose }: StoreMenuDrawerProps) {
                   options={clothingOptions}
                   isOpen={!!expandedSizes.clothing}
                   onToggle={() => toggleSize("clothing")}
-                  onNavigate={closeMenu}
+                  onNavigate={onClose}
                 />
                 <SizeGroup
                   label="Jeans"
@@ -484,7 +475,7 @@ export function StoreMenuDrawer({ isOpen, onClose }: StoreMenuDrawerProps) {
                   options={jeanOptions}
                   isOpen={!!expandedSizes.jeans}
                   onToggle={() => toggleSize("jeans")}
-                  onNavigate={closeMenu}
+                  onNavigate={onClose}
                 />
                 <SizeGroup
                   label="Men's"
@@ -492,7 +483,7 @@ export function StoreMenuDrawer({ isOpen, onClose }: StoreMenuDrawerProps) {
                   options={mensOptions}
                   isOpen={!!expandedSizes.mens}
                   onToggle={() => toggleSize("mens")}
-                  onNavigate={closeMenu}
+                  onNavigate={onClose}
                 />
                 <SizeGroup
                   label="Women's"
@@ -500,7 +491,7 @@ export function StoreMenuDrawer({ isOpen, onClose }: StoreMenuDrawerProps) {
                   options={womensOptions}
                   isOpen={!!expandedSizes.womens}
                   onToggle={() => toggleSize("womens")}
-                  onNavigate={closeMenu}
+                  onNavigate={onClose}
                 />
                 <SizeGroup
                   label="Youth"
@@ -508,7 +499,7 @@ export function StoreMenuDrawer({ isOpen, onClose }: StoreMenuDrawerProps) {
                   options={youthOptions}
                   isOpen={!!expandedSizes.youth}
                   onToggle={() => toggleSize("youth")}
-                  onNavigate={closeMenu}
+                  onNavigate={onClose}
                 />
                 <SizeGroup
                   label="European"
@@ -516,15 +507,13 @@ export function StoreMenuDrawer({ isOpen, onClose }: StoreMenuDrawerProps) {
                   options={euOptions}
                   isOpen={!!expandedSizes.eu}
                   onToggle={() => toggleSize("eu")}
-                  onNavigate={closeMenu}
+                  onNavigate={onClose}
                 />
               </div>
             ) : null}
           </div>
         </section>
       </aside>
-    </div>
+    </ModalPortal>
   );
-
-  return createPortal(drawer, document.body);
 }

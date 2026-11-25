@@ -3,7 +3,7 @@
 import Image from "next/image";
 
 import { X, Package, Layers, Hash } from "lucide-react";
-import { useEffect, useMemo, useState } from "react";
+import { useMemo, useState } from "react";
 
 import { ModalPortal } from "@/components/ui/ModalPortal";
 
@@ -173,19 +173,6 @@ export function AdminOrderItemDetailsModal({
     setSelectedImageIndex(0);
   }
 
-  useEffect(() => {
-    if (!open) {
-      return;
-    }
-    const onKeyDown = (event: KeyboardEvent) => {
-      if (event.key === "Escape") {
-        onClose();
-      }
-    };
-    window.addEventListener("keydown", onKeyDown);
-    return () => window.removeEventListener("keydown", onKeyDown);
-  }, [open, onClose]);
-
   const images = useMemo(() => {
     const raw = (item?.product?.images ?? []).filter(
       (entry): entry is AdminOrderItemImage => Boolean(entry?.url),
@@ -215,13 +202,13 @@ export function AdminOrderItemDetailsModal({
   const selectedImage = images[selectedImageIndex]?.url || "/images/logo.png";
 
   return (
-    <ModalPortal open={open} onClose={onClose} zIndexClassName="z-[10000]">
-      <div
-        role="dialog"
-        aria-modal="true"
-        onClick={(e) => e.stopPropagation()}
-        className="flex max-h-[80vh] w-full max-w-4xl flex-col overflow-hidden rounded-lg border border-zinc-800 bg-zinc-950 shadow-2xl"
-      >
+    <ModalPortal
+      open={open}
+      onClose={onClose}
+      label={productTitle}
+      zIndexClassName="z-[10000]"
+    >
+      <div className="flex max-h-[80vh] w-full max-w-4xl flex-col overflow-hidden rounded-lg border border-zinc-800 bg-zinc-950 shadow-2xl">
         {/* --- Header (Fixed) --- */}
         <div className="flex flex-shrink-0 items-start justify-between border-b border-zinc-800 bg-zinc-950 px-5 py-4">
           <div className="min-w-0 pr-4">
@@ -244,8 +231,10 @@ export function AdminOrderItemDetailsModal({
             </div>
           </div>
           <button
+            type="button"
+            aria-label="Close item details"
             onClick={onClose}
-            className="flex-shrink-0 rounded p-1.5 text-zinc-500 transition-colors hover:bg-zinc-900 hover:text-white"
+            className="flex h-11 w-11 flex-shrink-0 items-center justify-center rounded text-zinc-500 transition-colors hover:bg-zinc-900 hover:text-white"
           >
             <X className="h-5 w-5" />
           </button>

@@ -35,7 +35,7 @@ export function OriginModal({
   const errors = originFieldErrors ?? {};
 
   return (
-    <ModalPortal open={open} onClose={onClose}>
+    <ModalPortal open={open} onClose={onClose} label="Change origin address">
       <div className="w-full max-w-3xl rounded-sm border border-zinc-800/70 bg-zinc-950 p-3 sm:p-6">
         <div className="mb-2 flex items-center justify-between gap-3 sm:mb-4">
           <div>
@@ -49,7 +49,7 @@ export function OriginModal({
           <button
             type="button"
             onClick={onClose}
-            className="text-[11px] text-zinc-400 hover:text-white sm:text-sm"
+            className="min-h-11 px-2 text-[11px] text-zinc-400 hover:text-white sm:text-sm"
           >
             Close
           </button>

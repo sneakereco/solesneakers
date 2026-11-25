@@ -613,6 +613,7 @@ export default function ShippingPage() {
       activeTab === "label" ? (
         <button
           type="button"
+          aria-haspopup="dialog"
           onClick={(event) => {
             event.stopPropagation();
             setLabelOrder(order);
@@ -624,6 +625,7 @@ export default function ShippingPage() {
       ) : activeTab === "ready" ? (
         <button
           type="button"
+          aria-haspopup="dialog"
           onClick={(event) => {
             event.stopPropagation();
             setConfirmMarkShipped(order);
@@ -1057,6 +1059,7 @@ export default function ShippingPage() {
         </div>
         <button
           type="button"
+          aria-haspopup="dialog"
           onClick={() => {
             setOriginError("");
             setOriginMessage("");

@@ -409,22 +409,20 @@ export function CreateLabelForm({
   const hasAddressErrors = Object.keys(addressErrors).length > 0;
 
   return (
-    <ModalPortal open={open} onClose={onClose}>
-      <div
-        className="max-h-[90vh] w-full max-w-6xl overflow-y-auto rounded-lg border border-zinc-800/70 bg-zinc-950"
-        onMouseDown={(e) => e.stopPropagation()}
-      >
+    <ModalPortal open={open} onClose={onClose} label="Create shipping label">
+      <div className="max-h-[90vh] w-full max-w-6xl overflow-y-auto rounded-lg border border-zinc-800/70 bg-zinc-950">
         <div className="sticky top-0 z-10 flex items-start justify-between gap-4 border-b border-zinc-800/70 bg-zinc-950 p-5">
           <div>
-            <div className="text-lg font-semibold text-white">Create shipping label</div>
+            <h2 className="text-lg font-semibold text-white">Create shipping label</h2>
             <div className="mt-1 text-xs text-zinc-500">
               Order #{String(orderId).slice(0, 8)}
             </div>
           </div>
           <button
             type="button"
+            aria-label="Close shipping label editor"
             onClick={onClose}
-            className="text-zinc-400 hover:text-white"
+            className="flex h-11 w-11 items-center justify-center text-zinc-400 hover:text-white"
           >
             <X className="h-5 w-5" />
           </button>

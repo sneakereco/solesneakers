@@ -1,7 +1,7 @@
 // src/components/ui/Select.tsx
 "use client";
 
-import { useEffect, useMemo, useRef, useState } from "react";
+import { useEffect, useId, useMemo, useRef, useState, type KeyboardEvent } from "react";
 import { ChevronDown } from "lucide-react";
 
 export type RdkSelectOption = {
@@ -11,6 +11,9 @@ export type RdkSelectOption = {
 };
 
 type Props = {
+  id?: string;
+  "aria-label"?: string;
+  "aria-labelledby"?: string;
   value: string;
   onChange: (value: string) => void;
   options: RdkSelectOption[];
@@ -24,6 +27,9 @@ type Props = {
 };
 
 export function RdkSelect({
+  id,
+  "aria-label": ariaLabel,
+  "aria-labelledby": ariaLabelledBy,
   value,
   onChange,
   options,
@@ -36,6 +42,7 @@ export function RdkSelect({
   menuClassName = "",
 }: Props) {
   const [open, setOpen] = useState(false);
+  const menuId = useId();
   const [searchQuery, setSearchQuery] = useState("");
   const [activeIndex, setActiveIndex] = useState<number>(() => {
     const idx = options.findIndex((o) => o.value === value);
@@ -66,12 +73,45 @@ export function RdkSelect({
     [options, value],
   );
 
+  const handleKeyDown = (event: KeyboardEvent<HTMLDivElement>) => {
+    if (!open || disabled) return;
+
+    if (event.key === "Escape") {
+      event.preventDefault();
+      event.stopPropagation();
+      setOpen(false);
+      buttonRef.current?.focus();
+      return;
+    }
+
+    if (event.key === "ArrowDown" || event.key === "ArrowUp") {
+      if (filteredOptions.length === 0) return;
+      event.preventDefault();
+      const step = event.key === "ArrowDown" ? 1 : -1;
+      setActiveIndex((prev) =>
+        Math.max(0, Math.min(prev + step, filteredOptions.length - 1)),
+      );
+      return;
+    }
+
+    if (event.key === "Enter" && !event.nativeEvent.isComposing) {
+      event.preventDefault();
+      event.stopPropagation();
+      const option = filteredOptions[activeIndex];
+      if (option && !option.disabled) {
+        onChange(option.value);
+        setOpen(false);
+        buttonRef.current?.focus();
+      }
+    }
+  };
+
   useEffect(() => {
     if (!open) {
       return;
     }
 
-    const onMouseDown = (event: MouseEvent) => {
+    const onPointerDown = (event: PointerEvent) => {
       const target = event.target as Node | null;
       if (!target) {
         return;
@@ -82,54 +122,9 @@ export function RdkSelect({
       setOpen(false);
     };
 
-    const onKeyDown = (event: KeyboardEvent) => {
-      if (!open) {
-        return;
-      }
-
-      if (event.key === "Escape") {
-        event.preventDefault();
-        setOpen(false);
-        buttonRef.current?.focus();
-        return;
-      }
-
-      if (event.key === "ArrowDown") {
-        if (filteredOptions.length === 0) {
-          return;
-        }
-        event.preventDefault();
-        setActiveIndex((prev) => Math.min(prev + 1, filteredOptions.length - 1));
-        return;
-      }
-
-      if (event.key === "ArrowUp") {
-        if (filteredOptions.length === 0) {
-          return;
-        }
-        event.preventDefault();
-        setActiveIndex((prev) => Math.max(prev - 1, 0));
-        return;
-      }
-
-      if (event.key === "Enter") {
-        event.preventDefault();
-        const opt = filteredOptions[activeIndex];
-        if (opt && !opt.disabled) {
-          onChange(opt.value);
-          setOpen(false);
-          buttonRef.current?.focus();
-        }
-      }
-    };
-
-    document.addEventListener("mousedown", onMouseDown);
-    document.addEventListener("keydown", onKeyDown);
-    return () => {
-      document.removeEventListener("mousedown", onMouseDown);
-      document.removeEventListener("keydown", onKeyDown);
-    };
-  }, [open, activeIndex, onChange, filteredOptions]);
+    document.addEventListener("pointerdown", onPointerDown);
+    return () => document.removeEventListener("pointerdown", onPointerDown);
+  }, [open]);
 
   const [previousOptions, setPreviousOptions] = useState(filteredOptions);
   const [previousValue, setPreviousValue] = useState(value);
@@ -154,14 +149,28 @@ export function RdkSelect({
   }, [open, searchable]);
 
   return (
-    <div ref={wrapRef} data-ui-select className={`relative ${className}`}>
+    <div
+      ref={wrapRef}
+      data-ui-select
+      className={`relative ${className}`}
+      onKeyDown={handleKeyDown}
+      onBlur={(event) => {
+        if (event.relatedTarget && !event.currentTarget.contains(event.relatedTarget)) {
+          setOpen(false);
+        }
+      }}
+    >
       <button
         ref={buttonRef}
+        id={id}
         data-ui-select-trigger
         type="button"
         disabled={disabled}
         aria-haspopup="listbox"
-        aria-expanded={open}
+        aria-label={ariaLabel}
+        aria-labelledby={ariaLabelledBy}
+        aria-expanded={open && !disabled}
+        aria-controls={open && !disabled ? menuId : undefined}
         onClick={() => {
           setSearchQuery("");
           setActiveIndex(
@@ -197,6 +206,7 @@ export function RdkSelect({
 
       {open && !disabled && (
         <div
+          id={menuId}
           data-ui-select-menu
           role="listbox"
           className={[
@@ -234,6 +244,7 @@ export function RdkSelect({
                 aria-selected={isSelected}
                 data-active={isActive ? "true" : "false"}
                 disabled={opt.disabled}
+                onFocus={() => setActiveIndex(idx)}
                 onMouseEnter={() => setActiveIndex(idx)}
                 onClick={() => {
                   if (opt.disabled) {
