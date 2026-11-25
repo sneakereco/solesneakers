@@ -1,6 +1,7 @@
 import Image from "next/image";
 import Link from "next/link";
 import type { SpecialtyPublicProduct } from "../Claim/claim-contract";
+import { ClaimButton } from "../Claim/ClaimButton";
 export function SpecialtyProductCard({
   product,
   view = "grid",
@@ -37,12 +38,7 @@ export function SpecialtyProductCard({
           <Link href={"/store/" + product.id}>{product.name}</Link>
         </h2>
         <p className="mt-1 text-xs text-zinc-600">Free giveaway</p>
-        <Link
-          href={"/store/" + product.id}
-          className="mt-3 inline-flex min-h-11 items-center justify-center bg-zinc-950 px-5 py-2 text-sm text-white"
-        >
-          {product.claimable ? "Claim" : "Unavailable"}
-        </Link>
+        <ClaimButton product={product} />
       </div>
     </article>
   );
