@@ -2,7 +2,7 @@
 
 Date: 2026-11-25
 
-Status: Independently reviewed design for user approval. The user selected targeted hardening of the current release with selective reuse of reviewed fixes. A fresh builder check on November 25 reported “nothing important left.” Implementation, deployment and a Black Friday readiness claim are not approved by selecting that approach.
+Status: Approved by the user on November 25, 2026; implementation planning authorized. The user selected targeted hardening of the current release with selective reuse of reviewed fixes. A fresh builder check reported “nothing important left.” Deployment and a Black Friday readiness claim remain subject to the release gates below.
 
 ## Intent and scope
 
