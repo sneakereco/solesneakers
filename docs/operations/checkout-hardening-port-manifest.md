@@ -1,0 +1,31 @@
+# Checkout hardening port manifest
+
+The receiving baseline is `9a3db43f175cc4fa1d2948525f8d731f0bd62759`. This manifest records the donor scope and the harness adaptations used to verify behavior on the receiving branch.
+
+| Donor                                | Frozen reference                                                                                                                   | Receiving-branch scope                                                                                                                                                                                            |
+| ------------------------------------ | ---------------------------------------------------------------------------------------------------------------------------------- | ----------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| Cart state and storage               | `05b4fbd918756a1c5fafd064862032604b19394d`, `a7a94b9892ef678cb348024339bd3f83b237250d`, `b2064a32621028792b857b2cb43b0bd980c53`    | Port owner and revision fencing, native storage events, serialized writes and malformed-row salvage against receiving Cart and Session adapters. Retain the guest and account storage keys and basket separation. |
+| Purchase capture and unit provenance | `1c5cb53227a544fd0a61ced29d2147710a059cd9`, `271dc6787e050be23008bb9f076e2334862aa3df`                                             | Carry forward the private captured-unit lineage, binding, consumption and proof recovery in later product tasks.                                                                                                  |
+| Purchase observation                 | `4d02e05d85855e37c8b6b4b70a15c36e8e7c93c2`, `09655c64a09ab6edaf9d3bf2afa14dec4e0667ec`, `6d7b2db96312c8d73955f60b92c00716aeb394bd` | Carry forward cancellation and the bound lifetime of queued purchase work.                                                                                                                                        |
+| Cart catalog transport               | `e1aa8341b7a6e25cde6ae32e3c9fa4e6f758c024`, `8dfa4f2e7469f44beb7c59b82878dbe6cac46504`, `f14a28aa64a55fc967b2b598b5b4b4beae5a88bc` | Verify complete catalog facts and transport metadata against the receiving Supabase adapter.                                                                                                                      |
+| Checkout Outcomes                    | `d8c4b6b97bd189a42d3dfa9de2394aa01536aab4`, `da3c0d1f39053d9a9aa72f9cebc4af871721f7e0`                                             | Re-prove issued-key recovery, observation-bound access, unified polling, purchased-line authorization and same-layout checkout progress through current application adapters.                                     |
+
+## Harness and test provenance
+
+- The browser fixture adapts the provider mount and storage setup from [the historical state diagnostic](https://github.com/sneakereco/solesneakers/blob/aeb6668b2d6f14ce5134593a6735e4bca00d281d/scripts/audits/efficiency-state-2026-11-24.mjs) and the Next navigation seam from the receiving `tests/browser/checkout-progress.mjs` and `checkout-success.mjs`. The new fixture probes the real `useCart` and `useSession` and mounts the receiving cart drawer, checkout client and receipt in Chromium.
+- The database fixture follows the independent-connection pattern in the receiving single-store expansion tests and the November 25 contention diagnostic. `fresh` replays all application migration files against a platform-only Supabase bootstrap. `populated` replays through `20260922120000`, seeds synthetic records, applies the additive compatibility migration `20261123120000` and every subsequent migration in order and compares every pre-existing field of those records. The harness reads the current worktree migration directory, including untracked SQL files, freezes its source hashes per run, and checks both ordered migration versions and those hashes in the database registry.
+- The new Node tests cover target validation, ownership marker and directory guards, local project provisioning and cleanup, role connections, barrier behavior, real browser rendering and blocked outbound requests. The historical diagnostic scenarios still document defects. Their observations belong in the assessment, and product correctness tests belong with their receiving implementations.
+
+## Running the fixture
+
+```sh
+node --test tests/database/checkout-hardening-fixture.test.mjs tests/database/checkout-hardening-docker-relay.test.mjs tests/browser/checkout-hardening-fixture.test.mjs
+node scripts/test-checkout-hardening-db.mjs --self-test
+node scripts/test-checkout-hardening-db.mjs --mode populated --test tests/database/your-test.test.mjs
+```
+
+Use the repository's pinned Node and installed Playwright Chromium. Set `PLAYWRIGHT_BROWSERS_PATH` if installation uses a nondefault location. The browser route callback receives the intercepted local request and its URL. It can fulfill it immediately or retain it for release by a test barrier. The fixture rejects external requests and WebSockets and reports route failures on `close()`.
+
+The database runner owns one temporary Supabase project and database per invocation. Its child Node test receives a private lease. Callers use `withCheckoutDatabase` to open independent PostgreSQL connections against that lease. Tests within the same child share its fixture data, so use distinct synthetic IDs and explicit transaction lifetimes for concurrent operations. A standalone call to `withCheckoutDatabase` provisions its own temporary project. The self-test uses one project for each replay mode.
+
+The pinned Supabase CLI publishes numeric ports by default. A startup-only local Docker relay binds the owned PostgreSQL port explicitly to IPv4 loopback. The fixture inspects the actual container binding and exact project label before it writes application SQL. The parent process stops and verifies cleanup of the owned project and checks the containment and ownership marker of its temporary files before removal.
