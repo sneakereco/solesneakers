@@ -96,6 +96,7 @@ export async function handleLoadTestControl(
         providerMode: settings.target.providerMode,
         capabilities: ["shopping"],
         nonce: request.headers.get("x-load-test-nonce"),
+        serverAt: Date.now(),
       });
     if (operation === "register") {
       const input = registration.parse(body);
@@ -227,7 +228,24 @@ export async function handleLoadTestControl(
         };
       }),
     );
-    return json({ run, ledgers });
+    const cursor = z
+      .number()
+      .int()
+      .min(0)
+      .max(1000000)
+      .parse(body.cursor ?? 0);
+    const ownedOrderIds = await store.queueItems<string>(
+      "owned-orders",
+      runId,
+      100,
+      cursor,
+    );
+    return json({
+      run,
+      ledgers,
+      ownedOrderIds,
+      nextCursor: ownedOrderIds.length === 100 ? cursor + 100 : null,
+    });
   } catch (error) {
     return json(
       {

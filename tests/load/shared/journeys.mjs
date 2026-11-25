@@ -114,22 +114,24 @@ export async function runCheckoutJourney(session, plan, transport) {
     return { status: "not-started", classification: "stock-unavailable" };
   const started = transport.nowMs();
   const fulfillment = session.fulfillment ?? "ship";
-  const quote = await requestOperation(
-    transport,
-    "quote",
-    "/api/checkout/quote",
-    {
-      items: session.items,
-      fulfillment,
-      shippingAddress: fulfillment === "ship" ? session.address : null,
-    },
-    (x) =>
-      x?.completeness === "exact" &&
-      /^[a-f0-9]{64}$/.test(x.quoteFingerprint) &&
-      Number.isSafeInteger(x.totals?.totalCents) &&
-      x.totals.totalCents > 0,
-  );
-  await pause(plan, transport, "checkout");
+  const quote =
+    session.primedQuote ??
+    (await requestOperation(
+      transport,
+      "quote",
+      "/api/checkout/quote",
+      {
+        items: session.items,
+        fulfillment,
+        shippingAddress: fulfillment === "ship" ? session.address : null,
+      },
+      (x) =>
+        x?.completeness === "exact" &&
+        /^[a-f0-9]{64}$/.test(x.quoteFingerprint) &&
+        Number.isSafeInteger(x.totals?.totalCents) &&
+        x.totals.totalCents > 0,
+    ));
+  if (!session.isRush) await pause(plan, transport, "checkout");
   const { name, phone, ...physical } = session.address;
   const prepared = await requestOperation(
     transport,

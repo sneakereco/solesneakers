@@ -12,11 +12,12 @@ import { emit } from "./lib/metrics.js";
 // The large customer-cookie partition lives once per worker, not per VU.
 const metadata = new SharedArray("run-metadata", () => {
   const raw = JSON.parse(open(__ENV.LOAD_RUN_CONFIG));
-  const { sessions: _, ...fixtures } = raw.fixtures;
+  const fixtures = { ...raw.fixtures };
+  delete fixtures.sessions;
   return [{ ...raw, fixtures }];
 });
-const config = metadata[0];
-const sessions = new SharedArray(
+export const config = metadata[0];
+export const sessions = new SharedArray(
   "private-slot-sessions",
   () => JSON.parse(open(__ENV.LOAD_RUN_CONFIG)).fixtures.sessions,
 );

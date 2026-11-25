@@ -26,7 +26,8 @@ test(
     let forced = 0;
     const id = "22222222-2222-4222-8222-222222222222";
     const server = createServer(async (req, res) => {
-      for await (const _ of req) {
+      for await (const chunk of req) {
+        void chunk;
       }
       const path = new URL(req.url, "http://fixture").pathname;
       res.setHeader("content-type", "application/json");
@@ -140,5 +141,30 @@ test(
         (error) => error.code === 99,
       );
     }
+    forced = 0;
+    config.plan.profile = "rush";
+    config.plan.contenders = 3;
+    config.plan.contentionKind = "purchase";
+    config.plan.measurementSeconds = 1;
+    config.fixtures.products.push({ ...config.fixtures.products[0], hot: true });
+    config.options.scenarios.shoppers.exec = "rushSession";
+    config.phaseStart = Date.now() + 1500;
+    await writeFile(file, JSON.stringify(config), { mode: 0o600 });
+    await exec(
+      binary,
+      ["inspect", "--env", `LOAD_RUN_CONFIG=${file}`, resolve("tests/load/k6/rush.js")],
+      { env, windowsHide: true },
+    );
+    await exec(
+      binary,
+      [
+        "run",
+        "--quiet",
+        "--env",
+        `LOAD_RUN_CONFIG=${file}`,
+        resolve("tests/load/k6/rush.js"),
+      ],
+      { env, windowsHide: true, timeout: 45000 },
+    );
   },
 );

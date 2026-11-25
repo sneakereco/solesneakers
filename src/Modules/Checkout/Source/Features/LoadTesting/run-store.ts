@@ -24,7 +24,7 @@ export interface RunStore {
     change: (value: T) => T,
     queue?: QueueEffect<T>,
   ): Promise<T>;
-  queueItems<T>(kind: string, id: string, limit: number): Promise<T[]>;
+  queueItems<T>(kind: string, id: string, limit: number, offset?: number): Promise<T[]>;
   acknowledge(kind: string, id: string, value: unknown): Promise<void>;
 }
 export type QueueEffect<T> = { kind: string; id: string; value: (next: T) => unknown };
@@ -87,11 +87,11 @@ class RedisRunStore implements RunStore {
     }
     throw new Error("Load registry contention limit");
   }
-  async queueItems<T>(kind: string, id: string, limit: number): Promise<T[]> {
+  async queueItems<T>(kind: string, id: string, limit: number, offset = 0): Promise<T[]> {
     return this.redis.lrange<T>(
       this.key(kind, id),
-      0,
-      Math.min(100, Math.max(1, limit)) - 1,
+      offset,
+      offset + Math.min(100, Math.max(1, limit)) - 1,
     );
   }
   async acknowledge(kind: string, id: string, value: unknown): Promise<void> {

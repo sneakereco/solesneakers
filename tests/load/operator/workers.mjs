@@ -60,6 +60,7 @@ export function scenarioOptions(plan, shard) {
       vus: size,
       duration: `${plan.measurementSeconds}s`,
     };
+  if (plan.contenders) scenario.exec = "rushSession";
   return {
     scenarios: { shoppers: scenario },
     thresholds: buildThresholds(plan),
@@ -93,7 +94,11 @@ export async function launchWorkers(plan, fixtures, options) {
     const script = join(
       root,
       "tests/load/k6",
-      plan.profile === "arrival" ? "arrival.js" : "shopping.js",
+      plan.contenders
+        ? "rush.js"
+        : plan.profile === "arrival"
+          ? "arrival.js"
+          : "shopping.js",
     );
     const child = (options.spawn ?? spawn)(
       options.k6Binary,

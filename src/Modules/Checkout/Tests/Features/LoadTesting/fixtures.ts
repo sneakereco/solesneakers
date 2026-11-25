@@ -44,9 +44,9 @@ export class MemoryRunStore implements RunStore {
     }
     return next;
   }
-  queueItems<T>(kind: string, id: string, limit: number): Promise<T[]> {
+  queueItems<T>(kind: string, id: string, limit: number, offset = 0): Promise<T[]> {
     return Promise.resolve(
-      (this.queues.get(`${kind}:${id}`) ?? []).slice(0, limit) as T[],
+      (this.queues.get(`${kind}:${id}`) ?? []).slice(offset, offset + limit) as T[],
     );
   }
   acknowledge(kind: string, id: string, value: unknown): Promise<void> {

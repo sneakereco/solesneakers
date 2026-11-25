@@ -52,10 +52,18 @@ export async function reserveWithLoadOwnership<T extends { orderId: string }>(
     if (owner?.runId !== context.runId) throw new Error("Account is outside load run");
   }
   const result = await reserve();
-  await store.put("fixture", `order:${result.orderId}`, {
-    runId: context.runId,
-    slot: context.slot,
-  });
+  const owner = { runId: context.runId, slot: context.slot };
+  await store.mutate(
+    "fixture",
+    `order:${result.orderId}`,
+    owner,
+    (previous) => {
+      if (previous.runId !== context.runId || previous.slot !== context.slot)
+        throw new Error("Reservation ownership conflict");
+      return owner;
+    },
+    { kind: "owned-orders", id: context.runId, value: () => result.orderId },
+  );
   if (input.guestEmail)
     await store.put("fixture", `email:${input.guestEmail}`, {
       runId: context.runId,

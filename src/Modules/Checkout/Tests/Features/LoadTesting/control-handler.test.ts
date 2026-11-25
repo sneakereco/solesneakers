@@ -1,7 +1,33 @@
 import { handleLoadTestControl } from "../../../Source/Features/LoadTesting/control-handler";
-import { fixtureSettings, MemoryRunStore, signControlRequest } from "./fixtures";
+import {
+  fixtureSettings,
+  fixtureRun,
+  MemoryRunStore,
+  signControlRequest,
+} from "./fixtures";
 
 describe("load control plane", () => {
+  test("operator can enumerate durable owned outcomes beyond the first page", async () => {
+    const { settings } = fixtureSettings(),
+      store = new MemoryRunStore(),
+      run = fixtureRun(settings.target.digest);
+    await store.put("run", run.runId, run);
+    for (let index = 0; index < 105; index++)
+      await store.mutate("owned", String(index), index, (value) => value, {
+        kind: "owned-orders",
+        id: run.runId,
+        value: () => `order-${index}`,
+      });
+    const response = await handleLoadTestControl(
+      signControlRequest(settings, "status", { runId: run.runId, cursor: 100 }),
+      "status",
+      { settings, store },
+    );
+    const page = await response.json();
+    expect(page.ownedOrderIds).toHaveLength(5);
+    expect(page.ownedOrderIds[0]).toBe("order-100");
+    expect(page.nextCursor).toBeNull();
+  });
   test("disabled endpoint is absent and unsigned enabled requests are forbidden", async () => {
     const request = new Request(
       "https://load.example.test/api/internal/load-test/attest",

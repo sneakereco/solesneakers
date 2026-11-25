@@ -88,7 +88,7 @@ export async function seedFixtures(target, plan, clients, journal) {
     postalCode: "29201",
     country: "US",
   };
-  // Server uses shippingAddressKey (lowercase normalized JSON); keep one
+  // Server uses shippingAddressKey (uppercase normalized array); keep one
   // golden contract test at the boundary rather than trusting prose here.
   const addressKey = JSON.stringify([
     physical.line1,

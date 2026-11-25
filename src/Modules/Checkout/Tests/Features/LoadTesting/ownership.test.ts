@@ -33,4 +33,5 @@ test("unregistered buyer identity cannot reserve stock before ownership validati
     runId: run.runId,
     slot: 1,
   });
+  expect(await store.queueItems("owned-orders", run.runId, 100)).toEqual(["new-order"]);
 });
