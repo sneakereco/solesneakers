@@ -39,12 +39,14 @@ export const paymentAttemptSchema = z
     (a) =>
       a.state !== "ready" || (a.requestDigest === null && a.providerPaymentId === null),
   )
-  .refine(
-    (a) =>
-      !["dispatch_started", "unknown", "pending", "succeeded", "declined"].includes(
-        a.state,
-      ) || a.requestDigest !== null,
-  );
+  .refine((a) => {
+    if (a.requestDigest !== null) return true;
+    if (a.state === "dispatch_started" || a.state === "unknown") return false;
+    // A known legacy Square payment can be verified without a local dispatch.
+    if (["pending", "succeeded", "declined"].includes(a.state))
+      return a.providerPaymentId !== null;
+    return true;
+  });
 export type PaymentAttempt = z.infer<typeof paymentAttemptSchema>;
 
 // A scope identifier is constructed only after server verification of the account,

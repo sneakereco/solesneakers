@@ -58,6 +58,33 @@ test("returns the durable DTO and dispatch decision, preserving the SQL error on
     }),
   ).rejects.toBe(error);
 });
+test("reads the verified legacy outcome with its original unknown dispatch fingerprint", async () => {
+  const { repo, rpc } = setup();
+  const providerPaymentId = "legacy-payment";
+  const result = { ...a, state: "succeeded", providerPaymentId };
+  rpc.mockResolvedValueOnce({ data: result, error: null });
+  await expect(
+    repo.recordAttemptOutcome({
+      attemptId: id,
+      providerPaymentId,
+      state: "succeeded",
+      verifiedFacts: {
+        kind: "square_payment",
+        orderId,
+        squareOrderId: "legacy-square-order",
+        paymentId: providerPaymentId,
+        amountCents: 1250,
+        currency: "USD",
+        status: "COMPLETED",
+      },
+    }),
+  ).resolves.toEqual(result);
+  rpc.mockResolvedValueOnce({ data: { kind: "observe", attempt: result }, error: null });
+  await expect(
+    repo.beginDispatch({ attemptId: id, ownerBinding, requestDigest, sourceDigest }),
+  ).resolves.toEqual({ kind: "observe", attempt: result });
+});
+
 test("rejects unexpected or credential-shaped inputs before persisting any facts", async () => {
   const { repo, rpc } = setup();
   await expect(

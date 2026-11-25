@@ -203,7 +203,15 @@ begin
   select orders.* into strict o from public.orders orders where orders.id=(
     select order_id from public.checkout_payment_attempts where id=p_attempt_id) for update;
   select * into strict a from public.checkout_payment_attempts where id=p_attempt_id and order_id=o.id for update;
-  if a.dispatched_at is null or p_state is null or p_state not in ('unknown','review','pending','succeeded','declined','canceled')
+  -- Legacy inquiry can identify a known Square payment, never a new dispatch.
+  -- The ordinary square_payment path below still validates the complete fact.
+  if a.dispatched_at is null and (
+    o.checkout_attempt_guarded or kind is distinct from 'square_payment'
+    or a.provider_payment_id is null or p_provider_payment_id is distinct from a.provider_payment_id
+    or o.payment_transaction_id is distinct from a.provider_payment_id or nullif(a.square_order_id,'') is null
+    or a.state not in ('review','pending','succeeded','declined','canceled')
+  ) then raise exception 'invalid_attempt_outcome'; end if;
+  if p_state is null or p_state not in ('unknown','review','pending','succeeded','declined','canceled')
      or jsonb_typeof(p_verified_facts) is distinct from 'object' then raise exception 'invalid_attempt_outcome'; end if;
   if kind='square_payment' then
     matching_state := case p_verified_facts->>'status' when 'APPROVED' then 'pending' when 'PENDING' then 'pending'

@@ -301,6 +301,10 @@ test("one durable payment attempt per order", async (t) => {
           const a = await get(svc, o);
           assert.equal(a.state, "review");
           assert.equal(a.providerPaymentId, null);
+          const unboundId = "legacy-unbound";
+          await assert.rejects(
+            record(svc, a, unboundId, "succeeded", payment(o, unboundId, "COMPLETED")),
+          );
           assert.equal((await begin(svc, o, a)).kind, "observe");
           assert.equal((await get(svc, o, "applePay")).id, a.id);
           await assert.rejects(
@@ -318,6 +322,72 @@ test("one durable payment attempt per order", async (t) => {
             ).rows[0].reason,
             "legacy_dispatch_unproven",
           );
+        },
+      );
+      await t.test(
+        "verified known legacy payments converge without enabling another dispatch",
+        async () => {
+          for (const [status, state] of [
+            ["COMPLETED", "succeeded"],
+            ["FAILED", "declined"],
+            ["CANCELED", "canceled"],
+          ]) {
+            const o = await order({ guarded: false, guest: true });
+            const pid = "legacy-" + randomUUID();
+            await admin.query(
+              "update public.orders set payment_transaction_id=$2 where id=$1",
+              [o.id, pid],
+            );
+            const a = await get(svc, o);
+            assert.equal(a.state, "review");
+            assert.equal(a.providerPaymentId, pid);
+            const wrongId = "different-payment";
+            await assert.rejects(
+              record(svc, a, wrongId, "succeeded", payment(o, wrongId, "COMPLETED")),
+            );
+            await assert.rejects(
+              record(svc, a, pid, "succeeded", {
+                ...payment(o, pid, "COMPLETED"),
+                amountCents: 1,
+              }),
+            );
+            await assert.rejects(
+              record(svc, a, null, "declined", {
+                kind: "square_decline",
+                code: "CARD_DECLINED",
+                requestDigest: digest,
+              }),
+            );
+            assert.equal((await get(svc, o)).state, "review");
+            if (status !== "COMPLETED") {
+              const pending = await record(
+                svc,
+                a,
+                pid,
+                "pending",
+                payment(o, pid, "APPROVED"),
+              );
+              assert.equal(pending.requestDigest, null);
+              assert.equal(pending.state, "pending");
+            }
+            const facts = payment(o, pid, status);
+            const resolved = await record(svc, a, pid, state, facts);
+            assert.equal(resolved.state, state);
+            assert.equal(resolved.providerPaymentId, pid);
+            assert.deepEqual(await record(svc, a, pid, state, facts), resolved);
+            assert.deepEqual(await get(svc, o, "afterpay"), resolved);
+            assert.deepEqual(await begin(svc, o, a), {
+              kind: "observe",
+              attempt: resolved,
+            });
+            const stored = await admin.query(
+              "select request_digest,source_digest,dispatched_at from public.checkout_payment_attempts where order_id=$1",
+              [o.id],
+            );
+            assert.deepEqual(stored.rows, [
+              { request_digest: null, source_digest: null, dispatched_at: null },
+            ]);
+          }
         },
       );
       await t.test(
