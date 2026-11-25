@@ -1,13 +1,12 @@
 "use client";
 
 import { ActionButton } from "@/components/ui/ActionButton";
-import { useEffect, useRef, useState } from "react";
+import { useEffect, useLayoutEffect, useRef, useState } from "react";
 import Image from "next/image";
 import { FeedbackLink } from "@/components/ui/FeedbackLink";
 import { ChevronDown } from "lucide-react";
 
 import { useCart } from "@/components/cart/CartProvider";
-import { useAsyncAction } from "@/components/ui/useAsyncAction";
 import { Toast } from "@/components/ui/Toast";
 import { captureProductViewed } from "@/lib/measurement/client";
 import type { ProductWithDetails } from "@/types/domain/product";
@@ -15,6 +14,10 @@ import type { ProductWithDetails } from "@/types/domain/product";
 interface ProductDetailProps {
   product: ProductWithDetails;
 }
+
+type AddFeedback =
+  | { status: "checking"; productId: string; variantId: string; quantity: number }
+  | { status: "success" | "error" };
 
 const formatPrice = (priceCents: number) =>
   new Intl.NumberFormat("en-US", {
@@ -34,12 +37,8 @@ const getConditionLabel = (condition: string) => {
 
 export function ProductDetail({ product }: ProductDetailProps) {
   const { addItem, items, isReady } = useCart();
-  const add = useAsyncAction();
-  const [addAttempt, setAddAttempt] = useState<{
-    productId: string;
-    variantId: string;
-    quantity: number;
-  } | null>(null);
+  const addInFlight = useRef(false);
+  const [addFeedback, setAddFeedback] = useState<AddFeedback | null>(null);
   const viewedProductId = useRef<string | null>(null);
   const initialVariant =
     product.variants.find((variant) => variant.stock > 0) ?? product.variants[0];
@@ -52,10 +51,6 @@ export function ProductDetail({ product }: ProductDetailProps) {
   const selectedSizeIdRef = useRef<string | null>(initialVariant?.size.id ?? null);
   const [selectedImageIndex, setSelectedImageIndex] = useState(initialImageIndex);
   const [showShipping, setShowShipping] = useState(false);
-  const [toast, setToast] = useState<{
-    message: string;
-    tone: "success" | "error" | "info";
-  } | null>(null);
 
   const selectedVariant =
     product.variants.find((variant) => variant.id === selectedVariantId) ??
@@ -102,53 +97,49 @@ export function ProductDetail({ product }: ProductDetailProps) {
     }
   }, [product.variants, selectedVariantId]);
 
-  useEffect(() => {
-    if (add.pending || !addAttempt) return;
+  useLayoutEffect(() => {
+    if (addFeedback?.status !== "checking") addInFlight.current = false;
+  }, [addFeedback]);
 
+  // The cart command updates the context synchronously. Settle once against that render.
+  if (addFeedback?.status === "checking") {
     const quantity =
       items.find(
         (item) =>
-          item.productId === addAttempt.productId &&
-          item.variantId === addAttempt.variantId,
+          item.productId === addFeedback.productId &&
+          item.variantId === addFeedback.variantId,
       )?.quantity ?? 0;
-    setToast(
-      quantity > addAttempt.quantity
-        ? { message: "Added to cart.", tone: "success" }
-        : { message: "Could not add this item. Please try again.", tone: "error" },
-    );
-    setAddAttempt(null);
-  }, [add.pending, addAttempt, items]);
+    setAddFeedback({ status: quantity > addFeedback.quantity ? "success" : "error" });
+  }
 
   const handleAddToCart = () => {
-    if (!isReady || !selectedVariant || !canAddMore) return;
+    if (addInFlight.current || !isReady || !selectedVariant || !canAddMore) return;
 
-    void add
-      .run(async () => {
-        setToast(null);
-        addItem({
-          productId: product.id,
-          variantId: selectedVariant.id,
-          sizeLabel: selectedVariant.size.label,
-          brand: product.brand.label,
-          name: product.name,
-          titleDisplay: product.name,
-          priceCents: selectedVariant.sale_price_cents,
-          imageUrl: primaryImage?.url || "/placeholder.png",
-          maxStock: selectedVariant.stock,
-        });
-        setAddAttempt({
-          productId: product.id,
-          variantId: selectedVariant.id,
-          quantity: inCartQuantity,
-        });
-      })
-      .catch(() => {
-        setToast({
-          message: "Could not add this item. Please try again.",
-          tone: "error",
-        });
+    addInFlight.current = true;
+    try {
+      addItem({
+        productId: product.id,
+        variantId: selectedVariant.id,
+        sizeLabel: selectedVariant.size.label,
+        brand: product.brand.label,
+        name: product.name,
+        titleDisplay: product.name,
+        priceCents: selectedVariant.sale_price_cents,
+        imageUrl: primaryImage?.url || "/placeholder.png",
+        maxStock: selectedVariant.stock,
       });
+      setAddFeedback({
+        status: "checking",
+        productId: product.id,
+        variantId: selectedVariant.id,
+        quantity: inCartQuantity,
+      });
+    } catch {
+      setAddFeedback({ status: "error" });
+    }
   };
+
+  const added = addFeedback?.status === "success";
 
   return (
     <section
@@ -258,15 +249,7 @@ export function ProductDetail({ product }: ProductDetailProps) {
           <ActionButton
             type="button"
             onClick={handleAddToCart}
-            pending={add.pending}
-            pendingLabel="Adding to cart…"
-            disabled={
-              !isReady ||
-              !!addAttempt ||
-              !selectedVariant ||
-              selectedVariant.stock <= 0 ||
-              !canAddMore
-            }
+            disabled={!isReady || !selectedVariant || !canAddMore}
             className="mt-7 w-full cursor-pointer bg-zinc-900 px-6 py-4 text-sm font-medium uppercase text-white transition-colors hover:bg-black disabled:cursor-not-allowed disabled:bg-zinc-400"
           >
             {!isReady
@@ -328,10 +311,10 @@ export function ProductDetail({ product }: ProductDetailProps) {
       </div>
 
       <Toast
-        open={Boolean(toast)}
-        message={toast?.message ?? ""}
-        tone={toast?.tone ?? "info"}
-        onClose={() => setToast(null)}
+        open={added || addFeedback?.status === "error"}
+        message={added ? "Added to cart." : "Could not add this item. Please try again."}
+        tone={added ? "success" : "error"}
+        onClose={() => setAddFeedback(null)}
       />
     </section>
   );

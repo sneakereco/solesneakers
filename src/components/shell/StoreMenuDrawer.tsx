@@ -7,7 +7,7 @@ import { ChevronLeft, ChevronRight, Minus, Plus, X } from "lucide-react";
 
 import { RequestError } from "@/components/ui/RequestError";
 import { LoadingState, Skeleton } from "@/components/ui/Skeleton";
-import { readJsonResponse } from "@/lib/http/read-json-response";
+import { fetchJsonWithDeadline } from "@/lib/http/request-deadline";
 import { logError } from "@/lib/utils/log";
 import { ModalPortal, useOverlayTransition } from "@/components/ui/ModalPortal";
 import { TOP_BRAND_SHORTCUTS } from "@/config/constants/storefront";
@@ -248,12 +248,10 @@ export function StoreMenuDrawer({ isOpen, onClose, invoker }: StoreMenuDrawerPro
     const loadTaxonomy = async () => {
       setLoadFailed(false);
       try {
-        const response = await fetch("/api/store/taxonomy", {
-          signal: AbortSignal.any([controller.signal, AbortSignal.timeout(15_000)]),
-        });
-        const data = await readJsonResponse<MenuTaxonomy | null>(
-          response,
+        const data = await fetchJsonWithDeadline<MenuTaxonomy | null>(
+          "/api/store/taxonomy",
           "Could not load menu options",
+          controller.signal,
         );
         if (controller.signal.aborted) return;
         if (

@@ -181,7 +181,15 @@ async function check(width, name, run) {
 
 const options = { timeout: 1500 };
 
+async function emulateOlderAbortSignal(page) {
+  await page.addInitScript(() => {
+    Reflect.deleteProperty(AbortSignal, "any");
+    Reflect.deleteProperty(AbortSignal, "timeout");
+  });
+}
+
 async function checkHome(page) {
+  await emulateOlderAbortSignal(page);
   const featured = holdResponse();
   const clothing = holdResponse();
   const categories = holdResponse();
@@ -255,15 +263,8 @@ async function checkSearch(page) {
   const first = holdResponse();
   const second = holdResponse();
   const deadline = holdResponse();
-  // Control the timeout source without changing the feature's composed fetch signal.
-  await page.addInitScript(() => {
-    AbortSignal.timeout = () => {
-      const deadline = new AbortController();
-      window.expireRequest = () =>
-        deadline.abort(new DOMException("Expired", "TimeoutError"));
-      return deadline.signal;
-    };
-  });
+  await emulateOlderAbortSignal(page);
+  await page.clock.install();
   await page.route("**/api/store/products?q=first&limit=6", first.fulfill);
   await page.route("**/api/store/products?q=next&limit=6", second.fulfill);
   await page.route("**/api/store/products?q=deadline&limit=6", deadline.fulfill);
@@ -277,8 +278,11 @@ async function checkSearch(page) {
     await expect(page.locator("[aria-busy=true] [data-ui-skeleton]").first()).toBeVisible(
       options,
     );
+    const superseded = page.waitForEvent("requestfailed", {
+      predicate: (request) => request.url().includes("?q=first&"),
+    });
     await input.fill("next");
-    await second.received;
+    await Promise.all([second.received, superseded]);
   } finally {
     second.release({ status: 503, json: {} });
     first.release({ json: { products: [{ id: "old", name: "Old Result" }], total: 1 } });
@@ -306,7 +310,11 @@ async function checkSearch(page) {
       before.y,
       "search status moved current matches",
     );
-    await page.evaluate(() => window.expireRequest());
+    const expired = page.waitForEvent("requestfailed", {
+      predicate: (request) => request.url().includes("?q=deadline&"),
+    });
+    await page.clock.fastForward(15_000);
+    await expired;
     await expect(page.getByRole("alert")).toBeVisible(options);
     await expect(fresh).toBeVisible(options);
     await expect(input).toHaveValue("deadline");
@@ -505,6 +513,7 @@ async function checkCatalog(page) {
 }
 
 async function checkMenu(page) {
+  await emulateOlderAbortSignal(page);
   const loading = holdResponse();
   await page.route("**/api/store/taxonomy", loading.fulfill);
   await openUxHarness(page, bundle, "https://ux.test/menu");

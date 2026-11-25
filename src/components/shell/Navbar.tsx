@@ -12,6 +12,7 @@ import { ChevronDown, Menu, Search, ShoppingCart } from "lucide-react";
 
 import { isAdminRole, type ProfileRole } from "@/config/constants/roles";
 import { useSession } from "@/contexts/SessionContext";
+import { withRequestDeadline } from "@/lib/http/request-deadline";
 
 import { StoreMenuDrawer } from "./StoreMenuDrawer";
 
@@ -72,10 +73,9 @@ export function Navbar({
     void logout
       .run(async () => {
         setLogoutError(false);
-        const response = await fetch("/api/auth/logout", {
-          method: "POST",
-          signal: AbortSignal.timeout(15_000),
-        });
+        const response = await withRequestDeadline((signal) =>
+          fetch("/api/auth/logout", { method: "POST", signal }),
+        );
         if (!response.ok) throw new Error("Could not sign out");
         window.dispatchEvent(new CustomEvent("sessionUpdate"));
         window.location.href = "/";

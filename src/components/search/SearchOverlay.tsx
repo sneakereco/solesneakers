@@ -10,7 +10,7 @@ import { Search, X } from "lucide-react";
 import { LoadingAnnouncement } from "@/components/ui/LoadingAnnouncement";
 import { RequestError } from "@/components/ui/RequestError";
 import { LoadingState, Skeleton } from "@/components/ui/Skeleton";
-import { readJsonResponse } from "@/lib/http/read-json-response";
+import { fetchJsonWithDeadline } from "@/lib/http/request-deadline";
 import { ModalPortal } from "@/components/ui/ModalPortal";
 import { logError } from "@/lib/utils/log";
 
@@ -188,12 +188,11 @@ export function SearchOverlay({ isOpen, onClose, invoker }: SearchOverlayProps) 
       !controller.signal.aborted && generation === requestGeneration.current;
     const runSearch = async () => {
       try {
-        const signal = AbortSignal.any([controller.signal, AbortSignal.timeout(15_000)]);
-        const result = await fetch(
+        const data = await fetchJsonWithDeadline<SearchResponse | null>(
           `/api/store/products?q=${encodeURIComponent(normalizedQuery)}&limit=6`,
-          { signal },
+          SEARCH_ERROR,
+          controller.signal,
         );
-        const data = await readJsonResponse<SearchResponse | null>(result, SEARCH_ERROR);
         if (!stillOwned()) return;
         if (
           !Array.isArray(data?.products) ||

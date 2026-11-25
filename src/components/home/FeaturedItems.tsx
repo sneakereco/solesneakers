@@ -10,7 +10,7 @@ import {
   FeaturedCardsSkeleton,
   featuredCardClassName,
 } from "@/components/store/StoreSkeletons";
-import { readJsonResponse } from "@/lib/http/read-json-response";
+import { fetchJsonWithDeadline } from "@/lib/http/request-deadline";
 import { logError } from "@/lib/utils/log";
 import type { ProductWithDetails } from "@/types/domain/product";
 
@@ -50,12 +50,10 @@ export function FeaturedItems({ category }: { category?: "clothing" } = {}) {
         const endpoint = isClothing
           ? "/api/store/products?category=clothing&sort=newest&limit=12"
           : "/api/featured-items";
-        const signal = AbortSignal.any([controller.signal, AbortSignal.timeout(15_000)]);
-        const response = await fetch(endpoint, { signal });
-        const data = await readJsonResponse<{
+        const data = await fetchJsonWithDeadline<{
           products?: ProductWithDetails[];
           featured?: FeaturedProduct[];
-        } | null>(response, "Unable to load homepage products");
+        } | null>(endpoint, "Unable to load homepage products", controller.signal);
         if (controller.signal.aborted) return;
         if (isClothing) {
           if (!Array.isArray(data?.products))

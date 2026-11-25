@@ -12,7 +12,7 @@ import {
 } from "@/components/home/homepage-categories";
 import { LoadingAnnouncement } from "@/components/ui/LoadingAnnouncement";
 import { Skeleton } from "@/components/ui/Skeleton";
-import { readJsonResponse } from "@/lib/http/read-json-response";
+import { fetchJsonWithDeadline } from "@/lib/http/request-deadline";
 import { logError } from "@/lib/utils/log";
 
 export function HomepageCategories() {
@@ -25,12 +25,10 @@ export function HomepageCategories() {
 
     const loadBrands = async () => {
       try {
-        const response = await fetch("/api/store/taxonomy", {
-          signal: AbortSignal.any([controller.signal, AbortSignal.timeout(15_000)]),
-        });
-        const data = await readJsonResponse<{ brands?: HomepageBrand[] } | null>(
-          response,
+        const data = await fetchJsonWithDeadline<{ brands?: HomepageBrand[] } | null>(
+          "/api/store/taxonomy",
           "Unable to load collection brands",
+          controller.signal,
         );
         if (
           !Array.isArray(data?.brands) ||
