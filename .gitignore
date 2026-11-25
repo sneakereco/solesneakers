@@ -82,3 +82,6 @@ docker-storage/
 .codegraph/
 
 .swc/
+
+# Private load-test fixtures, credentials, journals and raw results
+.load-test/
