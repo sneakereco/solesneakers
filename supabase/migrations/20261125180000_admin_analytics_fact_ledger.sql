@@ -32,7 +32,13 @@ $$;
 
 create function public.analytics_snapshot_catalog_label(p_raw text) returns text
 language sql immutable strict security definer set search_path = '' as $$
-  select case when extensions.jsonb_matches_schema((public.analytics_fact_scalar_schemas()->'label')::json,to_jsonb(p_raw)) then p_raw end;
+  -- Validate the original display form and inspect its compatibility form for
+  -- private data. Successful snapshots always retain the original text.
+  select case when extensions.jsonb_matches_schema(schema::json, to_jsonb(p_raw))
+    and extensions.jsonb_matches_schema(
+      jsonb_build_object('not', schema->'not')::json, to_jsonb(normalize(p_raw, NFKC)))
+    then p_raw end
+  from (select public.analytics_fact_scalar_schemas()->'label' as schema) label;
 $$;
 
 create function public.analytics_valid_payload(p_kind text, p_payload jsonb)
@@ -73,7 +79,13 @@ returns boolean language sql immutable strict security definer set search_path =
       from shape cross join lateral jsonb_each_text(fields)
       having count(*) > 0
     )
-    select coalesce((select extensions.jsonb_matches_schema(schema::json,p_payload) from compiled),false);
+    select coalesce((select extensions.jsonb_matches_schema(schema::json,p_payload) from compiled),false)
+      and not exists (
+        select 1 from shape cross join lateral jsonb_each_text(fields) field
+        where rtrim(field.value,'?')='label'
+          and p_payload->>field.key is not null
+          and public.analytics_snapshot_catalog_label(p_payload->>field.key) is null
+      );
 $$;
 
 create table public.analytics_datasets (

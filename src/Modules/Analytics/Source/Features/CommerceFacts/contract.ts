@@ -18,7 +18,8 @@ const label = z
     (value) =>
       Array.from(value).length <= scalarSchemas.label.maxLength &&
       catalogCharacters.test(value) &&
-      !unsafeCatalogText.test(value),
+      !unsafeCatalogText.test(value) &&
+      !unsafeCatalogText.test(value.normalize("NFKC")),
     "Invalid catalog label",
   );
 

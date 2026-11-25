@@ -278,5 +278,45 @@
     "value": "completed",
     "valid": true,
     "top": false
+  },
+  {
+    "name": "label fullwidth parentheses phone",
+    "kind": "line",
+    "key": "productName",
+    "value": "（212） 555-0123",
+    "valid": false,
+    "top": false
+  },
+  {
+    "name": "label fully fullwidth phone",
+    "kind": "line",
+    "key": "productName",
+    "value": "０１２－３４５－６７８９",
+    "valid": false,
+    "top": false
+  },
+  {
+    "name": "label mixed compatibility phone in taxonomy",
+    "kind": "line",
+    "key": "brandLabel",
+    "value": "限定 （２１２） 555-0123",
+    "valid": false,
+    "top": false
+  },
+  {
+    "name": "label compatibility URL",
+    "kind": "line",
+    "key": "productName",
+    "value": "ＨＴＴＰＳ：／／ｅｘａｍｐｌｅ．ｃｏｍ",
+    "valid": false,
+    "top": false
+  },
+  {
+    "name": "label safe fullwidth catalog name",
+    "kind": "line",
+    "key": "productName",
+    "value": "Ｆｏｒｕｍ ８４（限定）",
+    "valid": true,
+    "top": false
   }
 ]
