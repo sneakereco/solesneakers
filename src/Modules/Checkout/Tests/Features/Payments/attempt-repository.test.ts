@@ -1,5 +1,8 @@
 import type { AdminSupabaseClient } from "@/lib/supabase/service-role";
-import { CheckoutPaymentAttemptRepository } from "@/Modules/Checkout/Source/Features/Payments/attempt-repository";
+import {
+  CheckoutPaymentAttemptRepository,
+  readCurrentPaymentAttempt,
+} from "@/Modules/Checkout/Source/Features/Payments/attempt-repository";
 
 const id = "c40e0e93-c290-464d-9660-a68d4e6ef881",
   orderId = "24734160-4ab6-4502-8f50-51ef7f69bcab";
@@ -145,4 +148,64 @@ test("invalid dispatch decisions and malformed rows fail closed", async () => {
       repo.getOrCreateAttempt({ orderId, method: "card", ownerBinding }),
     ).rejects.toThrow();
   }
+});
+
+test("checks the returned proof state and payment identity while retaining pending on uncertainty", async () => {
+  const { rpc, repo } = setup();
+  const proof = {
+    attemptId: id,
+    providerPaymentId: "p1",
+    state: "pending" as const,
+    verifiedFacts: {
+      kind: "square_payment" as const,
+      orderId,
+      squareOrderId: "sq",
+      paymentId: "p1",
+      amountCents: 1250,
+      currency: "USD" as const,
+      status: "APPROVED" as const,
+    },
+  };
+  const pending = { ...a, state: "pending", providerPaymentId: "p1", requestDigest };
+  for (const invalid of [
+    { ...pending, providerPaymentId: null },
+    { ...pending, providerPaymentId: "p2" },
+    { ...pending, state: "succeeded" },
+  ]) {
+    rpc.mockResolvedValueOnce({ data: invalid, error: null });
+    await expect(repo.recordAttemptOutcome(proof)).rejects.toThrow(
+      "Invalid checkout outcome response",
+    );
+  }
+  rpc.mockResolvedValueOnce({ data: pending, error: null });
+  await expect(
+    repo.recordAttemptOutcome({
+      attemptId: id,
+      providerPaymentId: null,
+      state: "unknown",
+      verifiedFacts: { kind: "uncertain", reason: "provider_timeout" },
+    }),
+  ).resolves.toEqual(pending);
+});
+
+test("the observation reader selects the latest sequence and rejects another order's row", async () => {
+  const maybeSingle = jest
+    .fn()
+    .mockResolvedValueOnce({ data: a, error: null })
+    .mockResolvedValueOnce({ data: { ...a, orderId: id }, error: null })
+    .mockResolvedValueOnce({ data: null, error: null });
+  const limit = jest.fn(() => ({ maybeSingle })),
+    order = jest.fn(() => ({ limit })),
+    eq = jest.fn(() => ({ order })),
+    select = jest.fn(() => ({ eq }));
+  const from = jest.fn(() => ({ select }));
+  const client = { from: from as unknown as AdminSupabaseClient["from"] };
+  await expect(readCurrentPaymentAttempt(client, orderId)).resolves.toEqual(a);
+  expect(eq).toHaveBeenCalledWith("order_id", orderId);
+  expect(order).toHaveBeenCalledWith("sequence", { ascending: false });
+  expect(limit).toHaveBeenCalledWith(1);
+  await expect(readCurrentPaymentAttempt(client, orderId)).rejects.toThrow(
+    "Invalid checkout attempt response",
+  );
+  await expect(readCurrentPaymentAttempt(client, orderId)).resolves.toBeNull();
 });

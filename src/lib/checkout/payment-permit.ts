@@ -4,7 +4,7 @@ import { Redis } from "@upstash/redis";
 
 import { env } from "@/config/env";
 import {
-  legacyPaymentPermitSchema,
+  issuingPaymentPermitSchema,
   readPaymentPermit,
   type ConsumedPaymentPermit,
 } from "@/Modules/Checkout/Source/Features/ContractCompatibility/payment-permit-reader";
@@ -12,6 +12,8 @@ import {
 export type PaymentMethod = "card" | "afterpay" | "applePay" | "cashAppPay";
 
 export type PaymentPermitPayload = {
+  attemptId?: string;
+  ownerBinding?: string;
   tenantId: string;
   orderId: string;
   cartHash: string;
@@ -47,7 +49,7 @@ export class PaymentPermitStore {
   async issue(
     payload: PaymentPermitPayload,
   ): Promise<{ token: string; expiresInSeconds: number }> {
-    const parsed = legacyPaymentPermitSchema.parse(payload);
+    const parsed = issuingPaymentPermitSchema.parse(payload);
     const token = this.createToken();
 
     try {

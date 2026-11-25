@@ -1,4 +1,4 @@
-import { randomUUID } from "node:crypto";
+import type { CheckoutPaymentAttemptRepository } from "@/Modules/Checkout/Source/Features/Payments/attempt-repository";
 
 import type { NextRequest } from "next/server";
 
@@ -14,6 +14,7 @@ import type { PaymentCheckout } from "@/repositories/checkout-reservation-repo";
 type CheckoutSession = { user: { id: string; email: string } } | null;
 
 export type IssuePaymentPermitDependencies = {
+  getOrCreateAttempt: CheckoutPaymentAttemptRepository["getOrCreateAttempt"];
   findTenantId(): Promise<string | null>;
   getAccess(tenantId: string): Promise<CheckoutAccessDecision>;
   verifyBrowser(): Promise<CheckoutBotVerdict>;
@@ -30,7 +31,9 @@ export type IssuePaymentPermitDependencies = {
     normalizedEmailHash: string;
   }): Promise<CheckoutAttemptDecision>;
   hashEmail(email: string): string;
-  issuePermit(payload: PaymentPermitPayload): Promise<{
+  issuePermit(
+    payload: PaymentPermitPayload & { attemptId: string; ownerBinding: string },
+  ): Promise<{
     token: string;
     expiresInSeconds: number;
   }>;
@@ -149,7 +152,17 @@ export async function issuePaymentPermitHandler(
       }
     }
 
+    const ownerBinding = isGuest
+      ? `order:${order.orderId}`
+      : `account:${session!.user.id}`;
+    const financialAttempt = await deps.getOrCreateAttempt({
+      orderId: order.orderId,
+      method: parsed.data.method,
+      ownerBinding,
+    });
     const permit = await deps.issuePermit({
+      attemptId: financialAttempt.id,
+      ownerBinding,
       tenantId,
       orderId: order.orderId,
       cartHash: order.cartHash,
@@ -157,7 +170,7 @@ export async function issuePaymentPermitHandler(
       method: parsed.data.method,
       deviceSessionId: parsed.data.deviceSessionId,
       normalizedEmailHash,
-      squareIdempotencyKey: randomUUID(),
+      squareIdempotencyKey: financialAttempt.squareIdempotencyKey,
     });
     return json(
       {
@@ -168,8 +181,8 @@ export async function issuePaymentPermitHandler(
       },
       201,
     );
-  } catch (error) {
-    deps.reportError(error);
+  } catch {
+    deps.reportError(new Error("checkout_payment_permit_unavailable"));
     return json({ error: "Checkout is temporarily unavailable" }, 503);
   }
 }

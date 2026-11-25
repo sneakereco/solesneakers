@@ -36,6 +36,14 @@ function dependencies() {
       .fn()
       .mockResolvedValue({ allowed: true, retryAfterSeconds: null }),
     hashEmail: jest.fn().mockReturnValue("email-hash"),
+    getOrCreateAttempt: jest.fn().mockResolvedValue({
+      id: DEVICE_ID,
+      orderId: ORDER_ID,
+      method: "afterpay",
+      state: "ready",
+      amountCents: 11800,
+      squareIdempotencyKey: DEVICE_ID,
+    }),
     issuePermit: jest
       .fn()
       .mockResolvedValue({ token: "permit-1", expiresInSeconds: 120 }),
@@ -78,7 +86,14 @@ describe("issuePaymentPermitHandler", () => {
     );
 
     expect(response.status).toBe(201);
+    expect(deps.getOrCreateAttempt).toHaveBeenCalledWith({
+      orderId: ORDER_ID,
+      method: "afterpay",
+      ownerBinding: "order:" + ORDER_ID,
+    });
     expect(deps.issuePermit).toHaveBeenCalledWith({
+      attemptId: DEVICE_ID,
+      ownerBinding: "order:" + ORDER_ID,
       tenantId: "tenant-1",
       orderId: ORDER_ID,
       cartHash: "cart-hash",
@@ -86,7 +101,32 @@ describe("issuePaymentPermitHandler", () => {
       method: "afterpay",
       deviceSessionId: DEVICE_ID,
       normalizedEmailHash: "email-hash",
-      squareIdempotencyKey: expect.any(String),
+      squareIdempotencyKey: DEVICE_ID,
     });
+  });
+});
+
+it("derives the account scope from the verified session and denies a failed guest grant before issuance", async () => {
+  const deps = dependencies(),
+    body = {
+      orderId: ORDER_ID,
+      deviceSessionId: DEVICE_ID,
+      method: "afterpay",
+      guestAccessToken: "token",
+      turnstileToken: "test",
+    };
+  deps.validateGuestAccess.mockResolvedValue(false);
+  expect((await issuePaymentPermitHandler(request(body), deps)).status).toBe(403);
+  expect(deps.getOrCreateAttempt).not.toHaveBeenCalled();
+  const order = await deps.loadOrder();
+  deps.loadOrder.mockResolvedValue({ ...order, userId: DEVICE_ID, guestEmail: null });
+  deps.getSession.mockResolvedValue({
+    user: { id: DEVICE_ID, email: "account@example.invalid" },
+  });
+  expect((await issuePaymentPermitHandler(request(body), deps)).status).toBe(201);
+  expect(deps.getOrCreateAttempt).toHaveBeenCalledWith({
+    orderId: ORDER_ID,
+    method: "afterpay",
+    ownerBinding: "account:" + DEVICE_ID,
   });
 });

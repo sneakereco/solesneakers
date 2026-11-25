@@ -1,6 +1,7 @@
 import assert from "node:assert/strict";
 import { randomUUID } from "node:crypto";
 import test from "node:test";
+import { dispatchPayment } from "../../../Source/Features/Payments/dispatch-payment.ts";
 import { withCheckoutDatabase } from "../../../../../../tests/database/fixtures/checkout-hardening.mjs";
 
 const digest = "a".repeat(64);
@@ -137,6 +138,109 @@ test("one durable payment attempt per order", async (t) => {
             { code: "42501" },
           );
           assert.equal((await get(svc, o)).id, a.id);
+        },
+      );
+      await t.test(
+        "another database session observes the guard before the gateway can run",
+        async () => {
+          const o = await order();
+          const ready = await get(svc, o);
+          const observer = await connect("service_role");
+          const permit = {
+            orderId: o.id,
+            attemptId: ready.id,
+            ownerBinding: o.binding,
+            method: ready.method,
+            totalCents: ready.amountCents,
+            squareIdempotencyKey: ready.squareIdempotencyKey,
+          };
+          const committed = Promise.withResolvers(),
+            release = Promise.withResolvers();
+          const latest = async () => {
+            const { rows } = await observer.query(
+              `select id,order_id as "orderId",sequence,state,method,
+            amount_cents as "amountCents",currency,square_idempotency_key as "squareIdempotencyKey",
+            request_digest as "requestDigest",provider_payment_id as "providerPaymentId"
+            from public.checkout_payment_attempts where order_id=$1 order by sequence desc limit 1`,
+              [o.id],
+            );
+            return rows[0];
+          };
+          const calls = [];
+          const deps = {
+            order: { orderId: o.id, squareOrderId: o.square },
+            attempt: ready,
+            ownerBinding: o.binding,
+            validate: () => Promise.resolve(null),
+            readCurrentAttempt: latest,
+            fingerprints: () => ({ requestDigest: digest, sourceDigest: source }),
+            beginDispatch: async (input) => {
+              const decision = await begin(
+                svc,
+                o,
+                ready,
+                input.requestDigest,
+                input.sourceDigest,
+              );
+              committed.resolve();
+              await release.promise;
+              return decision;
+            },
+            createPayment: (input) => {
+              calls.push(input.idempotencyKey);
+              return Promise.resolve({
+                id: "fixture-response-" + o.id,
+                status: "COMPLETED",
+                orderId: o.square,
+                totalCents: 1000,
+              });
+            },
+            recordAttemptOutcome: (input) =>
+              record(
+                svc,
+                ready,
+                input.providerPaymentId,
+                input.state,
+                input.verifiedFacts,
+              ),
+            declineCode: () => null,
+            save: () => Promise.resolve(),
+            reportError: (err) => {
+              throw err;
+            },
+          };
+          const winner = dispatchPayment({ permit, sourceId: "inert-test-input" }, deps);
+          try {
+            await Promise.race([
+              committed.promise,
+              winner.then(() => {
+                throw new Error("Missing committed claim");
+              }),
+            ]);
+            const current = await latest();
+            assert.equal(current.state, "dispatch_started");
+            assert.equal(
+              (
+                await observer.query(
+                  "select count(*)::int as n from public.checkout_recovery_jobs where order_id=$1 and unique_key=$2",
+                  [o.id, "payment_attempt:" + ready.id],
+                )
+              ).rows[0].n,
+              1,
+            );
+            const follower = await dispatchPayment(
+              { permit, sourceId: "inert-reload" },
+              { ...deps, attempt: current },
+            );
+            assert.equal(follower.kind, "observe");
+            assert.equal(follower.attemptId, ready.id);
+            assert.deepEqual(calls, []);
+          } finally {
+            release.resolve();
+            await winner;
+          }
+          assert.deepEqual(calls, [ready.squareIdempotencyKey]);
+          assert.equal((await latest()).state, "succeeded");
         },
       );
       await t.test("two_issuers_share_one_attempt_and_one_dispatch", async () => {

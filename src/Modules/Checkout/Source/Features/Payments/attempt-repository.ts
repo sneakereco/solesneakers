@@ -12,6 +12,28 @@ import {
   type RecordOutcomeInput,
 } from "./attempt-contract";
 
+// A consumed permit can observe the latest sequence but can never create one.
+export async function readCurrentPaymentAttempt(
+  client: Pick<AdminSupabaseClient, "from">,
+  orderId: string,
+): Promise<PaymentAttempt | null> {
+  const { data, error } = await client
+    .from("checkout_payment_attempts")
+    .select(
+      "id,orderId:order_id,sequence,state,method,amountCents:amount_cents,currency,squareIdempotencyKey:square_idempotency_key,requestDigest:request_digest,providerPaymentId:provider_payment_id",
+    )
+    .eq("order_id", orderId)
+    .order("sequence", { ascending: false })
+    .limit(1)
+    .maybeSingle();
+  if (error) throw error;
+  if (data === null) return null;
+  const row = paymentAttemptSchema.safeParse(data);
+  if (!row.success || row.data.orderId !== orderId)
+    throw new Error("Invalid checkout attempt response");
+  return row.data;
+}
+
 export class CheckoutPaymentAttemptRepository {
   constructor(private readonly client: Pick<AdminSupabaseClient, "rpc">) {}
 
@@ -68,7 +90,24 @@ export class CheckoutPaymentAttemptRepository {
     });
     if (error) throw error;
     const row = paymentAttemptSchema.safeParse(data);
-    if (!row.success || row.data.id !== attemptId)
+    const retained =
+      verifiedFacts.kind === "uncertain" &&
+      state === "unknown" &&
+      row.success &&
+      ["pending", "review"].includes(row.data.state);
+    if (
+      !row.success ||
+      row.data.id !== attemptId ||
+      (!retained && row.data.state !== state) ||
+      (verifiedFacts.kind !== "uncertain" &&
+        row.data.providerPaymentId !== providerPaymentId) ||
+      (verifiedFacts.kind === "square_payment" &&
+        (row.data.orderId !== verifiedFacts.orderId ||
+          row.data.amountCents !== verifiedFacts.amountCents ||
+          row.data.providerPaymentId !== verifiedFacts.paymentId)) ||
+      (verifiedFacts.kind === "square_decline" &&
+        row.data.requestDigest !== verifiedFacts.requestDigest)
+    )
       throw new Error("Invalid checkout outcome response");
     return row.data;
   }

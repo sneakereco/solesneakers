@@ -1,3 +1,8 @@
+import {
+  CheckoutPaymentAttemptRepository,
+  readCurrentPaymentAttempt,
+} from "@/Modules/Checkout/Source/Features/Payments/attempt-repository";
+import { CheckoutRecoveryRepository } from "@/Modules/Checkout/Source/Features/Recovery/recovery-repository";
 import { validateShippingAddress } from "@/lib/shipping/validate-shipping-address";
 import { env } from "@/config/env";
 import { getServerSession } from "@/lib/auth/session";
@@ -14,7 +19,7 @@ import { getTrustedClientIp } from "@/lib/http/client-ip";
 import { verifyCheckoutBrowser } from "@/lib/security/checkout-bot";
 import { verifyTurnstile } from "@/lib/security/turnstile";
 import { createSquarePaymentsGateway } from "@/lib/square/client";
-import { isDefiniteSquarePaymentDecline } from "@/lib/square/payments";
+import { squareDeclineCode } from "@/lib/square/payments";
 import { recordSquarePaymentDetails } from "@/lib/square/payment-details";
 import { createSupabaseAdminClient } from "@/lib/supabase/service-role";
 import { logError } from "@/lib/utils/log";
@@ -40,8 +45,10 @@ export function createIssuePaymentPermitDependencies(
   const accessTokens = new OrderAccessTokenService(supabase);
   const limiter = createCheckoutAttemptLimiter();
   const permits = createPaymentPermitStore();
+  const attempts = new CheckoutPaymentAttemptRepository(supabase);
 
   return {
+    getOrCreateAttempt: (input) => attempts.getOrCreateAttempt(input),
     findTenantId: () => tenants.getFirstTenantId(),
     getAccess: assertCheckoutOpen,
     verifyBrowser: verifyCheckoutBrowser,
@@ -81,10 +88,26 @@ export function createDirectPaymentDependencies(
   const orders = new OrdersRepository(supabase);
   const limiter = createCheckoutAttemptLimiter();
   const permits = createPaymentPermitStore();
+  const attempts = new CheckoutPaymentAttemptRepository(supabase);
   let payments: ReturnType<typeof createSquarePaymentsGateway> | null = null;
   const getPayments = () => (payments ??= createSquarePaymentsGateway());
 
   return {
+    getSession: getServerSession,
+    getAccess: assertCheckoutOpen,
+    readCurrentAttempt: (orderId) => readCurrentPaymentAttempt(supabase, orderId),
+    beginDispatch: (input) => attempts.beginDispatch(input),
+    recordAttemptOutcome: (input) => attempts.recordAttemptOutcome(input),
+    fingerprints: (input) =>
+      getPayments().fingerprints(input, getCheckoutIdentitySecret()),
+    enqueueLegacyInquiry: (orderId) =>
+      new CheckoutRecoveryRepository(supabase).enqueueRecovery({
+        kind: "reconcile_payment",
+        orderId,
+        uniqueKey: `legacy_payment_order:${orderId}`,
+        dueAt: new Date().toISOString(),
+        reason: "legacy_dispatch_unproven",
+      }),
     validateShippingAddress: (address) =>
       validateShippingAddress(address, env.SHIPPO_API_TOKEN),
     consumePermit: (token) => permits.consume(token),
@@ -99,13 +122,13 @@ export function createDirectPaymentDependencies(
         amountCents: payment.totalCents,
         currency: "USD",
         details: {
-          ...payment.details,
+          source_type: payment.details?.source_type ?? null,
           payment_method: payment.details?.payment_method ?? method,
         },
       });
     },
     recordDecline: (input) => limiter.recordDecline(input),
-    isDefiniteDecline: isDefiniteSquarePaymentDecline,
+    declineCode: squareDeclineCode,
     reportError: (error) =>
       logError(error, { layer: "api", route: "/api/checkout/pay", requestId }),
     now: () => new Date(),

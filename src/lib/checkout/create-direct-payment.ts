@@ -1,27 +1,35 @@
 import type { NextRequest } from "next/server";
-
+import { z } from "zod";
 import {
-  checkoutShippingAddressSchema,
-  checkoutPickupContactSchema,
-  directPaymentRequestSchema,
-} from "@/lib/checkout/checkout-request";
+  dispatchPayment,
+  type DispatchOperations,
+} from "@/Modules/Checkout/Source/Features/Payments/dispatch-payment";
 import {
   permitMatchesLegacyTenant,
   type ConsumedPaymentPermit,
 } from "@/Modules/Checkout/Source/Features/ContractCompatibility/payment-permit-reader";
-import type { CheckoutAttemptDecision } from "@/lib/checkout/checkout-attempt-limit";
-import type { DirectPaymentInput, DirectPaymentResult } from "@/lib/square/payments";
+import {
+  checkoutBillingAddressSchema,
+  checkoutPickupContactSchema,
+  checkoutShippingAddressSchema,
+  directPaymentRequestSchema,
+} from "./checkout-request";
+import type { CheckoutAccessDecision } from "./checkout-access";
+import type { CheckoutAttemptDecision } from "./checkout-attempt-limit";
+import type { DirectPaymentResult } from "@/lib/square/payments";
 import type {
   ShippingAddress,
   ShippingValidationResult,
-} from "@/lib/checkout/shipping-address-validation";
+} from "./shipping-address-validation";
 import type { PaymentCheckout } from "@/repositories/checkout-reservation-repo";
 
-export type CreateDirectPaymentDependencies = {
+export type CreateDirectPaymentDependencies = DispatchOperations & {
   validateShippingAddress(address: ShippingAddress): Promise<ShippingValidationResult>;
   consumePermit(token: string): Promise<ConsumedPaymentPermit | null>;
   loadOrder(orderId: string): Promise<PaymentCheckout | null>;
-  createPayment(input: DirectPaymentInput): Promise<DirectPaymentResult>;
+  getSession(): Promise<{ user: { id: string } } | null>;
+  getAccess(tenantId: string): Promise<CheckoutAccessDecision>;
+  enqueueLegacyInquiry(orderId: string): Promise<void>;
   savePaymentId(
     orderId: string,
     paymentId: string,
@@ -32,7 +40,6 @@ export type CreateDirectPaymentDependencies = {
     tenantId: string;
     deviceSessionId: string;
   }): Promise<CheckoutAttemptDecision>;
-  isDefiniteDecline(error: unknown): boolean;
   reportError(error: unknown): void;
   now(): Date;
 };
@@ -41,155 +48,167 @@ function json(body: Record<string, unknown>, status: number) {
   return Response.json(body, { status, headers: { "Cache-Control": "no-store" } });
 }
 
-function statusUrl(orderId: string): string {
-  return `/checkout/processing?orderId=${encodeURIComponent(orderId)}`;
+type Invalid = { status: number; message: string };
+const billing = checkoutBillingAddressSchema.omit({
+  givenName: true,
+  familyName: true,
+  phone: true,
+});
+async function validate(
+  order: PaymentCheckout,
+  permit: ConsumedPaymentPermit,
+  deps: CreateDirectPaymentDependencies,
+): Promise<Invalid | null> {
+  if (
+    order.status !== "pending" ||
+    !(Date.parse(order.expiresAt) > deps.now().getTime()) ||
+    !order.squareOrderId ||
+    order.squareOrderVersion === null ||
+    !billing.safeParse(order.billingAddress).success
+  )
+    return {
+      status: 409,
+      message: "Checkout details changed. Return to checkout and review them.",
+    };
+  if (
+    order.fulfillment === "pickup" &&
+    !checkoutPickupContactSchema.safeParse(order.pickupContact).success
+  )
+    return {
+      status: 409,
+      message: "Pickup contact is incomplete. Return to checkout and review it.",
+    };
+  if (order.fulfillment === "ship") {
+    const address = checkoutShippingAddressSchema.safeParse(order.shippingAddress);
+    const invalid = {
+      status: 409,
+      message: "Shipping address needs verification. Return to checkout and review it.",
+    };
+    if (!address.success) return invalid;
+    if (permit.method !== "applePay" && !order.shippingAddressOverrideConfirmed) {
+      const result = await deps
+        .validateShippingAddress(address.data)
+        .catch(() => ({ status: "unavailable" }));
+      if (result.status === "unavailable")
+        return {
+          status: 503,
+          message: "Address verification is temporarily unavailable. Please retry.",
+        };
+      if (result.status !== "valid") return invalid;
+    }
+  }
+  const access = await deps.getAccess(order.tenantId);
+  return access.open ? null : { status: 503, message: access.message };
 }
 
-function matches(order: PaymentCheckout, permit: ConsumedPaymentPermit, now: Date) {
-  const expiresAt = new Date(order.expiresAt).getTime();
-  return (
-    permitMatchesLegacyTenant(permit, order.tenantId) &&
-    order.orderId === permit.orderId &&
-    order.cartHash === permit.cartHash &&
-    order.totalCents === permit.totalCents &&
-    order.deviceSessionId === permit.deviceSessionId &&
-    order.status === "pending" &&
-    Boolean(order.squareOrderId) &&
-    Boolean(order.billingAddress) &&
-    Number.isFinite(expiresAt) &&
-    expiresAt > now.getTime()
-  );
-}
-
+// A valid bearer can still resolve an already submitted attempt after its source has expired.
+const envelope = directPaymentRequestSchema.extend({ sourceId: z.unknown().optional() });
 export async function createDirectPaymentHandler(
   request: NextRequest,
   deps: CreateDirectPaymentDependencies,
 ): Promise<Response> {
-  const parsed = directPaymentRequestSchema.safeParse(
-    await request.json().catch(() => null),
-  );
-  if (!parsed.success) {
-    return json({ error: "Invalid payment request" }, 400);
-  }
-
-  let permit: ConsumedPaymentPermit | null;
+  const body = envelope.safeParse(await request.json().catch(() => null));
+  if (!body.success) return json({ error: "Invalid payment request" }, 400);
+  let observation: Record<string, unknown> | null = null;
   try {
-    permit = await deps.consumePermit(parsed.data.permit);
-  } catch (error) {
-    deps.reportError(error);
-    return json({ error: "Checkout protection is temporarily unavailable" }, 503);
-  }
-  if (!permit) {
-    return json({ error: "Payment authorization expired" }, 403);
-  }
-
-  let declineIdentity: { tenantId: string; deviceSessionId: string } | null = null;
-  try {
+    const permit = await deps.consumePermit(body.data.permit);
+    if (!permit) return json({ error: "Payment authorization expired" }, 403);
     const order = await deps.loadOrder(permit.orderId);
-    if (!order || !matches(order, permit, deps.now())) {
-      return json({ error: "Checkout details changed; start again" }, 409);
-    }
-    declineIdentity = {
-      tenantId: order.tenantId,
-      deviceSessionId: permit.deviceSessionId,
-    };
-
     if (
-      order.fulfillment === "pickup" &&
-      !checkoutPickupContactSchema.safeParse(order.pickupContact).success
-    ) {
-      return json(
-        {
-          error:
-            "Pickup contact is incomplete. Return to checkout and review it. You have not been charged.",
-        },
-        409,
-      );
-    }
+      !order ||
+      order.orderId !== permit.orderId ||
+      !permitMatchesLegacyTenant(permit, order.tenantId) ||
+      order.deviceSessionId !== permit.deviceSessionId ||
+      order.cartHash !== permit.cartHash ||
+      order.totalCents !== permit.totalCents
+    )
+      return json({ error: "Checkout details changed; start again" }, 409);
 
-    // Require a complete stored address for every shipment. Express wallets supply
-    // their destination directly; only other methods require Shippo deliverability.
-    if (order.fulfillment === "ship") {
-      const address = checkoutShippingAddressSchema.safeParse(order.shippingAddress);
-      if (!address.success) {
+    let ownerBinding: string;
+    if (order.userId !== null) {
+      const session = await deps.getSession();
+      if (!session || session.user.id !== order.userId)
+        return json({ error: "Order access denied" }, 403);
+      ownerBinding = `account:${session.user.id}`;
+    } else {
+      // Only the grant-verifying issuer may mint this two-minute, one-use guest bearer.
+      if (!("ownerBinding" in permit) || permit.ownerBinding !== `order:${order.orderId}`)
+        return json({ error: "Order access denied" }, 403);
+      ownerBinding = permit.ownerBinding;
+    }
+    if ("ownerBinding" in permit && permit.ownerBinding !== ownerBinding)
+      return json({ error: "Order access denied" }, 403);
+    observation = {
+      orderId: order.orderId,
+      paymentId: null,
+      status: "UNKNOWN",
+      statusUrl: `/checkout/processing?orderId=${encodeURIComponent(order.orderId)}`,
+    };
+    const attempt = await deps.readCurrentAttempt(order.orderId);
+    if (!attempt) {
+      try {
+        await deps.enqueueLegacyInquiry(order.orderId);
+      } catch {
+        deps.reportError(new Error("checkout_legacy_inquiry_unavailable"));
         return json(
-          {
-            error:
-              "Shipping address needs verification. Return to checkout and review it. You have not been charged.",
-          },
-          409,
+          { ...observation, error: "Payment status is temporarily unavailable" },
+          503,
         );
       }
-      if (permit.method !== "applePay" && !order.shippingAddressOverrideConfirmed) {
-        let validation: ShippingValidationResult;
-        try {
-          validation = await deps.validateShippingAddress(address.data);
-        } catch {
-          return json(
-            {
-              error:
-                "Address verification is temporarily unavailable. Please retry. You have not been charged.",
-            },
-            503,
-          );
-        }
-        if (validation.status !== "valid") {
-          return json(
-            {
-              error:
-                validation.status === "unavailable"
-                  ? "Address verification is temporarily unavailable. Please retry. You have not been charged."
-                  : "Shipping address needs verification. Return to checkout and review it. You have not been charged.",
-            },
-            validation.status === "unavailable" ? 503 : 409,
-          );
-        }
-      }
+      return json(observation, 202);
     }
-
-    const payment = await deps.createPayment({
-      localOrderId: order.orderId,
-      squareOrderId: order.squareOrderId!,
-      sourceId: parsed.data.sourceId,
-      idempotencyKey: permit.squareIdempotencyKey,
-      totalCents: permit.totalCents,
-      shippingAddress: order.shippingAddress,
-      billingAddress: order.billingAddress,
-    });
-    if (payment.status === "CANCELED" || payment.status === "FAILED") {
-      await deps.recordDecline(declineIdentity);
-      return json(
-        { error: "Payment was declined. Check your details and try again." },
-        402,
-      );
-    }
-    await deps.savePaymentId(order.orderId, payment.id, payment, permit.method);
-    return json(
-      {
-        orderId: order.orderId,
-        paymentId: payment.id,
-        status: payment.status,
-        statusUrl: statusUrl(order.orderId),
-      },
-      202,
+    observation.attemptId = attempt.id;
+    let failureStatus = 409;
+    const projection: { payment?: DirectPaymentResult } = {};
+    const source = directPaymentRequestSchema.shape.sourceId.safeParse(
+      body.data.sourceId,
     );
-  } catch (error) {
-    deps.reportError(error);
-    if (deps.isDefiniteDecline(error) && declineIdentity) {
-      await deps.recordDecline(declineIdentity);
+    const result = await dispatchPayment(
+      { permit, sourceId: source.success ? source.data : "" },
+      {
+        ...deps,
+        order,
+        attempt,
+        ownerBinding,
+        validate: async () => {
+          const invalid = await validate(order, permit, deps);
+          if (invalid) failureStatus = invalid.status;
+          return invalid?.message ?? null;
+        },
+        save: async (payment) => {
+          await deps.savePaymentId(order.orderId, payment.id, payment, permit.method);
+          projection.payment = payment;
+        },
+      },
+    );
+    if (result.kind === "not_submitted")
+      return json({ error: result.message, code: result.code }, failureStatus);
+    if (result.kind === "declined") {
+      await deps.recordDecline({
+        tenantId: order.tenantId,
+        deviceSessionId: permit.deviceSessionId,
+      });
       return json(
-        { error: "Payment was declined. Check your details and try again." },
+        {
+          error: "Payment was declined. Check your details and try again.",
+          attemptId: result.attemptId,
+        },
         402,
       );
     }
     return json(
       {
-        orderId: permit.orderId,
-        paymentId: null,
-        status: "UNKNOWN",
-        statusUrl: statusUrl(permit.orderId),
+        ...observation,
+        attemptId: result.attemptId,
+        paymentId: projection.payment?.id ?? null,
+        status: projection.payment?.status ?? "UNKNOWN",
       },
       202,
     );
+  } catch {
+    deps.reportError(new Error("checkout_payment_unavailable"));
+    return observation
+      ? json(observation, 202)
+      : json({ error: "Checkout protection is temporarily unavailable" }, 503);
   }
 }

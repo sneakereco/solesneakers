@@ -1,6 +1,9 @@
-import { SquarePaymentsGateway } from "@/lib/square/payments";
+import { SquareError } from "square";
+import { squareDeclineCode, SquarePaymentsGateway } from "@/lib/square/payments";
 
 const input = {
+  method: "card" as const,
+  attemptId: "10a88b57-5418-4d03-ba46-be65ff0fcb64",
   localOrderId: "4a57e953-80dd-4609-970f-31984acfe810",
   squareOrderId: "square-order-1",
   sourceId: "cnon:card-nonce-ok",
@@ -34,6 +37,7 @@ describe("SquarePaymentsGateway", () => {
         orderId: "square-order-1",
         status: "COMPLETED",
         amountMoney: { amount: BigInt(28563), currency: "USD" },
+        referenceId: input.attemptId,
         sourceType: "CARD",
         cardDetails: {
           card: { cardBrand: "VISA", last4: "4242" },
@@ -51,6 +55,7 @@ describe("SquarePaymentsGateway", () => {
       orderId: "square-order-1",
       status: "COMPLETED",
       totalCents: 28563,
+      referenceId: input.attemptId,
       details: expect.objectContaining({
         source_type: "CARD",
         card_type: "VISA",
@@ -67,7 +72,7 @@ describe("SquarePaymentsGateway", () => {
         autocomplete: true,
         orderId: "square-order-1",
         locationId: "square-location-1",
-        referenceId: "4a57e953-80dd-4609-970f-31984acfe810",
+        referenceId: "10a88b57-5418-4d03-ba46-be65ff0fcb64",
         shippingAddress: {
           addressLine1: "1 Main Street",
           locality: "Charleston",
@@ -132,4 +137,99 @@ describe("SquarePaymentsGateway", () => {
     });
     expect(get).toHaveBeenCalledWith({ paymentId: "payment-1" });
   });
+});
+
+it("classifies only unambiguous authenticated decline responses", () => {
+  const response = (codes: string[], statusCode = 400) =>
+    new SquareError({
+      statusCode,
+      body: { errors: codes.map((code) => ({ code, category: "PAYMENT_METHOD_ERROR" })) },
+    });
+  expect(squareDeclineCode(response(["CARD_DECLINED"]))).toBe("CARD_DECLINED");
+  for (const error of [
+    response(["CARD_DECLINED", "IDEMPOTENCY_KEY_REUSED"]),
+    response(["CARD_TOKEN_USED"]),
+    response(["CARD_DECLINED"], 503),
+    response(["CARD_DECLINED"], 408),
+    response(["CARD_DECLINED"], 409),
+    new Error("CARD_DECLINED"),
+  ])
+    expect(squareDeclineCode(error)).toBeNull();
+});
+
+it("fingerprints the complete exact request with a server key and an independent source domain", () => {
+  const gateway = new SquarePaymentsGateway(
+    { create: jest.fn(), get: jest.fn() },
+    "location-one",
+  );
+  const other = new SquarePaymentsGateway(
+    { create: jest.fn(), get: jest.fn() },
+    "location-two",
+  );
+  const hashes = gateway.fingerprints(input, "fixture-key");
+  expect(hashes.requestDigest).toMatch(/^[0-9a-f]{64}$/);
+  expect(hashes.sourceDigest).toMatch(/^[0-9a-f]{64}$/);
+  expect(gateway.fingerprints({ ...input }, "fixture-key")).toEqual(hashes);
+  for (const variant of [
+    { ...input, totalCents: 77 },
+    { ...input, sourceId: "other" },
+    { ...input, attemptId: input.localOrderId },
+    { ...input, billingAddress: null },
+  ])
+    expect(gateway.fingerprints(variant, "fixture-key").requestDigest).not.toBe(
+      hashes.requestDigest,
+    );
+  expect(other.fingerprints(input, "fixture-key").requestDigest).not.toBe(
+    hashes.requestDigest,
+  );
+  expect(gateway.fingerprints(input, "other-key").sourceDigest).not.toBe(
+    hashes.sourceDigest,
+  );
+});
+
+it.each([
+  ["cashAppPay", "WALLET", { walletDetails: { brand: "CASH_APP" } }],
+  ["afterpay", "BUY_NOW_PAY_LATER", { buyNowPayLaterDetails: { brand: "AFTERPAY" } }],
+  ["applePay", "CARD", {}],
+] as const)("accepts a bound %s provider source", async (method, sourceType, details) => {
+  const gateway = new SquarePaymentsGateway(
+    {
+      create: jest.fn().mockResolvedValue({
+        payment: {
+          id: "p",
+          orderId: input.squareOrderId,
+          referenceId: input.attemptId,
+          status: "APPROVED",
+          amountMoney: { amount: BigInt(input.totalCents), currency: "USD" },
+          sourceType,
+          ...details,
+        },
+      }),
+      get: jest.fn(),
+    },
+    "loc",
+  );
+  expect((await gateway.create({ ...input, method })).id).toBe("p");
+});
+
+it.each([
+  { referenceId: input.localOrderId, sourceType: "CARD" },
+  { referenceId: input.attemptId, sourceType: "EXTERNAL" },
+])("rejects a mismatched attempt or financial source", async (mismatch) => {
+  const gateway = new SquarePaymentsGateway(
+    {
+      create: jest.fn().mockResolvedValue({
+        payment: {
+          id: "p",
+          orderId: input.squareOrderId,
+          status: "APPROVED",
+          amountMoney: { amount: BigInt(input.totalCents), currency: "USD" },
+          ...mismatch,
+        },
+      }),
+      get: jest.fn(),
+    },
+    "loc",
+  );
+  await expect(gateway.create(input)).rejects.toThrow("square_payment_invalid_response");
 });

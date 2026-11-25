@@ -1,4 +1,5 @@
 import { z } from "zod";
+import { ownerBindingSchema } from "../Payments/attempt-contract";
 
 const bindings = {
   orderId: z.string().min(1),
@@ -18,7 +19,18 @@ export const legacyPaymentPermitSchema = z
   .strict();
 
 const tenantFreePermitSchema = z.object({ version: z.literal(2), ...bindings }).strict();
-const consumedPermitSchema = z.union([legacyPaymentPermitSchema, tenantFreePermitSchema]);
+export const boundPaymentPermitSchema = legacyPaymentPermitSchema.extend({
+  attemptId: z.uuid(),
+  ownerBinding: ownerBindingSchema,
+});
+export const issuingPaymentPermitSchema = z.union([
+  boundPaymentPermitSchema,
+  legacyPaymentPermitSchema,
+]);
+const consumedPermitSchema = z.union([
+  issuingPaymentPermitSchema,
+  tenantFreePermitSchema,
+]);
 
 export type ConsumedPaymentPermit = z.infer<typeof consumedPermitSchema>;
 

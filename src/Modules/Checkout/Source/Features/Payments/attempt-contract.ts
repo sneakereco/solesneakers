@@ -39,6 +39,9 @@ export const paymentAttemptSchema = z
     (a) =>
       a.state !== "ready" || (a.requestDigest === null && a.providerPaymentId === null),
   )
+  .refine(
+    (a) => !["pending", "succeeded"].includes(a.state) || a.providerPaymentId !== null,
+  )
   .refine((a) => {
     if (a.requestDigest !== null) return true;
     if (a.state === "dispatch_started" || a.state === "unknown") return false;
@@ -51,19 +54,19 @@ export type PaymentAttempt = z.infer<typeof paymentAttemptSchema>;
 
 // A scope identifier is constructed only after server verification of the account,
 // original signed guest context, or an order-specific guest access grant.
-const ownerBinding = z.string().refine((binding) => {
+export const ownerBindingSchema = z.string().refine((binding) => {
   const [kind, value, ...rest] = binding.split(":");
   if (rest.length || !value) return false;
   if (kind === "guest") return digest.safeParse(value).success;
   return (kind === "account" || kind === "order") && z.uuid().safeParse(value).success;
 });
 export const getAttemptSchema = z
-  .object({ orderId: z.uuid(), method, ownerBinding })
+  .object({ orderId: z.uuid(), method, ownerBinding: ownerBindingSchema })
   .strict();
 export const beginDispatchSchema = z
   .object({
     attemptId: z.uuid(),
-    ownerBinding,
+    ownerBinding: ownerBindingSchema,
     requestDigest: digest,
     sourceDigest: digest,
   })
