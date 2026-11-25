@@ -5,6 +5,7 @@ import { useState } from "react";
 import { Eye, EyeOff } from "lucide-react";
 
 import { authStyles } from "@/components/auth/ui/authStyles";
+import { ActionButton } from "@/components/ui/ActionButton";
 
 interface PasswordFieldProps {
   name: string;
@@ -16,6 +17,7 @@ interface PasswordFieldProps {
   required?: boolean;
   dataTestId?: string;
   disabled?: boolean;
+  describedBy?: string;
 }
 
 export function PasswordField({
@@ -28,16 +30,15 @@ export function PasswordField({
   required = true,
   dataTestId,
   disabled = false,
+  describedBy,
 }: PasswordFieldProps) {
   const [visible, setVisible] = useState(false);
 
   return (
     <div className="space-y-2">
-      {label && (
-        <label htmlFor={name} className="block text-sm font-medium text-zinc-700">
-          {label}
-        </label>
-      )}
+      <label htmlFor={name} className={authStyles.label}>
+        {label}
+      </label>
       <div className="relative">
         <input
           id={name}
@@ -47,20 +48,21 @@ export function PasswordField({
           autoComplete={autoComplete}
           value={value}
           onChange={(e) => onChange(e.target.value)}
-          disabled={disabled}
+          readOnly={disabled}
           className={`${authStyles.input} pr-14`}
           placeholder={placeholder}
           data-testid={dataTestId}
+          aria-describedby={describedBy}
         />
-        <button
+        <ActionButton
           type="button"
           onClick={() => setVisible(!visible)}
-          disabled={disabled}
-          className="absolute right-4 top-1/2 -translate-y-1/2 text-zinc-500 transition-colors hover:text-zinc-800 disabled:cursor-not-allowed disabled:opacity-50"
+          className="absolute right-1 top-1/2 flex h-11 w-11 -translate-y-1/2 items-center justify-center text-zinc-500 transition-colors hover:text-zinc-800"
           aria-label={visible ? "Hide password" : "Show password"}
+          aria-controls={name}
         >
           {visible ? <EyeOff className="h-4 w-4" /> : <Eye className="h-4 w-4" />}
-        </button>
+        </ActionButton>
       </div>
     </div>
   );

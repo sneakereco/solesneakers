@@ -6,13 +6,15 @@ import { useCart } from "@/components/cart/CartProvider";
 import { RootLoadingShell } from "@/components/shell/RootLoadingShell";
 import { SessionShell } from "@/components/shell/SessionShell";
 import { useSession } from "@/contexts/SessionContext";
-import { getServerSession, type ServerSession } from "@/lib/auth/session";
+import { readServerSession, type ServerSession } from "@/lib/auth/session";
 
-jest.mock("@/lib/auth/session", () => ({ getServerSession: jest.fn() }));
+jest.mock("@/lib/auth/session", () => ({ readServerSession: jest.fn() }));
+jest.mock("@/lib/utils/log");
 
 function SessionContent() {
-  const { user, role } = useSession();
+  const { user, role, isSessionUnavailable } = useSession();
   const { isReady } = useCart();
+  if (isSessionUnavailable) return <p>Account status unavailable</p>;
   return (
     <p>
       {user?.email} {role} {isReady ? "Cart ready" : "Cart awaiting hydration"}
@@ -30,7 +32,7 @@ describe("initial storefront session shell", () => {
 
   it("streams safe loading markup while the session is pending and supplies the resolved identity", async () => {
     let resolveSession!: (value: ServerSession) => void;
-    jest.mocked(getServerSession).mockReturnValueOnce(
+    jest.mocked(readServerSession).mockReturnValueOnce(
       new Promise((resolve) => {
         resolveSession = resolve;
       }),
@@ -60,6 +62,14 @@ describe("initial storefront session shell", () => {
     });
     const resolved = renderToStaticMarkup(await sessionShell);
     expect(resolved).toContain("owner@example.test customer Cart awaiting hydration");
-    expect(getServerSession).toHaveBeenCalledTimes(1);
+    expect(readServerSession).toHaveBeenCalledTimes(1);
+  });
+
+  it("supplies an unavailable initial identity after a provider failure", async () => {
+    jest
+      .mocked(readServerSession)
+      .mockRejectedValueOnce(new Error("Provider unavailable"));
+    const sessionShell = await SessionShell({ children: <SessionContent /> });
+    expect(renderToStaticMarkup(sessionShell)).toContain("Account status unavailable");
   });
 });

@@ -2,10 +2,13 @@ import { pageMetadata } from "@/lib/metadata";
 
 // app/account/page.tsx
 
-import Link from "next/link";
+import { isDynamicServerError } from "next/dist/client/components/hooks-server-context";
 
-import { requireUser } from "@/lib/auth/session";
+import { readServerSession } from "@/lib/auth/session";
+import { logError } from "@/lib/utils/log";
+import { AccountLoadError } from "@/components/account/AccountLoadError";
 import { AccountProfile } from "@/components/account/AccountProfile";
+import { FeedbackLink } from "@/components/ui/FeedbackLink";
 
 export const metadata = {
   ...pageMetadata(
@@ -19,8 +22,18 @@ export default async function AccountPage() {
   let session;
 
   try {
-    session = await requireUser();
-  } catch {
+    session = await readServerSession();
+  } catch (error) {
+    if (isDynamicServerError(error)) throw error;
+    logError(error, {
+      layer: "auth",
+      route: "/account",
+      message: "account_session_lookup_failed",
+    });
+    return <AccountLoadError />;
+  }
+
+  if (!session) {
     return (
       <div className="min-h-[36rem] bg-[var(--storefront-surface)] px-5 py-24 text-center text-black sm:px-8">
         <p className="text-[0.68rem] uppercase tracking-[0.28em] text-zinc-500">
@@ -33,22 +46,22 @@ export default async function AccountPage() {
           Access your saved addresses, order history, and account security settings.
         </p>
         <div className="mt-9 flex flex-col items-center justify-center gap-3 sm:flex-row">
-          <Link
-            href="/auth/login"
+          <FeedbackLink
+            href="/auth/login?next=%2Faccount"
             className="inline-flex min-h-12 min-w-44 items-center justify-center bg-[#1f1f1d] px-7 text-xs font-semibold uppercase tracking-[0.14em] text-white transition-colors hover:bg-black"
           >
             Sign In
-          </Link>
-          <Link
-            href="/auth/register"
+          </FeedbackLink>
+          <FeedbackLink
+            href="/auth/register?next=%2Faccount"
             className="inline-flex min-h-12 min-w-44 items-center justify-center border border-zinc-400 px-7 text-xs font-semibold uppercase tracking-[0.14em] text-zinc-800 transition-colors hover:border-black hover:text-black"
           >
             Create Account
-          </Link>
+          </FeedbackLink>
         </div>
       </div>
     );
   }
 
-  return <AccountProfile userEmail={session.user.email} />;
+  return <AccountProfile userId={session.user.id} userEmail={session.user.email} />;
 }

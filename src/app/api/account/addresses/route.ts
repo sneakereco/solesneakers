@@ -4,8 +4,9 @@ import { NextResponse } from "next/server";
 import { z } from "zod";
 
 import { createSupabaseServerClient } from "@/lib/supabase/server";
-import { AuthError, requireUserApi } from "@/lib/auth/session";
 import { AddressesRepository } from "@/repositories/addresses-repo";
+import { AuthError } from "@/lib/auth/session";
+import { requireAccountSession } from "@/lib/account/session";
 import { getRequestIdFromHeaders } from "@/lib/http/request-id";
 import { logError } from "@/lib/utils/log";
 
@@ -36,7 +37,7 @@ export async function GET(request: NextRequest) {
   const requestId = getRequestIdFromHeaders(request.headers);
 
   try {
-    const session = await requireUserApi();
+    const session = await requireAccountSession(request, "read");
     const supabase = await createSupabaseServerClient();
     const repo = new AddressesRepository(supabase);
 
@@ -65,7 +66,7 @@ export async function POST(request: NextRequest) {
   const requestId = getRequestIdFromHeaders(request.headers);
 
   try {
-    const session = await requireUserApi();
+    const session = await requireAccountSession(request, "write");
     const supabase = await createSupabaseServerClient();
     const repo = new AddressesRepository(supabase);
 

@@ -1,4 +1,5 @@
 // src/lib/auth/session.ts
+import { isAuthSessionMissingError } from "@supabase/supabase-js";
 import { redirect } from "next/navigation";
 import { isDynamicServerError } from "next/dist/client/components/hooks-server-context";
 
@@ -31,56 +32,69 @@ export class AuthError extends Error {
   }
 }
 
-async function getServerSessionUncached(): Promise<ServerSession | null> {
+const rejectedSessionCodes = new Set([
+  "bad_jwt",
+  "no_authorization",
+  "user_not_found",
+  "session_not_found",
+  "session_expired",
+  "refresh_token_not_found",
+  "refresh_token_already_used",
+  "user_banned",
+]);
+
+/** Read the validated session for callers that can represent temporary unavailability. */
+export async function readServerSession(): Promise<ServerSession | null> {
+  const supabase = await createSupabaseServerClient();
+  const {
+    data: { user },
+    error,
+  } = await supabase.auth.getUser();
+
+  if (error) {
+    if (
+      isAuthSessionMissingError(error) ||
+      (error.code && rejectedSessionCodes.has(error.code))
+    ) {
+      return null;
+    }
+    throw error;
+  }
+  if (!user) return null;
+
+  const profileRepo = new ProfileRepository(supabase);
+  const row = await profileRepo.getByUserId(user.id);
+  const profile = row
+    ? {
+        id: row.id,
+        email: row.email ?? user.email ?? "",
+        role: isProfileRole(row.role) ? row.role : ("customer" as const),
+        full_name: row.full_name ?? null,
+        tenant_id: row.tenant_id ?? null,
+      }
+    : null;
+
+  return {
+    user: { id: user.id, email: user.email ?? "" },
+    profile,
+    role: profile?.role ?? "customer",
+  };
+}
+
+export async function getServerSession(): Promise<ServerSession | null> {
   try {
-    const supabase = await createSupabaseServerClient();
-
-    // ✅ Correct: validates user by contacting Supabase Auth server
-    const {
-      data: { user },
-      error,
-    } = await supabase.auth.getUser();
-
-    if (error || !user) {
-      return null;
-    }
-
-    const profileRepo = new ProfileRepository(supabase);
-    const row = await profileRepo.getByUserId(user.id);
-
-    const profile = row
-      ? {
-          id: row.id,
-          email: row.email ?? user.email ?? "",
-          role: isProfileRole(row.role) ? row.role : "customer",
-          full_name: row.full_name ?? null,
-          tenant_id: row.tenant_id ?? null,
-        }
-      : null;
-
-    return {
-      user: {
-        id: user.id,
-        email: user.email ?? "",
-      },
-      profile,
-      role: profile?.role ?? "customer",
-    };
+    return await readServerSession();
   } catch (error) {
-    if (isDynamicServerError(error)) {
-      return null;
+    if (!isDynamicServerError(error)) {
+      logError(error, {
+        layer: "auth",
+        route: "getServerSession",
+        message: "server_session_lookup_failed",
+      });
     }
-
-    logError(error, {
-      layer: "auth",
-      route: "getServerSession",
-      message: "server_session_lookup_failed",
-    });
     return null;
   }
 }
-
-export const getServerSession = getServerSessionUncached;
 
 /**
  * PAGE GUARDS (Server Components / Pages)

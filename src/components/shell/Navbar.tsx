@@ -47,6 +47,9 @@ export function Navbar({
     role: sessionRole,
     isAuthenticated: sessionIsAuthenticated,
     isLoading,
+    isSessionUnavailable,
+    hasRefreshed,
+    refreshSession,
   } = useSession();
   const [menuInvoker, setMenuInvoker] = useState<HTMLButtonElement | null>(null);
 
@@ -83,12 +86,16 @@ export function Navbar({
       .catch(() => setLogoutError(true));
   };
 
-  const effectiveIsAuthenticated = sessionIsAuthenticated || isAuthenticated;
-  const effectiveUserEmail = user?.email ?? userEmail;
-  const effectiveRole = sessionRole ?? role;
+  const useInitialHeaderIdentity = !hasRefreshed && !isSessionUnavailable;
+  const effectiveIsAuthenticated =
+    sessionIsAuthenticated || (useInitialHeaderIdentity && isAuthenticated);
+  const effectiveUserEmail =
+    user?.email ?? (useInitialHeaderIdentity ? userEmail : undefined);
+  const effectiveRole = sessionRole ?? (useInitialHeaderIdentity ? role : null);
   const showAdminDashboardLink =
     typeof effectiveRole === "string" && isAdminRole(effectiveRole);
-  const showAuthButtons = !isLoading && !effectiveIsAuthenticated;
+  const showAuthButtons =
+    !isLoading && !isSessionUnavailable && !effectiveIsAuthenticated;
 
   const actionClassName =
     "inline-flex whitespace-nowrap text-xs font-semibold uppercase text-zinc-700 transition-all duration-150 hover:text-black hover:font-bold";
@@ -209,13 +216,13 @@ export function Navbar({
               >
                 Login
               </FeedbackLink>
-            ) : (
+            ) : isLoading && !isSessionUnavailable ? (
               <LoadingState label="Loading account">
                 <div data-testid="navbar-auth-loading">
                   <Skeleton className="h-4 w-16" />
                 </div>
               </LoadingState>
-            )}
+            ) : null}
 
             <ActionButton
               type="button"
@@ -262,6 +269,19 @@ export function Navbar({
           </ActionButton>
         </div>
       </div>
+
+      {isSessionUnavailable && (
+        <div
+          data-session-recovery
+          className="border-b border-zinc-300 px-5 py-3 sm:px-8 lg:px-14"
+        >
+          <RequestError
+            message="Could not load your account."
+            onRetry={() => void refreshSession()}
+            retrying={isLoading}
+          />
+        </div>
+      )}
 
       <StoreMenuDrawer
         isOpen={menuInvoker !== null}

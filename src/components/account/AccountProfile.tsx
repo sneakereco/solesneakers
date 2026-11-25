@@ -1,15 +1,29 @@
 // src/components/account/AccountProfile.tsx
 "use client";
 
-import { useState, useEffect } from "react";
+import { useLayoutEffect, useRef, useState, type FormEvent } from "react";
 import { useRouter } from "next/navigation";
 import { Eye, EyeOff } from "lucide-react";
 
 import type { Tables } from "@/types/db/database.types";
-import { logError } from "@/lib/utils/log";
 import { PasswordRequirements } from "@/components/auth/register/PasswordRequirements";
 import { isPasswordValid } from "@/lib/validation/password";
-import { Toast } from "@/components/ui/Toast";
+import { ActionButton } from "@/components/ui/ActionButton";
+import { RequestError } from "@/components/ui/RequestError";
+import { useAsyncAction } from "@/components/ui/useAsyncAction";
+import { useSession } from "@/contexts/SessionContext";
+import { fetchAccountJson } from "@/lib/account/request";
+import { ResponseError } from "@/lib/http/read-json-response";
+import { withRequestDeadline } from "@/lib/http/request-deadline";
+
+import {
+  AccountSkeleton,
+  AddressesSkeleton,
+  OrdersSkeleton,
+  ShippingProfileSkeleton,
+} from "./AccountSkeletons";
+import { AccountLoadError } from "./AccountLoadError";
+import { useAccountResource } from "./use-account-resource";
 
 type ShippingProfile = Tables<"shipping_profiles">;
 
@@ -48,7 +62,134 @@ type AccountAddress = {
   country: string;
 };
 
-type AddressInput = Omit<AccountAddress, "id"> & { id?: string };
+type AddressInput = Omit<AccountAddress, "id">;
+type Result = { tone: "success" | "error"; message: string };
+type DefaultResult = { ok: true } | { ok: false; message: string };
+type DefaultRetry = { address: AddressInput | null; message: string };
+
+const emptyAddress = {
+  name: "",
+  phone: "",
+  line1: "",
+  line2: "",
+  city: "",
+  state: "",
+  postal_code: "",
+  country: "",
+};
+
+const addressFields = [
+  "line1",
+  "line2",
+  "city",
+  "state",
+  "postal_code",
+  "country",
+] as const;
+
+function sameAddress(left: Partial<AddressInput>, right: Partial<AddressInput>) {
+  const normalize = (value?: string | null) => (value ?? "").trim().toLowerCase();
+  return addressFields.every(
+    (field) => normalize(left[field]) === normalize(right[field]),
+  );
+}
+
+function asAddress(profile: Partial<ShippingProfile>): Partial<AddressInput> {
+  return {
+    line1: profile.address_line1 ?? undefined,
+    line2: profile.address_line2,
+    city: profile.city ?? undefined,
+    state: profile.state ?? undefined,
+    postal_code: profile.postal_code ?? undefined,
+    country: profile.country ?? undefined,
+  };
+}
+
+function parseProfile(value: unknown): Partial<ShippingProfile> {
+  if (!value || typeof value !== "object" || Array.isArray(value) || "error" in value) {
+    throw new Error("Invalid shipping profile");
+  }
+  return value;
+}
+
+function parseAddresses(value: unknown): AccountAddress[] {
+  if (
+    !value ||
+    typeof value !== "object" ||
+    !("addresses" in value) ||
+    !Array.isArray(value.addresses)
+  ) {
+    throw new Error("Invalid saved addresses");
+  }
+  return value.addresses;
+}
+
+function parseOrders(value: unknown): AccountOrder[] {
+  if (
+    !value ||
+    typeof value !== "object" ||
+    !("orders" in value) ||
+    !Array.isArray(value.orders)
+  ) {
+    throw new Error("Invalid order history");
+  }
+  return value.orders;
+}
+
+const signInHref = "/auth/login?next=%2Faccount";
+
+function ResourceError({
+  label,
+  resource,
+}: {
+  label: string;
+  resource: {
+    error: "sign-in" | "owner-changed" | "unavailable" | null;
+    loading: boolean;
+    load: () => Promise<void>;
+  };
+}) {
+  if (!resource.error) return null;
+  return (
+    <div className="mt-4">
+      {resource.error === "sign-in" ? (
+        <RequestError
+          message={`Sign in again to view ${label}.`}
+          signInHref={signInHref}
+        />
+      ) : (
+        <RequestError
+          message={`Could not load ${label}.`}
+          onRetry={() => void resource.load()}
+          retrying={resource.loading}
+        />
+      )}
+    </div>
+  );
+}
+
+function ActionResult({ result, id }: { result: Result | null; id: string }) {
+  if (!result) return null;
+  return (
+    <p
+      id={id}
+      role={result.tone === "error" ? "alert" : "status"}
+      className={`border px-5 py-4 text-sm ${
+        result.tone === "success"
+          ? "border-emerald-200 bg-[#f7fbf8] text-emerald-700"
+          : "border-red-200 bg-[#fff8f8] text-red-700"
+      }`}
+    >
+      {result.message}
+    </p>
+  );
+}
+
+function failedAction(error: unknown, fallback: string) {
+  return error instanceof ResponseError && error.status === 401
+    ? `${fallback} Sign in again and retry.`
+    : fallback;
+}
 
 const fieldClassName =
   "h-12 w-full border border-zinc-300 bg-white px-4 text-[0.95rem] text-zinc-900 transition-colors placeholder:text-zinc-400 focus:border-zinc-500 focus:outline-none disabled:cursor-not-allowed disabled:bg-zinc-100";
@@ -59,304 +200,328 @@ const primaryButtonClassName =
 const textButtonClassName =
   "text-xs font-medium uppercase tracking-[0.1em] text-zinc-500 transition-colors hover:text-black disabled:cursor-not-allowed disabled:opacity-50";
 
-export function AccountProfile({ userEmail }: { userEmail: string }) {
+type AccountProps = { userId: string; userEmail: string };
+
+export function AccountProfile({ userId, userEmail }: AccountProps) {
+  const session = useSession();
+  if (session.user?.id !== userId) {
+    return session.isLoading ? (
+      <AccountSkeleton />
+    ) : (
+      <AccountLoadError ownerChanged={!session.isSessionUnavailable} />
+    );
+  }
+
+  return (
+    <AccountDetails
+      key={userId}
+      userId={userId}
+      userEmail={userEmail}
+      canChangeAccount={!session.isLoading && !session.isSessionUnavailable}
+    />
+  );
+}
+
+function AccountDetails({
+  userId,
+  userEmail,
+  canChangeAccount,
+}: AccountProps & { canChangeAccount: boolean }) {
   const router = useRouter();
-  const [profile, setProfile] = useState<Partial<ShippingProfile>>({});
-  const [isLoading, setIsLoading] = useState(false);
-  const [message, setMessage] = useState("");
+  const profileResource = useAccountResource(
+    userId,
+    "/api/account/shipping",
+    parseProfile,
+  );
+  const addressResource = useAccountResource(
+    userId,
+    "/api/account/addresses",
+    parseAddresses,
+  );
+  const orderResource = useAccountResource(userId, "/api/account/orders", parseOrders);
+  const profile = profileResource.data;
+  const addresses = addressResource.data;
+  const orders = orderResource.data;
+
+  const addressAction = useAsyncAction();
+  const passwordAction = useAsyncAction();
+  const logoutAction = useAsyncAction();
+  const [addressOperation, setAddressOperation] = useState("");
+  const [addressResult, setAddressResult] = useState<Result | null>(null);
+  const [defaultRetry, setDefaultRetry] = useState<DefaultRetry | null>(null);
+  const [passwordResult, setPasswordResult] = useState<Result | null>(null);
+  const [logoutError, setLogoutError] = useState<string | null>(null);
+  const [signedOut, setSignedOut] = useState(false);
   const [newPassword, setNewPassword] = useState("");
   const [confirmPassword, setConfirmPassword] = useState("");
   const [newPasswordVisible, setNewPasswordVisible] = useState(false);
   const [confirmPasswordVisible, setConfirmPasswordVisible] = useState(false);
-  const [toast, setToast] = useState<{
-    message: string;
-    tone: "success" | "error" | "info";
-  } | null>(null);
-  const [orders, setOrders] = useState<AccountOrder[]>([]);
-  const [isOrdersLoading, setIsOrdersLoading] = useState(true);
-  const [isSigningOut, setIsSigningOut] = useState(false);
-  const [addresses, setAddresses] = useState<AccountAddress[]>([]);
-  const [isAddressesLoading, setIsAddressesLoading] = useState(true);
-  const [isAddressSaving, setIsAddressSaving] = useState(false);
-  const [isDefaultSaving, setIsDefaultSaving] = useState(false);
   const [setAsDefault, setSetAsDefault] = useState(false);
-  const [addressForm, setAddressForm] = useState({
-    name: "",
-    phone: "",
-    line1: "",
-    line2: "",
-    city: "",
-    state: "",
-    postal_code: "",
-    country: "",
-  });
+  const [addressForm, setAddressForm] = useState(emptyAddress);
+  const [ownerConflict, setOwnerConflict] = useState(false);
+  const activeOwner = useRef<AbortController | null>(null);
+  const ownerReady = useRef(canChangeAccount);
+  const ownerChanged =
+    ownerConflict ||
+    profileResource.error === "owner-changed" ||
+    addressResource.error === "owner-changed" ||
+    orderResource.error === "owner-changed";
+  const accountActionsAvailable = canChangeAccount && !ownerChanged;
 
-  useEffect(() => {
-    const loadProfile = async () => {
-      try {
-        const response = await fetch("/api/account/shipping");
-        const data = await response.json();
-        setProfile(data);
-      } catch (error) {
-        logError(error, { layer: "frontend", event: "account_load_profile" });
-      }
+  useLayoutEffect(() => {
+    if (ownerChanged) return;
+    const controller = new AbortController();
+    activeOwner.current = controller;
+    return () => {
+      activeOwner.current = null;
+      controller.abort();
     };
+  }, [ownerChanged]);
 
-    const loadOrders = async () => {
-      try {
-        const response = await fetch("/api/account/orders");
-        const data = await response.json();
-        setOrders(data.orders || []);
-      } catch (error) {
-        logError(error, { layer: "frontend", event: "account_load_orders" });
-      } finally {
-        setIsOrdersLoading(false);
-      }
-    };
+  useLayoutEffect(() => {
+    ownerReady.current = accountActionsAvailable;
+  }, [accountActionsAvailable]);
 
-    const loadAddresses = async () => {
-      try {
-        const response = await fetch("/api/account/addresses");
-        const data = await response.json();
-        setAddresses(data.addresses || []);
-      } catch (error) {
-        logError(error, { layer: "frontend", event: "account_load_addresses" });
-      } finally {
-        setIsAddressesLoading(false);
-      }
-    };
+  function postAccountJson(url: string, body: unknown, ownerSignal: AbortSignal) {
+    return fetchAccountJson<unknown>(userId, url, "Account update failed", ownerSignal, {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify(body),
+    });
+  }
 
-    void loadProfile();
-    void loadOrders();
-    void loadAddresses();
-  }, []);
-
-  const formatField = (value?: string | null) => (value ?? "").trim().toLowerCase();
-
-  const isDefaultAddress = (address: AccountAddress) => {
-    if (!profile.address_line1) {
-      return false;
+  function commandFailure(error: unknown, fallback: string) {
+    if (error instanceof ResponseError && error.status === 409) {
+      activeOwner.current?.abort();
+      setOwnerConflict(true);
     }
-    return (
-      formatField(profile.address_line1) === formatField(address.line1) &&
-      formatField(profile.address_line2) === formatField(address.line2) &&
-      formatField(profile.city) === formatField(address.city) &&
-      formatField(profile.state) === formatField(address.state) &&
-      formatField(profile.postal_code) === formatField(address.postal_code) &&
-      formatField(profile.country) === formatField(address.country)
-    );
-  };
+    return failedAction(error, fallback);
+  }
 
-  const handleSetDefaultAddress = async (address: AddressInput, silent?: boolean) => {
-    setIsDefaultSaving(true);
-    if (!silent) {
-      setMessage("");
+  function isDefaultAddress(address: AccountAddress) {
+    return Boolean(profile?.address_line1 && sameAddress(asAddress(profile), address));
+  }
+
+  async function updateDefault(
+    address: AddressInput | null,
+    ownerSignal: AbortSignal,
+  ): Promise<DefaultResult> {
+    if (!ownerReady.current || ownerSignal.aborted) {
+      return {
+        ok: false,
+        message: "Verify your account before updating the default shipping address.",
+      };
     }
-
     try {
-      const response = await fetch("/api/account/shipping", {
-        method: "POST",
-        headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({
-          full_name: address.name ?? null,
-          phone: address.phone ?? null,
-          address_line1: address.line1 ?? null,
-          address_line2: address.line2 ?? null,
-          city: address.city ?? null,
-          state: address.state ?? null,
-          postal_code: address.postal_code ?? null,
-          country: address.country ?? null,
-        }),
-      });
+      const data = await postAccountJson(
+        "/api/account/shipping",
+        {
+          full_name: address?.name ?? null,
+          phone: address?.phone ?? null,
+          address_line1: address?.line1 ?? null,
+          address_line2: address?.line2 ?? null,
+          city: address?.city ?? null,
+          state: address?.state ?? null,
+          postal_code: address?.postal_code ?? null,
+          country: address?.country ?? null,
+        },
+        ownerSignal,
+      );
+      const savedProfile = parseProfile(data);
+      if (
+        address
+          ? !savedProfile.address_line1 || !sameAddress(asAddress(savedProfile), address)
+          : savedProfile.address_line1 !== null
+      ) {
+        throw new Error("Default shipping update could not be confirmed");
+      }
+      profileResource.replace(savedProfile);
+      return { ok: true };
+    } catch (error) {
+      const message = address
+        ? "Could not set the default shipping address."
+        : "Could not clear the default shipping address.";
+      return { ok: false, message: commandFailure(error, message) };
+    }
+  }
 
-      const data = await response.json().catch(() => null);
+  function runAddressAction(
+    operation: string,
+    work: (ownerSignal: AbortSignal) => Promise<void>,
+  ) {
+    const signal = activeOwner.current?.signal;
+    if (!ownerReady.current || !signal || signal.aborted) return;
+    void addressAction.run(async () => {
+      setAddressOperation(operation);
+      setAddressResult(null);
+      await work(signal);
+    });
+  }
 
-      if (!response.ok) {
-        if (!silent) {
-          setMessage(data?.error ?? "Failed to set default shipping address");
+  function handleDefault(address: AddressInput | null, operation: string) {
+    runAddressAction(operation, async (signal) => {
+      const result = await updateDefault(address, signal);
+      if (signal.aborted) return;
+      if (!result.ok) {
+        if (operation === "retry-default" && defaultRetry) {
+          setDefaultRetry({
+            ...defaultRetry,
+            message: address
+              ? `Address saved. The default update still failed. ${result.message}`
+              : `Address removed. The default update still failed. ${result.message}`,
+          });
+          return;
         }
+        setAddressResult({ tone: "error", message: result.message });
+        return;
+      }
+      setDefaultRetry(null);
+      setAddressResult({
+        tone: "success",
+        message: address
+          ? "Default shipping address updated."
+          : "Default shipping address cleared.",
+      });
+    });
+  }
+
+  function handleChangePassword(event: FormEvent<HTMLFormElement>) {
+    event.preventDefault();
+    const signal = activeOwner.current?.signal;
+    if (!ownerReady.current || !signal || signal.aborted) return;
+    void passwordAction.run(async () => {
+      setPasswordResult(null);
+
+      if (newPassword !== confirmPassword || !isPasswordValid(newPassword)) {
+        setPasswordResult({
+          tone: "error",
+          message:
+            newPassword !== confirmPassword
+              ? "Passwords do not match."
+              : "Password does not meet the required criteria.",
+        });
         return;
       }
 
-      setProfile(data || {});
-      if (!silent) {
-        setMessage("Default shipping address updated successfully.");
-      }
-    } catch {
-      if (!silent) {
-        setMessage("Error updating default shipping address");
-      }
-    } finally {
-      setIsDefaultSaving(false);
-    }
-  };
-
-  const handleClearDefaultShipping = async (silent?: boolean) => {
-    setIsDefaultSaving(true);
-    if (!silent) {
-      setMessage("");
-    }
-
-    try {
-      const response = await fetch("/api/account/shipping", {
-        method: "POST",
-        headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({
-          full_name: null,
-          phone: null,
-          address_line1: null,
-          address_line2: null,
-          city: null,
-          state: null,
-          postal_code: null,
-          country: null,
-        }),
-      });
-
-      const data = await response.json().catch(() => null);
-
-      if (!response.ok) {
-        if (!silent) {
-          setMessage(data?.error ?? "Failed to clear default shipping address");
+      try {
+        const response = await postAccountJson(
+          "/api/account/password",
+          {
+            password: newPassword,
+          },
+          signal,
+        );
+        if (
+          !response ||
+          typeof response !== "object" ||
+          !("ok" in response) ||
+          response.ok !== true
+        ) {
+          throw new Error("Password change could not be confirmed");
         }
-        return;
-      }
-
-      setProfile(data || {});
-      if (!silent) {
-        setMessage("Default shipping address cleared successfully.");
-      }
-    } catch {
-      if (!silent) {
-        setMessage("Error clearing default shipping address");
-      }
-    } finally {
-      setIsDefaultSaving(false);
-    }
-  };
-
-  const handleChangePassword = async (e: React.FormEvent) => {
-    e.preventDefault();
-    setIsLoading(true);
-    setMessage("");
-
-    if (newPassword !== confirmPassword) {
-      setMessage("Passwords do not match");
-      setIsLoading(false);
-      return;
-    }
-
-    if (!isPasswordValid(newPassword)) {
-      setMessage("Password does not meet the required criteria.");
-      setIsLoading(false);
-      return;
-    }
-
-    try {
-      const response = await fetch("/api/account/password", {
-        method: "POST",
-        headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({ password: newPassword }),
-      });
-
-      const data = await response.json().catch(() => null);
-
-      if (!response.ok) {
-        setMessage(`Failed to change password: ${data?.error ?? "Unknown error"}`);
-      } else {
-        setToast({ message: "Password changed successfully!", tone: "success" });
+        setPasswordResult({ tone: "success", message: "Password changed successfully." });
         setNewPassword("");
         setConfirmPassword("");
         setNewPasswordVisible(false);
         setConfirmPasswordVisible(false);
+      } catch (error) {
+        if (signal.aborted) return;
+        setPasswordResult({
+          tone: "error",
+          message: commandFailure(
+            error,
+            "Could not change your password. Please try again.",
+          ),
+        });
       }
-    } catch {
-      setMessage("Error changing password");
-    } finally {
-      setIsLoading(false);
-    }
-  };
+    });
+  }
 
-  const handleSaveAddress = async (e: React.FormEvent) => {
-    e.preventDefault();
-    setIsAddressSaving(true);
-    setMessage("");
-    const addressPayload = { ...addressForm };
-
-    try {
-      const response = await fetch("/api/account/addresses", {
-        method: "POST",
-        headers: { "Content-Type": "application/json" },
-        body: JSON.stringify(addressForm),
-      });
-
-      if (!response.ok) {
-        setMessage("Failed to save address");
+  function handleSaveAddress(event: FormEvent<HTMLFormElement>) {
+    event.preventDefault();
+    runAddressAction("add", async (signal) => {
+      try {
+        const data = await postAccountJson("/api/account/addresses", addressForm, signal);
+        const savedAddresses = parseAddresses(data);
+        if (!savedAddresses.some((address) => sameAddress(address, addressForm))) {
+          throw new Error("Address save could not be confirmed");
+        }
+        addressResource.replace(savedAddresses);
+      } catch (error) {
+        if (signal.aborted) return;
+        setAddressResult({
+          tone: "error",
+          message: commandFailure(error, "Could not save address. Please try again."),
+        });
         return;
       }
 
-      const data = await response.json();
-      setAddresses(data.addresses || []);
-      setAddressForm({
-        name: "",
-        phone: "",
-        line1: "",
-        line2: "",
-        city: "",
-        state: "",
-        postal_code: "",
-        country: "",
-      });
-      if (setAsDefault) {
-        await handleSetDefaultAddress(
-          {
-            name: addressPayload.name,
-            phone: addressPayload.phone,
-            line1: addressPayload.line1,
-            line2: addressPayload.line2,
-            city: addressPayload.city,
-            state: addressPayload.state,
-            postal_code: addressPayload.postal_code,
-            country: addressPayload.country,
-          },
-          true,
-        );
-      }
+      setAddressForm(emptyAddress);
       setSetAsDefault(false);
-      setMessage(
-        setAsDefault
-          ? "Address saved successfully and set as default shipping."
-          : "Address saved successfully!",
-      );
-    } catch {
-      setMessage("Error saving address");
-    } finally {
-      setIsAddressSaving(false);
-    }
-  };
+      if (setAsDefault) {
+        const result = await updateDefault(addressForm, signal);
+        if (signal.aborted) return;
+        if (!result.ok) {
+          setDefaultRetry({
+            address: addressForm,
+            message: `Address saved. ${result.message}`,
+          });
+          return;
+        }
+        setDefaultRetry(null);
+      }
 
-  const handleDeleteAddress = async (addressId: string) => {
-    setMessage("");
-    const targetAddress = addresses.find((address) => address.id === addressId);
-    const wasDefault = targetAddress ? isDefaultAddress(targetAddress) : false;
-    try {
-      const response = await fetch(`/api/account/addresses/${addressId}`, {
-        method: "DELETE",
+      setAddressResult({
+        tone: "success",
+        message: setAsDefault
+          ? "Address saved and set as the default shipping address."
+          : "Address saved.",
       });
+    });
+  }
 
-      if (!response.ok) {
-        setMessage("Failed to remove address");
+  function handleDeleteAddress(address: AccountAddress) {
+    if (!profile) return;
+    runAddressAction(`remove:${address.id}`, async (signal) => {
+      try {
+        const response = await fetchAccountJson<{ ok?: boolean }>(
+          userId,
+          `/api/account/addresses/${address.id}`,
+          "Address could not be removed",
+          signal,
+          { method: "DELETE" },
+        );
+        if (response?.ok !== true)
+          throw new Error("Address removal could not be confirmed");
+      } catch (error) {
+        if (signal.aborted) return;
+        setAddressResult({
+          tone: "error",
+          message: commandFailure(error, "Could not remove address. Please try again."),
+        });
         return;
       }
 
-      setAddresses((prev) => prev.filter((address) => address.id !== addressId));
-      if (wasDefault) {
-        await handleClearDefaultShipping(true);
+      addressResource.replace((addresses ?? []).filter(({ id }) => id !== address.id));
+      if (defaultRetry?.address && sameAddress(defaultRetry.address, address)) {
+        setDefaultRetry(null);
       }
-    } catch {
-      setMessage("Error removing address");
-    }
-  };
+      if (isDefaultAddress(address)) {
+        const result = await updateDefault(null, signal);
+        if (signal.aborted) return;
+        if (!result.ok) {
+          setDefaultRetry({
+            address: null,
+            message: `Address removed. ${result.message}`,
+          });
+          return;
+        }
+        setDefaultRetry(null);
+      }
+
+      setAddressResult({ tone: "success", message: "Address removed." });
+    });
+  }
 
   const getTrackingUrl = (carrier?: string | null, trackingNumber?: string | null) => {
     if (!trackingNumber) {
@@ -381,18 +546,27 @@ export function AccountProfile({ userEmail }: { userEmail: string }) {
     return null;
   };
 
-  const handleLogout = async () => {
-    setIsSigningOut(true);
-    try {
-      await fetch("/api/auth/logout", { method: "POST" });
-      router.replace("/");
-      router.refresh();
-    } catch {
-      setMessage("Failed to log out. Please try again.");
-    } finally {
-      setIsSigningOut(false);
-    }
-  };
+  function handleLogout() {
+    if (signedOut) return;
+    void logoutAction.run(async () => {
+      setLogoutError(null);
+      try {
+        const response = await withRequestDeadline((signal) =>
+          fetch("/api/auth/logout", { method: "POST", signal }),
+        );
+        if (!response.ok) throw new Error("Sign out failed");
+        setSignedOut(true);
+        window.dispatchEvent(new Event("sessionUpdate"));
+        router.replace("/");
+        router.refresh();
+      } catch {
+        setSignedOut(false);
+        setLogoutError("Could not sign out. Please try again.");
+      }
+    });
+  }
+
+  if (ownerChanged) return <AccountLoadError ownerChanged />;
 
   return (
     <div className="min-h-screen bg-[var(--storefront-surface)] text-black">
@@ -425,32 +599,26 @@ export function AccountProfile({ userEmail }: { userEmail: string }) {
                 Password
               </a>
             </nav>
-            <div className="mt-8 hidden border-t border-zinc-300 pt-6 lg:block">
-              <button
+            <div className="mt-8 hidden space-y-3 border-t border-zinc-300 pt-6 lg:block">
+              <ActionButton
                 type="button"
-                onClick={() => void handleLogout()}
-                disabled={isSigningOut}
+                onClick={handleLogout}
+                pending={logoutAction.pending || signedOut}
+                pendingLabel="Signing out…"
                 className={textButtonClassName}
               >
-                {isSigningOut ? "Signing out..." : "Sign out"}
-              </button>
+                Sign out
+              </ActionButton>
+              {logoutError && <RequestError message={logoutError} />}
             </div>
           </aside>
 
           <div className="min-w-0">
-            {message ? (
-              <div
-                role="status"
-                className={`mb-8 border px-5 py-4 text-sm ${
-                  message.includes("success")
-                    ? "border-emerald-200 bg-[#f7fbf8] text-emerald-700"
-                    : "border-red-200 bg-[#fff8f8] text-red-700"
-                }`}
-              >
-                {message}
-              </div>
-            ) : null}
-
+            {!accountActionsAvailable && (
+              <p role="status" className="mb-5 text-sm text-zinc-600">
+                Verify your account session before making changes.
+              </p>
+            )}
             <section id="addresses" className="scroll-mt-36 pb-14">
               <div className="flex flex-col gap-3 sm:flex-row sm:items-end sm:justify-between">
                 <div>
@@ -472,7 +640,14 @@ export function AccountProfile({ userEmail }: { userEmail: string }) {
                     <p className="text-[0.68rem] font-medium uppercase tracking-[0.18em] text-zinc-500">
                       Default shipping address
                     </p>
-                    {profile.address_line1 ? (
+                    <ResourceError
+                      label="your default shipping address"
+                      resource={profileResource}
+                    />
+                    {!profile && !profileResource.error ? (
+                      <ShippingProfileSkeleton />
+                    ) : null}
+                    {profile?.address_line1 ? (
                       <address className="mt-4 space-y-1 text-sm not-italic leading-6 text-zinc-700">
                         {profile.full_name ? (
                           <div className="font-semibold text-black">
@@ -491,21 +666,23 @@ export function AccountProfile({ userEmail }: { userEmail: string }) {
                           <div className="text-zinc-500">{profile.phone}</div>
                         ) : null}
                       </address>
-                    ) : (
+                    ) : profile ? (
                       <p className="mt-3 text-sm text-zinc-500">
                         No default address selected yet.
                       </p>
-                    )}
+                    ) : null}
                   </div>
-                  {profile.address_line1 ? (
-                    <button
+                  {profile?.address_line1 ? (
+                    <ActionButton
                       type="button"
-                      onClick={() => void handleClearDefaultShipping()}
-                      disabled={isDefaultSaving}
+                      onClick={() => handleDefault(null, "clear")}
+                      disabled={addressAction.pending || !accountActionsAvailable}
+                      pending={addressAction.pending && addressOperation === "clear"}
+                      pendingLabel="Clearing default…"
                       className={textButtonClassName}
                     >
-                      {isDefaultSaving ? "Updating..." : "Clear default"}
-                    </button>
+                      Clear default
+                    </ActionButton>
                   ) : null}
                 </div>
               </div>
@@ -514,13 +691,13 @@ export function AccountProfile({ userEmail }: { userEmail: string }) {
                 <h3 className="text-sm font-medium uppercase tracking-[0.12em]">
                   Saved Addresses
                 </h3>
-                {isAddressesLoading ? (
-                  <p className="mt-5 text-sm text-zinc-500">Loading addresses...</p>
-                ) : addresses.length === 0 ? (
+                <ResourceError label="your saved addresses" resource={addressResource} />
+                {!addresses && !addressResource.error ? <AddressesSkeleton /> : null}
+                {addresses?.length === 0 ? (
                   <p className="mt-5 border-t border-zinc-200 py-6 text-sm text-zinc-500">
                     No saved addresses yet.
                   </p>
-                ) : (
+                ) : addresses ? (
                   <div className="mt-5 grid border-t border-zinc-300 md:grid-cols-2">
                     {addresses.map((address, index) => (
                       <article
@@ -549,32 +726,74 @@ export function AccountProfile({ userEmail }: { userEmail: string }) {
                               <div className="text-zinc-500">{address.phone}</div>
                             ) : null}
                           </address>
-                          <button
+                          <ActionButton
                             type="button"
-                            onClick={() => void handleDeleteAddress(address.id)}
+                            onClick={() => handleDeleteAddress(address)}
+                            disabled={
+                              addressAction.pending ||
+                              !profile ||
+                              !accountActionsAvailable
+                            }
+                            pending={
+                              addressAction.pending &&
+                              addressOperation === `remove:${address.id}`
+                            }
+                            pendingLabel="Removing…"
                             className={textButtonClassName}
                           >
                             Remove
-                          </button>
+                          </ActionButton>
                         </div>
-                        {!isDefaultAddress(address) ? (
-                          <button
+                        {profile && !isDefaultAddress(address) ? (
+                          <ActionButton
                             type="button"
-                            onClick={() => void handleSetDefaultAddress(address)}
-                            disabled={isDefaultSaving}
+                            onClick={() => handleDefault(address, `set:${address.id}`)}
+                            disabled={addressAction.pending || !accountActionsAvailable}
+                            pending={
+                              addressAction.pending &&
+                              addressOperation === `set:${address.id}`
+                            }
+                            pendingLabel="Setting default…"
                             className={`${textButtonClassName} mt-5`}
                           >
-                            {isDefaultSaving ? "Updating..." : "Set as default"}
-                          </button>
+                            Set as default
+                          </ActionButton>
                         ) : null}
                       </article>
                     ))}
+                  </div>
+                ) : null}
+              </div>
+
+              <div className="mt-5 space-y-4">
+                <ActionResult result={addressResult} id="account-address-result" />
+                {defaultRetry && (
+                  <div className="space-y-3">
+                    <ActionResult
+                      result={{ tone: "error", message: defaultRetry.message }}
+                      id="account-default-result"
+                    />
+                    <ActionButton
+                      type="button"
+                      onClick={() => handleDefault(defaultRetry.address, "retry-default")}
+                      disabled={addressAction.pending || !accountActionsAvailable}
+                      pending={
+                        addressAction.pending && addressOperation === "retry-default"
+                      }
+                      pendingLabel="Retrying default update…"
+                      className={textButtonClassName}
+                    >
+                      Retry default update
+                    </ActionButton>
                   </div>
                 )}
               </div>
 
               <form
-                onSubmit={(event) => void handleSaveAddress(event)}
+                onSubmit={handleSaveAddress}
+                aria-describedby={
+                  addressResult?.tone === "error" ? "account-address-result" : undefined
+                }
                 className="mt-12 border-t border-zinc-300 pt-8"
               >
                 <div className="mb-7">
@@ -586,8 +805,14 @@ export function AccountProfile({ userEmail }: { userEmail: string }) {
 
                 <div className="grid gap-5 sm:grid-cols-2">
                   <div>
-                    <label className={fieldLabelClassName}>Full Name</label>
+                    <label htmlFor="account-address-name" className={fieldLabelClassName}>
+                      Full Name
+                    </label>
                     <input
+                      id="account-address-name"
+                      name="name"
+                      autoComplete="name"
+                      readOnly={addressAction.pending && addressOperation === "add"}
                       type="text"
                       value={addressForm.name}
                       onChange={(event) =>
@@ -597,8 +822,17 @@ export function AccountProfile({ userEmail }: { userEmail: string }) {
                     />
                   </div>
                   <div>
-                    <label className={fieldLabelClassName}>Phone</label>
+                    <label
+                      htmlFor="account-address-phone"
+                      className={fieldLabelClassName}
+                    >
+                      Phone
+                    </label>
                     <input
+                      id="account-address-phone"
+                      name="phone"
+                      autoComplete="tel"
+                      readOnly={addressAction.pending && addressOperation === "add"}
                       type="tel"
                       value={addressForm.phone}
                       onChange={(event) =>
@@ -608,8 +842,17 @@ export function AccountProfile({ userEmail }: { userEmail: string }) {
                     />
                   </div>
                   <div className="sm:col-span-2">
-                    <label className={fieldLabelClassName}>Address Line 1 *</label>
+                    <label
+                      htmlFor="account-address-line1"
+                      className={fieldLabelClassName}
+                    >
+                      Address Line 1 *
+                    </label>
                     <input
+                      id="account-address-line1"
+                      name="line1"
+                      autoComplete="address-line1"
+                      readOnly={addressAction.pending && addressOperation === "add"}
                       type="text"
                       required
                       value={addressForm.line1}
@@ -620,8 +863,17 @@ export function AccountProfile({ userEmail }: { userEmail: string }) {
                     />
                   </div>
                   <div className="sm:col-span-2">
-                    <label className={fieldLabelClassName}>Apartment / Unit</label>
+                    <label
+                      htmlFor="account-address-line2"
+                      className={fieldLabelClassName}
+                    >
+                      Apartment / Unit
+                    </label>
                     <input
+                      id="account-address-line2"
+                      name="line2"
+                      autoComplete="address-line2"
+                      readOnly={addressAction.pending && addressOperation === "add"}
                       type="text"
                       value={addressForm.line2}
                       onChange={(event) =>
@@ -631,8 +883,14 @@ export function AccountProfile({ userEmail }: { userEmail: string }) {
                     />
                   </div>
                   <div>
-                    <label className={fieldLabelClassName}>City *</label>
+                    <label htmlFor="account-address-city" className={fieldLabelClassName}>
+                      City *
+                    </label>
                     <input
+                      id="account-address-city"
+                      name="city"
+                      autoComplete="address-level2"
+                      readOnly={addressAction.pending && addressOperation === "add"}
                       type="text"
                       required
                       value={addressForm.city}
@@ -643,8 +901,17 @@ export function AccountProfile({ userEmail }: { userEmail: string }) {
                     />
                   </div>
                   <div>
-                    <label className={fieldLabelClassName}>State *</label>
+                    <label
+                      htmlFor="account-address-state"
+                      className={fieldLabelClassName}
+                    >
+                      State *
+                    </label>
                     <input
+                      id="account-address-state"
+                      name="state"
+                      autoComplete="address-level1"
+                      readOnly={addressAction.pending && addressOperation === "add"}
                       type="text"
                       required
                       value={addressForm.state}
@@ -655,8 +922,17 @@ export function AccountProfile({ userEmail }: { userEmail: string }) {
                     />
                   </div>
                   <div>
-                    <label className={fieldLabelClassName}>Postal Code *</label>
+                    <label
+                      htmlFor="account-address-postal_code"
+                      className={fieldLabelClassName}
+                    >
+                      Postal Code *
+                    </label>
                     <input
+                      id="account-address-postal_code"
+                      name="postal_code"
+                      autoComplete="postal-code"
+                      readOnly={addressAction.pending && addressOperation === "add"}
                       type="text"
                       required
                       value={addressForm.postal_code}
@@ -670,8 +946,17 @@ export function AccountProfile({ userEmail }: { userEmail: string }) {
                     />
                   </div>
                   <div>
-                    <label className={fieldLabelClassName}>Country *</label>
+                    <label
+                      htmlFor="account-address-country"
+                      className={fieldLabelClassName}
+                    >
+                      Country *
+                    </label>
                     <input
+                      id="account-address-country"
+                      name="country"
+                      autoComplete="country-name"
+                      readOnly={addressAction.pending && addressOperation === "add"}
                       type="text"
                       required
                       value={addressForm.country}
@@ -687,19 +972,22 @@ export function AccountProfile({ userEmail }: { userEmail: string }) {
                   <input
                     type="checkbox"
                     checked={setAsDefault}
+                    disabled={addressAction.pending && addressOperation === "add"}
                     onChange={(event) => setSetAsDefault(event.target.checked)}
                     className="h-4 w-4 accent-black"
                   />
                   Set as default shipping address
                 </label>
 
-                <button
+                <ActionButton
                   type="submit"
-                  disabled={isAddressSaving}
+                  disabled={addressAction.pending || !accountActionsAvailable}
+                  pending={addressAction.pending && addressOperation === "add"}
+                  pendingLabel="Saving address…"
                   className={`${primaryButtonClassName} mt-7`}
                 >
-                  {isAddressSaving ? "Saving..." : "Add Address"}
-                </button>
+                  Add Address
+                </ActionButton>
               </form>
             </section>
 
@@ -711,15 +999,15 @@ export function AccountProfile({ userEmail }: { userEmail: string }) {
                 Orders
               </h2>
 
-              {isOrdersLoading ? (
-                <p className="mt-8 text-sm text-zinc-500">Loading orders...</p>
-              ) : orders.length === 0 ? (
+              <ResourceError label="your orders" resource={orderResource} />
+              {!orders && !orderResource.error ? <OrdersSkeleton /> : null}
+              {orders?.length === 0 ? (
                 <div className="mt-8 border-y border-zinc-300 py-10">
                   <p className="text-sm text-zinc-500">
                     You have not placed an order yet.
                   </p>
                 </div>
-              ) : (
+              ) : orders ? (
                 <div className="mt-8 border-t border-zinc-300">
                   {orders.map((order) => {
                     const trackingUrl = getTrackingUrl(
@@ -784,7 +1072,7 @@ export function AccountProfile({ userEmail }: { userEmail: string }) {
                     );
                   })}
                 </div>
-              )}
+              ) : null}
             </section>
 
             <section
@@ -798,24 +1086,32 @@ export function AccountProfile({ userEmail }: { userEmail: string }) {
                 Change Password
               </h2>
 
-              <form
-                onSubmit={(event) => void handleChangePassword(event)}
-                className="mt-8 max-w-2xl space-y-5"
-              >
+              <form onSubmit={handleChangePassword} className="mt-8 max-w-2xl space-y-5">
                 <div>
-                  <label className={fieldLabelClassName}>New Password</label>
+                  <label htmlFor="account-new-password" className={fieldLabelClassName}>
+                    New Password
+                  </label>
                   <div className="relative">
                     <input
+                      id="account-new-password"
+                      name="password"
+                      required
+                      readOnly={passwordAction.pending}
+                      aria-describedby={
+                        passwordResult?.tone === "error"
+                          ? "account-password-result"
+                          : undefined
+                      }
                       type={newPasswordVisible ? "text" : "password"}
                       value={newPassword}
                       onChange={(event) => setNewPassword(event.target.value)}
                       autoComplete="new-password"
                       className={`${fieldClassName} pr-12`}
                     />
-                    <button
+                    <ActionButton
                       type="button"
                       onClick={() => setNewPasswordVisible((visible) => !visible)}
-                      className="absolute right-4 top-1/2 -translate-y-1/2 text-zinc-400 transition-colors hover:text-black"
+                      className="absolute right-1 top-1/2 flex h-11 w-11 -translate-y-1/2 items-center justify-center text-zinc-500 hover:text-black"
                       aria-label={newPasswordVisible ? "Hide password" : "Show password"}
                     >
                       {newPasswordVisible ? (
@@ -823,26 +1119,40 @@ export function AccountProfile({ userEmail }: { userEmail: string }) {
                       ) : (
                         <Eye className="h-4 w-4" />
                       )}
-                    </button>
+                    </ActionButton>
                   </div>
                 </div>
 
                 <PasswordRequirements password={newPassword} />
 
                 <div>
-                  <label className={fieldLabelClassName}>Confirm Password</label>
+                  <label
+                    htmlFor="account-confirm-password"
+                    className={fieldLabelClassName}
+                  >
+                    Confirm Password
+                  </label>
                   <div className="relative">
                     <input
+                      id="account-confirm-password"
+                      name="confirm-password"
+                      required
+                      readOnly={passwordAction.pending}
+                      aria-describedby={
+                        passwordResult?.tone === "error"
+                          ? "account-password-result"
+                          : undefined
+                      }
                       type={confirmPasswordVisible ? "text" : "password"}
                       value={confirmPassword}
                       onChange={(event) => setConfirmPassword(event.target.value)}
                       autoComplete="new-password"
                       className={`${fieldClassName} pr-12`}
                     />
-                    <button
+                    <ActionButton
                       type="button"
                       onClick={() => setConfirmPasswordVisible((visible) => !visible)}
-                      className="absolute right-4 top-1/2 -translate-y-1/2 text-zinc-400 transition-colors hover:text-black"
+                      className="absolute right-1 top-1/2 flex h-11 w-11 -translate-y-1/2 items-center justify-center text-zinc-500 hover:text-black"
                       aria-label={
                         confirmPasswordVisible ? "Hide password" : "Show password"
                       }
@@ -852,17 +1162,20 @@ export function AccountProfile({ userEmail }: { userEmail: string }) {
                       ) : (
                         <Eye className="h-4 w-4" />
                       )}
-                    </button>
+                    </ActionButton>
                   </div>
                 </div>
 
-                <button
+                <ActionResult result={passwordResult} id="account-password-result" />
+                <ActionButton
                   type="submit"
-                  disabled={isLoading}
+                  disabled={!accountActionsAvailable}
+                  pending={passwordAction.pending}
+                  pendingLabel="Changing password…"
                   className={primaryButtonClassName}
                 >
-                  {isLoading ? "Changing..." : "Change Password"}
-                </button>
+                  Change Password
+                </ActionButton>
               </form>
             </section>
 
@@ -871,25 +1184,24 @@ export function AccountProfile({ userEmail }: { userEmail: string }) {
               <p className="mt-2 text-sm leading-6 text-zinc-500">
                 You can sign back in anytime to view your orders and account details.
               </p>
-              <button
+              <ActionButton
                 type="button"
-                onClick={() => void handleLogout()}
-                disabled={isSigningOut}
+                onClick={handleLogout}
+                pending={logoutAction.pending || signedOut}
+                pendingLabel="Signing out…"
                 className={`${primaryButtonClassName} mt-6`}
               >
-                {isSigningOut ? "Signing out..." : "Sign out"}
-              </button>
+                Sign out
+              </ActionButton>
+              {logoutError && (
+                <div className="mt-3">
+                  <RequestError message={logoutError} />
+                </div>
+              )}
             </section>
           </div>
         </div>
       </div>
-
-      <Toast
-        open={Boolean(toast)}
-        message={toast?.message ?? ""}
-        tone={toast?.tone ?? "info"}
-        onClose={() => setToast(null)}
-      />
     </div>
   );
 }

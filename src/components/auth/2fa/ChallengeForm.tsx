@@ -1,46 +1,46 @@
-// src/components/auth/2fa/ChallengeForm.tsx
 "use client";
 
-import { useMemo, useState } from "react";
+import { useState, type FormEvent } from "react";
 import { useRouter } from "next/navigation";
-import { useSession } from "@/contexts/SessionContext";
 
-import { SixDigitCodeField } from "@/components/auth/ui/SixDigitCodeField";
+import { AuthError } from "@/components/auth/ui/AuthError";
 import { AuthHeader } from "@/components/auth/ui/AuthHeader";
 import { authStyles } from "@/components/auth/ui/authStyles";
+import { SixDigitCodeField } from "@/components/auth/ui/SixDigitCodeField";
+import { ActionButton } from "@/components/ui/ActionButton";
+import { useAsyncAction } from "@/components/ui/useAsyncAction";
+import { useSession } from "@/contexts/SessionContext";
 import { mfaVerifyChallenge } from "@/services/mfa-service";
 
 export function ChallengeForm() {
   const router = useRouter();
   const { refreshSession } = useSession();
-
+  const verification = useAsyncAction();
   const [code, setCode] = useState("");
-  const [msg, setMsg] = useState<string | null>(null);
-  const [isSubmitting, setIsSubmitting] = useState(false);
+  const [error, setError] = useState<string | null>(null);
+  const [continuing, setContinuing] = useState(false);
+  const busy = verification.pending || continuing;
 
-  const canSubmit = useMemo(() => code.replace(/\D/g, "").length === 6, [code]);
+  function handleVerify(event: FormEvent<HTMLFormElement>) {
+    event.preventDefault();
+    if (continuing || code.length !== 6) return;
 
-  async function verify() {
-    setMsg(null);
-
-    const cleaned = code.replace(/\D/g, "").slice(0, 6);
-    if (cleaned.length !== 6) {
-      setMsg("Enter the 6-digit code.");
-      return;
-    }
-
-    try {
-      setIsSubmitting(true);
-      const res = await mfaVerifyChallenge(cleaned);
-      if (res.error) {
-        setMsg(res.error);
-        return;
+    void verification.run(async () => {
+      setError(null);
+      try {
+        await mfaVerifyChallenge(code);
+        setContinuing(true);
+        void refreshSession();
+        router.push("/admin");
+      } catch (failure) {
+        setContinuing(false);
+        setError(
+          failure instanceof Error
+            ? failure.message
+            : "Could not verify the authentication code. Please try again.",
+        );
       }
-      void refreshSession();
-      router.push("/admin");
-    } finally {
-      setIsSubmitting(false);
-    }
+    });
   }
 
   return (
@@ -50,30 +50,26 @@ export function ChallengeForm() {
         description="Enter the code from your authenticator app."
       />
 
-      <form
-        onSubmit={(e) => {
-          e.preventDefault();
-          void verify();
-        }}
-        className="space-y-4"
-      >
+      <form onSubmit={handleVerify} className="space-y-4">
         <SixDigitCodeField
           id="mfa-code"
           label="Authentication code"
           value={code}
           onChange={setCode}
-          disabled={isSubmitting}
+          readOnly={busy}
+          aria-describedby={error ? "mfa-challenge-error" : undefined}
+          autoFocus
         />
-
-        {msg && <div className={authStyles.errorBox}>{msg}</div>}
-
-        <button
+        <AuthError id="mfa-challenge-error" message={error} />
+        <ActionButton
           type="submit"
-          disabled={!canSubmit || isSubmitting}
+          disabled={code.length !== 6}
+          pending={busy}
+          pendingLabel="Verifying…"
           className={authStyles.primaryButton}
         >
-          {isSubmitting ? "Verifying..." : "Verify"}
-        </button>
+          Verify
+        </ActionButton>
       </form>
     </div>
   );

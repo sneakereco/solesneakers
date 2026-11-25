@@ -1,9 +1,10 @@
-import type { ReactNode } from "react";
+import { Suspense, type ReactNode } from "react";
 import Image from "next/image";
 import Link from "next/link";
 
 import { Footer } from "@/components/shell/Footer";
 import { StorefrontHeader } from "@/components/shell/StorefrontHeader";
+import { AuthSkeleton } from "./AuthSkeleton";
 
 type AuthShellProps = {
   children: ReactNode;
@@ -11,6 +12,11 @@ type AuthShellProps = {
 };
 
 export default function AuthShell({ children, isSiteLocked = false }: AuthShellProps) {
+  const content = (
+    <div className="w-full sm:w-[min(28.7vw,34.375rem)] sm:min-w-[24rem]">
+      <Suspense fallback={<AuthSkeleton />}>{children}</Suspense>
+    </div>
+  );
   if (isSiteLocked) {
     return (
       <div data-auth-shell className="min-h-[100svh] bg-[#f8f8f6] text-black">
@@ -33,9 +39,7 @@ export default function AuthShell({ children, isSiteLocked = false }: AuthShellP
           data-auth-content
           className="mx-auto flex min-h-[calc(100svh-5rem)] items-center justify-center px-6 py-12 sm:min-h-[calc(100svh-6rem)] sm:px-8 lg:px-12"
         >
-          <div className="w-full sm:w-[min(28.7vw,34.375rem)] sm:min-w-[24rem]">
-            {children}
-          </div>
+          {content}
         </main>
       </div>
     );
@@ -48,9 +52,7 @@ export default function AuthShell({ children, isSiteLocked = false }: AuthShellP
         data-auth-content
         className="mx-auto flex min-h-screen justify-center px-6 pb-20 pt-40 sm:px-8 sm:pt-[min(20.05vw,24.1rem)] lg:px-12"
       >
-        <div className="w-full sm:w-[min(28.7vw,34.375rem)] sm:min-w-[24rem]">
-          {children}
-        </div>
+        {content}
       </main>
       <Footer />
     </div>

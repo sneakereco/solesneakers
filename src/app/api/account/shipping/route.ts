@@ -5,8 +5,8 @@ import { NextResponse } from "next/server";
 import { z } from "zod";
 
 import { createSupabaseServerClient } from "@/lib/supabase/server";
-import { requireUserApi } from "@/lib/auth/session";
 import { ShippingService } from "@/services/shipping-service";
+import { AccountSessionError, requireAccountSession } from "@/lib/account/session";
 import { getRequestIdFromHeaders } from "@/lib/http/request-id";
 import { logError } from "@/lib/utils/log";
 import type { TablesInsert } from "@/types/db/database.types";
@@ -38,7 +38,7 @@ export async function GET(request: NextRequest) {
   const requestId = getRequestIdFromHeaders(request.headers);
 
   try {
-    const session = await requireUserApi();
+    const session = await requireAccountSession(request, "read");
     const supabase = await createSupabaseServerClient();
     const service = new ShippingService(supabase);
 
@@ -46,6 +46,12 @@ export async function GET(request: NextRequest) {
 
     return NextResponse.json(profile || {}, { headers: { "Cache-Control": "no-store" } });
   } catch (error) {
+    if (error instanceof AccountSessionError) {
+      return NextResponse.json(
+        { error: error.message, requestId },
+        { status: error.status, headers: { "Cache-Control": "no-store" } },
+      );
+    }
     logError(error, {
       layer: "api",
       requestId,
@@ -62,7 +68,7 @@ export async function POST(request: NextRequest) {
   const requestId = getRequestIdFromHeaders(request.headers);
 
   try {
-    const session = await requireUserApi();
+    const session = await requireAccountSession(request, "write");
     const supabase = await createSupabaseServerClient();
     const service = new ShippingService(supabase);
 
@@ -87,6 +93,12 @@ export async function POST(request: NextRequest) {
 
     return NextResponse.json(profile, { headers: { "Cache-Control": "no-store" } });
   } catch (error) {
+    if (error instanceof AccountSessionError) {
+      return NextResponse.json(
+        { error: error.message, requestId },
+        { status: error.status, headers: { "Cache-Control": "no-store" } },
+      );
+    }
     logError(error, {
       layer: "api",
       requestId,

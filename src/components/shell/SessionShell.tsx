@@ -2,14 +2,32 @@ import type { ReactNode } from "react";
 
 import { CartProvider } from "@/components/cart/CartProvider";
 import { SessionProvider } from "@/contexts/SessionContext";
-import { getServerSession } from "@/lib/auth/session";
+import { isDynamicServerError } from "next/dist/client/components/hooks-server-context";
+import { readServerSession } from "@/lib/auth/session";
+import { logError } from "@/lib/utils/log";
 
 export async function SessionShell({ children }: { children: ReactNode }) {
-  const session = await getServerSession();
+  const initial = await readServerSession()
+    .then((session) => ({ session, unavailable: false }))
+    .catch((error: unknown) => {
+      if (isDynamicServerError(error)) throw error;
+      logError(error, {
+        layer: "auth",
+        route: "SessionShell",
+        message: "server_session_lookup_failed",
+      });
+      return { session: null, unavailable: true };
+    });
+  const { session } = initial;
   const user = session?.user ? { id: session.user.id, email: session.user.email } : null;
 
   return (
-    <SessionProvider initialUser={user} initialRole={session?.role ?? null}>
+    <SessionProvider
+      initialUser={user}
+      initialRole={session?.role ?? null}
+      initialUnavailable={initial.unavailable}
+      serverReadId={crypto.randomUUID()}
+    >
       <CartProvider userId={user?.id ?? null}>{children}</CartProvider>
     </SessionProvider>
   );

@@ -1,375 +1,252 @@
-// src/components/auth/login/ForgotPasswordForm.tsx
 "use client";
 
-import { useEffect, useReducer } from "react";
+import { useState, type FormEvent } from "react";
 import { useRouter } from "next/navigation";
 
-import { isPasswordValid } from "@/lib/validation/password";
-import { authStyles } from "@/components/auth/ui/authStyles";
+import { AuthError } from "@/components/auth/ui/AuthError";
 import { AuthHeader } from "@/components/auth/ui/AuthHeader";
+import { authStyles } from "@/components/auth/ui/authStyles";
+import { ActionButton } from "@/components/ui/ActionButton";
+import { FeedbackLink } from "@/components/ui/FeedbackLink";
+import { useAsyncAction } from "@/components/ui/useAsyncAction";
+import { postAuthJson } from "@/lib/http/post-auth-json";
+import { isPasswordValid } from "@/lib/validation/password";
 
 import { PasswordRequirements } from "../register/PasswordRequirements";
-
-import { SplitCodeInputWithResend } from "./SplitCodeInputWithResend";
 import { PasswordField } from "./PasswordField";
+import { SplitCodeInputWithResend } from "./SplitCodeInputWithResend";
+import { useResendCooldown } from "./use-resend-cooldown";
 
 interface ForgotPasswordFormProps {
   onBackToLogin: () => void;
 }
 
-type Step = "request" | "reset";
-
-type State = {
-  step: Step;
-  email: string;
-  code: string;
-  password: string;
-  confirmPassword: string;
-  isSubmitting: boolean;
-  infoMessage: string | null;
-  error: string | null;
-  resendCooldown: number;
-  resendSent: boolean;
-  resendError: string | null;
-  isSendingResend: boolean;
-};
-
-type Action =
-  | { type: "SET_EMAIL"; email: string }
-  | { type: "SET_CODE"; code: string }
-  | { type: "SET_PASSWORD"; password: string }
-  | { type: "SET_CONFIRM_PASSWORD"; confirmPassword: string }
-  | { type: "START_SUBMIT" }
-  | { type: "ERROR"; error: string }
-  | { type: "INFO"; message: string }
-  | { type: "ADVANCE_TO_RESET" }
-  | { type: "START_RESEND" }
-  | { type: "RESEND_SUCCESS" }
-  | { type: "RESEND_ERROR"; error: string }
-  | { type: "TICK_COOLDOWN" }
-  | { type: "RESET_SUCCESS" };
-
-function reducer(state: State, action: Action): State {
-  switch (action.type) {
-    case "SET_EMAIL":
-      return { ...state, email: action.email };
-    case "SET_CODE":
-      return { ...state, code: action.code };
-    case "SET_PASSWORD":
-      return { ...state, password: action.password };
-    case "SET_CONFIRM_PASSWORD":
-      return { ...state, confirmPassword: action.confirmPassword };
-    case "START_SUBMIT":
-      return { ...state, isSubmitting: true, error: null, infoMessage: null };
-    case "ERROR":
-      return { ...state, isSubmitting: false, error: action.error };
-    case "INFO":
-      return { ...state, infoMessage: action.message };
-    case "ADVANCE_TO_RESET":
-      return {
-        ...state,
-        isSubmitting: false,
-        step: "reset",
-        resendCooldown: 60,
-        resendSent: false,
-        resendError: null,
-      };
-    case "START_RESEND":
-      return {
-        ...state,
-        isSendingResend: true,
-        error: null,
-        infoMessage: null,
-        resendError: null,
-      };
-    case "RESEND_SUCCESS":
-      return {
-        ...state,
-        isSendingResend: false,
-        resendSent: true,
-        resendCooldown: 60,
-        infoMessage: "We've sent you a new reset code.",
-      };
-    case "RESEND_ERROR":
-      return {
-        ...state,
-        isSendingResend: false,
-        error: action.error,
-        resendError: action.error,
-      };
-    case "TICK_COOLDOWN":
-      return { ...state, resendCooldown: Math.max(0, state.resendCooldown - 1) };
-    case "RESET_SUCCESS":
-      return { ...state, isSubmitting: false };
-    default:
-      return state;
-  }
-}
-
 export function ForgotPasswordForm({ onBackToLogin }: ForgotPasswordFormProps) {
   const router = useRouter();
-  const [state, dispatch] = useReducer(reducer, {
-    step: "request",
-    email: "",
-    code: "",
-    password: "",
-    confirmPassword: "",
-    isSubmitting: false,
-    infoMessage: null,
-    error: null,
-    resendCooldown: 0,
-    resendSent: false,
-    resendError: null,
-    isSendingResend: false,
-  });
+  const action = useAsyncAction();
+  const [step, setStep] = useState<"request" | "reset" | "complete">("request");
+  const [operation, setOperation] = useState<"submit" | "resend">("submit");
+  const [email, setEmail] = useState("");
+  const [code, setCode] = useState("");
+  const [password, setPassword] = useState("");
+  const [confirmation, setConfirmation] = useState("");
+  const [codeAccepted, setCodeAccepted] = useState(false);
+  const [error, setError] = useState<string | null>(null);
+  const [resendResult, setResendResult] = useState<{
+    ok: boolean;
+    message: string;
+  } | null>(null);
+  const cooldown = useResendCooldown();
+  const [continuing, setContinuing] = useState(false);
+  const submitting = (action.pending && operation === "submit") || continuing;
+  const resending = action.pending && operation === "resend";
 
-  useEffect(() => {
-    if (state.resendCooldown <= 0) {
-      return;
-    }
-    const id = setTimeout(() => dispatch({ type: "TICK_COOLDOWN" }), 1000);
-    return () => clearTimeout(id);
-  }, [state.resendCooldown]);
-
-  async function handleRequestSubmit(e: React.FormEvent) {
-    e.preventDefault();
-    dispatch({ type: "START_SUBMIT" });
-
-    try {
-      const res = await fetch("/api/auth/forgot-password", {
-        method: "POST",
-        headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({ email: state.email.trim() }),
-      });
-
-      const json = await res.json();
-
-      if (!res.ok || !json.ok) {
-        throw new Error(json.error ?? "Could not send reset code.");
-      }
-
-      dispatch({
-        type: "INFO",
-        message: "If an account exists for that email, we've sent a reset code.",
-      });
-      dispatch({ type: "ADVANCE_TO_RESET" });
-    } catch (err: unknown) {
-      const message = err instanceof Error ? err.message : "Could not send reset code.";
-      dispatch({ type: "ERROR", error: message });
-    }
+  async function requestCode(fallback: string) {
+    const result = await postAuthJson(
+      "/api/auth/forgot-password",
+      { email: email.trim() },
+      fallback,
+    );
+    if (result.ok !== true) throw new Error(fallback);
+    cooldown.restart();
   }
 
-  async function handleResendResetCode() {
-    if (
-      !state.email ||
-      state.step !== "reset" ||
-      state.isSendingResend ||
-      state.resendCooldown > 0
-    ) {
-      return;
-    }
+  function handleSubmit(event: FormEvent<HTMLFormElement>) {
+    event.preventDefault();
+    if (continuing || step === "complete") return;
 
-    dispatch({ type: "START_RESEND" });
+    void action.run(async () => {
+      setOperation("submit");
+      setError(null);
 
-    try {
-      const res = await fetch("/api/auth/forgot-password", {
-        method: "POST",
-        headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({ email: state.email.trim() }),
-      });
+      try {
+        if (step === "request") {
+          await requestCode("Could not send a reset code.");
+          setStep("reset");
+          return;
+        }
 
-      const json = await res.json();
-      if (!res.ok || !json.ok) {
-        throw new Error(json.error ?? "Could not resend reset code.");
+        if (!codeAccepted && code.length !== 6) {
+          throw new Error("Please enter the 6-digit reset code from your email.");
+        }
+        if (password !== confirmation) throw new Error("Passwords do not match.");
+        if (!isPasswordValid(password))
+          throw new Error("Password does not meet the required criteria.");
+
+        if (!codeAccepted) {
+          const verified = await postAuthJson(
+            "/api/auth/forgot-password/verify-code",
+            { email: email.trim(), code },
+            "Invalid or expired reset code.",
+          );
+          if (verified.ok !== true) throw new Error("Invalid or expired reset code.");
+
+          if (verified.requiresTwoFASetup || verified.requiresTwoFAChallenge) {
+            setContinuing(true);
+            router.push(
+              verified.requiresTwoFASetup ? "/auth/2fa/setup" : "/auth/2fa/challenge",
+            );
+            return;
+          }
+          setCodeAccepted(true);
+        }
+
+        const updated = await postAuthJson(
+          "/api/auth/update-password",
+          { password },
+          "Could not update your password. Please try again.",
+        );
+        if (updated.ok !== true)
+          throw new Error("Could not update your password. Please try again.");
+
+        setPassword("");
+        setConfirmation("");
+        setCode("");
+        setStep("complete");
+        window.dispatchEvent(new Event("sessionUpdate"));
+      } catch (failure) {
+        setContinuing(false);
+        setError(
+          failure instanceof Error
+            ? failure.message
+            : "Could not reset your password. Please try again.",
+        );
       }
-
-      dispatch({ type: "RESEND_SUCCESS" });
-    } catch (err: unknown) {
-      const message = err instanceof Error ? err.message : "Could not resend reset code.";
-      dispatch({ type: "RESEND_ERROR", error: message });
-    }
+    });
   }
 
-  async function handleResetSubmit(e: React.FormEvent) {
-    e.preventDefault();
+  function handleResend() {
+    if (step !== "reset" || cooldown.seconds > 0 || !email || continuing) return;
 
-    if (!state.code || state.code.length !== 6) {
-      dispatch({
-        type: "ERROR",
-        error: "Please enter the 6-digit reset code from your email.",
-      });
-      return;
-    }
-
-    if (state.password !== state.confirmPassword) {
-      dispatch({ type: "ERROR", error: "Passwords do not match." });
-      return;
-    }
-
-    if (!isPasswordValid(state.password)) {
-      dispatch({ type: "ERROR", error: "Password does not meet the required criteria." });
-      return;
-    }
-
-    dispatch({ type: "START_SUBMIT" });
-
-    try {
-      const verifyRes = await fetch("/api/auth/forgot-password/verify-code", {
-        method: "POST",
-        headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({ email: state.email.trim(), code: state.code.trim() }),
-      });
-
-      const verifyJson = await verifyRes.json();
-      if (!verifyRes.ok || !verifyJson.ok) {
-        throw new Error(verifyJson.error ?? "Invalid or expired code.");
+    void action.run(async () => {
+      setOperation("resend");
+      setResendResult(null);
+      try {
+        await requestCode("Could not resend a reset code.");
+        setCodeAccepted(false);
+        setCode("");
+        setResendResult({
+          ok: true,
+          message: "If an account exists for that email, we sent a new reset code.",
+        });
+      } catch (failure) {
+        setResendResult({
+          ok: false,
+          message:
+            failure instanceof Error ? failure.message : "Could not resend a reset code.",
+        });
       }
-
-      if (verifyJson.requiresTwoFASetup) {
-        router.push("/auth/2fa/setup");
-        return;
-      }
-
-      if (verifyJson.requiresTwoFAChallenge) {
-        router.push("/auth/2fa/challenge");
-        return;
-      }
-
-      const updateRes = await fetch("/api/auth/update-password", {
-        method: "POST",
-        headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({ password: state.password }),
-      });
-
-      const updateJson = await updateRes.json();
-      if (!updateRes.ok || !updateJson.ok) {
-        throw new Error(updateJson.error ?? "Password update failed.");
-      }
-
-      dispatch({ type: "INFO", message: "Your password has been updated." });
-      dispatch({ type: "RESET_SUCCESS" });
-
-      setTimeout(() => {
-        router.push("/auth/login");
-      }, 1000);
-    } catch (err: unknown) {
-      const message =
-        err instanceof Error ? err.message : "Reset failed. Please try again.";
-      dispatch({ type: "ERROR", error: message });
-    }
+    });
   }
+
+  if (step === "complete") {
+    return (
+      <div className="space-y-5">
+        <AuthHeader title="Reset password" />
+        <p role="status" className={authStyles.infoBox}>
+          Your password has been updated.
+        </p>
+        <FeedbackLink href="/auth/login" className={authStyles.accentLink}>
+          Continue to sign in
+        </FeedbackLink>
+      </div>
+    );
+  }
+
+  const errorId = error ? "reset-password-error" : undefined;
 
   return (
-    <div className="space-y-5">
+    <form onSubmit={handleSubmit} className="space-y-5">
       <AuthHeader
-        title={state.step === "request" ? "Forgot password" : "Reset password"}
+        title={step === "request" ? "Forgot password" : "Reset password"}
         description={
-          state.step === "request"
+          step === "request"
             ? "Enter your email and we will send you a reset code."
             : "Enter the code from your email and choose a new password."
         }
       />
+      <AuthError id="reset-password-error" message={error} />
 
-      {state.error && <div className={authStyles.errorBox}>{state.error}</div>}
-      {state.infoMessage && <div className={authStyles.infoBox}>{state.infoMessage}</div>}
+      <div>
+        <label htmlFor="forgot-email" className={authStyles.label}>
+          Email
+        </label>
+        <input
+          id="forgot-email"
+          name="email"
+          type="email"
+          required
+          autoComplete="email"
+          value={email}
+          onChange={(event) => setEmail(event.target.value)}
+          readOnly={step === "reset" || submitting}
+          aria-describedby={step === "request" ? errorId : undefined}
+          className={authStyles.input}
+        />
+      </div>
 
-      {state.step === "request" && (
-        <form onSubmit={(e) => void handleRequestSubmit(e)} className="space-y-4">
-          <input
-            id="forgot-email"
-            type="email"
-            required
-            autoComplete="email"
-            value={state.email}
-            onChange={(e) => dispatch({ type: "SET_EMAIL", email: e.target.value })}
-            className={authStyles.input}
-            placeholder="E-mail"
-          />
-
-          <button
-            type="submit"
-            disabled={state.isSubmitting}
-            className={authStyles.primaryButton}
-          >
-            {state.isSubmitting ? "Sending code..." : "Send reset code"}
-          </button>
-
-          <div className="flex justify-center pt-1">
-            <button
-              type="button"
-              onClick={onBackToLogin}
-              className={authStyles.neutralLink}
-            >
-              Back to sign in
-            </button>
-          </div>
-        </form>
-      )}
-
-      {state.step === "reset" && (
-        <form onSubmit={(e) => void handleResetSubmit(e)} className="space-y-4">
-          <input
-            id="reset-email"
-            value={state.email}
-            disabled
-            className={authStyles.inputDisabled}
-          />
-
+      {step === "reset" && (
+        <>
+          <p role="status" className={authStyles.infoBox}>
+            {codeAccepted
+              ? "Reset code confirmed."
+              : "If an account exists for that email, we sent a reset code."}
+          </p>
           <SplitCodeInputWithResend
             id="reset-code"
             label="Reset code"
-            length={6}
-            value={state.code}
-            onChange={(code) => dispatch({ type: "SET_CODE", code })}
-            onResend={() => void handleResendResetCode()}
-            isSending={state.isSendingResend}
-            cooldown={state.resendCooldown}
-            disabled={state.isSubmitting}
-            resendSent={state.resendSent}
-            resendError={state.resendError}
+            value={code}
+            onChange={setCode}
+            onResend={handleResend}
+            isSending={resending}
+            cooldown={cooldown.seconds}
+            disabled={submitting}
+            readOnly={submitting || codeAccepted}
+            resendResult={resendResult}
+            aria-describedby={errorId}
           />
-
           <PasswordField
             name="new-password"
-            label=""
-            value={state.password}
-            onChange={(password) => dispatch({ type: "SET_PASSWORD", password })}
+            label="New password"
+            value={password}
+            onChange={setPassword}
             autoComplete="new-password"
-            placeholder="New password"
+            disabled={submitting}
+            describedBy={errorId}
           />
-
           <PasswordField
             name="confirm-password"
-            label=""
-            value={state.confirmPassword}
-            onChange={(confirmPassword) =>
-              dispatch({ type: "SET_CONFIRM_PASSWORD", confirmPassword })
-            }
+            label="Confirm password"
+            value={confirmation}
+            onChange={setConfirmation}
             autoComplete="new-password"
-            placeholder="Confirm password"
+            disabled={submitting}
+            describedBy={errorId}
           />
-
-          <PasswordRequirements password={state.password} />
-
-          <button
-            type="submit"
-            disabled={state.isSubmitting}
-            className={authStyles.primaryButton}
-          >
-            {state.isSubmitting ? "Updating password..." : "Update password"}
-          </button>
-
-          <div className="flex justify-center pt-1">
-            <button
-              type="button"
-              onClick={onBackToLogin}
-              className={authStyles.neutralLink}
-            >
-              Back to sign in
-            </button>
-          </div>
-        </form>
+          <PasswordRequirements password={password} />
+        </>
       )}
-    </div>
+
+      <ActionButton
+        type="submit"
+        disabled={resending}
+        pending={submitting}
+        pendingLabel={step === "request" ? "Sending code…" : "Updating password…"}
+        className={authStyles.primaryButton}
+      >
+        {step === "request" ? "Send reset code" : "Update password"}
+      </ActionButton>
+
+      <div className="flex justify-center">
+        <ActionButton
+          type="button"
+          onClick={onBackToLogin}
+          disabled={action.pending || continuing}
+          className={authStyles.secondaryButton}
+        >
+          Back to sign in
+        </ActionButton>
+      </div>
+    </form>
   );
 }
