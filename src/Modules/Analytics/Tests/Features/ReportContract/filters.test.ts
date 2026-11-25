@@ -1,4 +1,4 @@
-import { parseReportRequest } from "../../../ReportContract/filters";
+import { parseReportRequest } from "../../../Source/Features/ReportContract/filters";
 
 const now = new Date("2026-11-25T12:00:00Z");
 const uuid = "a754a24d-a657-4522-93d6-3d4b20879f05";
@@ -119,4 +119,72 @@ it.each([
   "from=2026-11-24",
 ])("rejects invalid or unsupported query parameters (%s)", (query) => {
   expect(() => parseReportRequest(new URLSearchParams(query), now)).toThrow(RangeError);
+});
+
+it.each([
+  ["day", "2020-01-01", "2025-06-22", "2025-06-23"],
+  ["week", "1988-01-03", "2026-04-26", "2026-04-27"],
+  ["month", "1850-01-31", "2016-08-31", "2016-09-01"],
+])(
+  "enforces the limit on intersected %s buckets",
+  (bucket, from, lastValidTo, firstInvalidTo) => {
+    expect(
+      parseReportRequest(new URLSearchParams({ from, to: lastValidTo, bucket }), now),
+    ).toMatchObject({ bucket, range: { from, to: lastValidTo } });
+
+    expect(() =>
+      parseReportRequest(new URLSearchParams({ from, to: firstInvalidTo, bucket }), now),
+    ).toThrow(/2,000/);
+  },
+);
+
+it("suggests a valid coarser bucket and preserves the requested long range", () => {
+  const from = "1900-01-01";
+  const to = "2026-11-25";
+  const dates = { from, to };
+
+  expect(() =>
+    parseReportRequest(new URLSearchParams({ ...dates, bucket: "day" }), now),
+  ).toThrow("Choose month buckets.");
+  expect(
+    parseReportRequest(new URLSearchParams({ ...dates, bucket: "month" }), now),
+  ).toMatchObject({ bucket: "month", range: dates });
+  expect(parseReportRequest(new URLSearchParams(dates), now)).toMatchObject({
+    bucket: "month",
+    range: dates,
+  });
+});
+
+it("validates the default bucket against the same limit", () => {
+  const dates = { from: "1850-01-31", to: "2016-09-01" };
+  expect(() => parseReportRequest(new URLSearchParams(dates), now)).toThrow(/2,000/);
+});
+
+it("counts weeks in the comparison window independently", () => {
+  // The selected dates begin on Tuesday and span 2,000 weeks. The equally
+  // long comparison starts on Wednesday and intersects 2,001 weeks.
+  const query = new URLSearchParams({
+    from: "1988-01-05",
+    to: "2026-05-03",
+    bucket: "week",
+  });
+  expect(parseReportRequest(query, now)).toMatchObject({ bucket: "week" });
+
+  query.set("compare", "true");
+  expect(() => parseReportRequest(query, now)).toThrow("Choose month buckets.");
+});
+
+it("allows up to 2,000 buckets in each of the selected and comparison periods", () => {
+  const params = new URLSearchParams({
+    from: "2020-01-01",
+    to: "2025-06-22",
+    bucket: "day",
+    compare: "true",
+  });
+
+  expect(parseReportRequest(params, now)).toMatchObject({
+    compare: true,
+    bucket: "day",
+    range: { calendarDays: 2000 },
+  });
 });

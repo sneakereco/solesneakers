@@ -3,7 +3,7 @@ import {
   toCents,
   toNonnegativeCents,
   toQuantity,
-} from "../../../ReportContract/money";
+} from "../../../Source/Features/ReportContract/money";
 
 it("keeps_unknown_money_unknown", () => {
   expect(moneyValue(null, 3)).toEqual({ cents: null, complete: false, missingCount: 3 });

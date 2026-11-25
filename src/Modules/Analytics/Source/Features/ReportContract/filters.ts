@@ -1,6 +1,10 @@
 import { z } from "zod";
 
-import { getDefaultCalendarRange, resolveCalendarRange } from "./calendar-range";
+import {
+  countCalendarBuckets,
+  getDefaultCalendarRange,
+  resolveCalendarRange,
+} from "./calendar-range";
 import {
   REPORT_FILTER_VALUES,
   REPORT_IDS,
@@ -8,12 +12,14 @@ import {
   type ReportBucket,
   type ReportId,
   type ReportRequest,
+  type ResolvedRange,
 } from "./types";
 
 export const DEFAULT_REPORT_ID = "overview" satisfies ReportId;
 export const DEFAULT_REPORT_PAGE_SIZE = 50;
 export const MAX_REPORT_PAGE_SIZE = 100;
 export const MAX_REPORT_OFFSET = 100_000;
+export const MAX_REPORT_BUCKETS = 2_000;
 
 export const REPORT_SORTS = {
   overview: ["netMerchandise", "confirmedOrders", "sessions"],
@@ -88,6 +94,39 @@ function defaultBucket(calendarDays: number): ReportBucket {
   return "month";
 }
 
+function enforceBucketLimit(
+  range: ResolvedRange,
+  bucket: ReportBucket,
+  compare: boolean,
+): void {
+  const fits = (candidate: ReportBucket, includeComparison = compare) => {
+    const { selected, comparison } = countCalendarBuckets(range, candidate);
+    return (
+      selected <= MAX_REPORT_BUCKETS &&
+      (!includeComparison || comparison <= MAX_REPORT_BUCKETS)
+    );
+  };
+  if (fits(bucket)) {
+    return;
+  }
+
+  const buckets = REPORT_FILTER_VALUES.bucket;
+  const alternatives = buckets
+    .slice(buckets.indexOf(bucket) + 1)
+    .filter((candidate) => fits(candidate));
+  let guidance = "Choose a shorter date range.";
+  if (alternatives.length > 0) {
+    guidance = `Choose ${alternatives.join(" or ")} buckets.`;
+  } else if (compare && fits(bucket, false)) {
+    guidance = "Turn off comparison or choose a shorter date range.";
+  }
+
+  const limit = MAX_REPORT_BUCKETS.toLocaleString("en-US");
+  throw new RangeError(
+    `The selected dates exceed the ${limit}-bucket limit per series. ${guidance}`,
+  );
+}
+
 export function parseReportRequest(input: URLSearchParams, now: Date): ReportRequest {
   const fields = new Map<string, string>();
   for (const [key, value] of input) {
@@ -132,12 +171,14 @@ export function parseReportRequest(input: URLSearchParams, now: Date): ReportReq
       ? { from, to, timezone }
       : getDefaultCalendarRange(now);
   const range = resolveCalendarRange(calendar, now);
+  const effectiveBucket = bucket ?? defaultBucket(range.calendarDays);
+  enforceBucketLimit(range, effectiveBucket, compare);
   return {
     ...filters,
     report,
     range,
     compare,
-    bucket: bucket ?? defaultBucket(range.calendarDays),
+    bucket: effectiveBucket,
     dateBasis,
     page,
     pageSize,

@@ -1,6 +1,11 @@
 import { TZDate } from "@date-fns/tz";
 
-import { REPORT_TIMEZONE, type CalendarRange, type ResolvedRange } from "./types";
+import {
+  REPORT_TIMEZONE,
+  type CalendarRange,
+  type ReportBucket,
+  type ResolvedRange,
+} from "./types";
 
 const MILLISECONDS_PER_UTC_DAY = 86_400_000;
 
@@ -40,6 +45,40 @@ function storeMidnight(day: Date): string {
   return new Date(local.getTime()).toISOString();
 }
 
+function calendarDayCount(start: Date, end: Date): number {
+  // These UTC dates represent calendar labels, independently of the store's day lengths.
+  return (end.getTime() - start.getTime()) / MILLISECONDS_PER_UTC_DAY + 1;
+}
+
+function countBucketsBetween(start: Date, end: Date, bucket: ReportBucket): number {
+  if (bucket === "month") {
+    const years = end.getUTCFullYear() - start.getUTCFullYear();
+    return years * 12 + end.getUTCMonth() - start.getUTCMonth() + 1;
+  }
+
+  const days = calendarDayCount(start, end);
+  if (bucket === "week") {
+    const daysSinceMonday = (start.getUTCDay() + 6) % 7;
+    return Math.ceil((daysSinceMonday + days) / 7);
+  }
+  return days;
+}
+
+export function countCalendarBuckets(
+  range: ResolvedRange,
+  bucket: ReportBucket,
+): { selected: number; comparison: number } {
+  const start = parseCalendarDate(range.from);
+  const end = parseCalendarDate(range.to);
+  const comparisonStart = shiftCalendarDays(start, -range.calendarDays);
+  const comparisonEnd = shiftCalendarDays(start, -1);
+
+  return {
+    selected: countBucketsBetween(start, end, bucket),
+    comparison: countBucketsBetween(comparisonStart, comparisonEnd, bucket),
+  };
+}
+
 export function getDefaultCalendarRange(now: Date): CalendarRange {
   const today = todayInStore(now);
   return {
@@ -61,8 +100,7 @@ export function resolveCalendarRange(range: CalendarRange, now: Date): ResolvedR
     throw new RangeError("Report dates must be ordered and cannot end in the future.");
   }
 
-  // These UTC dates represent calendar labels, independently of the store's day lengths.
-  const calendarDays = (end.getTime() - start.getTime()) / MILLISECONDS_PER_UTC_DAY + 1;
+  const calendarDays = calendarDayCount(start, end);
   const startInclusive = storeMidnight(start);
   return {
     ...range,

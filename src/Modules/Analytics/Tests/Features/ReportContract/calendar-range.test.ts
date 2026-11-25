@@ -1,5 +1,5 @@
-import { resolveCalendarRange } from "../../../ReportContract/calendar-range";
-import type { CalendarRange } from "../../../ReportContract/types";
+import { resolveCalendarRange } from "../../../Source/Features/ReportContract/calendar-range";
+import type { CalendarRange } from "../../../Source/Features/ReportContract/types";
 
 const now = new Date("2026-11-25T12:00:00Z");
 
