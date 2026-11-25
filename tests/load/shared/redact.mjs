@@ -1,5 +1,5 @@
 const sensitive =
-  /(?:authorization|cookie|password|secret|token|email|address|instagram|handle|sourceId)/i;
+  /(?:authorization|cookie|password|secret|token|credential|signing.?key|email|address|instagram|handle|sourceId|^mac$)/i;
 export function redactString(value) {
   return value
     .replace(

@@ -39,3 +39,13 @@ test("PII, credentials, cyclic failures and error stacks are safe to export", ()
   for (const secret of ["someone@", "Private St", '"pw"', "token=secret"])
     assert.equal(JSON.stringify(result).includes(secret), false);
 });
+test("scoped harness credentials and signing material are never public report fields", () => {
+  const output = JSON.stringify(
+    redactArtifact({
+      headers: { "x-load-test-credential": "phase-secret" },
+      signingKey: "root-secret",
+    }),
+  );
+  assert.equal(output.includes("phase-secret"), false);
+  assert.equal(output.includes("root-secret"), false);
+});

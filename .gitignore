@@ -85,3 +85,4 @@ docker-storage/
 
 # Private load-test fixtures, credentials, journals and raw results
 .load-test/
+!tests/load/config/.env.example

@@ -1,4 +1,5 @@
 import { checkBotId } from "botid/server";
+import { getActiveLoadTestContext } from "@/Modules/Checkout/Source/Features/LoadTesting/context";
 
 export type CheckoutBotVerdict = {
   allowed: boolean;
@@ -6,6 +7,8 @@ export type CheckoutBotVerdict = {
 };
 
 export async function verifyCheckoutBrowser(): Promise<CheckoutBotVerdict> {
+  if (getActiveLoadTestContext()?.providerMode === "simulated")
+    return { allowed: true, reason: "passed" };
   try {
     const result = await checkBotId({
       advancedOptions: { checkLevel: "deepAnalysis" },

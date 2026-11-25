@@ -13,6 +13,13 @@ import { checkBot } from "@/proxy/bot";
 import { canonicalizePath } from "@/proxy/canonicalize";
 import { finalizeProxyResponse } from "@/proxy/finalize";
 import { checkSiteLock } from "@/proxy/site-lock";
+import {
+  verifyHarnessRequest,
+  type LoadTestContext,
+} from "@/Modules/Checkout/Source/Features/LoadTesting/context";
+import { readLoadTestSettings } from "@/Modules/Checkout/Source/Features/LoadTesting/settings";
+import { createLoadRunStore } from "@/Modules/Checkout/Source/Features/LoadTesting/run-store";
+import { verifyControlHeaders } from "@/Modules/Checkout/Source/Features/LoadTesting/control-handler";
 
 /**
  * @see docs/PROXY_PIPELINE.md
@@ -30,11 +37,34 @@ export async function proxy(request: NextRequest): Promise<NextResponse> {
     return finalizeProxyResponse(canonicalizeResponse, requestId, pathname);
   }
 
+  let loadContext: LoadTestContext | null = null;
+  let signedLoadControl = false;
+  try {
+    const settings = readLoadTestSettings();
+    if (settings) {
+      signedLoadControl = verifyControlHeaders(request, settings);
+      if (!signedLoadControl)
+        loadContext = await verifyHarnessRequest(
+          request,
+          settings,
+          createLoadRunStore(settings),
+        );
+    }
+  } catch {
+    return finalizeProxyResponse(
+      NextResponse.json({ error: "Load-test admission failed" }, { status: 403 }),
+      requestId,
+      pathname,
+    );
+  }
+
   // Refresh Supabase session and get response with cookies
   const sessionResponse = await refreshSession(request);
 
   // Create forwarded headers with request ID for downstream handlers
   const forwardedHeaders = new Headers(request.headers);
+  forwardedHeaders.delete("x-load-test-verified");
+  forwardedHeaders.delete("x-load-test-context");
   forwardedHeaders.set(security.proxy.requestIdHeader, requestId);
 
   // Create new response with forwarded headers
@@ -60,7 +90,12 @@ export async function proxy(request: NextRequest): Promise<NextResponse> {
 
   response = finalizeProxyResponse(response, requestId, pathname);
 
-  if (!isLocalDev && startsWithAny(pathname, security.proxy.botCheckPrefixes)) {
+  if (
+    !isLocalDev &&
+    !loadContext &&
+    !signedLoadControl &&
+    startsWithAny(pathname, security.proxy.botCheckPrefixes)
+  ) {
     const botResponse = checkBot(request, requestId);
 
     if (botResponse) {
@@ -81,7 +116,9 @@ export async function proxy(request: NextRequest): Promise<NextResponse> {
     startsWithAny(pathname, security.proxy.rateLimitPrefixes);
 
   if (shouldApplyRateLimit) {
-    const rateLimitResponse = await applyRateLimit(request, requestId);
+    const rateLimitResponse = loadContext
+      ? await applyRateLimit(request, requestId, loadContext.networkKey)
+      : await applyRateLimit(request, requestId);
 
     if (rateLimitResponse) {
       return finalizeProxyResponse(rateLimitResponse, requestId, pathname);

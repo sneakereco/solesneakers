@@ -169,6 +169,7 @@ export function getRateLimitPolicyForRequest(
 export async function applyRateLimit(
   request: NextRequest,
   requestId: string,
+  verifiedNetworkKey?: string,
 ): Promise<NextResponse | null> {
   const { pathname, hostname } = request.nextUrl;
   const { rateLimit } = security.proxy;
@@ -206,7 +207,7 @@ export async function applyRateLimit(
     return null;
   }
 
-  const clientIp = getTrustedClientIp(request);
+  const clientIp = verifiedNetworkKey ?? getTrustedClientIp(request);
   if (!clientIp) {
     // Fail open (your current behavior)
     log({
