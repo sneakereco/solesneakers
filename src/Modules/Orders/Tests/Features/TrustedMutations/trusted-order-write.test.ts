@@ -96,28 +96,52 @@ describe.each([
   );
 });
 
-it("resends pickup instructions to the stored customer email using the authorized order", async () => {
-  authenticate("admin");
-  const detail = {
-    id: orderId,
-    user_id: userId,
-    profiles: { email: "fixture@example.invalid" },
-    items: [],
-  };
-  const from = jest.fn().mockReturnValue({
-    select: () => ({
-      eq: () => ({ maybeSingle: () => Promise.resolve({ data: detail }) }),
-    }),
-  });
-  jest.mocked(createSupabaseAdminClient).mockReturnValue({ from } as never);
-  const payload = new Request("https://example.invalid/", {
-    method: "POST",
-    body: JSON.stringify({ emailType: "pickup_instructions" }),
-  }) as NextRequest;
-  const response = await resend(payload, { params: Promise.resolve({ orderId }) });
-  expect(response.status).toBe(200);
-  expect(from).toHaveBeenCalledWith("orders");
-  expect(
-    jest.mocked(OrderEmailService).mock.instances[0].sendPickupInstructions,
-  ).toHaveBeenCalledWith({ to: "fixture@example.invalid", orderId });
-});
+it.each(["pickup_instructions", "order_confirmation"] as const)(
+  "resends %s using persisted recipient and order amounts",
+  async (emailType) => {
+    authenticate("admin");
+    const detail = {
+      id: orderId,
+      user_id: userId,
+      fulfillment: emailType === "order_confirmation" ? "ship" : "pickup",
+      shipping: 8.25,
+      subtotal: 25,
+      tax_amount: 2,
+      total: 35.25,
+      profiles: { email: "fixture@example.invalid" },
+      items: [],
+    };
+    const from = jest.fn().mockReturnValue({
+      select: () => ({
+        eq: () => ({ maybeSingle: () => Promise.resolve({ data: detail }) }),
+      }),
+    });
+    jest.mocked(createSupabaseAdminClient).mockReturnValue({ from } as never);
+    const payload = new Request("https://example.invalid/", {
+      method: "POST",
+      body: JSON.stringify({ emailType }),
+    }) as NextRequest;
+    const response = await resend(payload, { params: Promise.resolve({ orderId }) });
+    expect(response.status).toBe(200);
+    expect(from).toHaveBeenCalledWith("orders");
+    const email = jest.mocked(OrderEmailService).mock.instances[0];
+    if (emailType === "pickup_instructions") {
+      expect(email.sendPickupInstructions).toHaveBeenCalledWith({
+        to: "fixture@example.invalid",
+        orderId,
+      });
+    } else {
+      expect(email.sendOrderConfirmationFromDetailed).toHaveBeenCalledWith(
+        expect.objectContaining({
+          to: "fixture@example.invalid",
+          order: expect.objectContaining({
+            orderId,
+            fulfillment: "ship",
+            shipping: 8.25,
+            total: 35.25,
+          }),
+        }),
+      );
+    }
+  },
+);

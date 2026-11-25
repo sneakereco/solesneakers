@@ -53,6 +53,10 @@ begin
     if target.fulfillment is distinct from 'pickup' then
       raise exception 'Order is not a pickup' using errcode = '22023';
     end if;
+    if coalesce(target.status, '') not in ('paid', 'shipped', 'partially_refunded')
+       or coalesce(target.fulfillment_status, '') not in ('unfulfilled', 'picked_up') then
+      raise exception 'Order is not ready for pickup' using errcode = '22023';
+    end if;
     event_type := 'picked_up';
     event_message := 'Order picked up.';
     if target.fulfillment_status is distinct from event_type then
@@ -60,11 +64,23 @@ begin
       where id = p_order_id returning * into target;
     end if;
   elsif p_action = 'fulfill' then
+    if target.fulfillment is distinct from 'ship' then
+      raise exception 'Order is not a shipment' using errcode = '22023';
+    end if;
+    if coalesce(target.status, '') not in ('paid', 'shipped')
+       or coalesce(target.fulfillment_status, '') not in ('ready_to_ship', 'shipped') then
+      raise exception 'Order is not ready to ship' using errcode = '22023';
+    end if;
     event_type := 'shipped';
     event_message := 'Order marked as shipped.';
-    update public.orders set fulfillment_status = event_type, shipping_carrier = p_carrier,
-      tracking_number = p_tracking_number, shipped_at = coalesce(shipped_at, now())
-    where id = p_order_id returning * into target;
+    if target.fulfillment_status = 'ready_to_ship' then
+      update public.orders set fulfillment_status = event_type, shipping_carrier = p_carrier,
+        tracking_number = p_tracking_number, shipped_at = coalesce(shipped_at, now())
+      where id = p_order_id returning * into target;
+    elsif target.shipping_carrier is distinct from p_carrier
+       or target.tracking_number is distinct from p_tracking_number then
+      raise exception 'The shipment already has different tracking details' using errcode = '22023';
+    end if;
   else
     raise exception 'Invalid fulfillment action' using errcode = '22023';
   end if;

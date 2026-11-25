@@ -120,7 +120,7 @@ export async function POST(
             currency: "USD",
             subtotal: Number(order.subtotal ?? 0),
             tax: Number(order.tax_amount ?? 0),
-            shipping: 0,
+            shipping: Number(order.shipping ?? 0),
             total: Number(order.total ?? 0),
             shippingAddress: shippingAddr
               ? {

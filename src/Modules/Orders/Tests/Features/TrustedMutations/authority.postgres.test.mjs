@@ -192,6 +192,45 @@ test("checkout authority on the replayed schema", async (t) => {
       },
     );
 
+    // Staff screens offer shipping from ready_to_ship and pickup from unfulfilled.
+    // Recheck the persisted state when the submitted action reaches the database.
+    const staff = await seedOrder();
+    await admin.query("update public.profiles set role='admin' where id=$1", [
+      staff.userId,
+    ]);
+    for (const [label, action, method, financial, fulfillment] of [
+      ["delivered shipment", "fulfill", "ship", "paid", "delivered"],
+      ["pickup sent to shipping", "fulfill", "pickup", "paid", "ready_to_ship"],
+      ["shipment sent to pickup", "pickup", "ship", "paid", "unfulfilled"],
+      ["shipment awaiting label", "fulfill", "ship", "paid", "unfulfilled"],
+      ["unsettled shipment", "fulfill", "ship", "pending", "ready_to_ship"],
+      ["fully refunded pickup", "pickup", "pickup", "refunded", "unfulfilled"],
+      ["delivered pickup", "pickup", "pickup", "paid", "delivered"],
+      ["changed tracking after dispatch", "fulfill", "ship", "shipped", "shipped"],
+    ]) {
+      await t.test("rejects stale or ineligible staff action: " + label, async () => {
+        const { orderId } = await seedOrder({ status: financial });
+        await admin.query(
+          "update public.orders set fulfillment=$2,fulfillment_status=$3 where id=$1",
+          [orderId, method, fulfillment],
+        );
+        const read = () =>
+          admin.query(
+            "select to_jsonb(o) as projection,(select count(*) from public.order_events where order_id=o.id) as events from public.orders o where o.id=$1",
+            [orderId],
+          );
+        const before = await read();
+        await assert.rejects(
+          service.query(
+            "select id from public.write_staff_order_fulfillment($1,$2,$3,$4,$5)",
+            [orderId, action, staff.userId, "USPS", "tracking-1"],
+          ),
+          { code: "22023" },
+        );
+        assert.deepEqual((await read()).rows, before.rows);
+      });
+    }
+
     await t.test(
       "trusted pickup and shipping commit the projection and a single attributed event on retry",
       async () => {
@@ -202,17 +241,34 @@ test("checkout authority on the replayed schema", async (t) => {
           ["pickup", "picked_up"],
           ["fulfill", "shipped"],
         ]) {
-          const order = await seedOrder({ status: "paid" });
+          const order = await seedOrder({
+            status: action === "pickup" ? "partially_refunded" : "paid",
+          });
           if (action === "fulfill")
-            await admin.query("update public.orders set fulfillment='ship' where id=$1", [
-              order.orderId,
-            ]);
+            await admin.query(
+              "update public.orders set fulfillment='ship', fulfillment_status='ready_to_ship' where id=$1",
+              [order.orderId],
+            );
+          let firstVersion;
           for (let i = 0; i < 2; i++) {
             const { rows } = await service.query(
               "select id, fulfillment_status from public.write_staff_order_fulfillment($1,$2,$3,$4,$5)",
               [order.orderId, action, other.userId, null, null],
             );
             assert.deepEqual(rows, [{ id: order.orderId, fulfillment_status: status }]);
+            const version = (
+              await admin.query(
+                "select xmin::text as version from public.orders where id=$1",
+                [order.orderId],
+              )
+            ).rows[0].version;
+            if (i === 0) firstVersion = version;
+            else
+              assert.equal(
+                version,
+                firstVersion,
+                "identical retry must not rewrite the row",
+              );
           }
           const { rows } = await admin.query(
             "select type,created_by from public.order_events where order_id=$1",
