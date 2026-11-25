@@ -1,4 +1,13 @@
 import test from "node:test";
+import { roleForSlot } from "../shared/journeys.mjs";
+test("small diagnostic cohorts include search cart and checkout roles", () => {
+  const roles = Array.from({ length: 8 }, (_, slot) => roleForSlot(slot, 8));
+  assert.ok(roles.some((x) => x >= 55 && x < 80));
+  assert.ok(roles.some((x) => x >= 80 && x < 95));
+  assert.ok(roles.some((x) => x >= 95));
+  const large = Array.from({ length: 100 }, (_, slot) => roleForSlot(slot, 100));
+  assert.equal(large.filter((x) => x < 55).length, 55);
+});
 test("live emergency counters preserve exact attempted and unexpected-error counts", async (t) => {
   const f = await fixture(t, { status: 503 });
   await assert.rejects(runCheckoutJourney(f.session, f.plan, f.transport));

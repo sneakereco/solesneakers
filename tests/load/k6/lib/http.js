@@ -1,11 +1,40 @@
 import http from "k6/http";
 import { sleep } from "k6";
 import { emit } from "./metrics.js";
+import { requestOperation } from "../../shared/journeys.mjs";
 export function createTransport(config, slot) {
   let requests = 0;
+  let replayed = false;
   const start = config.phaseStart + config.plan.warmupSeconds * 1000,
     end = start + config.plan.measurementSeconds * 1000;
-  return {
+  const transport = {
+    async replayNavigation() {
+      if (replayed) return;
+      replayed = true;
+      for (const path of config.fixtures.navigation?.paths ?? []) {
+        await requestOperation(
+          transport,
+          "asset",
+          path,
+          null,
+          (_, response) => response.status === 200,
+          { page: true },
+        );
+      }
+      for (const input of config.fixtures.navigation?.replay ?? []) {
+        await requestOperation(
+          transport,
+          "page",
+          input.path,
+          null,
+          (value, response) =>
+            typeof value === "string" &&
+            value.length > 0 &&
+            String(response.headers["Content-Type"] ?? "").includes("text/x-component"),
+          { page: true, headers: input.headers },
+        );
+      }
+    },
     get requests() {
       return requests;
     },
@@ -54,6 +83,7 @@ export function createTransport(config, slot) {
       };
     },
   };
+  return transport;
 }
 export function initializeCookies(config, session) {
   for (const cookie of session.cookies ?? [])

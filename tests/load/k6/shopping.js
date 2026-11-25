@@ -5,6 +5,7 @@ import {
   runCartJourney,
   runCheckoutJourney,
   requestOperation,
+  roleForSlot,
 } from "../shared/journeys.mjs";
 import { createTransport, initializeCookies } from "./lib/http.js";
 import { logicalSession } from "./lib/session.js";
@@ -61,8 +62,7 @@ export async function shopperSession() {
       );
       lastAuth = Date.now();
     }
-    const role =
-      config.plan.httpSlots < 20 && slot === config.plan.httpSlots - 1 ? 95 : slot % 100;
+    const role = roleForSlot(slot, config.plan.httpSlots);
     let checkedOut = false;
     do {
       await runCatalogJourney(session, config.plan, transport, {

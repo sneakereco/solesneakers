@@ -99,7 +99,11 @@ export function parseTarget(value) {
   if (supplied && supplied !== digest) throw new Error("Target manifest digest changed");
   return { ...target, digest };
 }
-export function assertAttestation(target, value) {
+export function assertAttestation(
+  target,
+  value,
+  requiredCapabilities = target.requiredCapabilities,
+) {
   if (
     !value ||
     value.baseUrl !== target.baseUrl ||
@@ -113,9 +117,7 @@ export function assertAttestation(target, value) {
     throw new Error("Deployment/resource/schema attestation mismatch");
   if (
     !Array.isArray(value.capabilities) ||
-    target.requiredCapabilities.some(
-      (capability) => !value.capabilities.includes(capability),
-    )
+    requiredCapabilities.some((capability) => !value.capabilities.includes(capability))
   )
     throw new Error("Required deployed capability unavailable");
   return value;

@@ -185,6 +185,11 @@ export async function runBrowserCohort(plan, fixtures, options) {
             });
             if (!response?.ok() || new URL(page.url()).origin !== options.target.baseUrl)
               throw Error("Storefront/perimeter admission blocked");
+            const storeLink = page.locator('a[href="/store"]').first();
+            if (await storeLink.count()) {
+              await storeLink.click();
+              await page.waitForURL((url) => url.pathname === "/store");
+            }
             if (!admitted) {
               admitted = true;
               started++;

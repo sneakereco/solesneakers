@@ -338,7 +338,7 @@ export async function runRenderedJourney(page, context, options) {
   await goto(page, options.baseUrl, "/store");
   await goto(page, options.baseUrl, `/store?q=${encodeURIComponent(product.name)}`);
   await goto(page, options.baseUrl, `/store/${product.id}`);
-  if (options.mode === "perimeter") {
+  if (options.mode === "perimeter" || options.mode === "discovery") {
     options.emit({
       type: "case",
       name: "normal-perimeter-navigation",

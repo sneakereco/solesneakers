@@ -85,6 +85,7 @@ export async function launchWorkers(plan, fixtures, options) {
       fixtures: {
         products: fixtures.products,
         addresses: fixtures.addresses,
+        navigation: fixtures.navigation,
         sessions: accounts,
       },
       options: scenarioOptions(plan, shard),

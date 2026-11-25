@@ -1,5 +1,11 @@
 // Portable core: no Node/npm/k6 globals. Response schemas deliberately reject
 // login pages and HTTP-200 error envelopes instead of treating them as success.
+export function roleForSlot(slot, total) {
+  if (!Number.isInteger(slot) || slot < 0 || slot >= total)
+    throw Error("Invalid shopper slot");
+  if (total < 20 && slot === total - 1) return 97.5;
+  return (((slot + 0.5) * 100) / total) % 100;
+}
 function json(response) {
   try {
     return typeof response.body === "string" ? JSON.parse(response.body) : response.body;
@@ -71,6 +77,7 @@ export async function runCatalogJourney(
   transport,
   { search = false } = {},
 ) {
+  await transport.replayNavigation?.();
   await requestOperation(
     transport,
     "page",
