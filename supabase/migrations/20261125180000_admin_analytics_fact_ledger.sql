@@ -1,12 +1,46 @@
 -- Minimized business observations have an independent lifetime from operational rows.
 create extension if not exists pg_jsonschema with schema extensions;
 
+-- Mirrored in fact-scalar-schemas.json; the real DB suite verifies exact schema equality.
+create function public.analytics_fact_scalar_schemas() returns jsonb
+language sql immutable set search_path = '' as $$
+  select $scalars${
+  "id": {
+    "type": "string",
+    "format": "uuid",
+    "pattern": "^[0-9a-f]{8}-[0-9a-f]{4}-[1-8][0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$"
+  },
+  "factId": {
+    "type": "string",
+    "pattern": "^(?:[a-z][a-z_]{0,31}:)?[0-9a-f]{8}-[0-9a-f]{4}-[1-8][0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$"
+  },
+  "timestamp": {
+    "type": "string",
+    "format": "date-time",
+    "pattern": "^(?:000[1-9]|00[1-9][0-9]|0[1-9][0-9]{2}|[1-9][0-9]{3})-[0-9]{2}-[0-9]{2}T(?:[01][0-9]|2[0-3]):[0-5][0-9]:[0-5][0-9](?:\\.[0-9]{1,6})?(?:Z|[+-](?:(?:0[0-9]|1[0-3]):[0-5][0-9]|14:00))$"
+  },
+  "label": {
+    "type": "string",
+    "maxLength": 160,
+    "pattern": "^[\\p{L}\\p{M}\\p{N}\\p{P}\\p{S}\\p{Zs}]+$",
+    "not": {
+      "pattern": "^[\\p{Zs}]*$|[@＠]|[A-Za-z][A-Za-z0-9+.-]*://|[A-Za-z0-9-]+\\.[A-Za-z]{2,}(?:[^A-Za-z]|$)|[0-9](?:[\\p{Zs}.()\\p{Pd}]*[0-9]){8}|(?:[0-9]{1,3}\\.){3}[0-9]{1,3}|(?:[0-9A-Fa-f]{0,4}:){2,}"
+    }
+  }
+}$scalars$::jsonb;
+$$;
+
+create function public.analytics_snapshot_catalog_label(p_raw text) returns text
+language sql immutable strict security definer set search_path = '' as $$
+  select case when extensions.jsonb_matches_schema((public.analytics_fact_scalar_schemas()->'label')::json,to_jsonb(p_raw)) then p_raw end;
+$$;
+
 create function public.analytics_valid_payload(p_kind text, p_payload jsonb)
 returns boolean language sql immutable strict security definer set search_path = '' as $$
     with shape as (
       select case p_kind
         when 'order' then '{"grossMerchandiseCents":"money?","discountCents":"money?","merchandiseCents":"money?","shippingCents":"money?","taxCents":"money?","totalCollectedCents":"money","paymentMethod":"method?","fulfillment":"methodOfFulfillment?","status":"orderStatus"}'::jsonb
-        when 'line' then '{"lineId":"id","productId":"id","variantId":"id?","productName":"label","brandId":"id?","brandLabel":"label?","categoryId":"id?","categoryLabel":"label?","sizeId":"id?","sizeLabel":"label?","quantity":"positive","unitGrossCents":"money?","discountCents":"money?","merchandiseCents":"money?","unitCostCents":"money?"}'::jsonb
+        when 'line' then '{"lineId":"id","productId":"id","variantId":"id?","productName":"label?","brandId":"id?","brandLabel":"label?","categoryId":"id?","categoryLabel":"label?","sizeId":"id?","sizeLabel":"label?","quantity":"positive","unitGrossCents":"money?","discountCents":"money?","merchandiseCents":"money?","unitCostCents":"money?"}'::jsonb
         when 'refund' then '{"refundId":"id","status":"refundStatus","totalCents":"money","merchandiseCents":"money?","shippingCents":"money?","taxCents":"money?","unallocatedCents":"money"}'::jsonb
         when 'refund_line' then '{"refundId":"id","lineId":"id","merchandiseCents":"money?","quantity":"count?","restockedQuantity":"count?"}'::jsonb
         when 'payment_attempt' then '{"attemptId":"id","stage":"stage","outcome":"outcome","method":"method?","reason":"reason","resolvedAt":"timestamp?"}'::jsonb
@@ -26,19 +60,16 @@ returns boolean language sql immutable strict security definer set search_path =
         "money":{"type":"integer","minimum":0,"maximum":9007199254740991},
         "positive":{"type":"integer","minimum":1,"maximum":9007199254740991},
         "count":{"$ref":"#/definitions/money"},
-        "id":{"type":"string","format":"uuid","pattern":"^(?i:[0-9a-f]{8}-[0-9a-f]{4}-[1-8][0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12})$"},
-        "timestamp":{"type":"string","format":"date-time"},
-        "label":{"type":"string","maxLength":160,"pattern":"^[\\p{L}\\p{N}][\\p{L}\\p{N} .,'’&+()/#:!\"_\\-]*$","not":{"pattern":"[0-9](?:[ .()\\-]*[0-9]){8}|(?:[0-9]{1,3}\\.){3}[0-9]{1,3}|(?:[0-9A-Fa-f]{0,4}:){2,}|https?://"}},
         "method":{"enum":["card","applePay","googlePay","afterpay","cashAppPay","unknown"]},
         "orderStatus":{"enum":["pending","processing","paid","shipped","canceled","refunded","partially_refunded","refund_pending","refund_failed","failed","blocked","review"]},
         "methodOfFulfillment":{"enum":["ship","pickup"]},
-        "refundStatus":{"enum":["pending","failed","canceled","completed"]},
+        "refundStatus":{"enum":["completed"]},
         "stage":{"enum":["checkout","reservation","payment","verification"]},
         "outcome":{"enum":["pending","unknown","succeeded","failed","canceled","expired"]},
         "reason":{"enum":["none","unknown","declined","timeout","unavailable","invalid","inventory","expired","canceled","verification","blocked"]},
         "adjustment":{"enum":["charge","credit"]},
         "fulfillmentState":{"enum":["pending","processing","unfulfilled","ready","ready_for_pickup","shipped","delivered","picked_up","fulfilled","canceled","unknown"]}
-        }$definitions$::jsonb) as schema
+        }$definitions$::jsonb || public.analytics_fact_scalar_schemas()) as schema
       from shape cross join lateral jsonb_each_text(fields)
       having count(*) > 0
     )
@@ -133,17 +164,17 @@ declare
     existing public.analytics_fact_versions%rowtype;
     publication uuid;
 begin
-    if p_fact is null or not extensions.jsonb_matches_schema('{
+    if p_fact is null or not extensions.jsonb_matches_schema(('{
       "type":"object","additionalProperties":false,
       "required":["datasetId","factId","revision","kind","effectiveAt","recordedAt","currency","buyerKey","orderId","payload"],
       "properties":{
         "datasetId":{"type":"string","pattern":"^[a-z0-9][a-z0-9_-]{0,63}$"},
-        "factId":{"type":"string","pattern":"^(?i:(?:[a-z][a-z_]{0,31}:)?[0-9a-f]{8}-[0-9a-f]{4}-[1-8][0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12})$"},
+        "factId":{"$ref":"#/definitions/factId"},
         "revision":{"type":"integer","minimum":1,"maximum":2147483647},"kind":{"type":"string"},
-        "effectiveAt":{"type":"string","format":"date-time"},"recordedAt":{"type":"string","format":"date-time"},
+        "effectiveAt":{"$ref":"#/definitions/timestamp"},"recordedAt":{"$ref":"#/definitions/timestamp"},
         "currency":{"const":"USD"},"buyerKey":{"type":["string","null"],"pattern":"^sole-buyer:v1:[a-f0-9]{64}$"},
-        "orderId":{"type":["string","null"],"format":"uuid"},"payload":{"type":"object"}
-      }}',p_fact) or not public.analytics_valid_payload(p_fact->>'kind',p_fact->'payload') then
+        "orderId":{"anyOf":[{"type":"null"},{"$ref":"#/definitions/id"}]},"payload":{"type":"object"}
+      }}'::jsonb || jsonb_build_object('definitions',public.analytics_fact_scalar_schemas()))::json,p_fact) or not public.analytics_valid_payload(p_fact->>'kind',p_fact->'payload') then
       raise exception 'Invalid analytics fact' using errcode='23514';
     end if;
 
@@ -262,3 +293,5 @@ revoke all on function public.analytics_fail_publication(text,uuid,uuid,text,boo
 grant execute on function public.analytics_fail_publication(text,uuid,uuid,text,boolean,integer) to service_role;
 revoke all on function public.analytics_revoke_receipt(text,uuid) from public,anon,authenticated;
 grant execute on function public.analytics_revoke_receipt(text,uuid) to service_role;
+revoke all on function public.analytics_fact_scalar_schemas(), public.analytics_snapshot_catalog_label(text) from public,anon,authenticated;
+grant execute on function public.analytics_fact_scalar_schemas(), public.analytics_snapshot_catalog_label(text) to service_role;

@@ -1,27 +1,38 @@
 import { z } from "zod";
 import { REPORT_FILTER_VALUES } from "../ReportContract/types";
 
-const id = z.uuid();
-const timestamp = z.iso.datetime({ offset: true });
+import scalarSchemas from "./fact-scalar-schemas.json";
+
+const id = z.string().regex(new RegExp(scalarSchemas.id.pattern));
+const timestamp = z.iso
+  .datetime({ offset: true })
+  .regex(new RegExp(scalarSchemas.timestamp.pattern));
 const money = z.number().int().nonnegative();
 const count = money;
 const positive = count.positive();
+const catalogCharacters = new RegExp(scalarSchemas.label.pattern, "u");
+const unsafeCatalogText = new RegExp(scalarSchemas.label.not.pattern, "u");
 const label = z
   .string()
-  .min(1)
-  .max(160)
-  .regex(/^[\p{L}\p{N}][\p{L}\p{N} .,'’&+()\/#:!"_\-]*$/u)
   .refine(
     (value) =>
-      !/[0-9](?:[ .()-]*[0-9]){8}|(?:[0-9]{1,3}\.){3}[0-9]{1,3}|(?:[0-9A-Fa-f]{0,4}:){2,}|https?:\/\//i.test(
-        value,
-      ),
+      Array.from(value).length <= scalarSchemas.label.maxLength &&
+      catalogCharacters.test(value) &&
+      !unsafeCatalogText.test(value),
     "Invalid catalog label",
   );
+
+// Preserve staff-supplied display text exactly when eligible. The opaque product
+// ID and monetary snapshot remain available even if its label must be omitted.
+export function snapshotCatalogLabel(raw: unknown): string | null {
+  const parsed = label.safeParse(raw);
+  return parsed.success ? parsed.data : null;
+}
+
 const method = z.enum(REPORT_FILTER_VALUES.paymentMethod);
 const orderStatus = z.enum(REPORT_FILTER_VALUES.status);
 const methodOfFulfillment = z.enum(REPORT_FILTER_VALUES.fulfillment);
-const refundStatus = z.enum(["pending", "failed", "canceled", "completed"]);
+const refundStatus = z.literal("completed");
 const stage = z.enum(["checkout", "reservation", "payment", "verification"]);
 const outcome = z.enum([
   "pending",
@@ -74,7 +85,7 @@ export const factPayloadSchemas = {
     lineId: id,
     productId: id,
     variantId: id.nullable(),
-    productName: label,
+    productName: label.nullable(),
     brandId: id.nullable(),
     brandLabel: label.nullable(),
     categoryId: id.nullable(),
@@ -141,11 +152,7 @@ export type FactKind = keyof typeof factPayloadSchemas;
 export const datasetIdSchema = z.string().regex(/^[a-z0-9][a-z0-9_-]{0,63}$/);
 export const factFields = {
   datasetId: datasetIdSchema,
-  factId: z
-    .string()
-    .regex(
-      /^(?:[a-z][a-z_]{0,31}:)?[0-9a-f]{8}-[0-9a-f]{4}-[1-8][0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$/i,
-    ),
+  factId: z.string().regex(new RegExp(scalarSchemas.factId.pattern)),
   revision: z.number().int().min(1).max(2147483647),
   effectiveAt: timestamp,
   recordedAt: timestamp,
@@ -177,6 +184,8 @@ export const analyticsFactSchema = z.discriminatedUnion("kind", [
   variant("customer_summary"),
 ]);
 export type AnalyticsFact = z.infer<typeof analyticsFactSchema>;
+/** Emitted only after authoritative confirmation, including qualified zero-balance orders.
+ * effectiveAt is confirmation time; status describes the latest lifecycle state. */
 export type OrderFact = Extract<AnalyticsFact, { kind: "order" }>;
 
 export const datasetScopeSchema = z.strictObject({

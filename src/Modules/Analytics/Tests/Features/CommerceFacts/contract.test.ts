@@ -1,4 +1,8 @@
-import { analyticsFactSchema } from "../../../Source/Features/CommerceFacts/contract";
+import { factParityCases } from "./fact-parity";
+import {
+  analyticsFactSchema,
+  snapshotCatalogLabel,
+} from "../../../Source/Features/CommerceFacts/contract";
 import { base, payloads } from "./fixtures";
 
 it.each(Object.entries(payloads))(
@@ -46,3 +50,13 @@ it.each([
     }).success,
   ).toBe(false);
 });
+
+it.each(factParityCases)("$name", ({ candidate, valid }) => {
+  expect(analyticsFactSchema.safeParse(candidate).success).toBe(valid);
+});
+it.each(factParityCases.filter((c) => c.key === "productName"))(
+  "snapshots $name",
+  ({ value, valid }) => {
+    expect(snapshotCatalogLabel(value)).toBe(valid ? value : null);
+  },
+);

@@ -2,6 +2,8 @@ import assert from "node:assert/strict";
 import { randomUUID } from "node:crypto";
 import { readFileSync } from "node:fs";
 import { Client } from "pg";
+import scalarSchemas from "../src/Modules/Analytics/Source/Features/CommerceFacts/fact-scalar-schemas.json" with { type: "json" };
+import factParity from "../src/Modules/Analytics/Tests/Features/CommerceFacts/fact-parity.json" with { type: "json" };
 import payloads from "../src/Modules/Analytics/Tests/Features/CommerceFacts/payloads.json" with { type: "json" };
 
 // This runner commits fixture jobs to test independent sessions. Never accept a remote
@@ -95,7 +97,7 @@ try {
   );
   await db.query(
     "insert into public.analytics_datasets(dataset_id,environment,activated_at) values ($1,'staging',$2)",
-    [ds, timestamp],
+    [ds, "2000-01-01T00:00:00Z"],
   );
   created = true;
   await db.query(
@@ -131,6 +133,44 @@ try {
   }
   await db.query("rollback");
   console.log("PASS all ten fact kinds pass the SQL payload contract");
+  assert.deepEqual(
+    (await db.query("select public.analytics_fact_scalar_schemas() as schemas")).rows[0]
+      .schemas,
+    scalarSchemas,
+  );
+  for (const entry of factParity) {
+    const candidate = {
+      ...fact,
+      kind: entry.kind,
+      factId: randomUUID(),
+      payload: payloads[entry.kind],
+    };
+    if (entry.top) candidate[entry.key] = entry.value;
+    else candidate.payload = { ...candidate.payload, [entry.key]: entry.value };
+    await db.query("begin");
+    try {
+      if (entry.valid) {
+        const publication = await append(candidate);
+        const [row] = await claim();
+        assert.equal(row.publication_id, publication, entry.name);
+        assert.deepEqual(row.fact, candidate, entry.name);
+      } else {
+        await assert.rejects(append(candidate), { code: "23514" }, entry.name);
+      }
+    } finally {
+      await db.query("rollback");
+    }
+    if (entry.key === "productName") {
+      const result = await db.query(
+        "select public.analytics_snapshot_catalog_label($1) as label",
+        [entry.value],
+      );
+      assert.equal(result.rows[0].label, entry.valid ? entry.value : null, entry.name);
+    }
+  }
+  console.log(
+    "PASS shared application/SQL/claim parity matrix, completed refunds and safe catalog snapshots",
+  );
   await db.query("set role service_role");
   const receipt = (
     await db.query(

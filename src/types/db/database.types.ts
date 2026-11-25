@@ -1994,6 +1994,7 @@ export type Database = {
         Args: { p_dataset_id: string; p_id: string; p_lease_token: string }
         Returns: boolean
       }
+      analytics_fact_scalar_schemas: { Args: never; Returns: Json }
       analytics_fail_publication: {
         Args: {
           p_category: string
@@ -2008,6 +2009,10 @@ export type Database = {
       analytics_revoke_receipt: {
         Args: { p_dataset_id: string; p_receipt_id: string }
         Returns: boolean
+      }
+      analytics_snapshot_catalog_label: {
+        Args: { p_raw: string }
+        Returns: string
       }
       analytics_valid_acquisition: {
         Args: { p_dimensions: Json }

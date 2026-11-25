@@ -1,3 +1,5 @@
+import { factParityCases } from "../CommerceFacts/fact-parity";
+import type { AnalyticsFact } from "../../../Source/Features/CommerceFacts/contract";
 import { readServerAnalyticsConfig } from "../../../Source/Features/Configuration/server-config";
 import {
   captureBatch,
@@ -220,4 +222,27 @@ it("does not acknowledge an explicit quota limit", async () => {
       now,
     }),
   ).toEqual({ status: "retryable", reason: "rate-limited" });
+});
+
+it.each(factParityCases)("checks $name before capture", async ({ candidate, valid }) => {
+  const attempt = candidate as unknown as AnalyticsFact;
+  const fetch = mockFetch().mockResolvedValue(Response.json({ status: 1 }));
+  const event = {
+    ...fact,
+    timestamp: attempt.effectiveAt,
+    properties: {
+      ...fact.properties,
+      fact_kind: attempt.kind,
+      order_id: attempt.orderId,
+      effective_at: attempt.effectiveAt,
+      payload: attempt.payload,
+    },
+  };
+  const result = await captureBatch([event as PublishedEvent], {
+    config: readServerAnalyticsConfig(validEnv),
+    fetch,
+    now,
+  });
+  expect(result.status).toBe(valid ? "accepted" : "permanent-failure");
+  expect(fetch).toHaveBeenCalledTimes(valid ? 1 : 0);
 });
