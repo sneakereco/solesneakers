@@ -17,7 +17,7 @@ export function buildThresholds(plan) {
   };
   for (const [operation, [p95, p99]] of Object.entries(OPERATION_BUDGETS)) {
     if (operation === "claim" && plan?.profile !== "claim-rush") continue;
-    thresholds[`http_req_duration{operation:${operation},outcome:success}`] = [
+    thresholds[`operation_ms{operation:${operation},outcome:success}`] = [
       `p(95)<${p95}`,
       `p(99)<${p99}`,
     ];

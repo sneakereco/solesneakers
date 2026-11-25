@@ -79,7 +79,7 @@ test("acceptance includes each independent workload and a failed threshold is no
   );
   const plan = createRunPlan(parseTarget(targetFixture()), "peak", RUN_OPTIONS);
   assert.deepEqual(
-    buildThresholds(plan)["http_req_duration{operation:catalog,outcome:success}"],
+    buildThresholds(plan)["operation_ms{operation:catalog,outcome:success}"],
     ["p(95)<1000", "p(99)<2000"],
   );
   assert.equal(
@@ -99,13 +99,13 @@ test("ordinary shopping does not require a nonexistent claim metric", () => {
   const target = parseTarget(targetFixture());
   assert.equal(
     buildThresholds(createRunPlan(target, "peak", RUN_OPTIONS))[
-      "http_req_duration{operation:claim,outcome:success}"
+      "operation_ms{operation:claim,outcome:success}"
     ],
     undefined,
   );
   assert.ok(
     buildThresholds(createRunPlan(target, "claim-rush", RUN_OPTIONS))[
-      "http_req_duration{operation:claim,outcome:success}"
+      "operation_ms{operation:claim,outcome:success}"
     ],
   );
 });
