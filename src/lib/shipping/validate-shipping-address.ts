@@ -1,4 +1,8 @@
 import { z } from "zod";
+import { getActiveLoadTestContext } from "@/Modules/Checkout/Source/Features/LoadTesting/context";
+import { readLoadTestSettings } from "@/Modules/Checkout/Source/Features/LoadTesting/settings";
+import { createLoadRunStore } from "@/Modules/Checkout/Source/Features/LoadTesting/run-store";
+import { createLoadTestShippingFetch } from "@/Modules/Checkout/Source/Features/LoadTesting/shipping-adapter";
 
 import { checkoutShippingAddressSchema } from "@/lib/checkout/checkout-request";
 import { shippingAddressKey } from "@/lib/checkout/shipping-address-validation";
@@ -28,6 +32,12 @@ export async function validateShippingAddress(
   token: string,
   fetcher: typeof fetch = fetch,
 ): Promise<ShippingValidationResult> {
+  const settings = readLoadTestSettings();
+  if (settings?.target.providerMode === "simulated") {
+    const context = getActiveLoadTestContext();
+    if (!context) return { status: "unavailable" };
+    fetcher = createLoadTestShippingFetch(context, createLoadRunStore(settings));
+  }
   if (!token) {
     return { status: "unavailable" };
   }

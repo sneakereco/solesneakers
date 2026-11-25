@@ -7,9 +7,32 @@ import {
   getActiveLoadTestContext,
   isHarnessShopperRoute,
 } from "../../../Source/Features/LoadTesting/context";
-import { fixtureRun, fixtureSettings, MemoryRunStore } from "./fixtures";
+import {
+  fixtureRun,
+  fixtureSettings,
+  MemoryRunStore,
+  fixtureManifestHash,
+} from "./fixtures";
 
 describe("staging harness admission", () => {
+  test("runtime deployment placeholders avoid redeploying to learn an immutable deployment ID", () => {
+    const { env } = fixtureSettings();
+    const raw = JSON.parse(env.LOAD_TEST_RESOURCE_MANIFEST);
+    raw.baseUrl = "$VERCEL_URL";
+    raw.expected.commit = "$VERCEL_GIT_COMMIT_SHA";
+    raw.expected.deploymentId = "$VERCEL_DEPLOYMENT_ID";
+    const settings = readLoadTestSettings({
+      ...env,
+      VERCEL_URL: "load-fixture.example.test",
+      LOAD_TEST_RESOURCE_MANIFEST: JSON.stringify(raw),
+      LOAD_TEST_RESOURCE_MANIFEST_SHA256: fixtureManifestHash(raw),
+    });
+    expect(settings?.target.expected.deploymentId).toBe(env.VERCEL_DEPLOYMENT_ID);
+    expect(settings?.target.baseUrl).toBe("https://load-fixture.example.test");
+    expect(() =>
+      readLoadTestSettings({ ...env, SQUARE_ENVIRONMENT: "production" }),
+    ).toThrow();
+  });
   test("a shopper credential cannot admit an unknown nested operation", () => {
     expect(isHarnessShopperRoute("/api/checkout/export")).toBe(false);
     expect(isHarnessShopperRoute("/api/store/admin")).toBe(false);

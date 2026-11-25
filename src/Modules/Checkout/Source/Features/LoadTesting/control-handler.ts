@@ -4,8 +4,18 @@ import { loadDigest } from "./contracts";
 import { issuePhaseCredential } from "./context";
 import { createLoadRunStore, type RunRecord, type RunStore } from "./run-store";
 import { readLoadTestSettings, type LoadTestSettings } from "./settings";
+import { dispatchDueEvents } from "./square-adapter";
+import { getSquareConfig } from "@/lib/square/config";
 
-const operations = ["attest", "register", "fixtures", "revoke", "status"];
+const operations = [
+  "attest",
+  "register",
+  "fixtures",
+  "revoke",
+  "status",
+  "events",
+  "faults",
+];
 const registration = z
   .object({
     runId: z.string().uuid(),
@@ -31,7 +41,7 @@ export function verifyControlHeaders(
   if (
     request.method !== "POST" ||
     url.origin !== settings.target.baseUrl ||
-    !/^\/api\/internal\/load-test\/(?:attest|register|fixtures|revoke|status)$/.test(
+    !/^\/api\/internal\/load-test\/(?:attest|register|fixtures|revoke|status|events|faults)$/.test(
       url.pathname,
     ) ||
     !nonce ||
@@ -141,6 +151,7 @@ export async function handleLoadTestControl(
                 "account",
                 "claim",
                 "campaign",
+                "address",
               ]),
               id: z.string().regex(/^[\w.@:-]{1,200}$/),
               slot: z.number().int().nonnegative(),
@@ -165,7 +176,58 @@ export async function handleLoadTestControl(
       }
       return json({ registered: fixtures.length });
     }
-    return json({ run });
+    if (operation === "events") {
+      const config = getSquareConfig();
+      return json(
+        await dispatchDueEvents({ runId }, store, settings, {
+          notificationUrl: config.webhookNotificationUrl,
+          signatureKey: config.webhookSignatureKey,
+        }),
+      );
+    }
+    if (operation === "faults") {
+      const kind = z
+        .enum([
+          "none",
+          "square-timeout",
+          "timeout-after-capture",
+          "response-loss",
+          "decline",
+          "shippo-unavailable",
+          "smtp-outage",
+        ])
+        .parse(body.kind);
+      if (kind === "none") await store.remove("fault", runId);
+      else await store.put("fault", runId, { kind });
+      return json({ configured: kind });
+    }
+    const ids = z
+      .array(z.string().regex(/^[\w:-]{1,200}$/))
+      .max(100)
+      .parse(body.squareOrderIds ?? []);
+    const ledgers = await Promise.all(
+      ids.map(async (id) => {
+        const value = await store.get<{
+          runId: string;
+          order: { reference_id: string };
+          payments: Record<
+            string,
+            { payment: { id: string; status: string; amount_money: { amount: string } } }
+          >;
+        }>("square", id);
+        if (!value || value.runId !== runId) throw new Error("Unowned ledger");
+        return {
+          squareOrderId: id,
+          localOrderId: value.order.reference_id,
+          payments: Object.values(value.payments).map(({ payment }) => ({
+            id: payment.id,
+            status: payment.status,
+            totalCents: Number(payment.amount_money.amount),
+          })),
+        };
+      }),
+    );
+    return json({ run, ledgers });
   } catch (error) {
     return json(
       {

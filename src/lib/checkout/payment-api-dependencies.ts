@@ -22,6 +22,8 @@ import { CheckoutReservationRepository } from "@/repositories/checkout-reservati
 import { OrdersRepository } from "@/repositories/orders-repo";
 import { TenantRepository } from "@/repositories/tenant-repo";
 import { OrderAccessTokenService } from "@/services/order-access-token-service";
+import { getActiveLoadTestContext } from "@/Modules/Checkout/Source/Features/LoadTesting/context";
+import { assertLoadPaymentOrder } from "@/Modules/Checkout/Source/Features/LoadTesting/ownership";
 
 function checkoutHostname(): string {
   const value = process.env.NEXT_PUBLIC_SITE_URL?.trim();
@@ -45,12 +47,26 @@ export function createIssuePaymentPermitDependencies(
     findTenantId: () => tenants.getFirstTenantId(),
     getAccess: assertCheckoutOpen,
     verifyBrowser: verifyCheckoutBrowser,
-    getClientIp: getTrustedClientIp,
+    getClientIp: (request) =>
+      getActiveLoadTestContext()?.networkKey ?? getTrustedClientIp(request),
     getSession: getServerSession,
-    loadOrder: (orderId) => reservations.findPaymentCheckout(orderId),
+    loadOrder: async (orderId) => {
+      const order = await reservations.findPaymentCheckout(orderId);
+      await assertLoadPaymentOrder(order);
+      return order;
+    },
     validateGuestAccess: (orderId, token) =>
       accessTokens.validateToken({ orderId, token }),
     verifyTurnstile: (token, remoteIp) => {
+      const context = getActiveLoadTestContext();
+      if (context?.providerMode === "simulated")
+        return Promise.resolve({
+          allowed: token === `load-turnstile:${context.runId}:${context.slot}`,
+          reason:
+            token === `load-turnstile:${context.runId}:${context.slot}`
+              ? ("passed" as const)
+              : ("invalid" as const),
+        });
       if (!env.TURNSTILE_SECRET_KEY) {
         return Promise.resolve({ allowed: false, reason: "unavailable" as const });
       }
@@ -88,7 +104,11 @@ export function createDirectPaymentDependencies(
     validateShippingAddress: (address) =>
       validateShippingAddress(address, env.SHIPPO_API_TOKEN),
     consumePermit: (token) => permits.consume(token),
-    loadOrder: (orderId) => reservations.findPaymentCheckout(orderId),
+    loadOrder: async (orderId) => {
+      const order = await reservations.findPaymentCheckout(orderId);
+      await assertLoadPaymentOrder(order);
+      return order;
+    },
     createPayment: (input) => getPayments().create(input),
     savePaymentId: async (orderId, paymentId, payment, method) => {
       await orders.updatePaymentTransactionId(orderId, paymentId);

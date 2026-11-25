@@ -17,9 +17,18 @@ export interface RunStore {
   put(kind: string, id: string, value: unknown, ttlSeconds?: number): Promise<void>;
   remove(kind: string, id: string): Promise<void>;
   once(id: string): Promise<boolean>;
-  mutate<T>(kind: string, id: string, initial: T, change: (value: T) => T): Promise<T>;
+  mutate<T>(
+    kind: string,
+    id: string,
+    initial: T,
+    change: (value: T) => T,
+    queue?: QueueEffect<T>,
+  ): Promise<T>;
+  queueItems<T>(kind: string, id: string, limit: number): Promise<T[]>;
+  acknowledge(kind: string, id: string, value: unknown): Promise<void>;
 }
-const COMPARE_SET = `local current = redis.call('GET', KEYS[1]); local revision = 0; if current then revision = cjson.decode(current).revision end; if revision ~= tonumber(ARGV[1]) then return 0 end; redis.call('SET', KEYS[1], ARGV[2], 'EX', ARGV[3]); return 1`;
+export type QueueEffect<T> = { kind: string; id: string; value: (next: T) => unknown };
+const COMPARE_SET = `local current = redis.call('GET', KEYS[1]); local revision = 0; if current then revision = cjson.decode(current).revision end; if revision ~= tonumber(ARGV[1]) then return 0 end; redis.call('SET', KEYS[1], ARGV[2], 'EX', ARGV[3]); if #KEYS > 1 then redis.call('RPUSH', KEYS[2], ARGV[4]); redis.call('EXPIRE', KEYS[2], ARGV[3]) end; return 1`;
 class RedisRunStore implements RunStore {
   constructor(
     private redis: Redis,
@@ -58,6 +67,7 @@ class RedisRunStore implements RunStore {
     id: string,
     initial: T,
     change: (value: T) => T,
+    queue?: QueueEffect<T>,
   ): Promise<T> {
     const key = this.key(kind, id);
     for (let attempt = 0; attempt < 12; attempt++) {
@@ -65,21 +75,32 @@ class RedisRunStore implements RunStore {
       const next = change(old?.data ?? structuredClone(initial));
       const ok = await this.redis.eval(
         COMPARE_SET,
-        [key],
+        queue ? [key, this.key(queue.kind, queue.id)] : [key],
         [
           String(old?.revision ?? 0),
           JSON.stringify({ revision: (old?.revision ?? 0) + 1, data: next }),
           "86400",
+          ...(queue ? [JSON.stringify(queue.value(next))] : []),
         ],
       );
       if (ok === 1) return next;
     }
     throw new Error("Load registry contention limit");
   }
+  async queueItems<T>(kind: string, id: string, limit: number): Promise<T[]> {
+    return this.redis.lrange<T>(
+      this.key(kind, id),
+      0,
+      Math.min(100, Math.max(1, limit)) - 1,
+    );
+  }
+  async acknowledge(kind: string, id: string, value: unknown): Promise<void> {
+    await this.redis.lrem(this.key(kind, id), 1, JSON.stringify(value));
+  }
 }
 export function createLoadRunStore(settings: LoadTestSettings): RunStore {
   return new RedisRunStore(
     new Redis({ url: settings.target.resources.redis.url, token: settings.redisToken }),
-    `soles:load:${settings.target.expected.deploymentId}`,
+    `soles:load:{${settings.target.expected.deploymentId}}`,
   );
 }

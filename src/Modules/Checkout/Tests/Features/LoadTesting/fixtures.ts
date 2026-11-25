@@ -1,10 +1,15 @@
 import manifest from "../../../../../../tests/load/config/staging.example.json";
 import { createHash, createHmac } from "node:crypto";
 import { readLoadTestSettings } from "../../../Source/Features/LoadTesting/settings";
-import type { RunStore, RunRecord } from "../../../Source/Features/LoadTesting/run-store";
+import type {
+  RunStore,
+  RunRecord,
+  QueueEffect,
+} from "../../../Source/Features/LoadTesting/run-store";
 
 export class MemoryRunStore implements RunStore {
   private values = new Map<string, unknown>();
+  private queues = new Map<string, unknown[]>();
   get<T>(kind: string, id: string): Promise<T | null> {
     return Promise.resolve((this.values.get(`${kind}:${id}`) as T) ?? null);
   }
@@ -26,10 +31,30 @@ export class MemoryRunStore implements RunStore {
     id: string,
     initial: T,
     change: (value: T) => T,
+    queue?: QueueEffect<T>,
   ): Promise<T> {
     const next = change((await this.get<T>(kind, id)) ?? initial);
     await this.put(kind, id, next);
+    if (queue) {
+      const key = `${queue.kind}:${queue.id}`;
+      this.queues.set(key, [
+        ...(this.queues.get(key) ?? []),
+        structuredClone(queue.value(next)),
+      ]);
+    }
     return next;
+  }
+  queueItems<T>(kind: string, id: string, limit: number): Promise<T[]> {
+    return Promise.resolve(
+      (this.queues.get(`${kind}:${id}`) ?? []).slice(0, limit) as T[],
+    );
+  }
+  acknowledge(kind: string, id: string, value: unknown): Promise<void> {
+    const key = `${kind}:${id}`,
+      list = this.queues.get(key) ?? [],
+      index = list.findIndex((item) => JSON.stringify(item) === JSON.stringify(value));
+    if (index >= 0) list.splice(index, 1);
+    return Promise.resolve();
   }
 }
 export function fixtureSettings() {
@@ -42,6 +67,7 @@ export function fixtureSettings() {
     VERCEL_DEPLOYMENT_ID: manifest.expected.deploymentId,
     VERCEL_GIT_COMMIT_SHA: manifest.expected.commit,
     VERCEL_ENV: "production",
+    SQUARE_ENVIRONMENT: "sandbox",
     NEXT_PUBLIC_SUPABASE_URL: manifest.resources.supabase.url,
     UPSTASH_REDIS_REST_URL: manifest.resources.redis.url,
     UPSTASH_REDIS_REST_TOKEN: "unit-boundary-only",
@@ -100,4 +126,19 @@ export function signControlRequest(
       "x-load-test-control": signature,
     },
   });
+}
+export function fixtureManifestHash(value: unknown): string {
+  const sort = (v: unknown): unknown =>
+    Array.isArray(v)
+      ? v.map(sort)
+      : v && typeof v === "object"
+        ? Object.fromEntries(
+            Object.entries(v)
+              .sort(([a], [b]) => a.localeCompare(b))
+              .map(([k, item]) => [k, sort(item)]),
+          )
+        : v;
+  return createHash("sha256")
+    .update(JSON.stringify(sort(value)))
+    .digest("hex");
 }
