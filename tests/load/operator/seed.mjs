@@ -10,6 +10,14 @@ export async function seedFixtures(target, plan, clients, journal) {
     capabilityGaps: [],
   };
   const registered = [];
+  if (clients.shipping) {
+    const prior = journal.records().find((x) => x.kind === "shipping");
+    const data = prior?.data ?? { id: randomUUID(), runId: plan.runId };
+    await journal.intent("shipping", "accessories", data);
+    const value = await clients.shipping.ensure(data);
+    if (value.owned) await journal.commit("shipping", "accessories", value);
+    else await journal.markDeleted("shipping", "accessories");
+  }
   async function ensure(kind, key, make, client) {
     const prior = journal.records().find((x) => x.kind === kind && x.key === key);
     const data = prior?.data ?? make();
@@ -55,7 +63,7 @@ export async function seedFixtures(target, plan, clients, journal) {
         stock:
           i === ordinaryCount
             ? plan.hotStock
-            : Math.ceil(plan.ordinaryStockUnits / ordinaryCount),
+            : Math.max(3, Math.ceil(plan.ordinaryStockUnits / ordinaryCount)),
         priceCents: 1000,
         sku: `load-${plan.runId}-${i}`,
       }),
@@ -103,8 +111,12 @@ export async function seedFixtures(target, plan, clients, journal) {
     id: createHash("sha256").update(canonicalJson(addressKey)).digest("hex"),
     slot: 0,
   });
-  for (let offset = 0; offset < registered.length; offset += 100)
-    await clients.register(registered.slice(offset, offset + 100));
+  for (let offset = 0; offset < registered.length; offset += 100) {
+    const data = { id: String(offset), fixtures: registered.slice(offset, offset + 100) };
+    await journal.intent("registry", String(offset), data);
+    await clients.register(data.fixtures);
+    await journal.commit("registry", String(offset), data);
+  }
   if (target.requiredCapabilities?.includes("specialty-claims"))
     bundle.capabilityGaps.push(
       "specialty-claims requires the deployed campaign contract; ordinary fixtures remain available",

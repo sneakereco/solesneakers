@@ -145,8 +145,6 @@ export async function resolveFixtureContext(
   if (
     !run ||
     run.targetDigest !== settings.target.digest ||
-    run.revoked ||
-    run.expiresAt <= Date.now() ||
     owner.slot < run.start ||
     owner.slot >= run.end
   )

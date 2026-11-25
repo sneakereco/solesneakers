@@ -15,6 +15,20 @@ import {
 } from "./fixtures";
 
 describe("staging harness admission", () => {
+  test("revoking shopper admission retains durable provider context for recovery", async () => {
+    const { settings } = fixtureSettings(),
+      store = new MemoryRunStore(),
+      run = fixtureRun(settings.target.digest);
+    await store.put("run", run.runId, {
+      ...run,
+      revoked: true,
+      expiresAt: Date.now() - 1,
+    });
+    await store.put("fixture", "order:accepted", { runId: run.runId, slot: 1 });
+    expect(
+      (await resolveFixtureContext("order", "accepted", settings, store))?.runId,
+    ).toBe(run.runId);
+  });
   test("runtime deployment placeholders avoid redeploying to learn an immutable deployment ID", () => {
     const { env } = fixtureSettings();
     const raw = JSON.parse(env.LOAD_TEST_RESOURCE_MANIFEST);

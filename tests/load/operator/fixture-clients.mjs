@@ -99,6 +99,30 @@ export function createFixtureClients({ admin, db, control, runId }) {
     },
   };
   return {
+    shipping: {
+      async ensure(data) {
+        const rows = (
+          await db.query(
+            "select id,shipping_cost_cents from public.shipping_defaults where category='accessories'",
+          )
+        ).rows;
+        if (rows.length) {
+          if (
+            rows.length !== 1 ||
+            !Number.isSafeInteger(Number(rows[0].shipping_cost_cents))
+          )
+            throw Error("Invalid existing shipping defaults");
+          return { ...data, owned: rows[0].id === data.id };
+        }
+        const tenant = (await db.query("select id from public.tenants limit 2")).rows;
+        if (tenant.length !== 1) throw Error("Single store required");
+        await db.query(
+          "insert into public.shipping_defaults(id,tenant_id,category,shipping_cost_cents,default_weight_oz,default_length_in,default_width_in,default_height_in) values($1,$2,'accessories',1000,16,12,12,12)",
+          [data.id, tenant[0].id],
+        );
+        return { ...data, owned: true };
+      },
+    },
     accounts,
     catalog,
     register: (fixtures) => control("fixtures", { runId, fixtures }),

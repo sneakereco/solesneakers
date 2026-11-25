@@ -15,6 +15,7 @@ const operations = [
   "status",
   "events",
   "faults",
+  "cleanup",
 ];
 const registration = z
   .object({
@@ -41,7 +42,7 @@ export function verifyControlHeaders(
   if (
     request.method !== "POST" ||
     url.origin !== settings.target.baseUrl ||
-    !/^\/api\/internal\/load-test\/(?:attest|register|fixtures|revoke|status|events|faults)$/.test(
+    !/^\/api\/internal\/load-test\/(?:attest|register|fixtures|revoke|status|events|faults|cleanup)$/.test(
       url.pathname,
     ) ||
     !nonce ||
@@ -112,7 +113,7 @@ export async function handleLoadTestControl(
         "target",
         { runId: input.runId, expiresAt: 0 },
         (old) => {
-          if (old.expiresAt > Date.now() && old.runId !== input.runId)
+          if (old.expiresAt !== 0 && old.runId !== input.runId)
             throw new Error("Another run owns this deployment");
           return { runId: input.runId, expiresAt: input.expiresAt };
         },
@@ -131,6 +132,14 @@ export async function handleLoadTestControl(
     }
     const runId = z.string().uuid().parse(body.runId);
     const run = await store.get<RunRecord>("run", runId);
+    if (operation === "cleanup") {
+      if (run && (!run.revoked || run.targetDigest !== settings.target.digest))
+        return json({ error: "Revoke admission before cleanup" }, 409);
+      const removed = await store.purgeRun(runId);
+      const lock = await store.get<{ runId: string }>("lock", "target");
+      if (lock?.runId === runId) await store.remove("lock", "target");
+      return json({ cleaned: true, removed });
+    }
     if (!run || run.targetDigest !== settings.target.digest)
       return json({ error: "Run not found" }, 404);
     if (operation === "revoke") {

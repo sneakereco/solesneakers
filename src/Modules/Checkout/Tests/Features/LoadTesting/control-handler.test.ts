@@ -7,6 +7,26 @@ import {
 } from "./fixtures";
 
 describe("load control plane", () => {
+  test("expired dirty target lease blocks a different run until scoped cleanup", async () => {
+    const { settings } = fixtureSettings(),
+      store = new MemoryRunStore(),
+      run = fixtureRun(settings.target.digest);
+    await store.put("lock", "target", { runId: run.runId, expiresAt: Date.now() - 1 });
+    const response = await handleLoadTestControl(
+      signControlRequest(settings, "register", {
+        nonce: "dirty",
+        runId: "22222222-2222-4222-8222-222222222222",
+        phaseId: "smoke",
+        profile: "smoke",
+        start: 0,
+        end: 10,
+        expiresAt: Date.now() + 60000,
+      }),
+      "register",
+      { settings, store },
+    );
+    expect(response.status).toBe(503);
+  });
   test("operator can enumerate durable owned outcomes beyond the first page", async () => {
     const { settings } = fixtureSettings(),
       store = new MemoryRunStore(),

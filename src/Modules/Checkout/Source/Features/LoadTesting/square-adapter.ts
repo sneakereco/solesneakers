@@ -273,7 +273,7 @@ export function createLoadTestSquareFetch(
           value: (next) => paymentEvent(next.payments[key].payment),
         },
       );
-      await store.put("payment-index", paymentId, { orderId, key });
+      await store.put("payment-index", paymentId, { runId: context.runId, orderId, key });
       await store.put("fixture", `payment:${paymentId}`, {
         runId: context.runId,
         slot: context.slot,
@@ -306,7 +306,9 @@ export async function dispatchDueEvents(
   let delivered = 0,
     failed = 0;
   const events = await store.queueItems<QueuedEvent>("events", context.runId, 100);
+  const deadline = Date.now() + 20000;
   for (const event of events) {
+    if (Date.now() >= deadline) break;
     try {
       const signature = createHmac("sha256", config.signatureKey)
         .update(expected + event.rawBody)
@@ -323,12 +325,13 @@ export async function dispatchDueEvents(
       });
       if (!result.ok) {
         failed++;
-        continue;
+        break;
       }
       await store.acknowledge("events", context.runId, event);
       delivered++;
     } catch {
       failed++;
+      break;
     }
   }
   return { delivered, failed };

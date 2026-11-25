@@ -22,6 +22,7 @@ export async function captureLoadTestEmail(
   if (fault?.kind === "smtp-outage") throw new Error("Synthetic SMTP outage");
   const messageId = `load-mail-${randomUUID()}`;
   await store.mutate<{
+    runId: string;
     count: number;
     messages: {
       messageId: string;
@@ -29,17 +30,23 @@ export async function captureLoadTestEmail(
       subjectDigest: string;
       bodyDigest: string;
     }[];
-  }>("mail", loadDigest(input.to), { count: 0, messages: [] }, (old) => ({
-    count: old.count + 1,
-    messages: [
-      ...old.messages,
-      {
-        messageId,
-        at: Date.now(),
-        subjectDigest: loadDigest(input.subject),
-        bodyDigest: loadDigest(input.html),
-      },
-    ],
-  }));
+  }>(
+    "mail",
+    loadDigest(input.to),
+    { runId: context.runId, count: 0, messages: [] },
+    (old) => ({
+      runId: context.runId,
+      count: old.count + 1,
+      messages: [
+        ...old.messages,
+        {
+          messageId,
+          at: Date.now(),
+          subjectDigest: loadDigest(input.subject),
+          bodyDigest: loadDigest(input.html),
+        },
+      ],
+    }),
+  );
   return { messageId };
 }

@@ -88,6 +88,7 @@ test("guest slots create no auth accounts", async () => {
     memoryJournal(),
   );
   assert.equal(fixtures.accounts.length, 0);
+  assert.ok(fixtures.products.filter((x) => !x.hot).every((x) => x.stock >= 3));
 });
 test("unrelated existing auth identities are never adopted", async () => {
   const clients = createFixtureClients({
