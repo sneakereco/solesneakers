@@ -115,7 +115,7 @@ class RedisRunStore implements RunStore {
     const index = this.key("keys", runId);
     let removed = 0;
     for (let batch = 0; batch < 10000; batch++) {
-      const keys = await this.redis.srandmember<string>(index, 100);
+      const keys = (await this.redis.srandmember<string[]>(index, 100)) ?? [];
       if (!keys.length) {
         await this.redis.del(index);
         return removed;
@@ -138,3 +138,4 @@ export function createLoadRunStore(settings: LoadTestSettings): RunStore {
     `soles:load:{${settings.target.expected.deploymentId}}`,
   );
 }
+
