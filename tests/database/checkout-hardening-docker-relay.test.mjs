@@ -391,6 +391,10 @@ test("partial startup preserves a pre-existing volume returned by a duplicate cr
   const commands = [];
   const cleanDocker = async (args) => {
     commands.push(args);
+    if (args[1] === "ls") {
+      assert.ok(args.includes("label=" + runLabel + "=" + ownership.token));
+      return args[0] === "network" && networkExists ? networkId : "";
+    }
     if (args[0] === "volume") {
       assert.equal(args[1], "inspect", "the replacement volume must survive");
       return JSON.stringify(volume);
@@ -448,7 +452,9 @@ test("partial startup preserves a pre-existing volume returned by a duplicate cr
       receipt: (entry) => receipts.push(entry),
     });
     assert.equal(networkExists, false);
-    assert.ok(!commands.some(([kind]) => kind === "volume"));
+    assert.ok(
+      !commands.some(([kind, operation]) => kind === "volume" && operation !== "ls"),
+    );
     assert.deepEqual(volume, foreignBefore);
     await assert.rejects(
       removeCreatedDockerResources(
@@ -476,3 +482,103 @@ test("partial startup preserves a pre-existing volume returned by a duplicate cr
     await rmdir(workspace);
   }
 });
+
+test(
+  "reconciles a daemon create when the response disconnects before its receipt",
+  { timeout: 5000 },
+  async (t) => {
+    const workspace = await mkdtemp(join(tmpdir(), "checkout-relay-disconnect-"));
+    const id = "checkout-hardening-test-" + randomBytes(7).toString("hex");
+    const ownership = await claimProjectDirectory(workspace, id);
+    const name = "supabase_network_" + id;
+    const resources = [];
+    let created;
+    const socket =
+      process.platform === "win32"
+        ? "\\\\.\\pipe\\" + id + "-fake"
+        : join(ownership.directory, "upstream.sock");
+    const upstream = createServer(async (incoming, outgoing) => {
+      const chunks = [];
+      for await (const chunk of incoming) chunks.push(chunk);
+      const spec = JSON.parse(Buffer.concat(chunks));
+      assert.equal(incoming.url, "/networks/create");
+      assert.equal(spec.Name, name);
+      assert.equal(spec.Labels[runLabel], ownership.token);
+      created = { Name: name, Id: networkId, Labels: spec.Labels };
+      outgoing.socket.destroy();
+    });
+    await new Promise((ready) => upstream.listen(socket, ready));
+    try {
+      await assert.rejects(
+        withLoopbackPublishing(
+          ownership,
+          56123,
+          socket,
+          async ({ DOCKER_HOST }) => {
+            const socketPath =
+              process.platform === "win32"
+                ? DOCKER_HOST.slice("npipe://".length).replaceAll("/", "\\")
+                : DOCKER_HOST.slice("unix://".length);
+            await new Promise((done, fail) => {
+              const req = request(
+                { socketPath, path: "/networks/create", method: "POST" },
+                (response) => {
+                  response.resume().once("end", () => {
+                    if (response.statusCode === 502)
+                      fail(new Error("daemon lost create response"));
+                    else done();
+                  });
+                },
+              );
+              req.once("error", fail);
+              req.end(
+                JSON.stringify({
+                  Name: name,
+                  Driver: "bridge",
+                  Labels: { "com.supabase.cli.project": id },
+                }),
+              );
+            });
+          },
+          resources,
+        ),
+        /daemon lost create response/,
+      );
+      assert.equal(created.Id, networkId);
+      assert.deepEqual(resources, []);
+      const receipts = [];
+      await removeCreatedDockerResources(ownership, resources, {
+        receipt: (entry) => receipts.push(entry),
+        command: async ([kind, operation, ...args]) => {
+          if (operation === "ls") {
+            assert.ok(args.includes("label=" + runLabel + "=" + ownership.token));
+            return kind === "network" && created ? created.Id : "";
+          }
+          assert.equal(kind, "network");
+          assert.equal(args.at(-1), networkId);
+          if (operation === "rm") {
+            created = undefined;
+            return networkId;
+          }
+          assert.equal(operation, "inspect");
+          if (!created) throw new Error("No such network");
+          return JSON.stringify(created);
+        },
+      });
+      assert.ok(!created, "lost create receipt must not leave the owned network");
+      assert.deepEqual(
+        receipts.map(({ phase, id, present }) => ({ phase, id, present })),
+        [
+          { phase: "before", id: networkId, present: true },
+          { phase: "after", id: networkId, present: false },
+        ],
+      );
+      t.diagnostic(JSON.stringify(receipts));
+    } finally {
+      upstream.closeAllConnections();
+      await new Promise((closed) => upstream.close(closed));
+      await removeOwnedDirectory(ownership);
+      await rmdir(workspace);
+    }
+  },
+);

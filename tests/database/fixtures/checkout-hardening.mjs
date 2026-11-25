@@ -311,14 +311,73 @@ function assertCreatedIdentity(ownership, resource, observed) {
   );
 }
 
+const cleanupOrder = ["container", "volume", "network"];
+
+async function listOwnedDockerResources(ownership, command) {
+  const filter = "label=" + runLabel + "=" + ownership.token;
+  const inventory = await Promise.all(
+    cleanupOrder.map(async (kind) => {
+      const flags = kind === "volume" ? [] : ["--no-trunc"];
+      if (kind === "container") flags.push("--all");
+      const format = kind === "volume" ? "{{.Name}}" : "{{.ID}}";
+      const found = await command([
+        kind,
+        "ls",
+        ...flags,
+        "--filter",
+        filter,
+        "--format",
+        format,
+      ]);
+      return found
+        .split(/\r?\n/)
+        .filter(Boolean)
+        .map((reference) => {
+          if (kind === "volume") {
+            assert.equal(reference, "supabase_db_" + ownership.projectId);
+            return { kind, name: reference };
+          }
+          assert.match(reference, /^[0-9a-f]{64}$/);
+          return { kind, id: reference };
+        });
+    }),
+  );
+  return inventory.flat();
+}
+
 export async function removeCreatedDockerResources(
   ownership,
   resources,
   { command = docker, receipt = () => {} } = {},
 ) {
   await verifyOwnership(ownership);
+  const pending = resources.toReversed();
+  // Docker may commit a create before the relay receives its response.
+  // Only adopt resources stamped with this run's private ownership label.
+  for (const entry of await listOwnedDockerResources(ownership, command)) {
+    if (
+      pending.some(
+        ({ kind, id, name }) =>
+          kind === entry.kind && (entry.id ? id === entry.id : name === entry.name),
+      )
+    )
+      continue;
+    const observed = await inspectResource(entry, command);
+    if (!observed) continue;
+    const resource =
+      entry.kind === "volume"
+        ? { ...entry, createdAt: observed.CreatedAt, reconciled: true }
+        : { ...entry, reconciled: true };
+    if (entry.kind === "volume")
+      assert.ok(resource.createdAt, "Owned Docker volume has no creation timestamp");
+    assertCreatedIdentity(ownership, resource, observed);
+    pending.push(resource);
+  }
+  pending.sort(
+    (left, right) => cleanupOrder.indexOf(left.kind) - cleanupOrder.indexOf(right.kind),
+  );
   const failures = [];
-  for (const resource of resources.toReversed()) {
+  for (const resource of pending) {
     const reference = resource.id ?? resource.name;
     try {
       const before = await inspectResource(resource, command);
@@ -342,6 +401,12 @@ export async function removeCreatedDockerResources(
     }
   }
   if (failures.length) throw new Error(failures.join("\n"));
+  const remaining = await listOwnedDockerResources(ownership, command);
+  assert.equal(
+    remaining.length,
+    0,
+    "Owned checkout Docker resources remain after cleanup",
+  );
 }
 
 async function readMigrations() {

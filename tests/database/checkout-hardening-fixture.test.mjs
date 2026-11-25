@@ -11,6 +11,7 @@ import {
   withCheckoutDatabase,
   claimProjectDirectory,
   removeOwnedDirectory,
+  removeCreatedDockerResources,
   validateMutationTarget,
 } from "./fixtures/checkout-hardening.mjs";
 
@@ -173,3 +174,24 @@ if (process.env.CHECKOUT_HARDENING_SELF_TEST_MODE === "populated") {
     });
   });
 }
+
+test("preserves the ownership marker while the final daemon inventory is nonempty", async () => {
+  const workspace = await mkdtemp(join(tmpdir(), "checkout-final-inventory-"));
+  try {
+    const ownership = await claimProjectDirectory(workspace, projectId);
+    const marker = await readFile(ownership.marker);
+    let networkLists = 0;
+    await assert.rejects(async () => {
+      await removeCreatedDockerResources(ownership, [], {
+        command: async ([kind, operation]) => {
+          assert.equal(operation, "ls");
+          return kind === "network" && ++networkLists === 2 ? "b".repeat(64) : "";
+        },
+      });
+      await removeOwnedDirectory(ownership);
+    }, /Owned checkout Docker resources remain/);
+    assert.deepEqual(await readFile(ownership.marker), marker);
+  } finally {
+    await rm(workspace, { recursive: true, force: true });
+  }
+});
