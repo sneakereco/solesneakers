@@ -33,6 +33,17 @@ const fact: PublishedEvent = {
     currency: "USD",
     buyer_key: null,
     order_id: factId,
+    payload: {
+      grossMerchandiseCents: 100,
+      discountCents: 0,
+      merchandiseCents: 100,
+      shippingCents: 0,
+      taxCents: 0,
+      totalCollectedCents: 100,
+      paymentMethod: "card",
+      fulfillment: "ship",
+      status: "paid",
+    },
   },
 };
 
@@ -98,6 +109,22 @@ it.each([
   [
     "profile override",
     [{ ...fact, properties: { ...fact.properties, $process_person_profile: true } }],
+  ],
+  [
+    "wrong kind payload",
+    [{ ...fact, properties: { ...fact.properties, fact_kind: "inventory" } }],
+  ],
+  [
+    "nested unsafe data",
+    [
+      {
+        ...fact,
+        properties: {
+          ...fact.properties,
+          payload: { ...fact.properties.payload, ip: "192.0.2.1" },
+        },
+      },
+    ],
   ],
   ["unsupported event", [{ ...fact, event: "$identify" }]],
   ["plaintext distinct ID", [{ ...fact, distinctId: "buyer@example.com" }]],

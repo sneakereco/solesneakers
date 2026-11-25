@@ -1,6 +1,7 @@
 import "server-only";
 
 import { z } from "zod";
+import { factFields, factPayloadSchemas, type FactKind } from "../CommerceFacts/contract";
 
 import {
   requestPostHogJson,
@@ -15,35 +16,38 @@ import {
 const MAX_BATCH_SIZE = 50;
 const CAPTURE_TIMEOUT_MS = 3_000;
 const uuid = z.uuid();
-const timestamp = z.iso.datetime({ offset: true });
-const factProperties = z.strictObject({
-  schema_version: z.literal(2),
-  storefront: z.literal("sole"),
-  environment: z.enum(["staging", "production"]),
-  dataset_id: z.string().regex(/^[a-z0-9][a-z0-9_-]{0,63}$/),
-  fact_id: z.string().regex(/^[a-z0-9][a-z0-9_:-]{0,127}$/),
-  fact_revision: z.number().int().positive(),
-  fact_kind: z.enum([
-    "order",
-    "line",
-    "refund",
-    "refund_line",
-    "payment_attempt",
-    "shipping_cost",
-    "fee",
-    "fulfillment",
-    "inventory",
-    "customer_summary",
-  ]),
-  effective_at: timestamp,
-  recorded_at: timestamp,
-  currency: z.literal("USD"),
-  buyer_key: z
-    .string()
-    .regex(/^sole-buyer:v1:[a-f0-9]{64}$/)
-    .nullable(),
-  order_id: uuid.nullable(),
-});
+const timestamp = factFields.effectiveAt;
+
+function wireVariant<K extends FactKind>(kind: K) {
+  return z.strictObject({
+    schema_version: z.literal(2),
+    storefront: z.literal("sole"),
+    environment: z.enum(["staging", "production"]),
+    dataset_id: factFields.datasetId,
+    fact_id: factFields.factId,
+    fact_revision: factFields.revision,
+    fact_kind: z.literal(kind),
+    effective_at: factFields.effectiveAt,
+    recorded_at: factFields.recordedAt,
+    currency: factFields.currency,
+    buyer_key: factFields.buyerKey,
+    order_id: factFields.orderId,
+    payload: factPayloadSchemas[kind],
+  });
+}
+
+const factProperties = z.discriminatedUnion("fact_kind", [
+  wireVariant("order"),
+  wireVariant("line"),
+  wireVariant("refund"),
+  wireVariant("refund_line"),
+  wireVariant("payment_attempt"),
+  wireVariant("shipping_cost"),
+  wireVariant("fee"),
+  wireVariant("fulfillment"),
+  wireVariant("inventory"),
+  wireVariant("customer_summary"),
+]);
 
 const publishedEvent = z.strictObject({
   uuid,
