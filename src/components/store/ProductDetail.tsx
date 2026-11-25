@@ -9,6 +9,7 @@ import { useCart } from "@/components/cart/CartProvider";
 import { Toast } from "@/components/ui/Toast";
 import { captureProductViewed } from "@/lib/measurement/client";
 import type { ProductWithDetails } from "@/types/domain/product";
+import { SpecialtyProductCard } from "@/Modules/SpecialtyProducts/Source/Features/Discovery/SpecialtyProductCard";
 
 interface ProductDetailProps {
   product: ProductWithDetails;
@@ -31,6 +32,24 @@ const getConditionLabel = (condition: string) => {
 };
 
 export function ProductDetail({ product }: ProductDetailProps) {
+  if (product.category === "specialty")
+    return (
+      <SpecialtyProductCard
+        product={{
+          id: product.id,
+          name: product.name,
+          description: product.description,
+          imageUrl:
+            (product.images.find((image) => image.is_primary) ?? product.images[0])
+              ?.url ?? null,
+          claimable: product.variants.some((variant) => variant.stock > 0),
+        }}
+      />
+    );
+  return <OrdinaryProductDetail product={product} />;
+}
+
+function OrdinaryProductDetail({ product }: ProductDetailProps) {
   const { addItem, items } = useCart();
   const viewedProductId = useRef<string | null>(null);
   const initialVariant =

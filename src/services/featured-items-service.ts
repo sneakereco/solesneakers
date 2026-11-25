@@ -21,21 +21,23 @@ export class FeaturedItemsService {
     const items = await this.repo.list(tenantId);
 
     // Sort images by primary first, then sort_order
-    return items.map((item) => ({
-      ...item,
-      product: {
-        ...item.product,
-        images: (item.product.images ?? []).sort((a, b) => {
-          if (a.is_primary && !b.is_primary) {
-            return -1;
-          }
-          if (!a.is_primary && b.is_primary) {
-            return 1;
-          }
-          return (a.sort_order ?? 0) - (b.sort_order ?? 0);
-        }),
-      },
-    }));
+    return items
+      .filter((item) => item.product.category !== "specialty")
+      .map((item) => ({
+        ...item,
+        product: {
+          ...item.product,
+          images: (item.product.images ?? []).sort((a, b) => {
+            if (a.is_primary && !b.is_primary) {
+              return -1;
+            }
+            if (!a.is_primary && b.is_primary) {
+              return 1;
+            }
+            return (a.sort_order ?? 0) - (b.sort_order ?? 0);
+          }),
+        },
+      }));
   }
 
   /**
@@ -51,6 +53,8 @@ export class FeaturedItemsService {
     if (!product) {
       throw new Error("Product not found");
     }
+    if (product.category === "specialty")
+      throw new Error("Specialty products use random discovery and cannot be featured.");
 
     if (!product.is_active) {
       throw new Error("Cannot feature inactive product");

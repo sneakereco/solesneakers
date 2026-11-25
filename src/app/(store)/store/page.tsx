@@ -10,6 +10,7 @@ import type { ProductFilters } from "@/repositories/product-repo";
 import { TagTaxonomyRepository } from "@/repositories/tag-taxonomy-repo";
 import { StorefrontService } from "@/services/storefront-service";
 import { pageMetadata } from "@/lib/metadata";
+import { isSpecialtyDiscoveryAllowed } from "@/Modules/SpecialtyProducts/Source/Features/Discovery/discovery-policy";
 
 export const revalidate = 60;
 
@@ -270,6 +271,7 @@ export default async function StorePage({
         }
       >
         <ProductGrid
+          allowSpecialty={isSpecialtyDiscoveryAllowed({ ...rawFilters, sort: undefined })}
           products={productsResult.products}
           storeHref={storeHref}
           view={view}

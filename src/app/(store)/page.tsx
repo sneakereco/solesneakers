@@ -46,7 +46,7 @@ export default function HomePage() {
         </div>
       </section>
 
-      <FeaturedItems />
+      <FeaturedItems allowSpecialty />
       <OutfitSlideshow />
       <FeaturedItems category="clothing" />
       <HomepageCategories />
