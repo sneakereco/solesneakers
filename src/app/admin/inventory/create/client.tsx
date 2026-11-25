@@ -5,6 +5,7 @@ import { useRouter } from "next/navigation";
 
 import { ProductForm } from "@/components/inventory/ProductForm";
 import type { ProductCreateInput } from "@/services/product-service";
+import { saveSpecialtyProduct } from "@/Modules/SpecialtyProducts/Source/Features/ManageProducts/specialty-product-client";
 
 interface CreateProductClientProps {
   initialBrands: Array<{
@@ -49,6 +50,11 @@ export function CreateProductClient({
 
   return (
     <ProductForm
+      onSpecialtySubmit={async (input) => {
+        await saveSpecialtyProduct(input);
+        router.push("/admin/inventory");
+        router.refresh();
+      }}
       onSubmit={handleSubmit}
       onCancel={handleCancel}
       initialBrands={initialBrands}

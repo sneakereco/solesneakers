@@ -253,6 +253,43 @@ test("expired proof or changed identity key cannot consume a prize", async () =>
   }
   assert.deepEqual(await readRunState(db, item.productId), { winners: 0, stock: 1 });
 });
+
+test("quantity edit racing the first claim either precedes it or conflicts without restoring stock", async () => {
+  const item = await prize(1);
+  const editor = await connectTestDatabase(),
+    claimant = await connectTestDatabase();
+  try {
+    const input = {
+      ...item.input,
+      mode: "update",
+      expectedRevision: 1,
+      quantity: 2,
+      campaignSlug: campaign.slug,
+    };
+    const [saved, claimed] = await Promise.allSettled([
+      editor.query("select public.save_specialty_product($1,$2::jsonb,$3,$4)", [
+        item.productId,
+        JSON.stringify(input),
+        item.actor,
+        item.owner,
+      ]),
+      award(claimant, claimAttempt(item, campaign)),
+    ]);
+    assert.equal(claimed.status, "fulfilled");
+    assert.equal(claimed.value.result.status, "won");
+    if (saved.status === "rejected")
+      assert.match(
+        saved.reason.message,
+        /specialty_revision_conflict|specialty_stock_locked_after_claim/,
+      );
+    assert.deepEqual(await readRunState(db, item.productId), {
+      winners: 1,
+      stock: saved.status === "fulfilled" ? 1 : 0,
+    });
+  } finally {
+    await Promise.all([editor.end(), claimant.end()]);
+  }
+});
 test("a blocked product does not block independent prizes behind a campaign-wide write lock", async () => {
   const a = await prize(1),
     b = await prize(1);

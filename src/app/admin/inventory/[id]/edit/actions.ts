@@ -6,6 +6,8 @@ import { requireAdmin } from "@/lib/auth/session";
 import { TagTaxonomyRepository } from "@/repositories/tag-taxonomy-repo";
 import { ProductService } from "@/services/product-service";
 import { ensureTenantId } from "@/lib/auth/tenant";
+import { createSupabaseAdminClient } from "@/lib/supabase/service-role";
+import { loadSpecialtyProductDraft } from "@/Modules/SpecialtyProducts/Source/Features/ManageProducts/load-specialty-product-draft";
 
 export async function getEditFormInitialData(productId: string) {
   try {
@@ -52,6 +54,9 @@ export async function getEditFormInitialData(productId: string) {
     }
 
     return {
+      specialtyInitial: product
+        ? await loadSpecialtyProductDraft(product, createSupabaseAdminClient())
+        : undefined,
       product,
       brands: brandsData.map((brand: { id: string; canonical_label: string }) => ({
         id: brand.id,
