@@ -3,7 +3,7 @@
 import {
   createContext,
   useContext,
-  useEffect,
+  useLayoutEffect,
   useOptimistic,
   useRef,
   useState,
@@ -35,28 +35,41 @@ export function StoreNavigation({
   const committedQuery = searchParams.toString();
   const requestedQuery = useRef<string | null>(null);
   const [isPending, startTransition] = useTransition();
-  const [intendedQuery, setIntendedQuery] = useOptimistic(committedQuery);
-  const [lastResults, setLastResults] = useState(children);
+  const [lastResults, setLastResults] = useState({ children, query: committedQuery });
 
-  if (!loadFailed && children !== lastResults) setLastResults(children);
+  if (
+    !loadFailed &&
+    (children !== lastResults.children || committedQuery !== lastResults.query)
+  ) {
+    setLastResults({ children, query: committedQuery });
+  }
 
-  useEffect(() => {
+  const visibleQuery = loadFailed ? lastResults.query : committedQuery;
+  const [intendedQuery, setIntendedQuery] = useOptimistic(visibleQuery);
+
+  useLayoutEffect(() => {
     if (!isPending) requestedQuery.current = null;
   }, [committedQuery, isPending]);
 
+  const beginNavigation = (query: string, navigate: () => void) => {
+    requestedQuery.current = query;
+    startTransition(() => {
+      setIntendedQuery(query);
+      navigate();
+    });
+  };
+
   const updateQuery: StoreNavigationValue["updateQuery"] = (update, scroll = false) => {
     // A new action can build on the shopper's previous intent before its route commits.
-    const current = requestedQuery.current ?? committedQuery;
+    const current = requestedQuery.current ?? visibleQuery;
     const params = new URLSearchParams(current);
     update(params);
     const next = params.toString();
     if (next === current) return;
 
-    requestedQuery.current = next;
-    startTransition(() => {
-      setIntendedQuery(next);
-      router.push(next ? `/store?${next}` : "/store", { scroll });
-    });
+    beginNavigation(next, () =>
+      router.push(next ? `/store?${next}` : "/store", { scroll }),
+    );
   };
 
   return (
@@ -66,16 +79,16 @@ export function StoreNavigation({
         <div className="mx-auto max-w-[90rem] px-5 py-5 sm:px-8">
           <RequestError
             message={
-              lastResults
+              lastResults.children
                 ? "Could not update products. Showing previous results."
                 : "Could not load products."
             }
-            onRetry={() => startTransition(() => router.refresh())}
+            onRetry={() => beginNavigation(committedQuery, () => router.refresh())}
             retrying={isPending}
           />
         </div>
       )}
-      {loadFailed ? lastResults : children}
+      {loadFailed ? lastResults.children : children}
     </CatalogNavigationContext.Provider>
   );
 }

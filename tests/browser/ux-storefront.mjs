@@ -573,6 +573,57 @@ async function checkPageReversal(page) {
   }
 }
 
+async function checkFailedPageRecovery(page) {
+  const forward = holdResponse();
+  const retry = holdResponse();
+  const previous = holdResponse();
+  let lastPageAttempts = 0;
+  await page.route("**/fixture/catalog**", (route) => {
+    const requested = new URL(route.request().url()).searchParams.get("page");
+    if (requested !== "3") return previous.fulfill(route);
+    lastPageAttempts += 1;
+    return (lastPageAttempts === 1 ? forward : retry).fulfill(route);
+  });
+  await openUxHarness(page, bundle, "https://ux.test/catalog?page=2");
+  const products = page.getByTestId("product-card");
+  const pagination = page.getByRole("navigation", { name: "Product pagination" });
+  const next = pagination.getByRole("button", { name: "Next" });
+  const back = pagination.getByRole("button", { name: "Previous" });
+  const retryButton = page.getByRole("button", { name: "Retry", exact: true });
+
+  try {
+    await next.press("Enter");
+    await forward.received;
+    forward.release({ status: 503, json: {} });
+    await expect(page.getByRole("alert")).toContainText("Showing previous results");
+    await expect(products).toContainText("Initial product");
+    await expect(next).toBeEnabled(options);
+
+    await retryButton.press("Enter");
+    const retried = await retry.received;
+    assert.equal(new URL(retried.url()).searchParams.get("page"), "3");
+    await expect(next).toBeDisabled(options);
+    retry.release({ status: 503, json: {} });
+    await expect(retryButton).toBeEnabled(options);
+    await expect(next).toBeEnabled(options);
+    await expect(back).toBeEnabled(options);
+    await expect(
+      pagination.getByRole("button", { name: "2", exact: true }),
+    ).toHaveAttribute("aria-current", "page");
+
+    await back.press("Enter");
+    const request = await previous.received;
+    assert.equal(new URL(request.url()).searchParams.get("page"), "1");
+    previous.release({ json: { name: "Previous page product" } });
+    await expect(products).toContainText("Previous page product");
+    await expect(page.getByRole("alert")).toHaveCount(0);
+  } finally {
+    forward.release({ status: 503, json: {} });
+    retry.release({ status: 503, json: {} });
+    previous.release({ json: { name: "Previous page product" } });
+  }
+}
+
 const authEmail = "hello@example.test";
 
 async function checkAuthHandoff(page, flow) {
@@ -735,6 +786,11 @@ try {
     );
     await check(width, "menu taxonomy shows scoped loading and retry", checkMenu);
     await check(width, "pagination reverses from latest intent", checkPageReversal);
+    await check(
+      width,
+      "pagination follows retained results after a failure",
+      checkFailedPageRecovery,
+    );
   }
   for (const flow of ["password", "otp", "verify", "challenge", "setup"]) {
     await check(1440, `session follows soft navigation after ${flow}`, (page) =>
