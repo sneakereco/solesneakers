@@ -64,7 +64,7 @@ type AccountAddress = {
 
 type AddressInput = Omit<AccountAddress, "id">;
 type Result = { tone: "success" | "error"; message: string };
-type DefaultResult = { ok: true } | { ok: false; message: string };
+type DefaultResult = { ok: true } | { ok: false; message: string; addressChanged?: true };
 type DefaultRetry = { address: AccountAddress | null; message: string };
 
 const emptyAddress = {
@@ -299,7 +299,9 @@ function AccountDetails({
     draft: AddressInput;
     makeDefault: boolean;
   } | null>(null);
-  const [addressRefreshNeeded, setAddressRefreshNeeded] = useState(false);
+  const [addressRefreshNeeded, setAddressRefreshNeeded] = useState<
+    "partial-save" | "stale-default" | null
+  >(null);
   const [passwordResult, setPasswordResult] = useState<Result | null>(null);
   const [logoutError, setLogoutError] = useState<string | null>(null);
   const [signedOut, setSignedOut] = useState(false);
@@ -319,6 +321,8 @@ function AccountDetails({
     orderResource.error === "owner-changed";
   const accountActionsAvailable = canChangeAccount && !ownerChanged;
   const addressActionsAvailable = accountActionsAvailable && !unconfirmedSave;
+  const savedDefaultAvailable =
+    addressActionsAvailable && addressRefreshNeeded !== "stale-default";
   const addressFormLocked =
     Boolean(unconfirmedSave) || (addressAction.pending && addressOperation === "add");
   const retrySnapshot = defaultRetry?.address;
@@ -367,6 +371,7 @@ function AccountDetails({
   async function updateDefault(
     address: AddressInput | null,
     ownerSignal: AbortSignal,
+    savedAddressId?: string,
   ): Promise<DefaultResult> {
     if (!ownerReady.current || ownerSignal.aborted) {
       return {
@@ -378,6 +383,7 @@ function AccountDetails({
       const data = await postAccountJson(
         "/api/account/shipping",
         {
+          ...(savedAddressId ? { savedAddressId } : {}),
           full_name: address?.name ?? null,
           phone: address?.phone ?? null,
           address_line1: address?.line1 ?? null,
@@ -400,6 +406,14 @@ function AccountDetails({
       profileResource.replace(savedProfile);
       return { ok: true };
     } catch (error) {
+      if (savedAddressId && error instanceof ResponseError && error.status === 412) {
+        return {
+          ok: false,
+          addressChanged: true,
+          message:
+            "Saved address changed. Refresh your saved addresses and select the current address.",
+        };
+      }
       const message = address
         ? "Could not set the default shipping address."
         : "Could not clear the default shipping address.";
@@ -447,14 +461,21 @@ function AccountDetails({
           tone: "error",
           message: unconfirmedSave
             ? "Could not check saved addresses. Your draft is still here."
-            : "Address saved. Could not refresh your saved addresses.",
+            : addressRefreshNeeded === "partial-save"
+              ? "Address saved. Could not refresh your saved addresses."
+              : "Could not refresh your saved addresses. Try again.",
         });
         return;
       }
 
-      setAddressRefreshNeeded(false);
+      setAddressRefreshNeeded(null);
       reconcileDefaultRetry(saved);
-      if (!unconfirmedSave) return;
+      if (!unconfirmedSave) {
+        if (addressRefreshNeeded === "stale-default") {
+          setAddressResult({ tone: "success", message: "Saved addresses refreshed." });
+        }
+        return;
+      }
       setUnconfirmedSave(null);
       const match = saved.find((address) =>
         sameSavedAddress(address, unconfirmedSave.draft),
@@ -474,11 +495,19 @@ function AccountDetails({
     });
   }
 
-  function handleDefault(address: AddressInput | null, operation: string) {
+  function handleDefault(address: AccountAddress | null, operation: string) {
+    if (address && !savedDefaultAvailable) return;
     runAddressAction(operation, async (signal) => {
-      const result = await updateDefault(address, signal);
+      const savedAddressId = operation === "retry-default" ? address?.id : undefined;
+      const result = await updateDefault(address, signal, savedAddressId);
       if (signal.aborted) return;
       if (!result.ok) {
+        if (result.addressChanged) {
+          setDefaultRetry(null);
+          setAddressRefreshNeeded("stale-default");
+          setAddressResult({ tone: "error", message: result.message });
+          return;
+        }
         if (operation === "retry-default" && defaultRetry) {
           setDefaultRetry({
             ...defaultRetry,
@@ -586,7 +615,9 @@ function AccountDetails({
         ...(addresses ?? []).filter((address) => address.id !== saved.address.id),
       ];
       addressResource.replace(latestAddresses);
-      setAddressRefreshNeeded(!saved.addresses);
+      setAddressRefreshNeeded((previous) =>
+        saved.addresses ? null : (previous ?? "partial-save"),
+      );
       reconcileDefaultRetry(latestAddresses);
       setAddressForm(emptyAddress);
       setSetAsDefault(false);
@@ -899,7 +930,7 @@ function AccountDetails({
                           <ActionButton
                             type="button"
                             onClick={() => handleDefault(address, `set:${address.id}`)}
-                            disabled={addressAction.pending || !addressActionsAvailable}
+                            disabled={addressAction.pending || !savedDefaultAvailable}
                             pending={
                               addressAction.pending &&
                               addressOperation === `set:${address.id}`

@@ -5,34 +5,57 @@ import { NextResponse } from "next/server";
 import { z } from "zod";
 
 import { createSupabaseServerClient } from "@/lib/supabase/server";
+import { AddressesRepository } from "@/repositories/addresses-repo";
 import { ShippingService } from "@/services/shipping-service";
 import { AccountSessionError, requireAccountSession } from "@/lib/account/session";
 import { getRequestIdFromHeaders } from "@/lib/http/request-id";
 import { logError } from "@/lib/utils/log";
-import type { TablesInsert } from "@/types/db/database.types";
+import type { Tables, TablesInsert } from "@/types/db/database.types";
 
 type ShippingProfileUpsert = TablesInsert<"shipping_profiles">;
 
-const optionalText = z.preprocess((value) => {
-  if (typeof value !== "string") {
-    return value;
-  }
-  const trimmed = value.trim();
-  return trimmed.length === 0 ? null : trimmed;
-}, z.string().trim().min(1).nullable().optional());
+function normalizeText(value: unknown) {
+  return typeof value === "string" ? value.trim() || null : value;
+}
 
-const shippingProfileSchema = z
+const nullableText = z.preprocess(normalizeText, z.string().min(1).nullable());
+const shippingDetailsSchema = z
   .object({
-    full_name: optionalText,
-    phone: optionalText,
-    address_line1: optionalText,
-    address_line2: optionalText,
-    city: optionalText,
-    state: optionalText,
-    postal_code: optionalText,
-    country: optionalText,
+    full_name: nullableText,
+    phone: nullableText,
+    address_line1: nullableText,
+    address_line2: nullableText,
+    city: nullableText,
+    state: nullableText,
+    postal_code: nullableText,
+    country: nullableText,
   })
   .strict();
+
+const shippingProfileSchema = z.union([
+  shippingDetailsSchema.partial(),
+  shippingDetailsSchema.extend({ savedAddressId: z.string().uuid() }),
+]);
+
+type ShippingDetails = z.infer<typeof shippingDetailsSchema>;
+
+function toShippingDetails(address: Tables<"user_addresses">): ShippingDetails {
+  return {
+    full_name: address.name,
+    phone: address.phone,
+    address_line1: address.line1,
+    address_line2: address.line2,
+    city: address.city,
+    state: address.state,
+    postal_code: address.postal_code,
+    country: address.country,
+  };
+}
+
+function matchesSnapshot(current: ShippingDetails, snapshot: ShippingDetails) {
+  const fields = Object.keys(current) as (keyof ShippingDetails)[];
+  return fields.every((field) => normalizeText(current[field]) === snapshot[field]);
+}
 
 export async function GET(request: NextRequest) {
   const requestId = getRequestIdFromHeaders(request.headers);
@@ -82,10 +105,29 @@ export async function POST(request: NextRequest) {
       );
     }
 
+    let details: Partial<ShippingDetails> = parsed.data;
+    if ("savedAddressId" in parsed.data) {
+      const { savedAddressId } = parsed.data;
+      const repo = new AddressesRepository(supabase);
+      const row = await repo.getUserAddress(session.user.id, savedAddressId);
+      const current =
+        row?.user_id === session.user.id && row.id === savedAddressId
+          ? toShippingDetails(row)
+          : null;
+
+      if (!current || !matchesSnapshot(current, parsed.data)) {
+        return NextResponse.json(
+          { code: "saved_address_changed", error: "Saved address changed", requestId },
+          { status: 412, headers: { "Cache-Control": "no-store" } },
+        );
+      }
+      details = current;
+    }
+
     const input: ShippingProfileUpsert = {
       user_id: session.user.id,
       tenant_id: session.profile?.tenant_id ?? null,
-      ...parsed.data,
+      ...details,
       updated_at: new Date().toISOString(),
     };
 

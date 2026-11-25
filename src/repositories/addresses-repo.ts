@@ -121,6 +121,21 @@ export class AddressesRepository {
     return data ?? [];
   }
 
+  async getUserAddress(
+    userId: string,
+    addressId: string,
+  ): Promise<UserAddressRow | null> {
+    const { data, error } = await this.supabase
+      .from("user_addresses")
+      .select("*")
+      .eq("user_id", userId)
+      .eq("id", addressId)
+      .maybeSingle();
+
+    if (error) throw error;
+    return data;
+  }
+
   async deleteUserAddress(userId: string, addressId: string): Promise<void> {
     const { error } = await this.supabase
       .from("user_addresses")

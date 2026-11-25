@@ -123,7 +123,7 @@ const failures = [];
 const json = (body, status = 200) => ({ status, json: body });
 const unavailable = json({ error: "Unavailable" }, 503);
 const address = {
-  id: "fixture-address",
+  id: "3fd71135-d895-4d08-a964-56bdebedd2dc",
   name: "Sally Test",
   line1: "123 Test Street",
   city: "Salem",
@@ -133,10 +133,11 @@ const address = {
 };
 
 async function check(name, run, options = {}) {
-  const page = await browser.newPage({
+  const context = await browser.newContext({
     viewport: { width: 1200, height: 900 },
     ...options,
   });
+  const page = await context.newPage();
   page.setDefaultTimeout(5000);
   try {
     await page.route("**/*", (route) => route.abort());
@@ -146,7 +147,7 @@ async function check(name, run, options = {}) {
     failures.push(name);
     console.error("FAIL", name, error);
   } finally {
-    await page.close();
+    await context.close();
   }
 }
 
@@ -442,6 +443,110 @@ try {
       assert.equal(defaultBodies.length, 2);
       assert.equal(defaultBodies[1].address_line2, revised.line2);
       assert.equal(defaultBodies[1].full_name, revised.name);
+    },
+  );
+
+  await check(
+    "a saved default retry rejects a second-tab edit and refreshes before a new choice",
+    async (page) => {
+      const refreshed = holdResponse();
+      const revised = { ...address, name: "Second tab recipient", line2: "Apartment 42" };
+      const defaultRequests = [];
+      const appliedDefaults = [];
+      let saved = null;
+      let refreshRequired = false;
+      const secondTab = await page.context().newPage();
+
+      function accountRoutes(isOriginalTab) {
+        return {
+          addresses: (route) => {
+            if (route.request().method() === "GET") {
+              if (isOriginalTab && refreshRequired) return refreshed.fulfill(route);
+              return route.fulfill(json({ addresses: saved ? [saved] : [] }));
+            }
+            const payload = route.request().postDataJSON();
+            saved = { ...address, name: payload.name, line2: payload.line2 || null };
+            return route.fulfill(json({ address: saved, addresses: [saved] }));
+          },
+          shipping: (route) => {
+            if (route.request().method() === "GET") return route.fulfill(json({}));
+            const payload = route.request().postDataJSON();
+            defaultRequests.push(payload);
+            if (defaultRequests.length === 1) return route.fulfill(unavailable);
+            if (
+              payload.savedAddressId &&
+              (payload.savedAddressId !== saved?.id ||
+                payload.full_name !== saved.name ||
+                payload.address_line2 !== (saved.line2 || null))
+            ) {
+              refreshRequired = true;
+              return route.fulfill(
+                json(
+                  { code: "saved_address_changed", error: "Saved address changed" },
+                  412,
+                ),
+              );
+            }
+            appliedDefaults.push(payload);
+            return route.fulfill(json(payload));
+          },
+        };
+      }
+
+      try {
+        await secondTab.route("**/*", (route) => route.abort());
+        await openAccount(page, accountRoutes(true));
+        await fillAddress(page);
+        await page.getByLabel("Set as default shipping address").check();
+        await page.getByRole("button", { name: "Add Address" }).click();
+        const retry = page.getByRole("button", { name: "Retry default update" });
+        await expect(retry).toBeVisible();
+        await page.getByLabel("Full Name").fill("Unrelated draft");
+
+        await openAccount(secondTab, accountRoutes(false));
+        await fillAddress(secondTab);
+        await secondTab.getByLabel("Full Name").fill(revised.name);
+        await secondTab.getByLabel("Apartment / Unit").fill(revised.line2);
+        await secondTab.getByRole("button", { name: "Add Address" }).click();
+        await expect(secondTab.getByText(revised.line2, { exact: true })).toBeVisible();
+        await expect(page.getByText(revised.line2, { exact: true })).toHaveCount(0);
+
+        await retry.click();
+        await expect(page.getByRole("alert")).toContainText(
+          /saved address changed|saved address.*changed/i,
+        );
+        await expect(retry).toHaveCount(0);
+        assert.equal(defaultRequests[1].savedAddressId, address.id);
+        assert.equal(defaultRequests[1].full_name, address.name);
+        assert.equal(defaultRequests[1].address_line2, null);
+        assert.equal(appliedDefaults.length, 0);
+        const selectDefault = page.getByRole("button", {
+          name: "Set as default",
+          exact: true,
+        });
+        await expect(selectDefault).toBeDisabled();
+
+        await page.getByRole("button", { name: "Refresh saved addresses" }).click();
+        assert.equal(
+          (await refreshed.received).headers()["x-account-owner"],
+          "account-a",
+        );
+        await expect(selectDefault).toBeDisabled();
+        refreshed.release(json({ addresses: [saved] }));
+        await expect(page.getByText(revised.line2, { exact: true })).toBeVisible();
+        await expect(page.getByLabel("Full Name")).toHaveValue("Unrelated draft");
+        assert.equal(appliedDefaults.length, 0);
+        await selectDefault.click();
+        await expect(
+          page.getByText("Default shipping address updated.", { exact: true }),
+        ).toBeVisible();
+        assert.equal(appliedDefaults.length, 1);
+        assert.equal(appliedDefaults[0].savedAddressId, undefined);
+        assert.equal(appliedDefaults[0].full_name, revised.name);
+        assert.equal(appliedDefaults[0].address_line2, revised.line2);
+      } finally {
+        await secondTab.close();
+      }
     },
   );
 
