@@ -1778,6 +1778,7 @@ export type Database = {
       [_ in never]: never
     }
     Functions: {
+      _single_store_compat_owner: { Args: never; Returns: string }
       accept_tag_candidate: {
         Args: { accepted_label: string; candidate_id: string }
         Returns: Json
@@ -1816,6 +1817,7 @@ export type Database = {
         Args: { p_notification_id: string; p_succeeded: boolean }
         Returns: boolean
       }
+      get_store_access_settings: { Args: never; Returns: Json }
       is_admin: { Args: never; Returns: boolean }
       is_admin_for_tenant: { Args: { target_tenant: string }; Returns: boolean }
       is_dev: { Args: never; Returns: boolean }
@@ -1898,31 +1900,56 @@ export type Database = {
         Args: { p_order_id: string; p_reason: string }
         Returns: boolean
       }
-      reserve_square_checkout_inventory: {
-        Args: {
-          p_billing_address: Json
-          p_cart_hash: string
-          p_currency: string
-          p_customer_state: string
-          p_expires_at: string
-          p_fulfillment: string
-          p_guest_email: string
-          p_idempotency_key: string
-          p_items: Json
-          p_payment_method: string
-          p_pickup_contact?: Json
-          p_protection_evidence: Json
-          p_shipping_address: Json
-          p_shipping_cents: number
-          p_subtotal_cents: number
-          p_tax_calculation_id: string
-          p_tax_cents: number
-          p_tenant_id: string
-          p_total_cents: number
-          p_user_id: string
-        }
-        Returns: Json
-      }
+      reserve_square_checkout_inventory:
+        | {
+            Args: {
+              p_billing_address: Json
+              p_cart_hash: string
+              p_currency: string
+              p_customer_state: string
+              p_expires_at: string
+              p_fulfillment: string
+              p_guest_email: string
+              p_idempotency_key: string
+              p_items: Json
+              p_payment_method: string
+              p_pickup_contact?: Json
+              p_protection_evidence: Json
+              p_shipping_address: Json
+              p_shipping_cents: number
+              p_subtotal_cents: number
+              p_tax_calculation_id: string
+              p_tax_cents: number
+              p_tenant_id: string
+              p_total_cents: number
+              p_user_id: string
+            }
+            Returns: Json
+          }
+        | {
+            Args: {
+              p_billing_address: Json
+              p_cart_hash: string
+              p_currency: string
+              p_customer_state: string
+              p_expires_at: string
+              p_fulfillment: string
+              p_guest_email: string
+              p_idempotency_key: string
+              p_items: Json
+              p_payment_method: string
+              p_pickup_contact?: Json
+              p_protection_evidence: Json
+              p_shipping_address: Json
+              p_shipping_cents: number
+              p_subtotal_cents: number
+              p_tax_calculation_id: string
+              p_tax_cents: number
+              p_total_cents: number
+              p_user_id: string
+            }
+            Returns: Json
+          }
       reserve_square_checkout_inventory_with_address: {
         Args: {
           p_cart_hash: string
@@ -1966,6 +1993,70 @@ export type Database = {
           p_user_id: string
         }
         Returns: Json
+      }
+      upsert_store_access_settings: {
+        Args: {
+          p_checkout_lock_enabled: boolean
+          p_checkout_lock_message: string
+          p_site_lock_enabled: boolean
+          p_site_unlock_at: string
+        }
+        Returns: Json
+      }
+      write_staff_order_fulfillment: {
+        Args: {
+          p_action: string
+          p_actor_id: string
+          p_carrier?: string
+          p_order_id: string
+          p_tracking_number?: string
+        }
+        Returns: {
+          actual_shipping_cost_cents: number | null
+          cart_hash: string | null
+          checkout_protection_evidence: Json
+          created_at: string | null
+          currency: string | null
+          customer_state: string | null
+          expires_at: string | null
+          failure_reason: string | null
+          fulfillment: string | null
+          fulfillment_status: string | null
+          guest_email: string | null
+          id: string
+          idempotency_key: string | null
+          label_created_at: string | null
+          label_created_by: string | null
+          label_url: string | null
+          payment_transaction_id: string | null
+          pickup_instructions: string | null
+          pickup_location_id: string | null
+          pickup_name: string | null
+          pickup_phone: string | null
+          refund_amount: number | null
+          refunded_at: string | null
+          shipped_at: string | null
+          shipping: number
+          shipping_carrier: string | null
+          square_order_id: string | null
+          square_order_version: number | null
+          status: string | null
+          subtotal: number
+          tax_amount: number | null
+          tax_calculation_id: string | null
+          tenant_id: string | null
+          total: number
+          tracking_number: string | null
+          tracking_url: string | null
+          updated_at: string | null
+          user_id: string | null
+        }[]
+        SetofOptions: {
+          from: "*"
+          to: "orders"
+          isOneToOne: false
+          isSetofReturn: true
+        }
       }
     }
     Enums: {

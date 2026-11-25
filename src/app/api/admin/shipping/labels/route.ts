@@ -7,7 +7,8 @@ import { z } from "zod";
 import { scheduleCheckoutNotifications } from "@/lib/checkout/checkout-notification-scheduler";
 
 import { createSupabaseServerClient } from "@/lib/supabase/server";
-import { requireAdminApi } from "@/lib/auth/session";
+import { createSupabaseAdminClient } from "@/lib/supabase/service-role";
+import { AuthError, requireAdminApi } from "@/lib/auth/session";
 import { OrdersRepository } from "@/repositories/orders-repo";
 import { ShippoService } from "@/services/shipping-label-service";
 import { getRequestIdFromHeaders } from "@/lib/http/request-id";
@@ -222,7 +223,10 @@ export async function POST(request: NextRequest) {
       actualShippingCost: shippingCostCents,
     };
 
-    await ordersRepo.markReadyToShip(orderId, updateData);
+    await new OrdersRepository(createSupabaseAdminClient()).markReadyToShip(
+      orderId,
+      updateData,
+    );
 
     // Saving the label also queues its notification in the same DB transaction.
     scheduleCheckoutNotifications(orderId);
@@ -252,6 +256,11 @@ export async function POST(request: NextRequest) {
       message: "Label purchased successfully. Customer notification queued.",
     });
   } catch (error: unknown) {
+    if (error instanceof AuthError)
+      return NextResponse.json(
+        { error: error.message, requestId },
+        { status: error.status },
+      );
     logError(error, {
       layer: "api",
       requestId,

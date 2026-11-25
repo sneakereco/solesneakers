@@ -345,15 +345,4 @@ export class OrdersService {
   }) {
     return this.ordersRepo.listOrdersPaged(params);
   }
-
-  async markRefunded(orderId: string, amount: number) {
-    return this.ordersRepo.markRefunded(orderId, amount);
-  }
-
-  async markFulfilled(
-    orderId: string,
-    input: { carrier?: string | null; trackingNumber?: string | null },
-  ) {
-    return this.ordersRepo.markFulfilled(orderId, input);
-  }
 }

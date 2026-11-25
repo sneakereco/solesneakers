@@ -3,11 +3,16 @@ jest.mock("@/lib/checkout/checkout-notification-scheduler", () => ({
 }));
 import { scheduleCheckoutNotifications } from "@/lib/checkout/checkout-notification-scheduler";
 jest.mock("@/lib/auth/session", () => ({
+  ...jest.requireActual("@/lib/auth/session"),
   requireAdminApi: jest.fn(),
 }));
 
 jest.mock("@/lib/supabase/server", () => ({
   createSupabaseServerClient: jest.fn(),
+}));
+
+jest.mock("@/lib/supabase/service-role", () => ({
+  createSupabaseAdminClient: jest.fn(() => ({ role: "service" })),
 }));
 
 jest.mock("@/repositories/orders-repo", () => ({
@@ -133,6 +138,7 @@ describe("POST /api/admin/shipping/labels", () => {
   it("schedules the persisted label notification without claiming email was sent", async () => {
     const response = await POST(request());
     expect(response.status).toBe(200);
+    expect(OrdersRepository).toHaveBeenLastCalledWith({ role: "service" });
     expect(mockMarkReadyToShip).toHaveBeenCalledWith(
       orderId,
       expect.objectContaining({
