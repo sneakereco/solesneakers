@@ -1,0 +1,66 @@
+import "server-only";
+
+import {
+  isPostHogCaptureHost,
+  isPostHogProjectKey,
+  readPublicAnalyticsConfig,
+  type PostHogCaptureHost,
+  type PublicAnalyticsConfig,
+} from "./public-config";
+
+type PostHogApiHost = "https://us.posthog.com" | "https://eu.posthog.com";
+
+const API_HOST_BY_CAPTURE_HOST: Record<PostHogCaptureHost, PostHogApiHost> = {
+  "https://us.i.posthog.com": "https://us.posthog.com",
+  "https://eu.i.posthog.com": "https://eu.posthog.com",
+};
+
+export type ServerAnalyticsConfig = PublicAnalyticsConfig &
+  Readonly<{
+    projectId: string;
+    apiHost: PostHogApiHost;
+    queryApiKey: string;
+    identitySecret: string;
+  }>;
+
+export function isServerAnalyticsConfig(
+  config: ServerAnalyticsConfig | null,
+): config is ServerAnalyticsConfig {
+  return (
+    !!config &&
+    (config.environment === "staging" || config.environment === "production") &&
+    isPostHogCaptureHost(config.host) &&
+    config.apiHost === API_HOST_BY_CAPTURE_HOST[config.host] &&
+    isPostHogProjectKey(config.projectKey) &&
+    /^[1-9][0-9]*$/.test(config.projectId) &&
+    Number.isSafeInteger(Number(config.projectId)) &&
+    /^ph[sx]_[a-zA-Z0-9_-]{20,}$/.test(config.queryApiKey) &&
+    typeof config.identitySecret === "string" &&
+    Buffer.byteLength(config.identitySecret.trim(), "utf8") >= 32 &&
+    config.identitySecret !== config.projectKey &&
+    config.identitySecret !== config.queryApiKey
+  );
+}
+
+export function readServerAnalyticsConfig(
+  env: Record<string, string | undefined>,
+): ServerAnalyticsConfig | null {
+  const publicConfig = readPublicAnalyticsConfig(env);
+  if (!publicConfig) {
+    return null;
+  }
+
+  const apiHost = API_HOST_BY_CAPTURE_HOST[publicConfig.host];
+  if (env.POSTHOG_API_HOST?.trim() !== apiHost) {
+    return null;
+  }
+
+  const config: ServerAnalyticsConfig = {
+    ...publicConfig,
+    apiHost,
+    projectId: env.POSTHOG_PROJECT_ID?.trim() ?? "",
+    queryApiKey: env.POSTHOG_QUERY_API_KEY?.trim() ?? "",
+    identitySecret: env.ANALYTICS_IDENTITY_SECRET ?? "",
+  };
+  return isServerAnalyticsConfig(config) ? config : null;
+}

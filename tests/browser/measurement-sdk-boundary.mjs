@@ -7,6 +7,9 @@ import { chromium } from "playwright";
 
 const projectKey = `phc_${"a".repeat(24)}`;
 
+const privateQueryKey = "phs_private_query_bundle_sentinel";
+const identitySecret = "analytics_identity_bundle_sentinel";
+
 const bundle = await build({
   stdin: {
     resolveDir: process.cwd(),
@@ -167,6 +170,7 @@ const bundle = await build({
   bundle: true,
   write: false,
   platform: "browser",
+  metafile: true,
   jsx: "automatic",
   define: {
     "process.env.NODE_ENV": '"test"',
@@ -174,6 +178,8 @@ const bundle = await build({
     "process.env.NEXT_PUBLIC_MEASUREMENT_ENVIRONMENT": '"staging"',
     "process.env.NEXT_PUBLIC_POSTHOG_PROJECT_KEY": JSON.stringify(projectKey),
     "process.env.NEXT_PUBLIC_POSTHOG_HOST": '"https://us.i.posthog.com"',
+    "process.env.POSTHOG_QUERY_API_KEY": JSON.stringify(privateQueryKey),
+    "process.env.ANALYTICS_IDENTITY_SECRET": JSON.stringify(identitySecret),
     "process.env.NEXT_PUBLIC_SITE_URL": '"https://www.solesneakersnc.com"',
   },
   plugins: [
@@ -241,6 +247,24 @@ const bundle = await build({
     },
   ],
 });
+
+const analyticsInputs = Object.keys(bundle.metafile.inputs).filter((path) =>
+  path.includes("Modules/Analytics/Source/Features/"),
+);
+assert.ok(analyticsInputs.some((path) => path.endsWith("/Configuration/public-config.ts")));
+assert.ok(!analyticsInputs.some((path) => path.endsWith("/Configuration/server-config.ts")));
+for (const file of bundle.outputFiles) {
+  assert.ok(file.text.includes(projectKey), "positive control: the project token is bundled");
+  for (const privateValue of [
+    privateQueryKey,
+    identitySecret,
+    "readServerAnalyticsConfig",
+    "POSTHOG_QUERY_API_KEY",
+    "ANALYTICS_IDENTITY_SECRET",
+  ]) {
+    assert.ok(!file.text.includes(privateValue), "private analytics config must stay server-side");
+  }
+}
 
 let browser;
 try {

@@ -3,6 +3,11 @@
 import posthog from "posthog-js";
 
 import {
+  readPublicAnalyticsConfig,
+  type PublicAnalyticsConfig,
+} from "@/Modules/Analytics/Source/Features/Configuration/public-config";
+
+import {
   extractSafeAttribution,
   MEASUREMENT_SCHEMA_VERSION,
   safePathname,
@@ -13,15 +18,10 @@ import {
 } from "@/lib/measurement/contract";
 import { isApprovedMeasurementHostname } from "@/lib/measurement/host-gate";
 
-type MeasurementConfig = {
-  projectKey: string;
-  host: string;
-  environment: MeasurementEnvironment;
-};
+type MeasurementConfig = PublicAnalyticsConfig;
 type OutgoingEvent = { event: string; properties?: Record<string, unknown> };
 
 const ATTRIBUTION_STORAGE_KEY = "sole_phase_a_attribution_v1";
-const CLOUD_HOSTS = new Set(["https://us.i.posthog.com", "https://eu.i.posthog.com"]);
 let initialized = false;
 let attribution: SafeAttribution | null = null;
 
@@ -31,18 +31,12 @@ export function resolveMeasurementConfig(input: {
   projectKey?: string;
   host?: string;
 }): MeasurementConfig | null {
-  if (
-    input.enabled !== "true" ||
-    (input.environment !== "staging" && input.environment !== "production")
-  ) {
-    return null;
-  }
-  const projectKey = input.projectKey?.trim() ?? "";
-  const host = input.host?.trim() ?? "";
-  if (!/^phc_[a-z0-9]{20,}$/i.test(projectKey) || !CLOUD_HOSTS.has(host)) {
-    return null;
-  }
-  return { projectKey, host, environment: input.environment };
+  return readPublicAnalyticsConfig({
+    NEXT_PUBLIC_POSTHOG_ENABLED: input.enabled,
+    NEXT_PUBLIC_MEASUREMENT_ENVIRONMENT: input.environment,
+    NEXT_PUBLIC_POSTHOG_PROJECT_KEY: input.projectKey,
+    NEXT_PUBLIC_POSTHOG_HOST: input.host,
+  });
 }
 
 function configuredMeasurement(): MeasurementConfig | null {
