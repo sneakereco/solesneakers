@@ -1,0 +1,337 @@
+{
+  "date": "2026-11-25",
+  "branch": "codex/customer-admin-ux-audit",
+  "auditedApplicationRevision": "d8ce10191a294a0974be759bb2cb43b0bd980c53",
+  "documentationHeadAtCapture": "75a94adba7d1bf47f5d846c2a980dbb8288ce764",
+  "target": "local Next.js development server with local Supabase; not a deployed-production or real-provider sign-off",
+  "browser": {
+    "engine": "Chromium",
+    "installedBuild": "chromium-1243",
+    "playwrightVersion": "1.56.1"
+  },
+  "viewports": {
+    "primary": [
+      {
+        "width": 1440,
+        "height": 1000
+      },
+      {
+        "width": 390,
+        "height": 844
+      }
+    ],
+    "additionalWidths": [320, 768]
+  },
+  "routeFiles": [
+    "src/app/(store)/account/page.tsx",
+    "src/app/(store)/authenticity-guarantee/page.tsx",
+    "src/app/(store)/brands/page.tsx",
+    "src/app/(store)/cart/page.tsx",
+    "src/app/(store)/contact/page.tsx",
+    "src/app/(store)/hours/page.tsx",
+    "src/app/(store)/legal/privacy/page.tsx",
+    "src/app/(store)/legal/refunds/page.tsx",
+    "src/app/(store)/legal/shipping/page.tsx",
+    "src/app/(store)/legal/terms/page.tsx",
+    "src/app/(store)/order-status/[orderId]/page.tsx",
+    "src/app/(store)/page.tsx",
+    "src/app/(store)/privacy/page.tsx",
+    "src/app/(store)/refunds/page.tsx",
+    "src/app/(store)/shipping/page.tsx",
+    "src/app/(store)/store/[productId]/page.tsx",
+    "src/app/(store)/store/page.tsx",
+    "src/app/(store)/terms/page.tsx",
+    "src/app/(store)/too-many-requests/page.tsx",
+    "src/app/admin/dashboard/page.tsx",
+    "src/app/admin/featured-items/page.tsx",
+    "src/app/admin/inventory/[id]/edit/page.tsx",
+    "src/app/admin/inventory/create/page.tsx",
+    "src/app/admin/inventory/page.tsx",
+    "src/app/admin/orders/[orderId]/page.tsx",
+    "src/app/admin/page.tsx",
+    "src/app/admin/pickups/page.tsx",
+    "src/app/admin/profile/page.tsx",
+    "src/app/admin/sales/page.tsx",
+    "src/app/admin/settings/shipping/page.tsx",
+    "src/app/admin/settings/store-access/page.tsx",
+    "src/app/admin/shipping/page.tsx",
+    "src/app/admin/tags/page.tsx",
+    "src/app/admin/transactions/[orderId]/page.tsx",
+    "src/app/admin/transactions/page.tsx",
+    "src/app/auth/2fa/challenge/page.tsx",
+    "src/app/auth/2fa/setup/page.tsx",
+    "src/app/auth/login/page.tsx",
+    "src/app/auth/register/page.tsx",
+    "src/app/checkout/cancel/page.tsx",
+    "src/app/checkout/page.tsx",
+    "src/app/checkout/processing/page.tsx",
+    "src/app/checkout/start/page.tsx",
+    "src/app/checkout/success/page.tsx",
+    "src/app/locked/page.tsx"
+  ],
+  "sourceFingerprints": [
+    {
+      "file": "src/app/checkout/success/page.tsx",
+      "sha256": "767b319de588d58fe580c6f3c837644047f9e49a0910d4915f6cdf63bc998ce7",
+      "matchesAuditedRevision": true
+    },
+    {
+      "file": "src/components/cart/CartDrawer.tsx",
+      "sha256": "a8d2741d283afad850a5c56b3652af643a38e515f527af1cf541d55a03dbaa20",
+      "matchesAuditedRevision": true
+    },
+    {
+      "file": "src/components/search/SearchOverlay.tsx",
+      "sha256": "f8fc1c47ad3e9b8dcf2b003feaf06a34ece15c54550d65254110d4abd71dc36c",
+      "matchesAuditedRevision": true
+    },
+    {
+      "file": "src/components/admin/AdminSidebar.tsx",
+      "sha256": "fdebdf114fb033d755816e9010a3a94223a035344767b2c828de886bc8607063",
+      "matchesAuditedRevision": true
+    },
+    {
+      "file": "src/components/ui/ModalPortal.tsx",
+      "sha256": "4173d81b1b979e04bb32f9889fdc64f6bdf891810bb9b1ebf08ddfae0eb4d34c",
+      "matchesAuditedRevision": true
+    },
+    {
+      "file": "src/components/account/AccountProfile.tsx",
+      "sha256": "b50b848c778befef9018c9f568facfec2f251494181bc4b5bc4192d963aad47b",
+      "matchesAuditedRevision": true
+    },
+    {
+      "file": "src/components/inventory/ProductForm.tsx",
+      "sha256": "9c26a642aa17bd1ca62edd4286f58ce584dced4179542fa88c572e42e8558993",
+      "matchesAuditedRevision": true
+    },
+    {
+      "file": "src/components/checkout/SquarePaymentMethods.tsx",
+      "sha256": "76e230bc94cc090931ebb984bb848213c925f757b0293b935f80fe45881a3802",
+      "matchesAuditedRevision": true
+    },
+    {
+      "file": "src/app/admin/dashboard/page.tsx",
+      "sha256": "fd075ec884357b76112dce8f687482d082a006c57d8ff9ad31ae50c3bf02f99d",
+      "matchesAuditedRevision": true
+    },
+    {
+      "file": "src/app/admin/transactions/page.tsx",
+      "sha256": "a2a08d629c0e5056f425dc5b5b142e8b265ae17b699d3d1bdfc294e9f78b56ca",
+      "matchesAuditedRevision": true
+    },
+    {
+      "file": "src/app/admin/settings/shipping/page.tsx",
+      "sha256": "d61f3f3684f57f1308896a7e63c7a0ff78c04d663a44a532d55b5ac39ef41da8",
+      "matchesAuditedRevision": true
+    },
+    {
+      "file": "src/app/admin/settings/store-access/page.tsx",
+      "sha256": "68b57a84bacddbf3dad4e7095096254232e8fbb4347bc5e8ba159f835479fae0",
+      "matchesAuditedRevision": true
+    },
+    {
+      "file": "src/app/(store)/brands/page.tsx",
+      "sha256": "2b1f0b96bd956d4eaa84a0bb7e527d04de1d3120884f1a879152bbe1455060fb",
+      "matchesAuditedRevision": true
+    },
+    {
+      "file": "src/components/auth/register/RegisterForm.tsx",
+      "sha256": "e8157b44b8a74745fac80d47576c0b94f60c7459a8a0fb6880a0aaf3d8365aea",
+      "matchesAuditedRevision": true
+    }
+  ],
+  "browserRunners": [
+    {
+      "file": "tests/browser/payment-methods.mjs",
+      "exitCode": 0,
+      "mode": "existing controlled component/browser harness"
+    },
+    {
+      "file": "tests/browser/checkout-ui.mjs",
+      "exitCode": 0,
+      "mode": "existing controlled component/browser harness"
+    },
+    {
+      "file": "tests/browser/shipping-validation.mjs",
+      "exitCode": 0,
+      "mode": "existing controlled component/browser harness"
+    },
+    {
+      "file": "tests/browser/checkout-success.mjs",
+      "exitCode": 0,
+      "mode": "existing controlled component/browser harness"
+    },
+    {
+      "file": "tests/browser/checkout-progress.mjs",
+      "exitCode": 0,
+      "mode": "existing controlled component/browser harness"
+    },
+    {
+      "file": "tests/browser/admin-transaction-detail.mjs",
+      "exitCode": 0,
+      "mode": "existing controlled component/browser harness"
+    },
+    {
+      "file": "tests/browser/admin-button-contrast.mjs",
+      "exitCode": 0,
+      "mode": "existing controlled component/browser harness"
+    },
+    {
+      "file": "tests/browser/shipping-settings-modal.mjs",
+      "exitCode": 0,
+      "mode": "existing controlled component/browser harness"
+    },
+    {
+      "file": "tests/browser/store-menu.mjs",
+      "exitCode": 0,
+      "mode": "existing controlled component/browser harness"
+    },
+    {
+      "file": "tests/browser/home-featured-items.mjs",
+      "exitCode": 0,
+      "mode": "existing controlled component/browser harness"
+    },
+    {
+      "file": "tests/browser/home-clothing.mjs",
+      "exitCode": 0,
+      "mode": "existing controlled component/browser harness"
+    },
+    {
+      "file": "tests/browser/home-categories.mjs",
+      "exitCode": 0,
+      "mode": "existing controlled component/browser harness"
+    },
+    {
+      "file": "tests/browser/storefront-branding.mjs",
+      "exitCode": 0,
+      "mode": "existing controlled component/browser harness"
+    }
+  ],
+  "sidebarContrast": {
+    "foreground": [82, 82, 91],
+    "background": [10, 10, 10],
+    "ratio": 2.561,
+    "fontSizesPx": [9.28, 9.6]
+  },
+  "selectedScreenshots": [
+    "docs/operations/customer-admin-ux-audit-2026-11-25/inventory-create-mobile.png",
+    "docs/operations/customer-admin-ux-audit-2026-11-25/unverified-confirmed-mobile.png",
+    "docs/operations/customer-admin-ux-audit-2026-11-25/address-partial-save-mobile.png",
+    "docs/operations/customer-admin-ux-audit-2026-11-25/cart-open-mobile.png"
+  ],
+  "localIgnoredArtifacts": [
+    "test-results/ux-audit-2026-11-25/account-mobile.png",
+    "test-results/ux-audit-2026-11-25/address-partial-save-mobile.png",
+    "test-results/ux-audit-2026-11-25/address-partial-save.json",
+    "test-results/ux-audit-2026-11-25/admin-desktop.json",
+    "test-results/ux-audit-2026-11-25/admin-detail-and-failure-settled.json",
+    "test-results/ux-audit-2026-11-25/admin-detail-dialogs.json",
+    "test-results/ux-audit-2026-11-25/admin-enrollment-error-mobile.png",
+    "test-results/ux-audit-2026-11-25/admin-enrollment.json",
+    "test-results/ux-audit-2026-11-25/admin-failure-desktop.png",
+    "test-results/ux-audit-2026-11-25/admin-http-failure.json",
+    "test-results/ux-audit-2026-11-25/admin-interactions.json",
+    "test-results/ux-audit-2026-11-25/admin-mobile-nav.json",
+    "test-results/ux-audit-2026-11-25/admin-mobile.json",
+    "test-results/ux-audit-2026-11-25/admin-product-create-edit.json",
+    "test-results/ux-audit-2026-11-25/cart-mobile.png",
+    "test-results/ux-audit-2026-11-25/cart-open-mobile.png",
+    "test-results/ux-audit-2026-11-25/checkout-initial.json",
+    "test-results/ux-audit-2026-11-25/checkout-mobile.png",
+    "test-results/ux-audit-2026-11-25/checkout-pickup-desktop.png",
+    "test-results/ux-audit-2026-11-25/checkout-pickup.json",
+    "test-results/ux-audit-2026-11-25/contact-failure.json",
+    "test-results/ux-audit-2026-11-25/customer-account-failure.json",
+    "test-results/ux-audit-2026-11-25/customer-account.json",
+    "test-results/ux-audit-2026-11-25/customer-desktop.json",
+    "test-results/ux-audit-2026-11-25/customer-mobile.json",
+    "test-results/ux-audit-2026-11-25/customer-overlays-confirmed.json",
+    "test-results/ux-audit-2026-11-25/customer-overlays.json",
+    "test-results/ux-audit-2026-11-25/customer-recovery-desktop.json",
+    "test-results/ux-audit-2026-11-25/dashboard-desktop.png",
+    "test-results/ux-audit-2026-11-25/dashboard-mobile.png",
+    "test-results/ux-audit-2026-11-25/home-desktop.png",
+    "test-results/ux-audit-2026-11-25/home-mobile.png",
+    "test-results/ux-audit-2026-11-25/inventory-create-desktop.png",
+    "test-results/ux-audit-2026-11-25/inventory-create-mobile.png",
+    "test-results/ux-audit-2026-11-25/login-desktop.png",
+    "test-results/ux-audit-2026-11-25/login-mobile.png",
+    "test-results/ux-audit-2026-11-25/menu-mobile.png",
+    "test-results/ux-audit-2026-11-25/origin-modal-mobile.png",
+    "test-results/ux-audit-2026-11-25/product-mobile.png",
+    "test-results/ux-audit-2026-11-25/receipt-recovery-controlled.json",
+    "test-results/ux-audit-2026-11-25/responsive.json",
+    "test-results/ux-audit-2026-11-25/search-mobile.png",
+    "test-results/ux-audit-2026-11-25/settings-store-access-mobile.png",
+    "test-results/ux-audit-2026-11-25/transactions-desktop.png",
+    "test-results/ux-audit-2026-11-25/unverified-confirmed-mobile.png",
+    "test-results/ux-audit-2026-11-25/unverified-receipt-mobile.png",
+    "test-results/ux-audit-2026-11-25/unverified-receipt.json",
+    "test-results/ux-audit-2026-11-25/admin-mfa-success.json"
+  ],
+  "cleanup": {
+    "status": "complete",
+    "localHost": "127.0.0.1",
+    "deletedProductIds": ["63c312a2-bc37-4c3c-8bf8-cde56c303ff4"],
+    "deletedUserIds": [
+      "f7dd89b6-ae2e-4b5d-903e-23df512c7af1",
+      "5cebd703-d27a-445a-bec8-d42ed9f5f02b"
+    ],
+    "errors": [],
+    "verification": {
+      "auditUsers": 0,
+      "auditProfiles": 0,
+      "auditVariants": 0,
+      "productsRemaining": 1,
+      "ordersRemaining": 3,
+      "user_addressesAuditRows": 0,
+      "user_billing_addressesAuditRows": 0
+    },
+    "credentialAndSessionFilesRemoved": true,
+    "isolatedBrowserAndProfileRemoved": true,
+    "localDevServerStopped": true,
+    "sourceComparison": {
+      "command": "git diff d8ce10191a294a0974be759bb2cb43b0bd980c53 --exit-code -- src supabase",
+      "exitCode": 0
+    }
+  },
+  "limitations": [
+    "Native wallets and physical mobile browsers unverified",
+    "No real payment, label purchase, refund, email delivery or deployment",
+    "No full assistive-technology or WCAG conformance audit",
+    "Local catalog was initially one product",
+    "Raw observations are local ignored artifacts and can contain existing local customer data"
+  ],
+  "documentationHeadAtFinalVerification": "167ce4b1b1d3d7b0847b8a3511c932be237dc733",
+  "verificationObservations": {
+    "adminMfa": {
+      "mode": "actual local application, ordinary password sign-in followed by TOTP enrollment and verification",
+      "role": "temporary super_admin",
+      "observedResponses": [
+        {
+          "path": "/api/auth/login",
+          "status": 200
+        },
+        {
+          "path": "/api/auth/2fa/enroll",
+          "status": 200,
+          "responseFields": ["factorId", "qrCode", "uri"]
+        },
+        {
+          "path": "/api/auth/2fa/verify-enrollment",
+          "status": 200
+        }
+      ],
+      "destination": "http://127.0.0.1:3100/admin",
+      "adminShellRendered": true,
+      "secretsPersisted": false,
+      "note": "Sanitized summary of successful interactive browser tool run and corroborating Next request logs. An earlier attempt with a restored AAL1 session failed; fresh uninterrupted sign-in/enroll/verify succeeded. No QR, seed, token or OTP is retained."
+    }
+  },
+  "review": {
+    "kind": "fresh read-only builder and evidence review",
+    "result": "nothing important left; no material corrections outstanding; ready for user review",
+    "productImplementationApproved": false
+  }
+}
