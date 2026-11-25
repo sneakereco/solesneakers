@@ -333,5 +333,75 @@
     "kind": "fresh read-only builder and evidence review",
     "result": "nothing important left; no material corrections outstanding; ready for user review",
     "productImplementationApproved": false
-  }
+  },
+  "scopeAddenda": [
+    {
+      "date": "2026-11-25",
+      "userRequested": [
+        "Immediate visible mobile action/tap feedback across customer and admin",
+        "Skeleton loaders and intentional feedback for all loading states"
+      ],
+      "implementationStatus": "expanded design proposed; no product code changes",
+      "sourceInventory": {
+        "routeLoadingFiles": [],
+        "sharedUiFiles": [
+          "src/components/ui\\useHydrated.ts",
+          "src/components/ui\\Toast.tsx",
+          "src/components/ui\\Select.tsx",
+          "src/components/ui\\ModalPortal.tsx",
+          "src/components/ui\\hydration.test.tsx",
+          "src/components/ui\\ConfirmDialog.tsx"
+        ],
+        "isolatedPulsePlaceholders": [
+          "SearchOverlay",
+          "Navbar",
+          "ShippingEstimate",
+          "EnrollmentForm QR fallback"
+        ],
+        "sources": [
+          {
+            "file": "src/components/search/SearchOverlay.tsx",
+            "sha256": "f8fc1c47ad3e9b8dcf2b003feaf06a34ece15c54550d65254110d4abd71dc36c"
+          },
+          {
+            "file": "src/components/shell/Navbar.tsx",
+            "sha256": "0c47ddb57b9d436bc077cfd3daf0dcf74dcd22f8e57bd655c6da57290f0a77ab"
+          },
+          {
+            "file": "src/components/cart/ShippingEstimate.tsx",
+            "sha256": "f075ddaf534bc454c3e5da4d5fc3bed31ca3af5a79e6adaa8a3b9474738dbb5d"
+          },
+          {
+            "file": "src/components/auth/2fa/EnrollmentForm.tsx",
+            "sha256": "ad6e49f909f777684a82040f49f3500403e7c64f9dbca3338315a4d69ef3dece"
+          },
+          {
+            "file": "src/components/home/FeaturedItems.tsx",
+            "sha256": "eaf64d4b1e00da3b235bac31eea3d46a91e5c0dd00c201dd10996734329ea4e3"
+          },
+          {
+            "file": "src/components/store/StorefrontFilterBar.tsx",
+            "sha256": "51ad3b3cba69ba074de43823658457bf3f48e71afc1d76f6ee5f2106606f72f3"
+          },
+          {
+            "file": "src/components/store/StoreControls.tsx",
+            "sha256": "855064d2335e34d9b357128a6583cb44c4544d792c067a105284046da5819d91"
+          },
+          {
+            "file": "src/components/store/ProductDetail.tsx",
+            "sha256": "97c35ba6fbe7dee647a9200effd1fcab73dbd47ca10a9d6e34f89775cfe402c8"
+          },
+          {
+            "file": "src/styles/site.css",
+            "sha256": "e8da10fa4f2ed6de8071db0b6bbc74b9117edb332bae1bea5ba0e5afbfa744ef"
+          }
+        ]
+      },
+      "newRuntimeTestsRun": false,
+      "review": {
+        "kind": "fresh read-only builder check of expanded loading/feedback design",
+        "result": "nothing important left; no material corrections; ready for user review"
+      }
+    }
+  ]
 }
