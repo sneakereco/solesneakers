@@ -1,6 +1,6 @@
 # Customer and admin UX remediation design
 
-Date: November 25, 2026. Status: proposed, awaiting user approval.
+Date: November 25, 2026. Status: approved by the user, including the expanded mobile feedback and skeleton loading scope; implementation authorized.
 
 Scope update: the user subsequently requested consistent mobile tap feedback and skeleton loaders across all loading states. This revision adds the feedback/loading coverage below to the existing twelve-finding repair program. The user's positive response to the assessment does not establish that this expanded design has been approved.
 
@@ -155,4 +155,4 @@ The audit used temporary local accounts, an address and a temporary product. The
 
 ## Approval
 
-Pending user approval after the builder check. After approval, the next step is the implementation plan under the invoked brainstorming workflow; product code must not be changed before that approval.
+The user approved this expanded design and explicitly requested planning and implementation on November 25, 2026. The implementation plan is `docs/superpowers/plans/2026-11-25-customer-admin-ux-implementation.md`. Execution proceeds without another approval question; existing deployment/provider boundaries remain unchanged.
