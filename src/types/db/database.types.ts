@@ -1313,6 +1313,44 @@ export type Database = {
           },
         ]
       }
+      specialty_claim_status_audit: {
+        Row: {
+          actor_id: string
+          changed_at: string
+          claim_id: string
+          id: string
+          new_status: string
+          previous_status: string
+          revision: number
+        }
+        Insert: {
+          actor_id: string
+          changed_at?: string
+          claim_id: string
+          id?: string
+          new_status: string
+          previous_status: string
+          revision: number
+        }
+        Update: {
+          actor_id?: string
+          changed_at?: string
+          claim_id?: string
+          id?: string
+          new_status?: string
+          previous_status?: string
+          revision?: number
+        }
+        Relationships: [
+          {
+            foreignKeyName: "specialty_claim_status_audit_claim_id_fkey"
+            columns: ["claim_id"]
+            isOneToOne: false
+            referencedRelation: "specialty_claims"
+            referencedColumns: ["id"]
+          },
+        ]
+      }
       specialty_claims: {
         Row: {
           accepted_at: string
@@ -2238,6 +2276,15 @@ export type Database = {
           p_enabled: boolean
           p_expected_revision: number
           p_identity_key_fingerprint: string
+        }
+        Returns: Json
+      }
+      update_specialty_claim_status: {
+        Args: {
+          p_actor_id: string
+          p_claim_id: string
+          p_expected_revision: number
+          p_status: string
         }
         Returns: Json
       }
