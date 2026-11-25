@@ -48,8 +48,11 @@ export class AddressesRepository {
     }
   }
 
-  async upsertUserAddress(userId: string, address: AddressInput): Promise<void> {
-    const { data: existing } = await this.supabase
+  async upsertUserAddress(
+    userId: string,
+    address: AddressInput,
+  ): Promise<UserAddressRow> {
+    const { data: existing, error: lookupError } = await this.supabase
       .from("user_addresses")
       .select("id")
       .eq("user_id", userId)
@@ -57,8 +60,10 @@ export class AddressesRepository {
       .eq("postal_code", address.postalCode ?? "")
       .maybeSingle();
 
+    if (lookupError) throw lookupError;
+
     if (existing) {
-      const { error } = await this.supabase
+      const { data, error } = await this.supabase
         .from("user_addresses")
         .update({
           name: address.name ?? null,
@@ -68,11 +73,15 @@ export class AddressesRepository {
           state: address.state ?? null,
           country: address.country ?? null,
         })
-        .eq("id", existing.id);
+        .eq("user_id", userId)
+        .eq("id", existing.id)
+        .select()
+        .single();
 
       if (error) {
         throw error;
       }
+      return data;
     } else {
       const insert: UserAddressInsert = {
         user_id: userId,
@@ -86,11 +95,16 @@ export class AddressesRepository {
         country: address.country ?? null,
       };
 
-      const { error } = await this.supabase.from("user_addresses").insert(insert);
+      const { data, error } = await this.supabase
+        .from("user_addresses")
+        .insert(insert)
+        .select()
+        .single();
 
       if (error) {
         throw error;
       }
+      return data;
     }
   }
 

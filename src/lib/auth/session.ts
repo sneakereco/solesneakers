@@ -1,5 +1,8 @@
 // src/lib/auth/session.ts
-import { isAuthSessionMissingError } from "@supabase/supabase-js";
+import {
+  isAuthSessionMissingError,
+  type AuthError as SupabaseAuthError,
+} from "@supabase/supabase-js";
 import { redirect } from "next/navigation";
 import { isDynamicServerError } from "next/dist/client/components/hooks-server-context";
 
@@ -43,6 +46,13 @@ const rejectedSessionCodes = new Set([
   "user_banned",
 ]);
 
+export function isRejectedSessionError(error: SupabaseAuthError) {
+  return (
+    isAuthSessionMissingError(error) ||
+    Boolean(error.code && rejectedSessionCodes.has(error.code))
+  );
+}
+
 /** Read the validated session for callers that can represent temporary unavailability. */
 export async function readServerSession(): Promise<ServerSession | null> {
   const supabase = await createSupabaseServerClient();
@@ -52,12 +62,7 @@ export async function readServerSession(): Promise<ServerSession | null> {
   } = await supabase.auth.getUser();
 
   if (error) {
-    if (
-      isAuthSessionMissingError(error) ||
-      (error.code && rejectedSessionCodes.has(error.code))
-    ) {
-      return null;
-    }
+    if (isRejectedSessionError(error)) return null;
     throw error;
   }
   if (!user) return null;

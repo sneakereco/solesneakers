@@ -10,6 +10,7 @@ import { ActionButton } from "@/components/ui/ActionButton";
 import { FeedbackLink } from "@/components/ui/FeedbackLink";
 import { useAsyncAction } from "@/components/ui/useAsyncAction";
 import { postAuthJson } from "@/lib/http/post-auth-json";
+import { ResponseError } from "@/lib/http/read-json-response";
 import { isPasswordValid } from "@/lib/validation/password";
 
 import { PasswordRequirements } from "../register/PasswordRequirements";
@@ -30,7 +31,7 @@ export function ForgotPasswordForm({ onBackToLogin }: ForgotPasswordFormProps) {
   const [code, setCode] = useState("");
   const [password, setPassword] = useState("");
   const [confirmation, setConfirmation] = useState("");
-  const [codeAccepted, setCodeAccepted] = useState(false);
+  const [recoveryOwnerId, setRecoveryOwnerId] = useState<string | null>(null);
   const [error, setError] = useState<string | null>(null);
   const [resendResult, setResendResult] = useState<{
     ok: boolean;
@@ -66,15 +67,21 @@ export function ForgotPasswordForm({ onBackToLogin }: ForgotPasswordFormProps) {
           return;
         }
 
-        if (!codeAccepted && code.length !== 6) {
+        if (!recoveryOwnerId && code.length !== 6) {
           throw new Error("Please enter the 6-digit reset code from your email.");
         }
         if (password !== confirmation) throw new Error("Passwords do not match.");
         if (!isPasswordValid(password))
           throw new Error("Password does not meet the required criteria.");
 
-        if (!codeAccepted) {
-          const verified = await postAuthJson(
+        let expectedOwnerId = recoveryOwnerId;
+        if (!expectedOwnerId) {
+          const verified = await postAuthJson<{
+            ok?: boolean;
+            requiresTwoFASetup?: boolean;
+            requiresTwoFAChallenge?: boolean;
+            recoveryOwnerId?: string;
+          }>(
             "/api/auth/forgot-password/verify-code",
             { email: email.trim(), code },
             "Invalid or expired reset code.",
@@ -88,12 +95,19 @@ export function ForgotPasswordForm({ onBackToLogin }: ForgotPasswordFormProps) {
             );
             return;
           }
-          setCodeAccepted(true);
+          if (typeof verified.recoveryOwnerId !== "string" || !verified.recoveryOwnerId) {
+            setCode("");
+            throw new Error(
+              "Could not verify the recovery session. Request a new reset code.",
+            );
+          }
+          expectedOwnerId = verified.recoveryOwnerId;
+          setRecoveryOwnerId(expectedOwnerId);
         }
 
         const updated = await postAuthJson(
           "/api/auth/update-password",
-          { password },
+          { password, recoveryOwnerId: expectedOwnerId },
           "Could not update your password. Please try again.",
         );
         if (updated.ok !== true)
@@ -106,6 +120,10 @@ export function ForgotPasswordForm({ onBackToLogin }: ForgotPasswordFormProps) {
         window.dispatchEvent(new Event("sessionUpdate"));
       } catch (failure) {
         setContinuing(false);
+        if (failure instanceof ResponseError && failure.status === 409) {
+          setRecoveryOwnerId(null);
+          setCode("");
+        }
         setError(
           failure instanceof Error
             ? failure.message
@@ -123,7 +141,7 @@ export function ForgotPasswordForm({ onBackToLogin }: ForgotPasswordFormProps) {
       setResendResult(null);
       try {
         await requestCode("Could not resend a reset code.");
-        setCodeAccepted(false);
+        setRecoveryOwnerId(null);
         setCode("");
         setResendResult({
           ok: true,
@@ -188,7 +206,7 @@ export function ForgotPasswordForm({ onBackToLogin }: ForgotPasswordFormProps) {
       {step === "reset" && (
         <>
           <p role="status" className={authStyles.infoBox}>
-            {codeAccepted
+            {recoveryOwnerId
               ? "Reset code confirmed."
               : "If an account exists for that email, we sent a reset code."}
           </p>
@@ -201,7 +219,7 @@ export function ForgotPasswordForm({ onBackToLogin }: ForgotPasswordFormProps) {
             isSending={resending}
             cooldown={cooldown.seconds}
             disabled={submitting}
-            readOnly={submitting || codeAccepted}
+            readOnly={submitting || Boolean(recoveryOwnerId)}
             resendResult={resendResult}
             aria-describedby={errorId}
           />

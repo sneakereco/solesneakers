@@ -1,4 +1,5 @@
 import { withRequestDeadline } from "./request-deadline";
+import { ResponseError } from "./read-json-response";
 
 type AuthResponse = {
   ok?: boolean;
@@ -31,7 +32,7 @@ export async function postAuthJson<T extends AuthResponse = AuthResponse>(
     });
     const data: T | null = await response.json().catch(() => null);
     if (!data || typeof data !== "object" || Array.isArray(data))
-      throw new Error(fallback);
+      throw new ResponseError(response.status, fallback);
 
     if (
       allowEmailVerification &&
@@ -41,7 +42,8 @@ export async function postAuthJson<T extends AuthResponse = AuthResponse>(
       return data;
     }
     if (!response.ok || data.ok === false || data.error) {
-      throw new Error(
+      throw new ResponseError(
+        response.status,
         response.status < 500 && typeof data.error === "string" ? data.error : fallback,
       );
     }

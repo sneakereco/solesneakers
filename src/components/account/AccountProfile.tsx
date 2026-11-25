@@ -65,7 +65,7 @@ type AccountAddress = {
 type AddressInput = Omit<AccountAddress, "id">;
 type Result = { tone: "success" | "error"; message: string };
 type DefaultResult = { ok: true } | { ok: false; message: string };
-type DefaultRetry = { address: AddressInput | null; message: string };
+type DefaultRetry = { address: AccountAddress | null; message: string };
 
 const emptyAddress = {
   name: "",
@@ -91,6 +91,14 @@ function sameAddress(left: Partial<AddressInput>, right: Partial<AddressInput>) 
   const normalize = (value?: string | null) => (value ?? "").trim().toLowerCase();
   return addressFields.every(
     (field) => normalize(left[field]) === normalize(right[field]),
+  );
+}
+
+const savedAddressFields = [...addressFields, "name", "phone"] as const;
+
+function sameSavedAddress(left: AddressInput, right: AddressInput) {
+  return savedAddressFields.every(
+    (field) => (left[field] ?? "").trim() === (right[field] ?? "").trim(),
   );
 }
 
@@ -124,6 +132,44 @@ function parseAddresses(value: unknown): AccountAddress[] {
   return value.addresses;
 }
 
+function parseAddressSave(value: unknown): {
+  address: AccountAddress;
+  addresses?: AccountAddress[];
+} {
+  if (!value || typeof value !== "object" || !("address" in value)) {
+    throw new Error("Address save could not be confirmed");
+  }
+  const saved = value.address;
+  if (
+    !saved ||
+    typeof saved !== "object" ||
+    !("id" in saved) ||
+    typeof saved.id !== "string" ||
+    !saved.id
+  ) {
+    throw new Error("Address save returned an invalid record");
+  }
+  const record = saved as Record<string, unknown>;
+  const requiredFields = ["line1", "city", "state", "postal_code", "country"];
+  const optionalFields = ["line2", "name", "phone"];
+  if (
+    requiredFields.some((field) => typeof record[field] !== "string" || !record[field]) ||
+    optionalFields.some((field) => {
+      const detail = record[field];
+      return detail !== null && detail !== undefined && typeof detail !== "string";
+    })
+  ) {
+    throw new Error("Address save returned incomplete details");
+  }
+  return {
+    address: saved as AccountAddress,
+    addresses:
+      "addresses" in value && Array.isArray(value.addresses)
+        ? value.addresses
+        : undefined,
+  };
+}
+
 function parseOrders(value: unknown): AccountOrder[] {
   if (
     !value ||
@@ -146,7 +192,7 @@ function ResourceError({
   resource: {
     error: "sign-in" | "owner-changed" | "unavailable" | null;
     loading: boolean;
-    load: () => Promise<void>;
+    load: () => Promise<unknown>;
   };
 }) {
   if (!resource.error) return null;
@@ -249,6 +295,11 @@ function AccountDetails({
   const [addressOperation, setAddressOperation] = useState("");
   const [addressResult, setAddressResult] = useState<Result | null>(null);
   const [defaultRetry, setDefaultRetry] = useState<DefaultRetry | null>(null);
+  const [unconfirmedSave, setUnconfirmedSave] = useState<{
+    draft: AddressInput;
+    makeDefault: boolean;
+  } | null>(null);
+  const [addressRefreshNeeded, setAddressRefreshNeeded] = useState(false);
   const [passwordResult, setPasswordResult] = useState<Result | null>(null);
   const [logoutError, setLogoutError] = useState<string | null>(null);
   const [signedOut, setSignedOut] = useState(false);
@@ -267,6 +318,17 @@ function AccountDetails({
     addressResource.error === "owner-changed" ||
     orderResource.error === "owner-changed";
   const accountActionsAvailable = canChangeAccount && !ownerChanged;
+  const addressActionsAvailable = accountActionsAvailable && !unconfirmedSave;
+  const addressFormLocked =
+    Boolean(unconfirmedSave) || (addressAction.pending && addressOperation === "add");
+  const retrySnapshot = defaultRetry?.address;
+  const retryAddress = retrySnapshot
+    ? addresses?.find(
+        (saved) =>
+          saved.id === retrySnapshot.id && sameSavedAddress(saved, retrySnapshot),
+      )
+    : null;
+  const showDefaultRetry = defaultRetry && (!defaultRetry.address || retryAddress);
 
   useLayoutEffect(() => {
     if (ownerChanged) return;
@@ -350,11 +412,65 @@ function AccountDetails({
     work: (ownerSignal: AbortSignal) => Promise<void>,
   ) {
     const signal = activeOwner.current?.signal;
-    if (!ownerReady.current || !signal || signal.aborted) return;
+    if (
+      !ownerReady.current ||
+      !signal ||
+      signal.aborted ||
+      (unconfirmedSave && operation !== "check-address")
+    )
+      return;
     void addressAction.run(async () => {
       setAddressOperation(operation);
       setAddressResult(null);
       await work(signal);
+    });
+  }
+
+  function reconcileDefaultRetry(saved: AccountAddress[]) {
+    setDefaultRetry((retry) => {
+      const previous = retry?.address;
+      if (!previous) return retry;
+      return saved.some(
+        (address) => address.id === previous.id && sameSavedAddress(address, previous),
+      )
+        ? retry
+        : null;
+    });
+  }
+
+  function handleAddressCheck() {
+    runAddressAction("check-address", async (signal) => {
+      const saved = await addressResource.load();
+      if (signal.aborted) return;
+      if (!saved) {
+        setAddressResult({
+          tone: "error",
+          message: unconfirmedSave
+            ? "Could not check saved addresses. Your draft is still here."
+            : "Address saved. Could not refresh your saved addresses.",
+        });
+        return;
+      }
+
+      setAddressRefreshNeeded(false);
+      reconcileDefaultRetry(saved);
+      if (!unconfirmedSave) return;
+      setUnconfirmedSave(null);
+      const match = saved.find((address) =>
+        sameSavedAddress(address, unconfirmedSave.draft),
+      );
+      if (match) {
+        setAddressForm(emptyAddress);
+        setSetAsDefault(false);
+      }
+      setAddressResult({
+        tone: match ? "success" : "error",
+        message: match
+          ? unconfirmedSave.makeDefault
+            ? "This address is in your saved addresses. Use Set as default to select it for checkout."
+            : "This address is in your saved addresses."
+          : "Saved addresses checked. Review your draft and try saving again.",
+      });
     });
   }
 
@@ -440,30 +556,57 @@ function AccountDetails({
   function handleSaveAddress(event: FormEvent<HTMLFormElement>) {
     event.preventDefault();
     runAddressAction("add", async (signal) => {
+      let saved: ReturnType<typeof parseAddressSave>;
       try {
         const data = await postAccountJson("/api/account/addresses", addressForm, signal);
-        const savedAddresses = parseAddresses(data);
-        if (!savedAddresses.some((address) => sameAddress(address, addressForm))) {
-          throw new Error("Address save could not be confirmed");
-        }
-        addressResource.replace(savedAddresses);
+        saved = parseAddressSave(data);
       } catch (error) {
         if (signal.aborted) return;
-        setAddressResult({
-          tone: "error",
-          message: commandFailure(error, "Could not save address. Please try again."),
-        });
+        if (error instanceof ResponseError && [400, 401, 409].includes(error.status)) {
+          setAddressResult({
+            tone: "error",
+            message: commandFailure(
+              error,
+              "Could not save address. Check the details and try again.",
+            ),
+          });
+        } else {
+          setUnconfirmedSave({ draft: addressForm, makeDefault: setAsDefault });
+          setAddressResult({
+            tone: "error",
+            message:
+              "Could not confirm whether the address was saved. Check saved addresses before trying again.",
+          });
+        }
         return;
       }
 
+      const latestAddresses = saved.addresses ?? [
+        saved.address,
+        ...(addresses ?? []).filter((address) => address.id !== saved.address.id),
+      ];
+      addressResource.replace(latestAddresses);
+      setAddressRefreshNeeded(!saved.addresses);
+      reconcileDefaultRetry(latestAddresses);
       setAddressForm(emptyAddress);
       setSetAsDefault(false);
       if (setAsDefault) {
-        const result = await updateDefault(addressForm, signal);
+        const current = latestAddresses.find(
+          (address) => address.id === saved.address.id,
+        );
+        if (!current || !sameSavedAddress(current, saved.address)) {
+          setAddressResult({
+            tone: "error",
+            message:
+              "Address saved. The saved record changed. Review it before setting the default.",
+          });
+          return;
+        }
+        const result = await updateDefault(current, signal);
         if (signal.aborted) return;
         if (!result.ok) {
           setDefaultRetry({
-            address: addressForm,
+            address: current,
             message: `Address saved. ${result.message}`,
           });
           return;
@@ -475,7 +618,9 @@ function AccountDetails({
         tone: "success",
         message: setAsDefault
           ? "Address saved and set as the default shipping address."
-          : "Address saved.",
+          : saved.addresses
+            ? "Address saved."
+            : "Address saved. Refresh to load your complete address list.",
       });
     });
   }
@@ -503,7 +648,7 @@ function AccountDetails({
       }
 
       addressResource.replace((addresses ?? []).filter(({ id }) => id !== address.id));
-      if (defaultRetry?.address && sameAddress(defaultRetry.address, address)) {
+      if (defaultRetry?.address?.id === address.id) {
         setDefaultRetry(null);
       }
       if (isDefaultAddress(address)) {
@@ -676,7 +821,7 @@ function AccountDetails({
                     <ActionButton
                       type="button"
                       onClick={() => handleDefault(null, "clear")}
-                      disabled={addressAction.pending || !accountActionsAvailable}
+                      disabled={addressAction.pending || !addressActionsAvailable}
                       pending={addressAction.pending && addressOperation === "clear"}
                       pendingLabel="Clearing default…"
                       className={textButtonClassName}
@@ -691,7 +836,13 @@ function AccountDetails({
                 <h3 className="text-sm font-medium uppercase tracking-[0.12em]">
                   Saved Addresses
                 </h3>
-                <ResourceError label="your saved addresses" resource={addressResource} />
+                {(addressResource.error === "sign-in" ||
+                  (!unconfirmedSave && !addressRefreshNeeded)) && (
+                  <ResourceError
+                    label="your saved addresses"
+                    resource={addressResource}
+                  />
+                )}
                 {!addresses && !addressResource.error ? <AddressesSkeleton /> : null}
                 {addresses?.length === 0 ? (
                   <p className="mt-5 border-t border-zinc-200 py-6 text-sm text-zinc-500">
@@ -732,7 +883,7 @@ function AccountDetails({
                             disabled={
                               addressAction.pending ||
                               !profile ||
-                              !accountActionsAvailable
+                              !addressActionsAvailable
                             }
                             pending={
                               addressAction.pending &&
@@ -748,7 +899,7 @@ function AccountDetails({
                           <ActionButton
                             type="button"
                             onClick={() => handleDefault(address, `set:${address.id}`)}
-                            disabled={addressAction.pending || !accountActionsAvailable}
+                            disabled={addressAction.pending || !addressActionsAvailable}
                             pending={
                               addressAction.pending &&
                               addressOperation === `set:${address.id}`
@@ -767,7 +918,23 @@ function AccountDetails({
 
               <div className="mt-5 space-y-4">
                 <ActionResult result={addressResult} id="account-address-result" />
-                {defaultRetry && (
+                {(unconfirmedSave || addressRefreshNeeded) && (
+                  <ActionButton
+                    type="button"
+                    onClick={handleAddressCheck}
+                    disabled={addressAction.pending || !accountActionsAvailable}
+                    pending={
+                      addressAction.pending && addressOperation === "check-address"
+                    }
+                    pendingLabel="Checking saved addresses…"
+                    className={textButtonClassName}
+                  >
+                    {unconfirmedSave
+                      ? "Check saved addresses"
+                      : "Refresh saved addresses"}
+                  </ActionButton>
+                )}
+                {showDefaultRetry && (
                   <div className="space-y-3">
                     <ActionResult
                       result={{ tone: "error", message: defaultRetry.message }}
@@ -775,8 +942,8 @@ function AccountDetails({
                     />
                     <ActionButton
                       type="button"
-                      onClick={() => handleDefault(defaultRetry.address, "retry-default")}
-                      disabled={addressAction.pending || !accountActionsAvailable}
+                      onClick={() => handleDefault(retryAddress ?? null, "retry-default")}
+                      disabled={addressAction.pending || !addressActionsAvailable}
                       pending={
                         addressAction.pending && addressOperation === "retry-default"
                       }
@@ -812,7 +979,7 @@ function AccountDetails({
                       id="account-address-name"
                       name="name"
                       autoComplete="name"
-                      readOnly={addressAction.pending && addressOperation === "add"}
+                      readOnly={addressFormLocked}
                       type="text"
                       value={addressForm.name}
                       onChange={(event) =>
@@ -832,7 +999,7 @@ function AccountDetails({
                       id="account-address-phone"
                       name="phone"
                       autoComplete="tel"
-                      readOnly={addressAction.pending && addressOperation === "add"}
+                      readOnly={addressFormLocked}
                       type="tel"
                       value={addressForm.phone}
                       onChange={(event) =>
@@ -852,7 +1019,7 @@ function AccountDetails({
                       id="account-address-line1"
                       name="line1"
                       autoComplete="address-line1"
-                      readOnly={addressAction.pending && addressOperation === "add"}
+                      readOnly={addressFormLocked}
                       type="text"
                       required
                       value={addressForm.line1}
@@ -873,7 +1040,7 @@ function AccountDetails({
                       id="account-address-line2"
                       name="line2"
                       autoComplete="address-line2"
-                      readOnly={addressAction.pending && addressOperation === "add"}
+                      readOnly={addressFormLocked}
                       type="text"
                       value={addressForm.line2}
                       onChange={(event) =>
@@ -890,7 +1057,7 @@ function AccountDetails({
                       id="account-address-city"
                       name="city"
                       autoComplete="address-level2"
-                      readOnly={addressAction.pending && addressOperation === "add"}
+                      readOnly={addressFormLocked}
                       type="text"
                       required
                       value={addressForm.city}
@@ -911,7 +1078,7 @@ function AccountDetails({
                       id="account-address-state"
                       name="state"
                       autoComplete="address-level1"
-                      readOnly={addressAction.pending && addressOperation === "add"}
+                      readOnly={addressFormLocked}
                       type="text"
                       required
                       value={addressForm.state}
@@ -932,7 +1099,7 @@ function AccountDetails({
                       id="account-address-postal_code"
                       name="postal_code"
                       autoComplete="postal-code"
-                      readOnly={addressAction.pending && addressOperation === "add"}
+                      readOnly={addressFormLocked}
                       type="text"
                       required
                       value={addressForm.postal_code}
@@ -956,7 +1123,7 @@ function AccountDetails({
                       id="account-address-country"
                       name="country"
                       autoComplete="country-name"
-                      readOnly={addressAction.pending && addressOperation === "add"}
+                      readOnly={addressFormLocked}
                       type="text"
                       required
                       value={addressForm.country}
@@ -972,7 +1139,7 @@ function AccountDetails({
                   <input
                     type="checkbox"
                     checked={setAsDefault}
-                    disabled={addressAction.pending && addressOperation === "add"}
+                    disabled={addressFormLocked}
                     onChange={(event) => setSetAsDefault(event.target.checked)}
                     className="h-4 w-4 accent-black"
                   />
@@ -981,7 +1148,7 @@ function AccountDetails({
 
                 <ActionButton
                   type="submit"
-                  disabled={addressAction.pending || !accountActionsAvailable}
+                  disabled={addressAction.pending || !addressActionsAvailable}
                   pending={addressAction.pending && addressOperation === "add"}
                   pendingLabel="Saving address…"
                   className={`${primaryButtonClassName} mt-7`}

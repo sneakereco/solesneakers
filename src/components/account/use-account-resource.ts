@@ -33,8 +33,10 @@ export function useAccountResource<T>(
       )
       .then((response) => {
         if (controller.signal.aborted) return;
-        setData(parse(response));
+        const value = parse(response);
+        setData(value);
         setError(null);
+        return value;
       })
       .catch((failure: unknown) => {
         if (controller.signal.aborted) return;
@@ -61,7 +63,9 @@ export function useAccountResource<T>(
   }, [load]);
 
   function retry() {
-    if (!active.current) setLoading(true);
+    active.current?.abort();
+    active.current = null;
+    setLoading(true);
     return load();
   }
 

@@ -257,7 +257,7 @@ try {
         "true",
       );
       await expect(page.getByRole("button", { name: "Change Password" })).toBeEnabled();
-      save.release(json({ addresses: [address] }));
+      save.release(json({ address, addresses: [address] }));
       await defaultSave.received;
       defaultSave.release(unavailable);
       await expect(page.getByRole("alert")).toContainText(/address saved.*default/i);
@@ -293,6 +293,155 @@ try {
       ).toHaveAttribute("href", "/auth/login?next=%2Faccount");
       await expect(page.getByText("No default address selected yet.")).toHaveCount(0);
       await expect(page.getByText("You have not placed an order yet.")).toHaveCount(0);
+    },
+  );
+
+  await check(
+    "a committed address remains visible when the list is unavailable and refresh only reads",
+    async (page) => {
+      let reads = 0;
+      let writes = 0;
+      await openAccount(page, {
+        addresses: (route) => {
+          if (route.request().method() === "POST") {
+            writes++;
+            return route.fulfill(json({ address }));
+          }
+          reads++;
+          return route.fulfill(json({ addresses: reads === 1 ? [] : [address] }));
+        },
+      });
+      await fillAddress(page);
+      await page.getByRole("button", { name: "Add Address" }).click();
+      await expect(
+        page.getByRole("status").filter({ hasText: /^Address saved/ }),
+      ).toBeVisible();
+      await expect(page.getByText(address.name)).toBeVisible();
+      await page.getByRole("button", { name: "Refresh saved addresses" }).click();
+      await expect(
+        page.getByRole("button", { name: "Refresh saved addresses" }),
+      ).toHaveCount(0);
+      assert.equal(reads, 2);
+      assert.equal(writes, 1);
+    },
+  );
+
+  await check(
+    "a lost address response gates resubmission until an owner-bound read confirms the saved draft",
+    async (page) => {
+      let reads = 0;
+      let writes = 0;
+      const readOwners = [];
+      await openAccount(page, {
+        addresses: (route) => {
+          if (route.request().method() === "POST") {
+            writes++;
+            return route.abort("failed");
+          }
+          readOwners.push(route.request().headers()["x-account-owner"]);
+          reads++;
+          return route.fulfill(
+            reads === 2 ? unavailable : json({ addresses: reads === 3 ? [address] : [] }),
+          );
+        },
+      });
+      await fillAddress(page);
+      const street = page.getByLabel("Address Line 1", { exact: false });
+      const submit = page.getByRole("button", { name: "Add Address" });
+      await submit.click();
+      await expect(page.getByRole("alert")).toContainText(
+        /could not confirm.*address.*saved/i,
+      );
+      await expect(street).toHaveValue(address.line1);
+      await expect(submit).toBeDisabled();
+      const checkSaved = page.getByRole("button", { name: "Check saved addresses" });
+      await checkSaved.click();
+      await expect(checkSaved).toBeEnabled();
+      await expect(submit).toBeDisabled();
+      await expect(street).toHaveValue(address.line1);
+      await checkSaved.click();
+      await expect(
+        page
+          .getByRole("status")
+          .filter({ hasText: /this address is in your saved addresses/i }),
+      ).toBeVisible();
+      await expect(page.getByText(address.name)).toBeVisible();
+      await expect(submit).toBeEnabled();
+      assert.deepEqual(readOwners, ["account-a", "account-a", "account-a"]);
+      assert.equal(writes, 1);
+    },
+  );
+
+  await check(
+    "an unconfirmed address can be submitted again explicitly after a successful empty read",
+    async (page) => {
+      let saves = 0;
+      await openAccount(page, {
+        addresses: (route) => {
+          if (route.request().method() === "GET")
+            return route.fulfill(json({ addresses: [] }));
+          saves++;
+          return route.fulfill(
+            saves === 1 ? unavailable : json({ address, addresses: [address] }),
+          );
+        },
+      });
+      await fillAddress(page);
+      const submit = page.getByRole("button", { name: "Add Address" });
+      await submit.click();
+      await expect(submit).toBeDisabled();
+      await page.getByRole("button", { name: "Check saved addresses" }).click();
+      await expect(page.getByRole("alert")).toContainText(/review your draft/i);
+      await expect(page.getByLabel("Address Line 1", { exact: false })).toHaveValue(
+        address.line1,
+      );
+      await expect(submit).toBeEnabled();
+      assert.equal(saves, 1);
+      await submit.click();
+      await expect(page.getByText(address.name)).toBeVisible();
+      assert.equal(saves, 2);
+    },
+  );
+
+  await check(
+    "ordinary upsert of a changed saved row invalidates its old default retry",
+    async (page) => {
+      let saves = 0;
+      const defaultBodies = [];
+      const revised = { ...address, name: "Updated recipient", line2: "Apartment 22" };
+      await openAccount(page, {
+        addresses: (route) => {
+          if (route.request().method() === "GET")
+            return route.fulfill(json({ addresses: [] }));
+          const saved = ++saves === 1 ? address : revised;
+          return route.fulfill(json({ address: saved, addresses: [saved] }));
+        },
+        shipping: (route) => {
+          if (route.request().method() === "GET") return route.fulfill(json({}));
+          defaultBodies.push(route.request().postDataJSON());
+          return route.fulfill(
+            defaultBodies.length === 1 ? unavailable : json(defaultBodies.at(-1)),
+          );
+        },
+      });
+      await fillAddress(page);
+      await page.getByLabel("Set as default shipping address").check();
+      await page.getByRole("button", { name: "Add Address" }).click();
+      const retry = page.getByRole("button", { name: "Retry default update" });
+      await expect(retry).toBeVisible();
+      await fillAddress(page);
+      await page.getByLabel("Full Name").fill(revised.name);
+      await page.getByLabel("Apartment / Unit").fill(revised.line2);
+      await page.getByRole("button", { name: "Add Address" }).click();
+      await expect(page.getByText(revised.line2, { exact: true })).toBeVisible();
+      await expect(retry).toHaveCount(0);
+      await page.getByRole("button", { name: "Set as default", exact: true }).click();
+      await expect(
+        page.getByText("Default shipping address updated.", { exact: true }),
+      ).toBeVisible();
+      assert.equal(defaultBodies.length, 2);
+      assert.equal(defaultBodies[1].address_line2, revised.line2);
+      assert.equal(defaultBodies[1].full_name, revised.name);
     },
   );
 
@@ -353,7 +502,7 @@ try {
         json({ orders: [{ id: "leaked-order", created_at: "2026-11-25T00:00:00Z" }] }),
       );
       profileA.release(json({ address_line1: "Private account A address" }));
-      saveA.release(json({ addresses: [address] }));
+      saveA.release(json({ address, addresses: [address] }));
       await Promise.all([
         addressesA.finished,
         ordersA.finished,
@@ -446,7 +595,7 @@ try {
       });
       await fillAddress(page);
       await page.getByRole("button", { name: "Add Address" }).click();
-      await expect(page.getByRole("alert")).toContainText(/save address/i);
+      await expect(page.getByRole("alert")).toContainText(/confirm.*address.*saved/i);
       await expect(page.getByLabel("Address Line 1", { exact: false })).toHaveValue(
         address.line1,
       );
@@ -634,6 +783,8 @@ try {
     "password reset retries only the password update after accepting the synthetic recovery code",
     async (page) => {
       const update = holdResponse();
+      const ownerId = "3fd71135-d895-4d08-a964-56bdebedd2dc";
+      const updateOwners = [];
       let verifies = 0;
       let writes = 0;
       await page.route("**/api/auth/forgot-password", (route) =>
@@ -641,10 +792,11 @@ try {
       );
       await page.route("**/api/auth/forgot-password/verify-code", (route) => {
         verifies++;
-        return route.fulfill(json({ ok: true }));
+        return route.fulfill(json({ ok: true, recoveryOwnerId: ownerId }));
       });
       await page.route("**/api/auth/update-password", (route) => {
         writes++;
+        updateOwners.push(route.request().postDataJSON().recoveryOwnerId);
         return writes === 1 ? update.fulfill(route) : route.fulfill(json({ ok: true }));
       });
       await page.route("**/api/auth/session", (route) =>
@@ -675,6 +827,47 @@ try {
       await expect(page.getByRole("link", { name: "Continue to sign in" })).toBeVisible();
       assert.equal(verifies, 1);
       assert.equal(writes, 2);
+      assert.deepEqual(updateOwners, [ownerId, ownerId]);
+    },
+  );
+
+  await check(
+    "a recovery owner conflict discards the accepted code before another password write",
+    async (page) => {
+      const owners = [];
+      let verifications = 0;
+      const ownerId = "3fd71135-d895-4d08-a964-56bdebedd2dc";
+      await page.route("**/api/auth/forgot-password", (route) =>
+        route.fulfill(json({ ok: true })),
+      );
+      await page.route("**/api/auth/forgot-password/verify-code", (route) => {
+        verifications++;
+        return route.fulfill(json({ ok: true, recoveryOwnerId: ownerId }));
+      });
+      await page.route("**/api/auth/update-password", (route) => {
+        owners.push(route.request().postDataJSON().recoveryOwnerId);
+        return route.fulfill(
+          json(
+            { error: "Your recovery session changed. Request a new reset code." },
+            409,
+          ),
+        );
+      });
+      await openUxHarness(page, bundle, "https://ux.test/forgot");
+      await page.getByLabel("Email", { exact: true }).fill("customer@example.test");
+      await page.getByRole("button", { name: "Send reset code" }).press("Enter");
+      const code = page.getByLabel("Reset code", { exact: true });
+      await code.fill("123456");
+      await page.getByLabel("New password", { exact: true }).fill("Example1!Secure");
+      await page.getByLabel("Confirm password", { exact: true }).fill("Example1!Secure");
+      const update = page.getByRole("button", { name: "Update password", exact: true });
+      await update.click();
+      await expect(page.getByRole("alert")).toContainText(/new reset code/i);
+      await expect(code).toHaveValue("");
+      await update.click();
+      await expect(page.getByRole("alert")).toContainText(/6-digit reset code/i);
+      assert.equal(verifications, 1);
+      assert.deepEqual(owners, [ownerId]);
     },
   );
 

@@ -80,7 +80,7 @@ export async function POST(request: NextRequest) {
       );
     }
 
-    await repo.upsertUserAddress(session.user.id, {
+    const address = await repo.upsertUserAddress(session.user.id, {
       name: parsed.data.name ?? null,
       phone: parsed.data.phone ?? null,
       line1: parsed.data.line1,
@@ -91,8 +91,21 @@ export async function POST(request: NextRequest) {
       country: parsed.data.country,
     });
 
-    const addresses = await repo.listUserAddresses(session.user.id);
-    return NextResponse.json({ addresses }, { headers: { "Cache-Control": "no-store" } });
+    const addresses = await repo
+      .listUserAddresses(session.user.id)
+      .catch((error: unknown) => {
+        logError(error, {
+          layer: "api",
+          requestId,
+          route: "/api/account/addresses",
+          event: "saved_address_list_refresh_failed",
+        });
+        return undefined;
+      });
+    return NextResponse.json(
+      { address, addresses },
+      { headers: { "Cache-Control": "no-store" } },
+    );
   } catch (error) {
     if (error instanceof AuthError) {
       return NextResponse.json(
