@@ -19,6 +19,7 @@ import {
   verifyCorrectionToken,
 } from "../Claim/validation-token";
 import type { validateEligibilityAddress } from "./address-provider";
+import { ClaimBodyError, readClaimJson } from "../Claim/claim-http";
 
 export type EligibilityDependencies = {
   getContext(request: Request, productId: string): Promise<SpecialtyContext | null>;
@@ -68,9 +69,10 @@ export async function validateEligibilityHandler(
   deps: EligibilityDependencies,
 ): Promise<Response> {
   try {
-    const parsed = eligibilityRequestSchema.safeParse(
-      await request.json().catch(() => null),
-    );
+    const protection = await deps.protect(request, "validate", "");
+    if (!protection.allowed)
+      return unavailable(protection.status, protection.retryAfterSeconds ?? 1);
+    const parsed = eligibilityRequestSchema.safeParse(await readClaimJson(request));
     if (!parsed.success) return invalid("address");
     const input = parsed.data;
     let handle: string;
@@ -87,9 +89,6 @@ export async function validateEligibilityHandler(
       context.identityKeyFingerprint !== getIdentityKeyFingerprint(secret)
     )
       return unavailable();
-    const protection = await deps.protect(request, "validate", context.browserId);
-    if (!protection.allowed)
-      return unavailable(protection.status, protection.retryAfterSeconds ?? 1);
     const binding = {
       campaignId: context.campaignId,
       productId: context.productId,
@@ -140,7 +139,12 @@ export async function validateEligibilityHandler(
       expiresAt: proof.expiresAt,
       validationToken: issueEligibilityToken(proof, secret),
     });
-  } catch {
+  } catch (error) {
+    if (error instanceof ClaimBodyError)
+      return reply(
+        { status: "invalid", fields: { address: "Enter valid claim details." } },
+        error.status,
+      );
     return unavailable();
   }
 }

@@ -39,6 +39,17 @@ function dependencies(): EligibilityDependencies {
   };
 }
 describe("specialty eligibility validation", () => {
+  test("bounds eligibility request bytes before JSON parsing", async () => {
+    const response = await validateEligibilityHandler(
+      new Request("https://example.com", {
+        method: "POST",
+        body: JSON.stringify({ padding: "x".repeat(17000) }),
+      }),
+      dependencies(),
+    );
+    expect(response.status).toBe(413);
+    expect(response.headers.get("Cache-Control")).toContain("no-store");
+  });
   test("issues a signed canonical eligibility proof with no stock operation", async () => {
     const response = await validateEligibilityHandler(request(), dependencies());
     const data = await response.json();
