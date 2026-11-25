@@ -39,5 +39,7 @@ test("staff claims expose manual contact/status details with escaped winning ins
   expect(html).toContain("&lt;script&gt;private instructions&lt;/script&gt;");
   for (const status of ["New", "Contacted", "Fulfilled"]) expect(html).toContain(status);
   expect(html).toContain('role="switch"');
+  expect(html).toMatch(/<select[^>]*disabled=""/);
+  expect(html).toContain("2026-11-25 18:00:00 UTC");
   expect(html).not.toMatch(/Card number|Create shipping label|Send email/);
 });

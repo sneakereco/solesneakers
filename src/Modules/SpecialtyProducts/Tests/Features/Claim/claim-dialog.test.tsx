@@ -12,6 +12,10 @@ const product = {
   imageUrl: null,
   claimable: true,
 };
+test("SSR claim actions wait for browser hydration before accepting a click", () => {
+  const html = renderToStaticMarkup(<ClaimButton product={product} />);
+  expect(html).toMatch(/<button[^>]*disabled=""/);
+});
 test("claim dialog requests IG and eligibility address without checkout contact/payment controls", () => {
   const html = renderToStaticMarkup(
     <ClaimDialog product={product} open onClose={() => {}} />,

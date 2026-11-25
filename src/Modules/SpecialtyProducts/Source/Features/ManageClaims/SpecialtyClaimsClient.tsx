@@ -1,6 +1,7 @@
 "use client";
 import Image from "next/image";
 import { useRef, useState } from "react";
+import { useHydrated } from "@/components/ui/useHydrated";
 import type {
   AdminClaimStatus,
   AdminSpecialtyClaim,
@@ -33,13 +34,15 @@ export function SpecialtyClaimsClient({
   campaign: SpecialtyCampaignState;
   products: Array<{ id: string; name: string }>;
 }) {
+  const hydrated = useHydrated();
   const [result, setResult] = useState(initial),
     [campaignState, setCampaign] = useState(campaign);
   const [status, setStatus] = useState<AdminClaimStatus | "all">("all"),
     [productId, setProductId] = useState(""),
     [page, setPage] = useState(1);
-  const [busy, setBusy] = useState(false),
+  const [saving, setBusy] = useState(false),
     [message, setMessage] = useState("");
+  const busy = saving || !hydrated;
   const pending = useRef(false);
   async function run(work: () => Promise<void>) {
     if (pending.current) return;
@@ -220,8 +223,12 @@ export function SpecialtyClaimsClient({
                     Claim {claim.claimId}
                   </p>
                   <p className="mt-1 text-xs text-zinc-500">
-                    Accepted {new Date(claim.acceptedAt).toLocaleString()} · Decision #
-                    {claim.decisionOrdinal}
+                    Accepted{" "}
+                    {new Date(claim.acceptedAt)
+                      .toISOString()
+                      .replace("T", " ")
+                      .replace(/\.\d{3}Z$/, " UTC")}{" "}
+                    · Decision #{claim.decisionOrdinal}
                   </p>
                 </div>
               </div>
@@ -235,11 +242,20 @@ export function SpecialtyClaimsClient({
                   onChange={(event) => {
                     const nextStatus = event.target.value as AdminClaimStatus;
                     void run(async () => {
-                      await api("/api/admin/specialty/claims/" + claim.claimId, "PATCH", {
-                        status: nextStatus,
-                        expectedRevision: claim.revision,
-                      });
-                      await load(page);
+                      const updated = await api<AdminSpecialtyClaim>(
+                        "/api/admin/specialty/claims/" + claim.claimId,
+                        "PATCH",
+                        {
+                          status: nextStatus,
+                          expectedRevision: claim.revision,
+                        },
+                      );
+                      setResult((current) => ({
+                        ...current,
+                        claims: current.claims.map((item) =>
+                          item.claimId === updated.claimId ? updated : item,
+                        ),
+                      }));
                     });
                   }}
                 >
@@ -290,7 +306,10 @@ export function SpecialtyClaimsClient({
             <p className="mt-5 break-all text-xs text-zinc-500">
               {claim.updatedBy
                 ? "Updated " +
-                  new Date(claim.updatedAt).toLocaleString() +
+                  new Date(claim.updatedAt)
+                    .toISOString()
+                    .replace("T", " ")
+                    .replace(/\.\d{3}Z$/, " UTC") +
                   " by " +
                   claim.updatedBy
                 : "No staff updates yet."}

@@ -1,9 +1,11 @@
 "use client";
 import { useCallback, useEffect, useState } from "react";
+import { useHydrated } from "@/components/ui/useHydrated";
 import type { SpecialtyPublicProduct } from "./claim-contract";
 import { ATTEMPT_CHANGED_EVENT, readAttempt } from "./attempt-storage";
 import { ClaimDialog } from "./ClaimDialog";
 export function ClaimButton({ product }: { product: SpecialtyPublicProduct }) {
+  const hydrated = useHydrated();
   const [open, setOpen] = useState(false),
     [hasAttempt, setHasAttempt] = useState(false);
   const close = useCallback(() => setOpen(false), []);
@@ -17,7 +19,7 @@ export function ClaimButton({ product }: { product: SpecialtyPublicProduct }) {
     <>
       <button
         type="button"
-        disabled={!product.claimable && !hasAttempt}
+        disabled={!hydrated || (!product.claimable && !hasAttempt)}
         onClick={() => setOpen(true)}
         className="mt-3 inline-flex min-h-11 items-center justify-center rounded bg-zinc-950 px-5 py-2 text-sm text-white disabled:opacity-50"
       >

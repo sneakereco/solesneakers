@@ -58,7 +58,7 @@ const formatPriceLabel = (min?: number, max?: number) => {
 export async function generateMetadata({
   searchParams,
 }: {
-  searchParams?: Promise<StoreSearchParams> | StoreSearchParams;
+  searchParams?: Promise<StoreSearchParams>;
 }): Promise<Metadata> {
   const params = await searchParams;
   const query = getStringParam(params, "q")?.trim().slice(0, 100);
@@ -108,7 +108,7 @@ export async function generateMetadata({
 export default async function StorePage({
   searchParams,
 }: {
-  searchParams?: Promise<StoreSearchParams> | StoreSearchParams;
+  searchParams?: Promise<StoreSearchParams>;
 }) {
   const resolvedSearchParams = searchParams ? await searchParams : undefined;
   const query = getStringParam(resolvedSearchParams, "q")?.trim() ?? "";
