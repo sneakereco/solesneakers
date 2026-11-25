@@ -18,7 +18,7 @@ import { isAbsolute, join, relative, resolve, sep } from "node:path";
 import { fileURLToPath } from "node:url";
 import { promisify } from "node:util";
 import { Client } from "pg";
-import { withLoopbackPublishing } from "./checkout-hardening-docker-relay.mjs";
+import { runLabel, withLoopbackPublishing } from "./checkout-hardening-docker-relay.mjs";
 
 const run = promisify(execFile);
 export const root = fileURLToPath(new URL("../../../", import.meta.url));
@@ -277,45 +277,71 @@ async function inspectDatabase(ownership, port) {
   return container.Id;
 }
 
-async function stopProject(ownership) {
-  await verifyOwnership(ownership);
-  const config = await assertDescendant(
-    ownership.directory,
-    join(ownership.directory, "supabase", "config.toml"),
-  );
-  assert.ok(
-    (await readFile(config, "utf8")).startsWith(
-      'project_id = "' + ownership.projectId + '"' + "\n",
-    ),
-    "Checkout project configuration no longer matches this run",
-  );
-  const database = "supabase_db_" + ownership.projectId;
-  const containers = await docker([
-    "ps",
-    "-a",
-    "--format",
-    "{{.Names}}",
-    "--filter",
-    "label=" + projectLabel + "=" + ownership.projectId,
-  ]);
-  if (containers.split(/\r?\n/).includes(database)) {
-    const [container] = JSON.parse(
-      await docker(["inspect", "--type", "container", database]),
+async function inspectResource(resource, command) {
+  const reference = resource.id ?? resource.name;
+  try {
+    return JSON.parse(
+      await command([resource.kind, "inspect", "--format", "{{json .}}", reference]),
     );
-    assert.equal(container.Config.Labels[projectLabel], ownership.projectId);
-    assert.equal(resolve(container.Config.Labels[workdirLabel]), ownership.directory);
+  } catch (error) {
+    if (
+      /no such (?:object|container|volume|network)|network .* not found/i.test(
+        error.message,
+      )
+    )
+      return null;
+    throw error;
   }
-  await supabaseCommand(ownership, [
-    "stop",
-    "--project-id",
-    ownership.projectId,
-    "--no-backup",
-  ]);
-  assert.deepEqual(
-    await projectResources(ownership.projectId),
-    [],
-    "Leaked checkout test resources",
+}
+
+function assertCreatedIdentity(ownership, resource, observed) {
+  const labels = resource.kind === "container" ? observed.Config.Labels : observed.Labels;
+  const name =
+    resource.kind === "container" ? observed.Name?.replace(/^\//, "") : observed.Name;
+  const sameIdentity =
+    resource.kind === "volume"
+      ? observed.CreatedAt === resource.createdAt && observed.Driver === "local"
+      : observed.Id === resource.id;
+  assert.ok(
+    sameIdentity &&
+      (!resource.name || resource.name === name) &&
+      labels?.[projectLabel] === ownership.projectId &&
+      labels?.[runLabel] === ownership.token,
+    "Refusing cleanup of changed Docker identity: " + (resource.name ?? resource.id),
   );
+}
+
+export async function removeCreatedDockerResources(
+  ownership,
+  resources,
+  { command = docker, receipt = () => {} } = {},
+) {
+  await verifyOwnership(ownership);
+  const failures = [];
+  for (const resource of resources.toReversed()) {
+    const reference = resource.id ?? resource.name;
+    try {
+      const before = await inspectResource(resource, command);
+      if (before) assertCreatedIdentity(ownership, resource, before);
+      receipt({ phase: "before", ...resource, present: !!before });
+      if (before) {
+        const args =
+          resource.kind === "container"
+            ? ["container", "rm", "--force"]
+            : [resource.kind, "rm"];
+        await command([...args, reference]);
+        assert.equal(
+          await inspectResource(resource, command),
+          null,
+          "Owned Docker resource remains after removal",
+        );
+      }
+      receipt({ phase: "after", ...resource, present: false });
+    } catch (error) {
+      failures.push(error.message);
+    }
+  }
+  if (failures.length) throw new Error(failures.join("\n"));
 }
 
 async function readMigrations() {
@@ -665,16 +691,31 @@ async function seedOrder(
   return { orderId, userId };
 }
 
-async function populatedRows(client, catalog, order) {
+export async function populatedRows(client, catalog, order) {
   return (
     await client.query(
       "select (select to_jsonb(p) from products p where id = $1) as product, " +
         "(select to_jsonb(v) from product_variants v where id = $2) as variant, " +
         '(select to_jsonb(o) from orders o where id = $3) as "order", ' +
-        "(select to_jsonb(p) from profiles p where id = $4) as profile",
+        "(select to_jsonb(p) from profiles p where id = $4) as profile, " +
+        '(select to_jsonb(u) from auth.users u where id = $4) as "auth user"',
       [catalog.productId, catalog.variantId, order.orderId, order.userId],
     )
   ).rows[0];
+}
+
+export function assertPopulatedRowsPreserved(before, after) {
+  for (const table of Object.keys(before)) {
+    assert.ok(before[table] && after[table], "Populated fixture lost its " + table);
+    // Later additive migrations may add defaults. Compare every pre-existing field.
+    assert.deepEqual(
+      Object.fromEntries(
+        Object.keys(before[table]).map((key) => [key, after[table][key]]),
+      ),
+      before[table],
+      "Populated fixture changed its " + table,
+    );
+  }
 }
 
 async function replay(client, { migrations }, lease) {
@@ -701,17 +742,7 @@ async function replay(client, { migrations }, lease) {
     const before = await populatedRows(client, catalog, order);
     await applyMigrations(client, migrations.slice(prefix.length));
     const after = await populatedRows(client, catalog, order);
-    for (const table of Object.keys(before)) {
-      assert.ok(before[table] && after[table], "Populated fixture lost its " + table);
-      // Later additive migrations may add defaults. Compare every pre-existing field.
-      assert.deepEqual(
-        Object.fromEntries(
-          Object.keys(before[table]).map((key) => [key, after[table][key]]),
-        ),
-        before[table],
-        "Populated fixture changed its " + table,
-      );
-    }
+    assertPopulatedRowsPreserved(before, after);
     lease.populated = { ...catalog, ...order };
   }
   await verifyRegistry(client, migrations);
@@ -759,7 +790,7 @@ async function withAttachedFixture(lease, runTest) {
 export async function withCheckoutProject(
   mode,
   runTest,
-  { verifyFailedClone = false } = {},
+  { verifyFailedClone = false, onResourceReceipt = () => {} } = {},
 ) {
   assert.ok(mode === "fresh" || mode === "populated", "Unknown checkout database mode");
   const upstreamSocket = await localDockerSocket();
@@ -767,7 +798,7 @@ export async function withCheckoutProject(
   const workspace = await mkdtemp(join(tmpdir(), "checkout-hardening-"));
   const projectId = "checkout-hardening-test-" + randomBytes(7).toString("hex");
   const ownership = await claimProjectDirectory(workspace, projectId);
-  let attemptedStart = false;
+  const resources = [];
   let verifyBootstrap;
   try {
     await assertUnusedProject(projectId);
@@ -789,11 +820,28 @@ export async function withCheckoutProject(
       ].join("\n") + "\n",
       { flag: "wx" },
     );
-    attemptedStart = true;
-    await withLoopbackPublishing(ownership, port, upstreamSocket, (env) =>
-      supabaseCommand(ownership, ["db", "start"], env),
+    await withLoopbackPublishing(
+      ownership,
+      port,
+      upstreamSocket,
+      (env) => supabaseCommand(ownership, ["db", "start"], env),
+      resources,
     );
     const containerId = await inspectDatabase(ownership, port);
+    const primary = resources.find(
+      (resource) => resource.kind === "container" && resource.id === containerId,
+    );
+    assert.ok(
+      primary?.name === "supabase_db_" + projectId,
+      "Database was not created by the checkout startup relay",
+    );
+    for (const resource of resources.filter(
+      ({ kind, name }) => kind !== "container" || name,
+    )) {
+      const observed = await inspectResource(resource, docker);
+      assert.ok(observed, "Owned checkout Docker resource disappeared");
+      assertCreatedIdentity(ownership, resource, observed);
+    }
     const database = projectId.replaceAll("-", "_");
     const url = "postgresql://postgres:postgres@127.0.0.1:" + port + "/" + database;
     validateMutationTarget(url, { database, port });
@@ -836,7 +884,9 @@ export async function withCheckoutProject(
     try {
       if (verifyBootstrap) await verifyBootstrap();
     } finally {
-      if (attemptedStart) await stopProject(ownership);
+      await removeCreatedDockerResources(ownership, resources, {
+        receipt: onResourceReceipt,
+      });
       await removeOwnedDirectory(ownership);
       await rmdir(workspace);
     }

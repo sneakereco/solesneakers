@@ -6,6 +6,8 @@ import { join } from "node:path";
 import test from "node:test";
 import {
   assertFreshTarget,
+  assertPopulatedRowsPreserved,
+  populatedRows,
   withCheckoutDatabase,
   claimProjectDirectory,
   removeOwnedDirectory,
@@ -142,6 +144,32 @@ if (process.env.CHECKOUT_HARDENING_SELF_TEST_MODE) {
       if (process.env.CHECKOUT_HARDENING_INDUCE_FAILURE === "1") {
         assert.fail("checkout_hardening_deliberate_gate_failure");
       }
+    });
+  });
+}
+
+if (process.env.CHECKOUT_HARDENING_SELF_TEST_MODE === "populated") {
+  test("detects a mutation of the seeded auth user while the profile stays intact", async () => {
+    await withCheckoutDatabase("populated", async ({ admin, populated }) => {
+      const read = () => populatedRows(admin, populated, populated);
+      const before = await read();
+      await admin.query("begin");
+      try {
+        const { rowCount } = await admin.query(
+          "update auth.users set role = 'fixture_changed' where id = $1",
+          [populated.userId],
+        );
+        assert.equal(rowCount, 1);
+        const after = await read();
+        assert.deepEqual(after.profile, before.profile);
+        assert.throws(
+          () => assertPopulatedRowsPreserved(before, after),
+          /Populated fixture changed its auth user/,
+        );
+      } finally {
+        await admin.query("rollback");
+      }
+      assertPopulatedRowsPreserved(before, await read());
     });
   });
 }

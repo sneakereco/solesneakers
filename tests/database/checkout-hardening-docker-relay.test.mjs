@@ -1,5 +1,5 @@
 import assert from "node:assert/strict";
-import { randomBytes } from "node:crypto";
+import { createHash, randomBytes } from "node:crypto";
 import { mkdtemp, rmdir } from "node:fs/promises";
 import { createServer, request } from "node:http";
 import { tmpdir } from "node:os";
@@ -7,10 +7,20 @@ import { join } from "node:path";
 import test from "node:test";
 import {
   rewriteStartupRequest,
+  runLabel,
   withLoopbackPublishing,
 } from "./fixtures/checkout-hardening-docker-relay.mjs";
 
+import {
+  claimProjectDirectory,
+  removeCreatedDockerResources,
+  removeOwnedDirectory,
+} from "./fixtures/checkout-hardening.mjs";
+
 const projectId = "checkout-hardening-test-0123456789abcd";
+const containerId = "a".repeat(64);
+const networkId = "b".repeat(64);
+const command = ["-c", "fixture database bootstrap"];
 const directory = process.cwd();
 const names = {
   container: "supabase_db_" + projectId,
@@ -22,16 +32,26 @@ const options = {
   directory,
   port: 56123,
   names,
-  ids: new Set(["owned-container-id"]),
+  token: "synthetic-test-owner",
+  databaseCommandHash: createHash("sha256").update(JSON.stringify(command)).digest("hex"),
+  resources: [
+    { kind: "network", name: names.network, id: networkId },
+    { kind: "volume", name: names.volume, createdAt: "2026-11-25T00:00:00Z" },
+    { kind: "container", name: null, id: containerId },
+  ],
 };
 const labels = {
   "com.supabase.cli.project": projectId,
   "com.supabase.cli.workdir": directory,
 };
 const container = {
+  Image: "public.ecr.aws/supabase/postgres:17.6.1.167",
+  Entrypoint: ["sh"],
+  Cmd: command,
   Labels: labels,
   HostConfig: {
     NetworkMode: names.network,
+    Binds: [names.volume + ":/var/lib/postgresql/data"],
     PortBindings: { "5432/tcp": [{ HostIp: "", HostPort: "56123" }] },
   },
 };
@@ -94,7 +114,7 @@ test("startup relay refuses foreign names, labels, ports and mutations", () => {
   assert.doesNotThrow(() =>
     rewriteStartupRequest(
       "POST",
-      "/v1.47/containers/owned-container-id/start",
+      "/v1.47/containers/" + containerId + "/start",
       null,
       options,
     ),
@@ -104,7 +124,8 @@ test("startup relay refuses foreign names, labels, ports and mutations", () => {
   );
   const initializer = {
     Image: "public.ecr.aws/supabase/storage-api:v1.72.1",
-    Cmd: ["entrypoint", "migrate"],
+    Cmd: ["node", "dist/scripts/migrate-call.js"],
+    Entrypoint: null,
     Labels: labels,
     HostConfig: { NetworkMode: names.network, AutoRemove: true },
   };
@@ -129,18 +150,27 @@ test(
   async () => {
     const workspace = await mkdtemp(join(tmpdir(), "checkout-relay-test-"));
     const projectId = "checkout-hardening-test-" + randomBytes(7).toString("hex");
-    const options = { directory: workspace, projectId };
+    const options = {
+      directory: workspace,
+      projectId,
+      token: "synthetic-lifecycle-owner",
+    };
     const socket =
       process.platform === "win32"
         ? "\\\\.\\pipe\\" + projectId + "-fake"
         : join(workspace, "upstream.sock");
-    const name = "supabase_db_" + projectId;
     const network = "supabase_network_" + projectId;
     const identifier = "a".repeat(64);
     let pendingWait;
     let upstreamAttach;
     let attachClosed;
     const upstream = createServer((req, res) => {
+      if (req.url.startsWith("/networks/create")) {
+        req.resume();
+        res.writeHead(201, { "Content-Type": "application/json" });
+        res.end(JSON.stringify({ Id: networkId }));
+        return;
+      }
       if (req.url.startsWith("/containers/create")) {
         req.resume();
         res.writeHead(201, { "Content-Type": "application/json" });
@@ -175,21 +205,27 @@ test(
           process.platform === "win32"
             ? DOCKER_HOST.slice("npipe://".length).replaceAll("/", "\\")
             : DOCKER_HOST.slice("unix://".length);
-        const spec = JSON.stringify({
-          Labels: {
-            "com.supabase.cli.project": projectId,
-            "com.supabase.cli.workdir": workspace,
-          },
-          HostConfig: {
-            NetworkMode: network,
-            PortBindings: { "5432/tcp": [{ HostPort: "56123" }] },
-          },
-        });
-        const created = await connectRelay(
+        const ownedLabels = { "com.supabase.cli.project": projectId };
+        const createdNetwork = await connectRelay(
           relaySocket,
-          "/containers/create?name=" + name,
-          spec,
+          "/networks/create",
+          JSON.stringify({
+            Name: network,
+            Driver: "bridge",
+            Labels: ownedLabels,
+          }),
         );
+        assert.equal(createdNetwork.statusCode, 201);
+        for await (const chunk of createdNetwork)
+          assert.match(chunk.toString(), new RegExp(networkId));
+        const spec = JSON.stringify({
+          Image: "public.ecr.aws/supabase/storage-api:v1.72.1",
+          Entrypoint: null,
+          Cmd: ["node", "dist/scripts/migrate-call.js"],
+          Labels: ownedLabels,
+          HostConfig: { NetworkMode: network, AutoRemove: true },
+        });
+        const created = await connectRelay(relaySocket, "/containers/create", spec);
         for await (const chunk of created)
           assert.match(chunk.toString(), new RegExp(identifier));
         const waited = await connectRelay(
@@ -239,3 +275,204 @@ test(
     }
   },
 );
+
+test("refuses changed initializer commands, entrypoints, database images, or storage", () => {
+  const spec = {
+    Image: "public.ecr.aws/supabase/storage-api:v1.72.1",
+    Cmd: ["node", "dist/scripts/migrate-call.js"],
+    Entrypoint: null,
+    Labels: labels,
+    HostConfig: { NetworkMode: names.network, AutoRemove: true },
+  };
+  const initialize = (body) =>
+    rewriteStartupRequest("POST", "/containers/create", body, options);
+  assert.throws(() => initialize({ ...spec, Cmd: ["node", "unreviewed.js"] }));
+  assert.throws(() => initialize({ ...spec, Entrypoint: ["sh"] }));
+  assert.throws(() => create(names.container, { ...container, Image: "postgres:17" }));
+  assert.throws(() =>
+    create(names.container, { ...container, Cmd: ["-c", "another script"] }),
+  );
+  assert.throws(() =>
+    create(names.container, {
+      ...container,
+      NetworkingConfig: { EndpointsConfig: { foreign: {} } },
+    }),
+  );
+  assert.throws(() =>
+    rewriteStartupRequest(
+      "POST",
+      "/containers/create?name=" + names.container,
+      structuredClone(container),
+      {
+        ...options,
+        resources: options.resources.filter(({ kind }) => kind !== "volume"),
+      },
+    ),
+  );
+  assert.throws(() =>
+    create(names.container, {
+      ...container,
+      HostConfig: {
+        ...container.HostConfig,
+        Mounts: [{ Source: "foreign", Target: "/app" }],
+      },
+    }),
+  );
+  assert.throws(() =>
+    create(names.container, {
+      ...container,
+      HostConfig: {
+        ...container.HostConfig,
+        Binds: ["existing:/var/lib/postgresql/data"],
+      },
+    }),
+  );
+});
+
+test("partial startup refuses to remove a never-created volume at the planned name", () => {
+  assert.throws(() =>
+    rewriteStartupRequest(
+      "DELETE",
+      "/containers/" + containerId.slice(0, 12),
+      null,
+      options,
+    ),
+  );
+  assert.throws(() =>
+    rewriteStartupRequest("DELETE", "/containers/" + networkId, null, options),
+  );
+
+  assert.throws(() =>
+    rewriteStartupRequest("DELETE", "/volumes/" + names.volume, null, options),
+  );
+  assert.throws(() =>
+    rewriteStartupRequest("DELETE", "/networks/" + names.network, null, options),
+  );
+  assert.throws(() =>
+    rewriteStartupRequest("DELETE", "/containers/" + names.container, null, options),
+  );
+});
+
+test("partial startup preserves a pre-existing volume returned by a duplicate create", async (t) => {
+  const workspace = await mkdtemp(join(tmpdir(), "checkout-relay-partial-"));
+  const id = "checkout-hardening-test-" + randomBytes(7).toString("hex");
+  const ownership = await claimProjectDirectory(workspace, id);
+  const volume = {
+    Name: "supabase_db_" + id,
+    CreatedAt: "2026-11-24T12:00:00Z",
+    Driver: "local",
+    Labels: { "com.supabase.cli.project": id, [runLabel]: "foreign-owner" },
+  };
+  const network = { Name: "supabase_network_" + id, Id: networkId };
+  const resources = [];
+  let networkExists = false;
+  const foreignBefore = structuredClone(volume);
+  const socket =
+    process.platform === "win32"
+      ? "\\\\.\\pipe\\" + id + "-fake"
+      : join(ownership.directory, "upstream.sock");
+  const upstream = createServer(async (request, response) => {
+    const body = [];
+    for await (const chunk of request) body.push(chunk);
+    const spec = JSON.parse(Buffer.concat(body));
+    assert.equal(spec.Labels[runLabel], ownership.token);
+    response.writeHead(201, { "Content-Type": "application/json" });
+    if (request.url === "/networks/create") {
+      networkExists = true;
+      network.Labels = spec.Labels;
+      response.end(JSON.stringify({ Id: networkId }));
+    } else {
+      assert.equal(request.url, "/volumes/create");
+      response.end(JSON.stringify(volume));
+    }
+  });
+  await new Promise((ready) => upstream.listen(socket, ready));
+  const receipts = [];
+  const commands = [];
+  const cleanDocker = async (args) => {
+    commands.push(args);
+    if (args[0] === "volume") {
+      assert.equal(args[1], "inspect", "the replacement volume must survive");
+      return JSON.stringify(volume);
+    }
+    assert.equal(args[0], "network");
+    assert.equal(args.at(-1), networkId);
+    if (args[1] === "rm") {
+      networkExists = false;
+      return networkId;
+    }
+    if (!networkExists) throw new Error("No such network");
+    return JSON.stringify(network);
+  };
+  try {
+    await assert.rejects(
+      withLoopbackPublishing(
+        ownership,
+        56123,
+        socket,
+        async ({ DOCKER_HOST }) => {
+          const socketPath =
+            process.platform === "win32"
+              ? DOCKER_HOST.slice("npipe://".length).replaceAll("/", "\\")
+              : DOCKER_HOST.slice("unix://".length);
+          const create = async (kind, name, driver) => {
+            return new Promise((done, fail) => {
+              const req = request(
+                { socketPath, path: "/" + kind + "/create", method: "POST" },
+                (resp) => {
+                  resp.resume().once("end", () => done(resp.statusCode));
+                },
+              );
+              req.once("error", fail);
+              req.end(
+                JSON.stringify({
+                  Name: name,
+                  Driver: driver,
+                  Labels: { "com.supabase.cli.project": id },
+                }),
+              );
+            });
+          };
+          assert.equal(await create("networks", network.Name, "bridge"), 201);
+          if ((await create("volumes", volume.Name, "local")) !== 201) {
+            throw new Error("partial start refused foreign volume");
+          }
+        },
+        resources,
+      ),
+      /partial start refused foreign volume/,
+    );
+    assert.deepEqual(resources, [{ kind: "network", name: network.Name, id: networkId }]);
+    await removeCreatedDockerResources(ownership, resources, {
+      command: cleanDocker,
+      receipt: (entry) => receipts.push(entry),
+    });
+    assert.equal(networkExists, false);
+    assert.ok(!commands.some(([kind]) => kind === "volume"));
+    assert.deepEqual(volume, foreignBefore);
+    await assert.rejects(
+      removeCreatedDockerResources(
+        ownership,
+        [{ kind: "volume", name: volume.Name, createdAt: volume.CreatedAt }],
+        { command: cleanDocker },
+      ),
+      /Refusing cleanup of changed Docker identity/,
+    );
+    assert.deepEqual(volume, foreignBefore);
+    t.diagnostic(
+      JSON.stringify({
+        receipts,
+        foreignVolume: {
+          name: volume.Name,
+          createdAt: volume.CreatedAt,
+          unchanged: true,
+        },
+      }),
+    );
+  } finally {
+    upstream.closeAllConnections();
+    await new Promise((closed) => upstream.close(closed));
+    await removeOwnedDirectory(ownership);
+    await rmdir(workspace);
+  }
+});

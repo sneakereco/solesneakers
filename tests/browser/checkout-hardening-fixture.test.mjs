@@ -104,3 +104,50 @@ test("checkout view keeps the receiving checkout layout and receipt adapter", as
     await close();
   }
 });
+
+test("two checkout fixture tabs mount real hooks and retain account writes across reload", async () => {
+  const initialUser = { id: "two-tab-buyer", email: "buyer@fixture.invalid" };
+  const key = "rdk_cart_user_" + initialUser.id;
+  const { page, context, close } = await mountCheckoutBrowser({
+    initialUser,
+    accountItems: { [initialUser.id]: [item] },
+    route: async (route, url) => {
+      expect(url.pathname).toBe("/api/cart/validate");
+      const { items } = route.request().postDataJSON();
+      await route.fulfill({
+        json: { items: items.map(({ quantity }) => ({ ...item, quantity })) },
+      });
+    },
+  });
+  try {
+    const other = await context.newPage();
+    await other.goto(page.url());
+    for (const tab of [page, other]) {
+      await expect(tab.getByText(item.titleDisplay, { exact: true })).toBeVisible();
+      expect(await tab.evaluate(() => window.testSession.user.id)).toBe(initialUser.id);
+    }
+    await other.evaluate((storageKey) => {
+      window.fixtureNativeStorage = new Promise((resolve) => {
+        window.addEventListener("storage", (event) => {
+          if (event.key === storageKey) resolve(JSON.parse(event.newValue)[0].quantity);
+        });
+      });
+    }, key);
+    await page.evaluate(
+      ({ productId, variantId }) =>
+        window.testCart.updateQuantity(productId, variantId, 2),
+      item,
+    );
+    await expect(other.evaluate(() => window.fixtureNativeStorage)).resolves.toBe(2);
+    await other.reload();
+    await expect
+      .poll(() => other.evaluate(() => window.testCart?.items[0]?.quantity))
+      .toBe(2);
+    await page.reload();
+    await expect
+      .poll(() => page.evaluate(() => window.testCart?.items[0]?.quantity))
+      .toBe(2);
+  } finally {
+    await close();
+  }
+});

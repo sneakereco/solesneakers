@@ -201,7 +201,11 @@ async function selfTest() {
           throw new Error(deliberateFailure);
         }
       },
-      { verifyFailedClone: mode === "fresh" },
+      {
+        verifyFailedClone: mode === "fresh",
+        onResourceReceipt: (entry) =>
+          console.log("Checkout Docker " + mode + " " + JSON.stringify(entry)),
+      },
     );
     if (mode === "fresh") await assert.rejects(rehearsal, { message: deliberateFailure });
     else await rehearsal;

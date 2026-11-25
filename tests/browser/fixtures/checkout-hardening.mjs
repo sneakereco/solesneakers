@@ -136,6 +136,42 @@ function browserBundle() {
   return bundle;
 }
 
+function bootstrapDocument({ initialUser, guestItems, accountItems, view, seedGuest }) {
+  if (!localStorage.getItem("checkout_fixture_initialized_accounts")) {
+    for (const [id, items] of Object.entries(accountItems)) {
+      localStorage.setItem("rdk_cart_user_" + id, JSON.stringify(items));
+    }
+    localStorage.setItem("checkout_fixture_initialized_accounts", "1");
+  }
+  if (seedGuest && !sessionStorage.getItem("checkout_fixture_initialized_guest")) {
+    sessionStorage.setItem("rdk_cart_session", JSON.stringify(guestItems));
+    sessionStorage.setItem("checkout_fixture_initialized_guest", "1");
+  }
+  window.checkoutFixture = { initialUser, view };
+  // Install the synthetic SDK before the real checkout mounts.
+  window.Square = {
+    payments: () => ({
+      card: async () => ({
+        attach: async () => {},
+        destroy: async () => true,
+        tokenize: async () => ({ status: "OK", token: "synthetic-fixture-token" }),
+      }),
+      paymentRequest: () => ({ addEventListener: () => {}, update: () => true }),
+      applePay: async () => {
+        throw new Error("Unavailable in the checkout fixture");
+      },
+      cashAppPay: async () => {
+        throw new Error("Unavailable in the checkout fixture");
+      },
+      afterpayClearpay: async () => {
+        throw new Error("Unavailable in the checkout fixture");
+      },
+    }),
+  };
+}
+
+const bundlePath = "/__checkout-fixture/bootstrap.js";
+
 export async function mountCheckoutBrowser({
   initialUser = null,
   guestItems = [],
@@ -183,6 +219,7 @@ export async function mountCheckoutBrowser({
       errors.push(new Error("Unexpected WebSocket request in checkout fixture"));
       return socket.close();
     });
+    const page = await context.newPage();
     await context.route("**/*", async (intercepted) => {
       const request = intercepted.request();
       const url = new URL(request.url());
@@ -191,10 +228,28 @@ export async function mountCheckoutBrowser({
           throw new Error("Unexpected external request to " + url.origin);
         }
         if (request.isNavigationRequest()) {
+          const config = JSON.stringify({
+            initialUser,
+            guestItems,
+            accountItems,
+            view,
+            seedGuest: request.frame().page() === page,
+          }).replaceAll("<", "\\u003c");
           await intercepted.fulfill({
             contentType: "text/html",
-            body: '<!doctype html><html lang="en"><meta charset="utf-8"><div id="root"></div></html>',
+            body:
+              '<!doctype html><html lang="en"><meta charset="utf-8"><div id="root"></div>' +
+              "<script>(" +
+              bootstrapDocument.toString() +
+              ")(" +
+              config +
+              ")</script>" +
+              '<script defer src="' +
+              bundlePath +
+              '"></script></html>',
           });
+        } else if (url.pathname === bundlePath && request.resourceType() === "script") {
+          await intercepted.fulfill({ contentType: "text/javascript", body: script });
         } else if (route) {
           await route(
             Object.freeze({
@@ -212,39 +267,7 @@ export async function mountCheckoutBrowser({
         await intercepted.abort().catch(() => {});
       }
     });
-    const page = await context.newPage();
     await page.goto(target.href);
-    await page.evaluate(
-      ({ initialUser, guestItems, accountItems, view }) => {
-        sessionStorage.setItem("rdk_cart_session", JSON.stringify(guestItems));
-        for (const [id, items] of Object.entries(accountItems)) {
-          localStorage.setItem("rdk_cart_user_" + id, JSON.stringify(items));
-        }
-        window.checkoutFixture = { initialUser, view };
-        // Use an in-page payment seam. The real Square script is external egress.
-        window.Square = {
-          payments: () => ({
-            card: async () => ({
-              attach: async () => {},
-              destroy: async () => true,
-              tokenize: async () => ({ status: "OK", token: "synthetic-fixture-token" }),
-            }),
-            paymentRequest: () => ({ addEventListener: () => {}, update: () => true }),
-            applePay: async () => {
-              throw new Error("Unavailable in the checkout fixture");
-            },
-            cashAppPay: async () => {
-              throw new Error("Unavailable in the checkout fixture");
-            },
-            afterpayClearpay: async () => {
-              throw new Error("Unavailable in the checkout fixture");
-            },
-          }),
-        };
-      },
-      { initialUser, guestItems, accountItems, view },
-    );
-    await page.addScriptTag({ content: script });
     await page.waitForFunction(() => window.testCart?.isReady && window.testSession);
     return { page, context, close };
   } catch (error) {
