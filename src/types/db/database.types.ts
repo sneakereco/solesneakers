@@ -135,6 +135,115 @@ export type Database = {
           },
         ]
       }
+      checkout_payment_attempt_history: {
+        Row: {
+          attempt_id: string
+          id: number
+          reason: string
+          recorded_at: string
+          state: string
+          verified_facts: Json | null
+        }
+        Insert: {
+          attempt_id: string
+          id?: never
+          reason: string
+          recorded_at?: string
+          state: string
+          verified_facts?: Json | null
+        }
+        Update: {
+          attempt_id?: string
+          id?: never
+          reason?: string
+          recorded_at?: string
+          state?: string
+          verified_facts?: Json | null
+        }
+        Relationships: [
+          {
+            foreignKeyName: "checkout_payment_attempt_history_attempt_id_fkey"
+            columns: ["attempt_id"]
+            isOneToOne: false
+            referencedRelation: "checkout_payment_attempts"
+            referencedColumns: ["id"]
+          },
+        ]
+      }
+      checkout_payment_attempts: {
+        Row: {
+          amount_cents: number
+          cart_hash: string | null
+          created_at: string
+          currency: string
+          device_session_id: string | null
+          dispatched_at: string | null
+          id: string
+          method: string
+          order_id: string
+          owner_key: string
+          provider_payment_id: string | null
+          reason: string | null
+          request_digest: string | null
+          sequence: number
+          source_digest: string | null
+          square_idempotency_key: string
+          square_order_id: string | null
+          state: string
+          updated_at: string
+        }
+        Insert: {
+          amount_cents: number
+          cart_hash?: string | null
+          created_at?: string
+          currency: string
+          device_session_id?: string | null
+          dispatched_at?: string | null
+          id?: string
+          method: string
+          order_id: string
+          owner_key: string
+          provider_payment_id?: string | null
+          reason?: string | null
+          request_digest?: string | null
+          sequence: number
+          source_digest?: string | null
+          square_idempotency_key?: string
+          square_order_id?: string | null
+          state: string
+          updated_at?: string
+        }
+        Update: {
+          amount_cents?: number
+          cart_hash?: string | null
+          created_at?: string
+          currency?: string
+          device_session_id?: string | null
+          dispatched_at?: string | null
+          id?: string
+          method?: string
+          order_id?: string
+          owner_key?: string
+          provider_payment_id?: string | null
+          reason?: string | null
+          request_digest?: string | null
+          sequence?: number
+          source_digest?: string | null
+          square_idempotency_key?: string
+          square_order_id?: string | null
+          state?: string
+          updated_at?: string
+        }
+        Relationships: [
+          {
+            foreignKeyName: "checkout_payment_attempts_order_id_fkey"
+            columns: ["order_id"]
+            isOneToOne: false
+            referencedRelation: "orders"
+            referencedColumns: ["id"]
+          },
+        ]
+      }
       checkout_recovery_jobs: {
         Row: {
           attempts: number
@@ -684,6 +793,8 @@ export type Database = {
         Row: {
           actual_shipping_cost_cents: number | null
           cart_hash: string | null
+          checkout_attempt_guarded: boolean
+          checkout_guest_context_hash: string | null
           checkout_protection_evidence: Json
           created_at: string | null
           currency: string | null
@@ -724,6 +835,8 @@ export type Database = {
         Insert: {
           actual_shipping_cost_cents?: number | null
           cart_hash?: string | null
+          checkout_attempt_guarded?: boolean
+          checkout_guest_context_hash?: string | null
           checkout_protection_evidence?: Json
           created_at?: string | null
           currency?: string | null
@@ -764,6 +877,8 @@ export type Database = {
         Update: {
           actual_shipping_cost_cents?: number | null
           cart_hash?: string | null
+          checkout_attempt_guarded?: boolean
+          checkout_guest_context_hash?: string | null
           checkout_protection_evidence?: Json
           created_at?: string | null
           currency?: string | null
@@ -1880,6 +1995,15 @@ export type Database = {
         }
         Returns: boolean
       }
+      begin_checkout_payment_dispatch: {
+        Args: {
+          p_attempt_id: string
+          p_owner_binding: string
+          p_request_digest: string
+          p_source_digest: string
+        }
+        Returns: Json
+      }
       claim_checkout_notifications: { Args: { p_limit: number }; Returns: Json }
       claim_checkout_notifications_for_order: {
         Args: { p_limit: number; p_order_id: string }
@@ -1926,6 +2050,10 @@ export type Database = {
           p_result: string
         }
         Returns: boolean
+      }
+      get_or_create_checkout_payment_attempt: {
+        Args: { p_method: string; p_order_id: string; p_owner_binding: string }
+        Returns: Json
       }
       get_store_access_settings: { Args: never; Returns: Json }
       is_admin: { Args: never; Returns: boolean }
@@ -1994,6 +2122,15 @@ export type Database = {
           p_payload_hash: string
         }
         Returns: string
+      }
+      record_checkout_payment_outcome: {
+        Args: {
+          p_attempt_id: string
+          p_provider_payment_id?: string
+          p_state?: string
+          p_verified_facts?: Json
+        }
+        Returns: Json
       }
       record_shippo_tracking_update: {
         Args: {
@@ -2137,6 +2274,8 @@ export type Database = {
         Returns: {
           actual_shipping_cost_cents: number | null
           cart_hash: string | null
+          checkout_attempt_guarded: boolean
+          checkout_guest_context_hash: string | null
           checkout_protection_evidence: Json
           created_at: string | null
           currency: string | null
