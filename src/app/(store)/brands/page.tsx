@@ -1,6 +1,6 @@
 import { pageMetadata } from "@/lib/metadata";
 
-import Link from "next/link";
+import { FeedbackLink } from "@/components/ui/FeedbackLink";
 import { unstable_cache } from "next/cache";
 import { connection } from "next/server";
 
@@ -75,7 +75,7 @@ export default async function BrandsPage() {
   });
 
   return (
-    <main className="min-h-screen bg-[#f4f4f4] text-black">
+    <div className="min-h-screen bg-[#f4f4f4] text-black">
       <div className="mx-auto w-full px-8 pb-20 pt-8 sm:px-12 sm:pt-9 lg:px-16">
         <h1 className="sr-only">Brands</h1>
 
@@ -90,12 +90,12 @@ export default async function BrandsPage() {
                 <ul className="space-y-2 text-[1.05rem] leading-8 sm:text-[1.1rem]">
                   {brandsForLetter.map((brand) => (
                     <li key={brand.id}>
-                      <Link
+                      <FeedbackLink
                         href={buildBrandHref(brand.id)}
-                        className="underline-offset-4 hover:underline focus-visible:underline focus-visible:outline-none"
+                        className="underline-offset-4 hover:underline focus-visible:underline"
                       >
                         {brand.label}
-                      </Link>
+                      </FeedbackLink>
                     </li>
                   ))}
                 </ul>
@@ -108,6 +108,6 @@ export default async function BrandsPage() {
           </p>
         )}
       </div>
-    </main>
+    </div>
   );
 }

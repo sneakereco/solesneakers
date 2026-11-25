@@ -1,8 +1,12 @@
 "use client";
 
+import { useAsyncAction } from "@/components/ui/useAsyncAction";
+import { RequestError } from "@/components/ui/RequestError";
+import { LoadingState, Skeleton } from "@/components/ui/Skeleton";
+import { ActionButton } from "@/components/ui/ActionButton";
 import { useMemo, useState, type MouseEvent } from "react";
 import Image from "next/image";
-import Link from "next/link";
+import { FeedbackLink } from "@/components/ui/FeedbackLink";
 import { usePathname } from "next/navigation";
 import { ChevronDown, Menu, Search, ShoppingCart } from "lucide-react";
 
@@ -23,6 +27,7 @@ interface NavbarProps {
   isAuthenticated?: boolean;
   userEmail?: string;
   cartCount?: number;
+  cartReady?: boolean;
   role?: ProfileRole | null;
   showAnnouncement?: boolean;
 }
@@ -31,6 +36,7 @@ export function Navbar({
   isAuthenticated = false,
   userEmail,
   cartCount = 0,
+  cartReady = true,
   role = null,
   showAnnouncement = true,
 }: NavbarProps) {
@@ -42,6 +48,9 @@ export function Navbar({
     isLoading,
   } = useSession();
   const [menuInvoker, setMenuInvoker] = useState<HTMLButtonElement | null>(null);
+
+  const logout = useAsyncAction();
+  const [logoutError, setLogoutError] = useState(false);
 
   const loginUrl = useMemo(() => {
     if (pathname === "/" || pathname.startsWith("/auth")) {
@@ -59,10 +68,19 @@ export function Navbar({
       new CustomEvent("openCart", { detail: { invoker: event.currentTarget } }),
     );
 
-  const handleLogout = async () => {
-    await fetch("/api/auth/logout", { method: "POST" });
-    window.dispatchEvent(new CustomEvent("sessionUpdate"));
-    window.location.href = "/";
+  const handleLogout = () => {
+    void logout
+      .run(async () => {
+        setLogoutError(false);
+        const response = await fetch("/api/auth/logout", {
+          method: "POST",
+          signal: AbortSignal.timeout(15_000),
+        });
+        if (!response.ok) throw new Error("Could not sign out");
+        window.dispatchEvent(new CustomEvent("sessionUpdate"));
+        window.location.href = "/";
+      })
+      .catch(() => setLogoutError(true));
   };
 
   const effectiveIsAuthenticated = sessionIsAuthenticated || isAuthenticated;
@@ -103,17 +121,17 @@ export function Navbar({
         className="relative h-20 border-b border-zinc-200 px-5 sm:h-24 sm:px-8 lg:px-14"
       >
         <div className="absolute left-5 top-1/2 -translate-y-1/2 sm:left-8 lg:left-14">
-          <button
+          <ActionButton
             type="button"
             onClick={(event) => setMenuInvoker(event.currentTarget)}
             className="inline-flex h-11 w-11 items-center justify-start text-zinc-800 transition-colors hover:text-black"
             aria-label="Open menu"
           >
             <Menu className="h-7 w-7 sm:h-8 sm:w-8" strokeWidth={1.7} />
-          </button>
+          </ActionButton>
         </div>
 
-        <Link
+        <FeedbackLink
           href="/"
           className="absolute left-1/2 top-1/2 -translate-x-1/2 -translate-y-1/2"
           aria-label="Home"
@@ -130,13 +148,13 @@ export function Navbar({
               unoptimized
             />
           </div>
-        </Link>
+        </FeedbackLink>
 
         <div className="absolute right-6 top-1/2 hidden -translate-y-1/2 sm:right-8 md:flex lg:right-14">
           <div className="flex items-center" style={{ gap: "1.75rem" }}>
             {effectiveIsAuthenticated ? (
               <div className="group relative inline-flex">
-                <button
+                <ActionButton
                   type="button"
                   className="inline-flex max-w-[15rem] items-center gap-1 text-xs font-semibold uppercase text-zinc-700 transition-colors duration-150 hover:text-black"
                   style={{ letterSpacing: "0.02em" }}
@@ -145,86 +163,91 @@ export function Navbar({
                 >
                   <span className="truncate">{effectiveUserEmail ?? "Account"}</span>
                   <ChevronDown className="h-3.5 w-3.5 -rotate-180 transition-transform duration-200 group-hover:rotate-0" />
-                </button>
+                </ActionButton>
 
-                <div className="pointer-events-none absolute right-0 top-full z-50 pt-4 opacity-0 transition duration-150 group-hover:pointer-events-auto group-hover:opacity-100">
+                <div className="invisible absolute right-0 top-full z-50 pt-4 opacity-0 group-focus-within:visible group-focus-within:opacity-100 group-hover:visible group-hover:opacity-100 motion-safe:transition motion-safe:duration-150">
                   <div className="min-w-full border border-zinc-200 bg-[var(--storefront-surface)] text-black shadow-[0_20px_50px_rgba(0,0,0,0.14)]">
                     {showAdminDashboardLink && (
-                      <Link
+                      <FeedbackLink
                         href="/admin"
                         className="block border-t border-zinc-200 px-4 py-3 text-left text-xs font-semibold uppercase text-zinc-700 transition-colors duration-150 hover:text-black"
                         style={{ letterSpacing: "0.02em" }}
                       >
                         To Admin Dashboard
-                      </Link>
+                      </FeedbackLink>
                     )}
-                    <Link
+                    <FeedbackLink
                       href="/account"
                       className="block px-4 py-3 text-left text-xs font-semibold uppercase text-zinc-700 transition-colors duration-150 hover:text-black"
                       style={{ letterSpacing: "0.02em" }}
                     >
                       Account Settings
-                    </Link>
-                    <button
+                    </FeedbackLink>
+                    <ActionButton
                       type="button"
-                      onClick={() => {
-                        void handleLogout();
-                      }}
+                      onClick={handleLogout}
+                      pending={logout.pending}
+                      pendingLabel="Signing out…"
                       className="block w-full px-4 py-3 text-left text-xs font-semibold uppercase text-zinc-700 transition-colors duration-150 hover:text-black"
                       style={{ letterSpacing: "0.02em" }}
                     >
                       Logout
-                    </button>
+                    </ActionButton>
+                    {logoutError && (
+                      <div className="px-4 pb-3">
+                        <RequestError message="Sign out failed. Please try again." />
+                      </div>
+                    )}
                   </div>
                 </div>
               </div>
             ) : showAuthButtons ? (
-              <Link
+              <FeedbackLink
                 href={loginUrl}
                 className={actionClassName}
                 style={{ letterSpacing: "0.02em" }}
               >
                 Login
-              </Link>
+              </FeedbackLink>
             ) : (
-              <div
-                className="h-4 w-16 animate-pulse bg-zinc-200"
-                aria-label="Loading account"
-                data-testid="navbar-auth-loading"
-              />
+              <LoadingState label="Loading account">
+                <div data-testid="navbar-auth-loading">
+                  <Skeleton className="h-4 w-16" />
+                </div>
+              </LoadingState>
             )}
 
-            <button
+            <ActionButton
               type="button"
               onClick={handleSearchClick}
               className={actionClassName}
               style={{ letterSpacing: "0.02em" }}
             >
               Search
-            </button>
+            </ActionButton>
 
-            <button
+            <ActionButton
               type="button"
               onClick={handleCartClick}
               className={actionClassName}
               style={{ letterSpacing: "0.02em" }}
             >
-              {`Cart (${cartCount})`}
-            </button>
+              {cartReady ? `Cart (${cartCount})` : "Cart"}
+            </ActionButton>
           </div>
         </div>
 
         <div className="absolute right-3 top-1/2 flex -translate-y-1/2 items-center sm:right-6 md:hidden">
-          <button
+          <ActionButton
             type="button"
             onClick={handleSearchClick}
             className="inline-flex h-11 w-11 items-center justify-center text-zinc-800 transition-colors hover:text-black"
             aria-label="Search"
           >
             <Search className="h-[1.15rem] w-[1.15rem]" />
-          </button>
+          </ActionButton>
 
-          <button
+          <ActionButton
             type="button"
             onClick={handleCartClick}
             className="relative inline-flex h-11 w-11 items-center justify-center text-zinc-800 transition-colors hover:text-black"
@@ -236,7 +259,7 @@ export function Navbar({
                 {cartCount}
               </span>
             )}
-          </button>
+          </ActionButton>
         </div>
       </div>
 

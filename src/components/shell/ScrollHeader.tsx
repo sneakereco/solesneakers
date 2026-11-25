@@ -26,7 +26,7 @@ export function ScrollHeader({
   userEmail,
   role = null,
 }: ScrollHeaderProps) {
-  const { itemCount } = useCart();
+  const { itemCount, isReady } = useCart();
   const headerRef = useRef<HTMLElement | null>(null);
   const [showAnnouncement, setShowAnnouncement] = useState(true);
 
@@ -191,6 +191,7 @@ export function ScrollHeader({
         userEmail={userEmail}
         role={role}
         cartCount={itemCount}
+        cartReady={isReady}
         showAnnouncement={showAnnouncement}
       />
     </header>

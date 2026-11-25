@@ -1,18 +1,16 @@
 "use client";
 
-import {
-  startTransition,
-  useCallback,
-  useEffect,
-  useMemo,
-  useRef,
-  useState,
-} from "react";
+import { ActionButton } from "@/components/ui/ActionButton";
+import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import Image from "next/image";
-import Link from "next/link";
+import { FeedbackLink } from "@/components/ui/FeedbackLink";
 import { useRouter } from "next/navigation";
 import { Search, X } from "lucide-react";
 
+import { LoadingAnnouncement } from "@/components/ui/LoadingAnnouncement";
+import { RequestError } from "@/components/ui/RequestError";
+import { LoadingState, Skeleton } from "@/components/ui/Skeleton";
+import { readJsonResponse } from "@/lib/http/read-json-response";
 import { ModalPortal } from "@/components/ui/ModalPortal";
 import { logError } from "@/lib/utils/log";
 
@@ -52,6 +50,8 @@ const priceFormatter = new Intl.NumberFormat("en-US", {
 });
 
 const SEARCH_EXIT_DURATION_MS = 180;
+const SEARCH_ERROR = "Search is temporarily unavailable. Please try again.";
+const searchHref = (query: string) => `/store?q=${encodeURIComponent(query)}`;
 
 function getProductImage(product: SearchResult) {
   const images = product.images ?? [];
@@ -120,19 +120,34 @@ function buildSuggestions(results: SearchResult[], query: string) {
 
 export function SearchOverlay({ isOpen, onClose, invoker }: SearchOverlayProps) {
   const router = useRouter();
+  const requestGeneration = useRef(0);
   const inputRef = useRef<HTMLInputElement>(null);
   const closeTimerRef = useRef<number | null>(null);
   const [query, setQuery] = useState("");
-  const [results, setResults] = useState<SearchResult[]>([]);
-  const [total, setTotal] = useState(0);
-  const [isLoading, setIsLoading] = useState(false);
-  const [searchError, setSearchError] = useState<string | null>(null);
+  const [attempt, setAttempt] = useState(0);
+  const [response, setResponse] = useState<{
+    query: string;
+    products: SearchResult[];
+    total: number;
+  } | null>(null);
+  const [settled, setSettled] = useState<{
+    query: string;
+    attempt: number;
+    failed: boolean;
+  } | null>(null);
   const [isClosing, setIsClosing] = useState(false);
 
   const normalizedQuery = query.trim();
+  const isCurrent = settled?.query === normalizedQuery && settled.attempt === attempt;
+  const isLoading = Boolean(normalizedQuery) && !isCurrent;
+  const searchError = isCurrent && settled.failed;
+  const previous = response !== null && response.query !== normalizedQuery;
   const suggestions = useMemo(
-    () => buildSuggestions(results, normalizedQuery),
-    [normalizedQuery, results],
+    () =>
+      response?.query === normalizedQuery
+        ? buildSuggestions(response.products, normalizedQuery)
+        : [],
+    [normalizedQuery, response],
   );
 
   const closeSearch = useCallback(() => {
@@ -140,15 +155,14 @@ export function SearchOverlay({ isOpen, onClose, invoker }: SearchOverlayProps) 
       return;
     }
 
+    requestGeneration.current += 1;
     setIsClosing(true);
     const reducedMotion = window.matchMedia("(prefers-reduced-motion: reduce)").matches;
     closeTimerRef.current = window.setTimeout(
       () => {
         setQuery("");
-        setResults([]);
-        setTotal(0);
-        setIsLoading(false);
-        setSearchError(null);
+        setResponse(null);
+        setSettled(null);
         setIsClosing(false);
         closeTimerRef.current = null;
         onClose();
@@ -166,42 +180,41 @@ export function SearchOverlay({ isOpen, onClose, invoker }: SearchOverlayProps) 
   }, []);
 
   useEffect(() => {
-    if (!isOpen || !normalizedQuery) {
-      return;
-    }
+    if (!isOpen || isClosing || !normalizedQuery) return;
 
     const controller = new AbortController();
+    const generation = requestGeneration.current;
+    const stillOwned = () =>
+      !controller.signal.aborted && generation === requestGeneration.current;
     const runSearch = async () => {
-      setIsLoading(true);
-      setSearchError(null);
-
       try {
-        const response = await fetch(
+        const signal = AbortSignal.any([controller.signal, AbortSignal.timeout(15_000)]);
+        const result = await fetch(
           `/api/store/products?q=${encodeURIComponent(normalizedQuery)}&limit=6`,
-          { signal: controller.signal },
+          { signal },
         );
-
-        if (!response.ok) {
-          throw new Error(`Search request failed with status ${response.status}`);
-        }
-
-        const data = (await response.json()) as SearchResponse;
-        startTransition(() => {
-          setResults(data.products ?? []);
-          setTotal(Number(data.total ?? data.products?.length ?? 0));
+        const data = await readJsonResponse<SearchResponse | null>(result, SEARCH_ERROR);
+        if (!stillOwned()) return;
+        if (
+          !Array.isArray(data?.products) ||
+          data.products.some(
+            (product) =>
+              !product ||
+              typeof product.id !== "string" ||
+              typeof product.name !== "string",
+          )
+        )
+          throw new Error("Invalid search results");
+        setResponse({
+          query: normalizedQuery,
+          products: data.products,
+          total: Number(data.total ?? data.products.length),
         });
+        setSettled({ query: normalizedQuery, attempt, failed: false });
       } catch (error) {
-        if (controller.signal.aborted) {
-          return;
-        }
-        setResults([]);
-        setTotal(0);
-        setSearchError("Search is temporarily unavailable. Please try again.");
+        if (!stillOwned()) return;
+        setSettled({ query: normalizedQuery, attempt, failed: true });
         logError(error, { layer: "frontend", event: "search_overlay_error" });
-      } finally {
-        if (!controller.signal.aborted) {
-          setIsLoading(false);
-        }
       }
     };
     const timer = window.setTimeout(() => void runSearch(), 250);
@@ -210,20 +223,13 @@ export function SearchOverlay({ isOpen, onClose, invoker }: SearchOverlayProps) 
       window.clearTimeout(timer);
       controller.abort();
     };
-  }, [isOpen, normalizedQuery]);
-
-  const openSearchResults = (searchQuery: string) => {
-    const value = searchQuery.trim();
-    if (!value) {
-      return;
-    }
-    router.push(`/store?q=${encodeURIComponent(value)}`);
-    closeSearch();
-  };
+  }, [attempt, isClosing, isOpen, normalizedQuery]);
 
   const handleSubmit = (event: React.FormEvent) => {
     event.preventDefault();
-    openSearchResults(normalizedQuery);
+    if (!normalizedQuery) return;
+    router.push(searchHref(normalizedQuery));
+    closeSearch();
   };
 
   if (!isOpen) {
@@ -231,7 +237,9 @@ export function SearchOverlay({ isOpen, onClose, invoker }: SearchOverlayProps) 
   }
 
   const showResultsPanel = Boolean(normalizedQuery);
+  const results = response?.products ?? [];
   const hasResults = results.length > 0;
+  const showSuggestions = !isLoading && !searchError && suggestions.length > 0;
 
   return (
     <ModalPortal
@@ -266,24 +274,25 @@ export function SearchOverlay({ isOpen, onClose, invoker }: SearchOverlayProps) 
             onChange={(event) => {
               const nextQuery = event.target.value;
               setQuery(nextQuery);
-              setResults([]);
-              setTotal(0);
-              setSearchError(null);
-              setIsLoading(Boolean(nextQuery.trim()));
+              if (nextQuery.trim() !== normalizedQuery) {
+                requestGeneration.current += 1;
+                setSettled(null);
+              }
+              if (!nextQuery.trim()) setResponse(null);
             }}
             placeholder="SEARCH FOR..."
             className="mx-5 min-w-0 flex-1 bg-transparent text-lg font-normal uppercase text-zinc-800 placeholder:text-zinc-500 focus:outline-none sm:mx-7 sm:text-[1.35rem]"
             aria-label="Search for products"
             autoComplete="off"
           />
-          <button
+          <ActionButton
             type="button"
             onClick={closeSearch}
             className="flex h-11 w-11 shrink-0 items-center justify-center text-zinc-900 transition-colors hover:text-zinc-500"
             aria-label="Close search"
           >
             <X className="h-7 w-7 sm:h-8 sm:w-8" strokeWidth={1.5} />
-          </button>
+          </ActionButton>
         </form>
 
         {showResultsPanel ? (
@@ -292,52 +301,73 @@ export function SearchOverlay({ isOpen, onClose, invoker }: SearchOverlayProps) 
             style={{
               height: "calc(100vh - var(--rdk-header-offset, 8rem) - 7rem)",
             }}
-            aria-live="polite"
+            aria-label="Search results"
           >
             <div className="min-h-0 flex-1 overflow-y-auto">
               <div
                 className={
-                  suggestions.length > 0
+                  showSuggestions
                     ? "grid h-full lg:grid-cols-[minmax(0,2.15fr)_minmax(15rem,1fr)]"
                     : "h-full"
                 }
               >
                 <div className="min-w-0 px-4 py-4 sm:px-5">
-                  <div className="border-b border-zinc-100 pb-4 text-[0.7rem] uppercase tracking-[0.03em] text-zinc-400">
-                    Product matches
+                  <div className="flex items-center justify-between gap-2 border-b border-zinc-100 pb-4 text-[0.7rem] uppercase tracking-[0.03em] text-zinc-500">
+                    <span>
+                      {previous && hasResults ? "Previous matches" : "Product matches"}
+                    </span>
+                    {isLoading && hasResults && <span aria-hidden="true">Updating…</span>}
                   </div>
 
-                  {isLoading ? (
-                    <div className="grid gap-x-8 sm:grid-cols-2" aria-label="Searching">
+                  {searchError && (
+                    <div className="px-4 py-6">
+                      <RequestError
+                        message={SEARCH_ERROR}
+                        onRetry={() => {
+                          requestGeneration.current += 1;
+                          setAttempt((value) => value + 1);
+                          inputRef.current?.focus();
+                        }}
+                      />
+                    </div>
+                  )}
+                  {isLoading && hasResults && (
+                    <LoadingAnnouncement label="Updating product matches" />
+                  )}
+                  {isLoading && !hasResults ? (
+                    <LoadingState
+                      label="Searching products"
+                      className="grid gap-x-8 sm:grid-cols-2"
+                    >
                       {Array.from({ length: 4 }, (_, index) => (
                         <div
                           key={index}
-                          className="flex animate-pulse items-center gap-4 border-b border-zinc-100 py-5"
+                          aria-hidden="true"
+                          className="grid min-h-[7.25rem] grid-cols-[5rem_minmax(0,1fr)] items-center gap-4 border-b border-zinc-100 py-4"
                         >
-                          <div className="h-16 w-20 bg-zinc-100" />
-                          <div className="flex-1 space-y-3">
-                            <div className="h-3 w-4/5 bg-zinc-100" />
-                            <div className="h-3 w-2/5 bg-zinc-100" />
+                          <Skeleton className="h-16 w-20" />
+                          <div className="space-y-3">
+                            <Skeleton className="h-3 w-4/5" />
+                            <Skeleton className="h-3 w-2/5" />
                           </div>
                         </div>
                       ))}
-                    </div>
-                  ) : searchError ? (
-                    <div className="px-4 py-14 text-center text-sm text-zinc-600">
-                      {searchError}
-                    </div>
+                    </LoadingState>
                   ) : hasResults ? (
-                    <div className="grid gap-x-8 sm:grid-cols-2">
+                    <div
+                      className="grid gap-x-8 sm:grid-cols-2"
+                      aria-busy={isLoading || undefined}
+                    >
                       {results.map((product) => {
                         const imageUrl = getProductImage(product);
                         const price = getProductPrice(product);
                         const condition = getConditionLabel(product.condition);
 
                         return (
-                          <Link
+                          <FeedbackLink
                             key={product.id}
                             href={`/store/${product.id}`}
-                            onClick={closeSearch}
+                            onNavigate={closeSearch}
                             className="group grid min-h-[7.25rem] grid-cols-[5rem_minmax(0,1fr)] items-center gap-4 border-b border-zinc-100 py-4 text-left"
                           >
                             <div className="relative h-16 w-20 overflow-hidden bg-zinc-50">
@@ -365,32 +395,35 @@ export function SearchOverlay({ isOpen, onClose, invoker }: SearchOverlayProps) 
                                 {price ?? "Price unavailable"}
                               </div>
                             </div>
-                          </Link>
+                          </FeedbackLink>
                         );
                       })}
                     </div>
-                  ) : (
-                    <div className="px-4 py-14 text-center text-sm text-zinc-600">
+                  ) : !searchError ? (
+                    <div
+                      role="status"
+                      className="px-4 py-14 text-center text-sm text-zinc-600"
+                    >
                       No products found for &quot;{normalizedQuery}&quot;.
                     </div>
-                  )}
+                  ) : null}
                 </div>
 
-                {suggestions.length > 0 && !isLoading ? (
+                {showSuggestions ? (
                   <aside className="border-t border-zinc-200 px-5 py-4 lg:border-l lg:border-t-0">
                     <div className="mb-5 text-[0.7rem] uppercase tracking-[0.03em] text-zinc-400">
                       Search suggestions
                     </div>
                     <div className="flex flex-col items-start gap-4">
                       {suggestions.map((suggestion) => (
-                        <button
+                        <FeedbackLink
                           key={suggestion.toLowerCase()}
-                          type="button"
-                          onClick={() => openSearchResults(suggestion)}
+                          href={searchHref(suggestion)}
+                          onNavigate={closeSearch}
                           className="text-sm text-zinc-600 transition-colors hover:text-black"
                         >
                           {suggestion}
-                        </button>
+                        </FeedbackLink>
                       ))}
                     </div>
                   </aside>
@@ -399,14 +432,15 @@ export function SearchOverlay({ isOpen, onClose, invoker }: SearchOverlayProps) 
             </div>
 
             {!isLoading && !searchError ? (
-              <button
-                type="button"
-                onClick={() => openSearchResults(normalizedQuery)}
+              <FeedbackLink
+                href={searchHref(normalizedQuery)}
+                onNavigate={closeSearch}
                 className="shrink-0 border-t border-zinc-200 bg-white px-5 py-3 text-center text-xs text-zinc-500 transition-colors hover:text-black"
               >
-                View all {total > 0 ? `${total} ` : ""}results for{" "}
+                View all {response && response.total > 0 ? `${response.total} ` : ""}
+                results for{" "}
                 <span className="font-semibold text-zinc-800">{normalizedQuery}</span>
-              </button>
+              </FeedbackLink>
             ) : null}
           </section>
         ) : null}

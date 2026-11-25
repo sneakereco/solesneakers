@@ -5,22 +5,10 @@ import { usePathname } from "next/navigation";
 
 import { Footer } from "@/components/shell/Footer";
 import { StorefrontHeader } from "@/components/shell/StorefrontHeader";
-import type { ProfileRole } from "@/config/constants/roles";
 import { captureStorefrontViewed } from "@/lib/measurement/client";
 import { enteredStorefront } from "@/lib/measurement/triggers";
 
-export function ClientShell({
-  children,
-  isAuthenticated = false,
-  userEmail = null,
-  role = null,
-}: {
-  children: React.ReactNode;
-  isAdmin?: boolean;
-  isAuthenticated?: boolean;
-  userEmail?: string | null;
-  role?: ProfileRole | null;
-}) {
+export function ClientShell({ children }: { children: React.ReactNode }) {
   const pathname = usePathname();
   const previousPathname = useRef<string | null>(null);
 
@@ -41,11 +29,7 @@ export function ClientShell({
   return (
     <>
       <div className="min-h-screen bg-[var(--storefront-surface)] text-black">
-        <StorefrontHeader
-          isAuthenticated={isAuthenticated}
-          userEmail={userEmail ?? undefined}
-          role={role}
-        />
+        <StorefrontHeader />
         <main
           className="min-h-screen bg-[var(--storefront-surface)] text-black"
           style={{ paddingTop: "var(--rdk-header-height, 5rem)" }}

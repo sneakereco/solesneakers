@@ -135,7 +135,7 @@ const bundle = await compileUxHarness(
                 ? `export const usePathname = () => "/admin/settings/shipping";
                    export const useRouter = () => ({push() {}});`
                 : path === "next/link"
-                  ? "export default function Link(props) { return <a {...props} />; }"
+                  ? "export const useLinkStatus = () => ({ pending: false }); export default function Link({ onNavigate, ...props }) { return <a {...props} />; }"
                   : "export default function Image({ priority, unoptimized, ...props }) { return <img {...props} />; }",
           }));
         },

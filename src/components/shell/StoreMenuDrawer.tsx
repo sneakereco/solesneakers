@@ -1,9 +1,14 @@
 "use client";
 
+import { ActionButton } from "@/components/ui/ActionButton";
 import { useEffect, useLayoutEffect, useRef, useState, type Ref } from "react";
-import Link from "next/link";
+import { FeedbackLink } from "@/components/ui/FeedbackLink";
 import { ChevronLeft, ChevronRight, Minus, Plus, X } from "lucide-react";
 
+import { RequestError } from "@/components/ui/RequestError";
+import { LoadingState, Skeleton } from "@/components/ui/Skeleton";
+import { readJsonResponse } from "@/lib/http/read-json-response";
+import { logError } from "@/lib/utils/log";
 import { ModalPortal, useOverlayTransition } from "@/components/ui/ModalPortal";
 import { TOP_BRAND_SHORTCUTS } from "@/config/constants/storefront";
 
@@ -22,6 +27,7 @@ type SizeOption = {
 };
 
 type BrandOption = { id: string; label: string };
+type MenuTaxonomy = { brands: BrandOption[]; sizes: SizeOption[] };
 
 const DRAWER_TRANSITION_MS = 460;
 const PANEL_TRANSITION_MS = 380;
@@ -53,9 +59,9 @@ function DrawerLink({
   variant?: "nested" | "row";
 }) {
   return (
-    <Link
+    <FeedbackLink
       href={href}
-      onClick={onNavigate}
+      onNavigate={onNavigate}
       className={
         variant === "row"
           ? "flex min-h-[61px] items-center border-b border-zinc-200 text-[13px] font-normal uppercase tracking-[0.02em] text-zinc-800 transition-colors hover:text-black"
@@ -63,7 +69,7 @@ function DrawerLink({
       }
     >
       {children}
-    </Link>
+    </FeedbackLink>
   );
 }
 
@@ -116,7 +122,7 @@ function SizeGroup({
 }) {
   return (
     <section className="border-b border-zinc-200">
-      <button
+      <ActionButton
         type="button"
         onClick={onToggle}
         className="flex min-h-[61px] w-full items-center justify-between py-4 text-left text-[13px] font-normal uppercase tracking-[0.02em] text-zinc-800"
@@ -124,10 +130,13 @@ function SizeGroup({
       >
         <span>{label}</span>
         {isOpen ? <Minus className="h-4 w-4" /> : <Plus className="h-4 w-4" />}
-      </button>
+      </ActionButton>
 
       <CollapsibleContent isOpen={isOpen}>
         <div className="mb-5 ml-2 border-l border-zinc-200 pl-6 pt-1">
+          {options.length === 0 && (
+            <p className="py-3 text-sm text-zinc-600">No sizes currently available.</p>
+          )}
           {options.map((option) => (
             <DrawerLink
               key={`${label}-${option.id}`}
@@ -154,7 +163,7 @@ function PanelHeader({
 }) {
   return (
     <div className="flex h-20 items-center gap-4 border-b border-zinc-200 px-7 md:border-b-0 md:px-8">
-      <button
+      <ActionButton
         ref={backRef}
         type="button"
         onClick={onBack}
@@ -162,11 +171,26 @@ function PanelHeader({
         aria-label="Back to main menu"
       >
         <ChevronLeft className="h-5 w-5" />
-      </button>
+      </ActionButton>
       <h2 className="text-xs font-medium uppercase tracking-[0.04em] md:hidden">
         {title}
       </h2>
     </div>
+  );
+}
+
+function MenuOptionsSkeleton({ label, lines }: { label: string; lines: number }) {
+  return (
+    <LoadingState label={label}>
+      {Array.from({ length: lines }, (_, index) => (
+        <div
+          key={index}
+          className="flex min-h-[61px] items-center border-b border-zinc-200"
+        >
+          <Skeleton className="h-4 w-32" />
+        </div>
+      ))}
+    </LoadingState>
   );
 }
 
@@ -179,8 +203,9 @@ export function StoreMenuDrawer({ isOpen, onClose, invoker }: StoreMenuDrawerPro
   const [expandedBrandSections, setExpandedBrandSections] = useState<
     Record<string, boolean>
   >({});
-  const [brands, setBrands] = useState<BrandOption[]>([]);
-  const [sizes, setSizes] = useState<SizeOption[]>([]);
+  const [taxonomy, setTaxonomy] = useState<MenuTaxonomy | null>(null);
+  const [loadFailed, setLoadFailed] = useState(false);
+  const [attempt, setAttempt] = useState(0);
   const panelTriggerRef = useRef<HTMLButtonElement | null>(null);
   const panelBackRef = useRef<HTMLButtonElement>(null);
   const panelTimeoutRef = useRef<number | null>(null);
@@ -217,24 +242,45 @@ export function StoreMenuDrawer({ isOpen, onClose, invoker }: StoreMenuDrawerPro
   }, [present]);
 
   useEffect(() => {
-    if (!isOpen || (brands.length > 0 && sizes.length > 0)) {
-      return;
-    }
+    if (!isOpen || taxonomy) return;
     const controller = new AbortController();
-    void fetch("/api/store/taxonomy", { signal: controller.signal })
-      .then((response) => (response.ok ? response.json() : Promise.reject(response)))
-      .then((data) => {
-        setBrands(data.brands ?? []);
-        setSizes(data.sizes ?? []);
-      })
-      .catch((error) => {
-        if ((error as { name?: string })?.name !== "AbortError") {
-          setBrands([]);
-          setSizes([]);
+
+    const loadTaxonomy = async () => {
+      setLoadFailed(false);
+      try {
+        const response = await fetch("/api/store/taxonomy", {
+          signal: AbortSignal.any([controller.signal, AbortSignal.timeout(15_000)]),
+        });
+        const data = await readJsonResponse<MenuTaxonomy | null>(
+          response,
+          "Could not load menu options",
+        );
+        if (controller.signal.aborted) return;
+        if (
+          !Array.isArray(data?.brands) ||
+          !Array.isArray(data.sizes) ||
+          data.brands.some(
+            (brand) =>
+              !brand || typeof brand.id !== "string" || typeof brand.label !== "string",
+          ) ||
+          data.sizes.some(
+            (size) =>
+              !size || typeof size.id !== "string" || typeof size.label !== "string",
+          )
+        ) {
+          throw new Error("Invalid menu options");
         }
-      });
+        setTaxonomy(data);
+      } catch (error) {
+        if (controller.signal.aborted) return;
+        setLoadFailed(true);
+        logError(error, { layer: "frontend", event: "load_store_menu_taxonomy" });
+      }
+    };
+
+    void loadTaxonomy();
     return () => controller.abort();
-  }, [brands.length, isOpen, sizes.length]);
+  }, [attempt, isOpen, taxonomy]);
 
   if (!present && activePanel) {
     setActivePanel(null);
@@ -293,6 +339,12 @@ export function StoreMenuDrawer({ isOpen, onClose, invoker }: StoreMenuDrawerPro
       : activePanel === "size"
         ? "Shop by Size"
         : "Shop by Category";
+  const brands = taxonomy?.brands ?? [];
+  const sizes = taxonomy?.sizes ?? [];
+  const retryTaxonomy = () => {
+    setLoadFailed(false);
+    setAttempt((value) => value + 1);
+  };
   const clothingOptions = sizes.filter(
     (size) => size.sizeType === "clothing" && !/^\d+$/.test(size.label),
   );
@@ -354,14 +406,14 @@ export function StoreMenuDrawer({ isOpen, onClose, invoker }: StoreMenuDrawerPro
           className="h-full w-full shrink-0 overflow-y-auto overscroll-contain bg-white md:w-[392px] md:border-r md:border-zinc-200"
         >
           <div className="flex h-20 items-center px-6 md:px-8">
-            <button
+            <ActionButton
               type="button"
               onClick={onClose}
               className="inline-flex h-11 w-11 items-center justify-start text-zinc-800 transition-colors hover:text-black"
               aria-label="Close menu"
             >
               <X className="h-6 w-6" strokeWidth={1.5} />
-            </button>
+            </ActionButton>
           </div>
 
           <nav
@@ -375,7 +427,7 @@ export function StoreMenuDrawer({ isOpen, onClose, invoker }: StoreMenuDrawerPro
                 ["category", "Shop by Category"],
               ] as const
             ).map(([panel, label]) => (
-              <button
+              <ActionButton
                 key={panel}
                 type="button"
                 onClick={(event) => openPanel(panel, event.currentTarget)}
@@ -384,16 +436,16 @@ export function StoreMenuDrawer({ isOpen, onClose, invoker }: StoreMenuDrawerPro
               >
                 <span>{label}</span>
                 <ChevronRight className="h-4 w-4" strokeWidth={1.5} />
-              </button>
+              </ActionButton>
             ))}
 
-            <Link
+            <FeedbackLink
               href="/store"
-              onClick={onClose}
+              onNavigate={onClose}
               className="flex min-h-[61px] items-center border-b border-zinc-200 text-[13px] font-normal uppercase tracking-[0.02em] text-zinc-800 transition-colors hover:text-black"
             >
               Shop All
-            </Link>
+            </FeedbackLink>
           </nav>
         </div>
 
@@ -419,7 +471,7 @@ export function StoreMenuDrawer({ isOpen, onClose, invoker }: StoreMenuDrawerPro
                   All Brands
                 </DrawerLink>
                 <section className="border-b border-zinc-200">
-                  <button
+                  <ActionButton
                     type="button"
                     onClick={() => toggleBrandSection("topBrands")}
                     className="flex min-h-[61px] w-full items-center justify-between text-left text-[13px] font-normal uppercase tracking-[0.02em] text-zinc-800"
@@ -431,19 +483,34 @@ export function StoreMenuDrawer({ isOpen, onClose, invoker }: StoreMenuDrawerPro
                     ) : (
                       <Plus className="h-4 w-4" />
                     )}
-                  </button>
+                  </ActionButton>
 
                   <CollapsibleContent isOpen={!!expandedBrandSections.topBrands}>
                     <div className="mb-5 ml-2 border-l border-zinc-200 pl-6 pt-1">
-                      {topBrandLinks.map((brand) => (
-                        <DrawerLink
-                          key={brand.label}
-                          href={brand.href}
-                          onNavigate={onClose}
-                        >
-                          {brand.label}
-                        </DrawerLink>
-                      ))}
+                      {loadFailed && (
+                        <div className="py-4">
+                          <RequestError
+                            message="Could not load brand collections. Search links are available below."
+                            onRetry={retryTaxonomy}
+                          />
+                        </div>
+                      )}
+                      {!taxonomy && !loadFailed && expandedBrandSections.topBrands ? (
+                        <MenuOptionsSkeleton
+                          label="Loading brand collections"
+                          lines={TOP_BRAND_SHORTCUTS.length}
+                        />
+                      ) : (
+                        topBrandLinks.map((brand) => (
+                          <DrawerLink
+                            key={brand.label}
+                            href={brand.href}
+                            onNavigate={onClose}
+                          >
+                            {brand.label}
+                          </DrawerLink>
+                        ))
+                      )}
                     </div>
                   </CollapsibleContent>
                 </section>
@@ -461,6 +528,14 @@ export function StoreMenuDrawer({ isOpen, onClose, invoker }: StoreMenuDrawerPro
                   </DrawerLink>
                 ))}
               </div>
+            ) : activePanel === "size" && !taxonomy ? (
+              loadFailed ? (
+                <div className="py-4">
+                  <RequestError message="Could not load sizes." onRetry={retryTaxonomy} />
+                </div>
+              ) : (
+                <MenuOptionsSkeleton label="Loading sizes" lines={6} />
+              )
             ) : activePanel === "size" ? (
               <div key="size" className="store-menu-content">
                 <SizeGroup

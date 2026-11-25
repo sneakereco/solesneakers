@@ -1,10 +1,16 @@
 "use client";
 
+import { ActionButton } from "@/components/ui/ActionButton";
 import { useCallback, useEffect, useRef, useState } from "react";
 import Image from "next/image";
-import Link from "next/link";
+import { FeedbackLink } from "@/components/ui/FeedbackLink";
 import { ChevronLeft, ChevronRight } from "lucide-react";
 
+import {
+  FeaturedCardsSkeleton,
+  featuredCardClassName,
+} from "@/components/store/StoreSkeletons";
+import { readJsonResponse } from "@/lib/http/read-json-response";
 import { logError } from "@/lib/utils/log";
 import type { ProductWithDetails } from "@/types/domain/product";
 
@@ -44,12 +50,16 @@ export function FeaturedItems({ category }: { category?: "clothing" } = {}) {
         const endpoint = isClothing
           ? "/api/store/products?category=clothing&sort=newest&limit=12"
           : "/api/featured-items";
-        const response = await fetch(endpoint, { signal: controller.signal });
-        if (!response.ok) throw new Error("Unable to load homepage products");
-        const data = await response.json();
+        const signal = AbortSignal.any([controller.signal, AbortSignal.timeout(15_000)]);
+        const response = await fetch(endpoint, { signal });
+        const data = await readJsonResponse<{
+          products?: ProductWithDetails[];
+          featured?: FeaturedProduct[];
+        } | null>(response, "Unable to load homepage products");
         if (controller.signal.aborted) return;
         if (isClothing) {
-          if (!Array.isArray(data.products)) throw new Error("Invalid clothing products");
+          if (!Array.isArray(data?.products))
+            throw new Error("Invalid clothing products");
           const products: ProductWithDetails[] = data.products;
           setFeatured(
             products.flatMap((product) => {
@@ -75,7 +85,18 @@ export function FeaturedItems({ category }: { category?: "clothing" } = {}) {
             }),
           );
         } else {
-          setFeatured(data.featured || []);
+          if (
+            !Array.isArray(data?.featured) ||
+            data.featured.some(
+              (product) =>
+                !product ||
+                typeof product.id !== "string" ||
+                typeof product.titleDisplay !== "string" ||
+                !Number.isFinite(product.minPrice),
+            )
+          )
+            throw new Error("Invalid featured products");
+          setFeatured(data.featured);
         }
       } catch (error) {
         if (controller.signal.aborted) return;
@@ -116,7 +137,7 @@ export function FeaturedItems({ category }: { category?: "clothing" } = {}) {
     });
   };
 
-  if (!isClothing && !isLoading && featured.length === 0) return null;
+  if (!isClothing && !isLoading && !hasError && featured.length === 0) return null;
 
   return (
     <section
@@ -132,13 +153,17 @@ export function FeaturedItems({ category }: { category?: "clothing" } = {}) {
         </h2>
 
         {isLoading ? (
-          <div className="py-24 text-center text-sm text-zinc-500" role="status">
-            {isClothing ? "Loading clothing..." : "Loading featured items..."}
-          </div>
+          <FeaturedCardsSkeleton
+            label={isClothing ? "Loading clothing" : "Loading featured items"}
+          />
         ) : hasError ? (
           <div className="py-10 text-center text-sm text-zinc-500">
-            <p role="status">Clothing is temporarily unavailable.</p>
-            <button
+            <p role="alert">
+              {isClothing
+                ? "Clothing is temporarily unavailable."
+                : "Featured items are temporarily unavailable."}
+            </p>
+            <ActionButton
               type="button"
               className="mt-2 min-h-11 px-3 underline underline-offset-4 focus-visible:outline focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-zinc-900"
               onClick={() => {
@@ -147,8 +172,8 @@ export function FeaturedItems({ category }: { category?: "clothing" } = {}) {
                 setAttempt((value) => value + 1);
               }}
             >
-              Retry clothing
-            </button>
+              {isClothing ? "Retry clothing" : "Retry featured items"}
+            </ActionButton>
           </div>
         ) : featured.length === 0 ? (
           <p role="status" className="py-10 text-center text-sm text-zinc-500">
@@ -157,14 +182,14 @@ export function FeaturedItems({ category }: { category?: "clothing" } = {}) {
         ) : (
           <div className="relative mt-10 md:mt-14">
             {canScrollLeft && (
-              <button
+              <ActionButton
                 type="button"
                 onClick={() => scroll("left")}
                 aria-label={`Previous ${productLabel}`}
                 className="absolute left-2 top-[38%] z-10 flex h-11 w-11 -translate-y-1/2 items-center justify-center rounded-full bg-white shadow-[0_2px_14px_rgba(0,0,0,0.14)] transition hover:bg-zinc-50 focus-visible:outline focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-zinc-900 md:h-14 md:w-14"
               >
                 <ChevronLeft className="h-5 w-5 md:h-6 md:w-6" aria-hidden="true" />
-              </button>
+              </ActionButton>
             )}
 
             <div
@@ -175,10 +200,10 @@ export function FeaturedItems({ category }: { category?: "clothing" } = {}) {
               style={{ scrollbarWidth: "none", msOverflowStyle: "none" }}
             >
               {featured.map((product) => (
-                <Link
+                <FeedbackLink
                   key={product.id}
                   href={`/store/${product.id}`}
-                  className="group w-[78%] shrink-0 snap-start text-center sm:w-[calc((100%-1.5rem)/2)] md:w-[calc((100%-3rem)/3)] lg:w-[calc((100%-6rem)/4)]"
+                  className={`group snap-start text-center ${featuredCardClassName}`}
                 >
                   <div className="relative h-48 w-full sm:h-52 md:h-56">
                     {product.primaryImage ? (
@@ -187,7 +212,7 @@ export function FeaturedItems({ category }: { category?: "clothing" } = {}) {
                         alt=""
                         fill
                         sizes="(min-width: 1024px) 25vw, (min-width: 768px) 33vw, (min-width: 640px) 50vw, 78vw"
-                        className="object-contain transition-transform duration-300 group-hover:scale-[1.03]"
+                        className="object-contain motion-safe:transition-transform motion-safe:duration-300 motion-safe:group-hover:scale-[1.03]"
                         quality={75}
                       />
                     ) : (
@@ -202,30 +227,30 @@ export function FeaturedItems({ category }: { category?: "clothing" } = {}) {
                   <p className="mt-1 text-sm tabular-nums text-zinc-500">
                     ${(product.minPrice / 100).toFixed(2)}
                   </p>
-                </Link>
+                </FeedbackLink>
               ))}
             </div>
 
             {canScrollRight && (
-              <button
+              <ActionButton
                 type="button"
                 onClick={() => scroll("right")}
                 aria-label={`Next ${productLabel}`}
                 className="absolute right-2 top-[38%] z-10 flex h-11 w-11 -translate-y-1/2 items-center justify-center rounded-full bg-white shadow-[0_2px_14px_rgba(0,0,0,0.14)] transition hover:bg-zinc-50 focus-visible:outline focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-zinc-900 md:h-14 md:w-14"
               >
                 <ChevronRight className="h-5 w-5 md:h-6 md:w-6" aria-hidden="true" />
-              </button>
+              </ActionButton>
             )}
           </div>
         )}
         {isClothing && (
           <div className="mt-8 text-center">
-            <Link
+            <FeedbackLink
               href="/store?category=clothing"
               className="inline-flex min-h-12 items-center justify-center rounded-full bg-zinc-900 px-8 py-4 text-xs font-semibold uppercase tracking-[0.12em] text-white transition-colors hover:bg-zinc-700 focus-visible:outline focus-visible:outline-2 focus-visible:outline-offset-4 focus-visible:outline-zinc-900"
             >
               Shop All Clothing
-            </Link>
+            </FeedbackLink>
           </div>
         )}
       </div>

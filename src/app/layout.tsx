@@ -1,12 +1,12 @@
 // app/layout.tsx
 
+import { Suspense } from "react";
 import type { Metadata, Viewport } from "next";
 
 import { CloudflareWebAnalytics } from "@/components/analytics/CloudflareWebAnalytics";
-import { CartProvider } from "@/components/cart/CartProvider";
+import { RootLoadingShell } from "@/components/shell/RootLoadingShell";
+import { SessionShell } from "@/components/shell/SessionShell";
 import { env } from "@/config/env";
-import { SessionProvider } from "@/contexts/SessionContext";
-import { getServerSession } from "@/lib/auth/session";
 import { pageMetadata } from "@/lib/metadata";
 import "@/styles/site.css";
 
@@ -30,25 +30,13 @@ export const viewport: Viewport = {
   ],
 };
 
-export default async function RootLayout({ children }: { children: React.ReactNode }) {
-  const session = await getServerSession();
-  const role = session?.role ?? null;
-  const userId = session?.user.id ?? null;
-
-  // OPTIMIZATION: Prepare session for client-side context
-  const sessionUser = session?.user
-    ? {
-        id: session.user.id,
-        email: session.user.email,
-      }
-    : null;
-
+export default function RootLayout({ children }: { children: React.ReactNode }) {
   return (
     <html lang="en">
       <body>
-        <SessionProvider initialUser={sessionUser} initialRole={role}>
-          <CartProvider userId={userId}>{children}</CartProvider>
-        </SessionProvider>
+        <Suspense fallback={<RootLoadingShell />}>
+          <SessionShell>{children}</SessionShell>
+        </Suspense>
         <CloudflareWebAnalytics token={env.NEXT_PUBLIC_CLOUDFLARE_WEB_ANALYTICS_TOKEN} />
       </body>
     </html>

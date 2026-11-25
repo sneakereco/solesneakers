@@ -1,6 +1,7 @@
 import type { ProductWithDetails } from "@/types/domain/product";
 
 import { ProductCard } from "./ProductCard";
+import { productGridClassName } from "./StoreSkeletons";
 
 interface ProductGridProps {
   products: ProductWithDetails[];
@@ -24,11 +25,7 @@ export function ProductGrid({ products, storeHref, view = "grid" }: ProductGridP
 
   return (
     <div
-      className={
-        view === "list"
-          ? "w-full"
-          : "grid grid-cols-2 gap-x-2 gap-y-10 sm:grid-cols-3 lg:grid-cols-4 lg:gap-x-4 lg:gap-y-14"
-      }
+      className={view === "list" ? "w-full" : productGridClassName}
       data-testid="product-grid"
       data-view={view}
     >

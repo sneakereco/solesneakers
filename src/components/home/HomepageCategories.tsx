@@ -1,14 +1,18 @@
 "use client";
 
+import { ActionButton } from "@/components/ui/ActionButton";
 import { useEffect, useState } from "react";
 import Image from "next/image";
-import Link from "next/link";
+import { FeedbackLink } from "@/components/ui/FeedbackLink";
 import { ArrowUpRight } from "lucide-react";
 
 import {
   getHomepageCategories,
   type HomepageBrand,
 } from "@/components/home/homepage-categories";
+import { LoadingAnnouncement } from "@/components/ui/LoadingAnnouncement";
+import { Skeleton } from "@/components/ui/Skeleton";
+import { readJsonResponse } from "@/lib/http/read-json-response";
 import { logError } from "@/lib/utils/log";
 
 export function HomepageCategories() {
@@ -22,12 +26,14 @@ export function HomepageCategories() {
     const loadBrands = async () => {
       try {
         const response = await fetch("/api/store/taxonomy", {
-          signal: controller.signal,
+          signal: AbortSignal.any([controller.signal, AbortSignal.timeout(15_000)]),
         });
-        if (!response.ok) throw new Error("Unable to load collection brands");
-        const data = await response.json();
+        const data = await readJsonResponse<{ brands?: HomepageBrand[] } | null>(
+          response,
+          "Unable to load collection brands",
+        );
         if (
-          !Array.isArray(data.brands) ||
+          !Array.isArray(data?.brands) ||
           !data.brands.every(
             (brand: HomepageBrand) =>
               brand && typeof brand.id === "string" && typeof brand.label === "string",
@@ -73,15 +79,23 @@ export function HomepageCategories() {
 
         <div className="grid grid-cols-1 gap-6 sm:grid-cols-2 lg:grid-cols-4">
           {categories.map((category) => {
+            const className = category.featured ? "lg:col-span-2" : "";
+            const imageClassName = category.featured
+              ? "aspect-[4/3] lg:aspect-video"
+              : "aspect-[4/3] sm:aspect-square";
+            if (status === "loading" && !category.href) {
+              return (
+                <div key={category.label} aria-busy="true" className={className}>
+                  <Skeleton className={`h-auto rounded-none ${imageClassName}`} />
+                  <div className="flex min-h-[62px] items-center border-b border-zinc-300 py-3">
+                    <Skeleton className="h-4 w-3/5" />
+                  </div>
+                </div>
+              );
+            }
             const content = (
               <>
-                <div
-                  className={`relative overflow-hidden bg-white ${
-                    category.featured
-                      ? "aspect-[4/3] lg:aspect-video"
-                      : "aspect-[4/3] sm:aspect-square"
-                  }`}
-                >
+                <div className={`relative overflow-hidden bg-white ${imageClassName}`}>
                   <Image
                     src={`/images/homepage_categories/${category.image}`}
                     alt=""
@@ -105,16 +119,15 @@ export function HomepageCategories() {
                 </div>
               </>
             );
-            const className = category.featured ? "lg:col-span-2" : "";
 
             return category.href ? (
-              <Link
+              <FeedbackLink
                 key={category.label}
                 href={category.href}
                 className={`group block focus-visible:outline focus-visible:outline-2 focus-visible:outline-offset-4 focus-visible:outline-zinc-900 ${className}`}
               >
                 {content}
-              </Link>
+              </FeedbackLink>
             ) : (
               <div key={category.label} aria-disabled="true" className={className}>
                 {content}
@@ -124,14 +137,12 @@ export function HomepageCategories() {
         </div>
 
         {status === "loading" && (
-          <p role="status" className="mt-6 text-center text-xs text-zinc-500">
-            Loading designer collections...
-          </p>
+          <LoadingAnnouncement label="Loading designer collections" />
         )}
         {designerUnavailable && (
           <div className="mt-6 text-center text-sm text-zinc-600">
-            <p role="status">Designer collections are temporarily unavailable.</p>
-            <button
+            <p role="alert">Designer collections are temporarily unavailable.</p>
+            <ActionButton
               type="button"
               onClick={() => {
                 setStatus("loading");
@@ -140,7 +151,7 @@ export function HomepageCategories() {
               className="mt-1 min-h-11 px-3 underline underline-offset-4 hover:text-black focus-visible:outline focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-zinc-900"
             >
               Retry designer collections
-            </button>
+            </ActionButton>
           </div>
         )}
       </div>

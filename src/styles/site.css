@@ -1415,3 +1415,26 @@ button:where([data-ui-action-button]:not(:disabled):active) {
 [data-admin-content] [data-ui-toast] button {
   color: #18181b !important;
 }
+
+:where([data-feedback-link]) {
+  position: relative;
+}
+
+:where([data-feedback-link]:active) {
+  filter: brightness(0.8);
+  text-decoration: underline;
+}
+
+:where([data-feedback-link]:focus-visible),
+button:where([data-ui-action-button]:focus-visible) {
+  outline: 2px solid #71717a;
+  outline-offset: 2px;
+}
+
+button:where([data-ui-action-button]:not(:disabled):active) {
+  opacity: 0.82;
+}
+
+a:where([data-checkout-link]:active) {
+  filter: brightness(0.85);
+}

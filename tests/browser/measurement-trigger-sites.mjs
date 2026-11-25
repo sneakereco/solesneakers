@@ -268,7 +268,7 @@ const bundle = await build({
           ],
           [
             "next/link",
-            "export default ({ children, ...props }) => <a {...props}>{children}</a>;",
+            "export const useLinkStatus = () => ({ pending: false }); export default ({ children, onNavigate, ...props }) => <a {...props}>{children}</a>;",
           ],
           ["@/components/shell/Footer", "export const Footer = () => null;"],
           [

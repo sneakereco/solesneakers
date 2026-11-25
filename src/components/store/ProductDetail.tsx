@@ -1,11 +1,13 @@
 "use client";
 
+import { ActionButton } from "@/components/ui/ActionButton";
 import { useEffect, useRef, useState } from "react";
 import Image from "next/image";
-import Link from "next/link";
+import { FeedbackLink } from "@/components/ui/FeedbackLink";
 import { ChevronDown } from "lucide-react";
 
 import { useCart } from "@/components/cart/CartProvider";
+import { useAsyncAction } from "@/components/ui/useAsyncAction";
 import { Toast } from "@/components/ui/Toast";
 import { captureProductViewed } from "@/lib/measurement/client";
 import type { ProductWithDetails } from "@/types/domain/product";
@@ -31,7 +33,13 @@ const getConditionLabel = (condition: string) => {
 };
 
 export function ProductDetail({ product }: ProductDetailProps) {
-  const { addItem, items } = useCart();
+  const { addItem, items, isReady } = useCart();
+  const add = useAsyncAction();
+  const [addAttempt, setAddAttempt] = useState<{
+    productId: string;
+    variantId: string;
+    quantity: number;
+  } | null>(null);
   const viewedProductId = useRef<string | null>(null);
   const initialVariant =
     product.variants.find((variant) => variant.stock > 0) ?? product.variants[0];
@@ -94,32 +102,52 @@ export function ProductDetail({ product }: ProductDetailProps) {
     }
   }, [product.variants, selectedVariantId]);
 
+  useEffect(() => {
+    if (add.pending || !addAttempt) return;
+
+    const quantity =
+      items.find(
+        (item) =>
+          item.productId === addAttempt.productId &&
+          item.variantId === addAttempt.variantId,
+      )?.quantity ?? 0;
+    setToast(
+      quantity > addAttempt.quantity
+        ? { message: "Added to cart.", tone: "success" }
+        : { message: "Could not add this item. Please try again.", tone: "error" },
+    );
+    setAddAttempt(null);
+  }, [add.pending, addAttempt, items]);
+
   const handleAddToCart = () => {
-    if (!selectedVariant) {
-      return;
-    }
+    if (!isReady || !selectedVariant || !canAddMore) return;
 
-    if (!canAddMore) {
-      setToast({
-        message: "Only limited stock is available for this size.",
-        tone: "info",
+    void add
+      .run(async () => {
+        setToast(null);
+        addItem({
+          productId: product.id,
+          variantId: selectedVariant.id,
+          sizeLabel: selectedVariant.size.label,
+          brand: product.brand.label,
+          name: product.name,
+          titleDisplay: product.name,
+          priceCents: selectedVariant.sale_price_cents,
+          imageUrl: primaryImage?.url || "/placeholder.png",
+          maxStock: selectedVariant.stock,
+        });
+        setAddAttempt({
+          productId: product.id,
+          variantId: selectedVariant.id,
+          quantity: inCartQuantity,
+        });
+      })
+      .catch(() => {
+        setToast({
+          message: "Could not add this item. Please try again.",
+          tone: "error",
+        });
       });
-      return;
-    }
-
-    addItem({
-      productId: product.id,
-      variantId: selectedVariant.id,
-      sizeLabel: selectedVariant.size.label,
-      brand: product.brand.label,
-      name: product.name,
-      titleDisplay: product.name,
-      priceCents: selectedVariant.sale_price_cents,
-      imageUrl: primaryImage?.url || "/placeholder.png",
-      maxStock: selectedVariant.stock,
-    });
-
-    setToast({ message: "Added to cart.", tone: "success" });
   };
 
   return (
@@ -135,7 +163,7 @@ export function ProductDetail({ product }: ProductDetailProps) {
               aria-label="Product images"
             >
               {product.images.map((image, index) => (
-                <button
+                <ActionButton
                   key={image.id}
                   type="button"
                   onClick={() => setSelectedImageIndex(index)}
@@ -157,7 +185,7 @@ export function ProductDetail({ product }: ProductDetailProps) {
                     className="object-contain p-1 mix-blend-multiply"
                     quality={75}
                   />
-                </button>
+                </ActionButton>
               ))}
             </div>
           )}
@@ -197,7 +225,7 @@ export function ProductDetail({ product }: ProductDetailProps) {
                   variant.size.label === "N/A" ? "One size" : variant.size.label;
 
                 return (
-                  <button
+                  <ActionButton
                     key={variant.id}
                     type="button"
                     disabled={isUnavailable}
@@ -214,7 +242,7 @@ export function ProductDetail({ product }: ProductDetailProps) {
                     }`}
                   >
                     {sizeLabel}
-                  </button>
+                  </ActionButton>
                 );
               })}
             </div>
@@ -227,20 +255,30 @@ export function ProductDetail({ product }: ProductDetailProps) {
             </div>
           </div>
 
-          <button
+          <ActionButton
             type="button"
             onClick={handleAddToCart}
-            disabled={!selectedVariant || selectedVariant.stock <= 0 || !canAddMore}
+            pending={add.pending}
+            pendingLabel="Adding to cart…"
+            disabled={
+              !isReady ||
+              !!addAttempt ||
+              !selectedVariant ||
+              selectedVariant.stock <= 0 ||
+              !canAddMore
+            }
             className="mt-7 w-full cursor-pointer bg-zinc-900 px-6 py-4 text-sm font-medium uppercase text-white transition-colors hover:bg-black disabled:cursor-not-allowed disabled:bg-zinc-400"
           >
-            {!selectedVariant || selectedVariant.stock <= 0
-              ? "Out of Stock"
-              : inCartQuantity > 0
-                ? canAddMore
-                  ? `Add Another (${inCartQuantity} in cart)`
-                  : "In Cart (Max)"
-                : "Add to Cart"}
-          </button>
+            {!isReady
+              ? "Loading cart…"
+              : !selectedVariant || selectedVariant.stock <= 0
+                ? "Out of Stock"
+                : inCartQuantity > 0
+                  ? canAddMore
+                    ? `Add Another (${inCartQuantity} in cart)`
+                    : "In Cart (Max)"
+                  : "Add to Cart"}
+          </ActionButton>
 
           {product.description && (
             <div className="mt-8 border-t border-zinc-300 pt-6">
@@ -254,7 +292,7 @@ export function ProductDetail({ product }: ProductDetailProps) {
           )}
 
           <div className="mt-8 border-t border-zinc-300 pt-5">
-            <button
+            <ActionButton
               type="button"
               onClick={() => setShowShipping((current) => !current)}
               aria-expanded={showShipping}
@@ -263,9 +301,9 @@ export function ProductDetail({ product }: ProductDetailProps) {
               Shipping &amp; Returns
               <ChevronDown
                 aria-hidden="true"
-                className={`h-4 w-4 transition-transform ${showShipping ? "rotate-180" : ""}`}
+                className={`h-4 w-4 motion-safe:transition-transform ${showShipping ? "rotate-180" : ""}`}
               />
-            </button>
+            </ActionButton>
 
             {showShipping && (
               <div className="mt-4 space-y-3 text-sm leading-6 text-zinc-600">
@@ -276,12 +314,12 @@ export function ProductDetail({ product }: ProductDetailProps) {
                 </p>
                 <p>Returns are handled according to our published store policies.</p>
                 <div className="flex flex-wrap gap-x-5 gap-y-2">
-                  <Link href="/shipping" className="underline underline-offset-4">
+                  <FeedbackLink href="/shipping" className="underline underline-offset-4">
                     Shipping Policy
-                  </Link>
-                  <Link href="/refunds" className="underline underline-offset-4">
+                  </FeedbackLink>
+                  <FeedbackLink href="/refunds" className="underline underline-offset-4">
                     Returns and Refunds Policy
-                  </Link>
+                  </FeedbackLink>
                 </div>
               </div>
             )}
