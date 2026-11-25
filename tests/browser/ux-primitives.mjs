@@ -56,10 +56,12 @@ const bundle = await compileUxHarness(`
         </form>
         <p>Saved {saved}</p>
         {error && <RequestError message={error} onRetry={save} retrying={pending} />}
-        <LoadingState label="Loading order details">
-          <Skeleton className="h-8 w-20" />
-          <Skeleton className="h-4 w-12" />
-        </LoadingState>
+        {pending && (
+          <LoadingState label="Saving order details">
+            <Skeleton className="h-8 w-20" />
+            <Skeleton className="h-4 w-12" />
+          </LoadingState>
+        )}
       </main>
     );
   }
@@ -158,22 +160,61 @@ try {
   });
   const mobile = await mount(touch);
   const skeletons = touch.locator("[data-ui-skeleton]");
+  await mobile.save.tap();
+  await expect.poll(() => mobile.requests.length).toBe(1);
+  await expect(mobile.save).toBeDisabled();
   await expect(skeletons).toHaveCount(2);
   await expect(skeletons.first()).not.toHaveCSS("animation-name", "none");
   await touch.emulateMedia({ reducedMotion: "reduce" });
   await expect(skeletons.first()).toHaveCSS("animation-name", "none");
   await expect(skeletons.first()).toBeVisible();
   await expect(skeletons.first()).toHaveAttribute("aria-hidden", "true");
-  await expect(touch.getByRole("status")).toHaveText("Loading order details");
-  await mobile.save.tap();
-  await expect.poll(() => mobile.requests.length).toBe(1);
-  await expect(mobile.save).toBeDisabled();
+  await expect(touch.getByRole("status")).toHaveText("Saving order details");
   mobile.requests[0](200);
   await expect(touch.getByText("Saved 1")).toBeVisible();
   assert.deepEqual(mobile.errors, []);
 
+  const loading = await browser.newPage();
+  const clockStart = new Date("2026-11-25T00:00:00Z");
+  await loading.clock.install({ time: clockStart });
+  await loading.clock.pauseAt(new Date(clockStart.getTime() + 1000));
+  const loadingFixture = await mount(loading);
+  const status = loading.getByRole("status");
+  const startSave = () => loadingFixture.save.evaluate((button) => button.click());
+  await startSave();
+  await expect.poll(() => loadingFixture.requests.length).toBe(1);
+  await expect(loading.locator('[aria-busy="true"] [data-ui-skeleton]')).toHaveCount(2);
+  await expect(status).toHaveText("");
+  const establishedStatus = await status.elementHandle();
+  await loading.clock.runFor(100);
+  await expect(status).toHaveText("Saving order details");
+  assert.equal(
+    await establishedStatus.evaluate((node) => node.textContent),
+    "Saving order details",
+    "The message is inserted into the already established live region",
+  );
+  loadingFixture.requests[0](200);
+  await expect(loading.getByText("Saved 1")).toBeVisible();
+  await expect(status).toHaveCount(0);
+
+  await startSave();
+  await expect.poll(() => loadingFixture.requests.length).toBe(2);
+  await expect(status).toHaveText("");
+  const fastStatus = await status.elementHandle();
+  loadingFixture.requests[1](200);
+  await expect(loading.getByText("Saved 2")).toBeVisible();
+  await expect(status).toHaveCount(0);
+  await loading.clock.runFor(100);
+  assert.equal(
+    await fastStatus.evaluate((node) => node.textContent),
+    "",
+    "A completed loading region never receives a late announcement",
+  );
+  await expect(status).toHaveCount(0);
+  assert.deepEqual(loadingFixture.errors, []);
+
   console.info(
-    "PASS: shared UX primitives handle pending requests, recovery, keyboard and touch, and reduced motion",
+    "PASS: shared UX primitives handle pending requests, recovery, keyboard and touch, reduced motion, and loading announcement timing",
   );
 } finally {
   await browser.close();

@@ -41,7 +41,7 @@ describe("ActionButton", () => {
 });
 
 describe("LoadingState", () => {
-  it("provides one status announcement for multiple hidden skeletons", () => {
+  it("renders skeletons immediately with one empty live region outside the busy subtree", () => {
     const html = renderToStaticMarkup(
       <LoadingState label="Loading sizes" className="grid">
         <Skeleton className="h-6" />
@@ -50,7 +50,10 @@ describe("LoadingState", () => {
     );
 
     expect(Array.from(html.matchAll(/role="status"/g))).toHaveLength(1);
-    expect(html).toContain("Loading sizes");
+    expect(html).toMatch(
+      /<span[^>]+role="status"[^>]*><\/span><div[^>]+aria-busy="true"/,
+    );
+    expect(html).not.toContain("Loading sizes");
     expect(html).toContain('aria-busy="true"');
     expect(html).toContain('class="grid"');
     expect(Array.from(html.matchAll(/aria-hidden="true"/g))).toHaveLength(2);

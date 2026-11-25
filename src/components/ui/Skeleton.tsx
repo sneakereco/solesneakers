@@ -1,5 +1,7 @@
 import type { ReactNode } from "react";
 
+import { LoadingAnnouncement } from "./LoadingAnnouncement";
+
 export function Skeleton({ className }: { className?: string }) {
   return <div data-ui-skeleton aria-hidden="true" className={className} />;
 }
@@ -13,9 +15,7 @@ type LoadingStateProps = {
 export function LoadingState({ label, children, className }: LoadingStateProps) {
   return (
     <>
-      <span role="status" className="sr-only">
-        {label}
-      </span>
+      <LoadingAnnouncement label={label} />
       <div aria-busy="true" className={className}>
         {children}
       </div>
