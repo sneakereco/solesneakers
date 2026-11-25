@@ -1,6 +1,6 @@
 # Sole Sneakers admin analytics
 
-Date: November 25, 2026. Status: proposed; approach and mockup accepted with calendar/theme revisions; written design awaiting approval.
+Date: November 25, 2026. Status: approved by the user, including the independent business/operational-data boundary, after the calendar/theme revisions and fresh builder check.
 
 ## Intent and user decisions
 
@@ -16,7 +16,7 @@ The user explicitly selected:
 - No giveaway-specific analytics.
 - The seven-view mockup, with a **calendar for arbitrary start/end dates** replacing the fixed period dropdown, and the **existing website admin color theme**.
 
-The full written design below adds agent recommendations where needed. Accepting a mockup does not constitute approval of this document or implementation.
+The full written design below includes the agent recommendations the user approved with this document. Implementation planning follows this approval; the execution method is selected after plan review.
 
 ## Approaches
 
@@ -124,7 +124,7 @@ Collect search counts/result counts and recognized catalog/taxonomy concepts, no
 
 ### Commerce facts and the consent boundary
 
-**Agent proposal requiring approval with this design:** send minimized server-side business facts for all confirmed website orders/refunds/costs **and operational payment/checkout attempts and outcomes, including failures and expirations**, to the owner's PostHog project independently of optional browser tracking. Complete financial totals and payment/checkout health counts cannot depend on a shopper accepting visitor analytics or completing an order. These facts must not enable browsing tracking for people who declined. This is a proposed processing boundary, not a legal conclusion about consent requirements.
+**Approved processing boundary:** send minimized server-side business facts for all confirmed website orders/refunds/costs **and operational payment/checkout attempts and outcomes, including failures and expirations**, to the owner's PostHog project independently of optional browser tracking. Complete financial totals and payment/checkout health counts cannot depend on a shopper accepting visitor analytics or completing an order. These facts must not enable browsing tracking for people who declined. This is the approved processing boundary, not a legal conclusion about consent requirements.
 
 Commerce facts contain opaque order/line/refund/provider-event references, effective timestamps, currency, integer monetary components, product purchase snapshots, quantities, coarse fulfillment state, recorded costs/fees, and a store-scoped opaque purchasing-customer key needed for new/returning/lifetime purchase reporting. Keep raw email, name, address, phone, payment tokens, card details, IPs, and arbitrary provider payloads out. An opaque purchasing-customer key is pseudonymous, not a claim of anonymous data.
 
@@ -132,7 +132,7 @@ Operational failure/expiration facts use a server-generated opaque attempt/reser
 
 Agent identity default: compute the buyer key inside the application from its transactional customer identity, using a keyed store-scoped mapping. Repeated guest orders can group by normalized transactional email inside the application; do not send that email or an unsalted email hash to PostHog, strip plus-tags, or guess identity from names/addresses/IPs. A browser-to-customer link is sent only when tracking consent is present. Verified signed-in identities can link consenting devices; guest grouping is a business-record estimate, not verified human identity.
 
-If the owner does not approve independent business/operational-fact processing, this requirement changes the implementation: use PostHog only for consented data and build complete financial and operational reporting in the application instead. Do not silently ship opted-out purchase or unsuccessful-checkout facts under the optional browser-consent gate.
+If the owner later withdraws approval for independent business/operational-fact processing, that changes the implementation: use PostHog only for consented data and build complete financial and operational reporting in the application instead. Do not conflate this approved operational processing with the optional browser-consent gate.
 
 ### Durable publication and reporting
 
@@ -174,11 +174,11 @@ Existing staging PR and production tag/release gates still apply. Configuration 
 8. Security checks cover unauthenticated/non-admin access, server credential isolation, filter/query injection, environment separation, cache partitioning by report scope, and safe exports. Check loading, empty, unavailable, stale, and provider-failure UI and mobile behavior.
 9. Run checks appropriate to changed production code, then verify staging ingestion and report reconciliation before release approval. Record precisely which local, staging, hosted PostHog, and real provider evidence exists.
 
-## Agent defaults to review
+## Approved defaults and remaining builder choices
 
-The user chose scope, PostHog-first architecture, native admin presentation, the mockup organization, custom calendar ranges, and existing admin colors. Agent defaults in this document are: Eastern Time/last 30 days; a five-minute normal commerce freshness target; same-session funnels; completion/refund-time financial flows; observed lifetime value; explicit fee/cost/unallocated-refund coverage; minimized server business and operational facts independent of optional behavior consent; pseudonymous buyer grouping; event/outbox-to-PostHog SQL reporting; all-since-launch financial history and at least 24 months of behavioral history; production activation with the public launch; and no new replay, GeoIP, ad-spend integration, paid-plan action, staff refund-allocation workflow, or historical import. The independent business/operational-data boundary particularly requires the owner's approval; it was not previously decided by choosing PostHog.
+The user chose scope, PostHog-first architecture, native admin presentation, the mockup organization, custom calendar ranges, and existing admin colors. The user also approved the document's defaults: Eastern Time/last 30 days; a five-minute normal commerce freshness target; same-session funnels; completion/refund-time financial flows; observed lifetime value; explicit fee/cost/unallocated-refund coverage; minimized server business and operational facts independent of optional behavior consent; pseudonymous buyer grouping; event/outbox-to-PostHog SQL reporting; all-since-launch financial history and at least 24 months of behavioral history; production activation with the public launch; and no new replay, GeoIP, ad-spend integration, paid-plan action, staff refund-allocation workflow, or historical import. Concrete file layout, supported libraries, query shapes, and bounded batch sizes remain implementation-planning choices.
 
-Fresh builder check completed November 25, 2026. Its findings were resolved by the explicit operational-attempt scope, missing-refund-allocation treatment, launch boundary/sequencing, exclusion of prelaunch customer history, and retention requirements above. The owner-processing approval point remains open; other implementation choices remain with the builder as identified in this document.
+Fresh builder check completed November 25, 2026. Its findings were resolved by the explicit operational-attempt scope, missing-refund-allocation treatment, launch boundary/sequencing, exclusion of prelaunch customer history, and retention requirements above. The user subsequently approved the written design and its processing boundary. Other implementation choices remain with the builder as identified in this document.
 
 ## References
 
