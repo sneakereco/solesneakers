@@ -1997,7 +1997,12 @@ export type Database = {
       [_ in never]: never
     }
     Functions: {
+      _record_specialty_claim_attempt: {
+        Args: { p_claim_id?: string; p_command: Json; p_result: Json }
+        Returns: Json
+      }
       _single_store_compat_owner: { Args: never; Returns: string }
+      accept_specialty_claim: { Args: { p_command: Json }; Returns: Json }
       accept_tag_candidate: {
         Args: { accepted_label: string; candidate_id: string }
         Returns: Json
@@ -2093,6 +2098,10 @@ export type Database = {
           p_square_payment_id: string
           p_square_refund_id: string
         }
+        Returns: Json
+      }
+      read_specialty_claim_result: {
+        Args: { p_attempt_id: string; p_recovery_hash: string }
         Returns: Json
       }
       record_shippo_tracking_update: {

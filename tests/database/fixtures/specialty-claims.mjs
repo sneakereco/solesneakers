@@ -214,7 +214,10 @@ export function prizeInput(quantity = 1, overrides = {}) {
 }
 export async function seedPrize(client, options = {}) {
   const { actor, owner } = await seedActor(client);
-  const input = prizeInput(options.quantity ?? 1);
+  const input = prizeInput(
+    options.quantity ?? 1,
+    options.campaignSlug ? { campaignSlug: options.campaignSlug } : {},
+  );
   const result = (
     await client.query(
       "select public.save_specialty_product(null,$1::jsonb,$2::uuid,$3::uuid) result",
@@ -247,6 +250,105 @@ export async function readRunState(client, productId) {
 export function fixtureKey(value) {
   return createHash("sha256").update(value).digest("hex");
 }
+
+export async function createRaceCampaign(client) {
+  const { actor } = await seedActor(client);
+  const slug = "fixture-race-" + randomUUID();
+  const row = (
+    await client.query(
+      "insert into public.specialty_campaigns(slug) values($1) returning *",
+      [slug],
+    )
+  ).rows[0];
+  const keyFingerprint = fixtureKey("specialty-fixture-identity-secret");
+  await client.query("select public.set_specialty_campaign_enabled($1,true,$2,$3,$4)", [
+    row.id,
+    Number(row.revision),
+    actor,
+    keyFingerprint,
+  ]);
+  return { id: row.id, slug, actor, keyFingerprint };
+}
+export function claimAttempt(prize, campaign, overrides = {}) {
+  const seed = randomUUID();
+  const handle =
+    overrides.instagramHandle ?? "fixture_" + seed.replaceAll("-", "").slice(0, 12);
+  const addressId = overrides.addressId ?? seed;
+  const secret = fixtureKey("recovery:" + seed);
+  const command = {
+    attemptId: randomUUID(),
+    recoveryHash: fixtureKey(secret),
+    inputHash: fixtureKey("input:" + prize.productId + ":" + handle + ":" + addressId),
+    payloadHash: fixtureKey(
+      "payload:" + prize.productId + ":" + handle + ":" + addressId,
+    ),
+    eligibility: {
+      campaignId: campaign.id,
+      productId: prize.productId,
+      browserId: "fixture-browser-context",
+      instagramHandle: handle,
+      address: {
+        line1:
+          "123 " +
+          addressId.replaceAll("-", "").slice(0, 10).toUpperCase() +
+          " FIXTURE ST",
+        line2: null,
+        city: "COLUMBIA",
+        state: "SC",
+        postalCode: "29201",
+        country: "US",
+      },
+      addressKey: fixtureKey("address:" + campaign.id + ":" + addressId),
+      instagramKey: fixtureKey("instagram:" + campaign.id + ":" + handle),
+      normalizationVersion: 1,
+      identityKeyFingerprint: campaign.keyFingerprint,
+      expiresAt: Date.now() + 600000,
+    },
+  };
+  return { command, recoverySecret: secret };
+}
+export async function award(client, attempt) {
+  return (
+    await client.query("select public.accept_specialty_claim($1::jsonb) result", [
+      JSON.stringify(attempt.command),
+    ])
+  ).rows[0].result;
+}
+export async function recover(client, attempt) {
+  return (
+    await client.query("select public.read_specialty_claim_result($1,$2) result", [
+      attempt.command.attemptId,
+      fixtureKey(attempt.recoverySecret),
+    ])
+  ).rows[0].result;
+}
+export async function cleanupRaceCampaign(client, campaign) {
+  assert.ok(campaign.slug.startsWith("fixture-race-"), "Refusing non-fixture cleanup");
+  const products = (
+    await client.query(
+      "select product_id from public.specialty_product_config where campaign_id=$1",
+      [campaign.id],
+    )
+  ).rows.map((row) => row.product_id);
+  await client.query("delete from public.specialty_claim_attempts where campaign_id=$1", [
+    campaign.id,
+  ]);
+  await client.query("delete from public.specialty_claims where campaign_id=$1", [
+    campaign.id,
+  ]);
+  await client.query("delete from public.specialty_product_config where campaign_id=$1", [
+    campaign.id,
+  ]);
+  if (products.length)
+    await client.query("delete from public.products where id=any($1::uuid[])", [
+      products,
+    ]);
+  await client.query("delete from public.specialty_campaigns where id=$1 and slug=$2", [
+    campaign.id,
+    campaign.slug,
+  ]);
+}
+
 export async function asRole(client, role, callback) {
   assert.ok(["anon", "authenticated", "service_role"].includes(role));
   await client.query("savepoint role_check");
