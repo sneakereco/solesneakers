@@ -327,6 +327,84 @@ test("checkout recovery storage on the owned PostgreSQL replay", async (t) => {
       );
 
       await t.test(
+        "enqueue accepts an identical obligation and rolls back active key identity conflicts",
+        async () => {
+          const key = "active-order-identity";
+          const dueAt = iso(-1000);
+          const { orderId: otherOrderId } = await seedOrder();
+          const [eventId, otherEventId] = [randomUUID(), randomUUID()];
+          await admin.query(
+            "insert into public.square_webhook_events(square_event_id,event_type,payload_sha256) values ($1,'payment.updated',$3),($2,'payment.updated',$3)",
+            [eventId, otherEventId, hash],
+          );
+          const eventKey = "active-event-identity";
+          const enqueueEvent = (id, key) =>
+            service.query(
+              "select public.enqueue_checkout_recovery('square_event',$1,$3,p_event_id => $2)",
+              [key, id, dueAt],
+            );
+
+          await enqueue(service, orderId, key, dueAt);
+          await enqueue(service, orderId, key, iso(60_000));
+          await enqueueEvent(eventId, eventKey);
+          await enqueueEvent(eventId, eventKey);
+          // One event must remain one obligation even when a later caller uses another key.
+          await enqueueEvent(eventId, "another-key-for-same-event");
+
+          const conflicts = [
+            () => enqueue(service, otherOrderId, key),
+            () =>
+              service.query(
+                "select public.enqueue_checkout_recovery('expire_reservation',$1,clock_timestamp(),p_order_id => $2)",
+                [key, orderId],
+              ),
+            () => enqueueEvent(eventId, key),
+            () => enqueueEvent(otherEventId, eventKey),
+          ];
+          try {
+            for (const conflict of conflicts) {
+              await service.query("begin");
+              try {
+                await enqueue(service, orderId, "rollback-on-conflict");
+                await assert.rejects(conflict, { code: "23505" });
+                await assert.rejects(service.query("select 1"), { code: "25P02" });
+              } finally {
+                await service.query("rollback");
+              }
+            }
+          } finally {
+            const claims = await claim(service, 50, iso(1000));
+            assert.equal(claims.length, 2);
+            for (const job of claims) assert.equal(await finish(service, job), true);
+          }
+
+          const { rows } = await admin.query(
+            "select unique_key,kind,order_id,event_id,next_attempt_at from public.checkout_recovery_jobs where unique_key = any($1) or event_id = any($2) order by unique_key",
+            [
+              [key, eventKey, "rollback-on-conflict"],
+              [eventId, otherEventId],
+            ],
+          );
+          assert.deepEqual(rows, [
+            {
+              unique_key: eventKey,
+              kind: "square_event",
+              order_id: null,
+              event_id: eventId,
+              next_attempt_at: new Date(dueAt),
+            },
+            {
+              unique_key: key,
+              kind: "reconcile_payment",
+              order_id: orderId,
+              event_id: null,
+              next_attempt_at: new Date(dueAt),
+            },
+          ]);
+        },
+      );
+
+      await t.test(
         "enqueue and receipt share the caller transaction, including rollback",
         async () => {
           const eventId = randomUUID();
@@ -334,7 +412,15 @@ test("checkout recovery storage on the owned PostgreSQL replay", async (t) => {
           try {
             await enqueue(service, orderId, "rolled-back-order");
             assert.equal(await receive(service, eventId), "stored");
-            assert.equal((await claim(service)).length, 2);
+            assert.equal(
+              (
+                await service.query(
+                  "select 1 from public.checkout_recovery_jobs where unique_key = 'rolled-back-order' or event_id = $1",
+                  [eventId],
+                )
+              ).rowCount,
+              2,
+            );
             assert.equal(
               (
                 await admin.query(
@@ -357,7 +443,7 @@ test("checkout recovery storage on the owned PostgreSQL replay", async (t) => {
             0,
           );
           assert.equal(await receive(service, eventId), "stored");
-          const [job] = await claim(service);
+          const [job] = await claim(service, 50, iso(1000));
           assert.equal(await finish(service, job), true);
         },
       );
@@ -409,7 +495,6 @@ test("checkout recovery storage on the owned PostgreSQL replay", async (t) => {
           async () => {
             const { processed, unprocessed } = populated.legacySquareEvents;
             assert.equal(await receive(service, processed), "duplicate");
-            assert.equal(await receive(service, unprocessed), "duplicate");
             const { rows } = await admin.query(
               "select square_event_id, processed_at, recovery_receipt from public.square_webhook_events where square_event_id = any($1)",
               [[processed, unprocessed]],
@@ -437,6 +522,72 @@ test("checkout recovery storage on the owned PostgreSQL replay", async (t) => {
           },
         );
       }
+
+      await t.test(
+        "concurrent redelivery of an unprocessed legacy receipt ensures exactly one obligation",
+        async () => {
+          const eventId = populated?.legacySquareEvents.unprocessed ?? randomUUID();
+          if (!populated) {
+            await admin.query(
+              "insert into public.square_webhook_events(square_event_id,event_type,payload_sha256,event_data) values ($1,'payment.updated',$2,$3)",
+              [eventId, "b".repeat(64), { paymentStatus: "PENDING" }],
+            );
+          }
+          const read = async () =>
+            (
+              await admin.query(
+                "select received_at,processed_at,recovery_receipt,payload_sha256,event_data from public.square_webhook_events where square_event_id = $1",
+                [eventId],
+              )
+            ).rows[0];
+          const original = await read();
+          assert.equal(original.recovery_receipt, false);
+          await assert.rejects(
+            service.query(
+              "select public.receive_checkout_square_event($1,'payment.created',$2,$3)",
+              [eventId, hash, payload],
+            ),
+            { code: "23505" },
+          );
+          assert.deepEqual(await read(), original);
+          const results = await race(connect, barrier, 2, (client) =>
+            receive(client, eventId),
+          );
+          assert.deepEqual(results, ["duplicate", "duplicate"]);
+          const { rowCount: obligations } = await admin.query(
+            "select 1 from public.checkout_recovery_jobs where event_id = $1",
+            [eventId],
+          );
+          assert.equal(obligations, 1);
+          const promoted = await read();
+          assert.deepEqual(promoted, {
+            received_at: original.received_at,
+            processed_at: null,
+            recovery_receipt: true,
+            payload_sha256: hash,
+            event_data: payload,
+          });
+          const jobs = await claim(service, 50, iso(1000));
+          assert.equal(jobs.length, 1);
+          assert.equal(jobs[0].eventId, eventId);
+          assert.equal(await finish(service, jobs[0]), true);
+          assert.equal(
+            await receive(
+              service,
+              eventId,
+              { ...payload, paymentId: "other-fixture" },
+              "c".repeat(64),
+            ),
+            "duplicate",
+          );
+          assert.deepEqual(await read(), promoted);
+          const { rows } = await admin.query(
+            "select status from public.checkout_recovery_jobs where event_id = $1",
+            [eventId],
+          );
+          assert.deepEqual(rows, [{ status: "done" }]);
+        },
+      );
 
       await t.test(
         "storage rejects unsafe receipt fields, oversized references and free-text reasons",

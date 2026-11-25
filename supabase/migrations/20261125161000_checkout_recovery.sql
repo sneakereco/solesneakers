@@ -80,6 +80,9 @@ create function public.enqueue_checkout_recovery(
 ) returns void
 language plpgsql security invoker set search_path = ''
 as $$
+declare
+  active_job public.checkout_recovery_jobs;
+  already_processed boolean;
 begin
   if p_kind is null or p_kind not in ('reconcile_payment', 'expire_reservation', 'square_event')
     or p_unique_key is null or btrim(p_unique_key) = '' or char_length(p_unique_key) > 256
@@ -92,16 +95,40 @@ begin
     raise exception 'Invalid checkout recovery work' using errcode = '22023';
   end if;
 
-  if p_kind = 'square_event' and exists (
+  already_processed := p_kind = 'square_event' and exists (
     select 1 from public.square_webhook_events
     where square_event_id = p_event_id and processed_at is not null
-  ) then
-    return;
-  end if;
+  );
 
-  insert into public.checkout_recovery_jobs (kind, unique_key, order_id, event_id, next_attempt_at, reason)
-  values (p_kind, p_unique_key, p_order_id, p_event_id, p_due_at, p_reason)
-  on conflict do nothing;
+  loop
+    if not already_processed then
+      insert into public.checkout_recovery_jobs (kind, unique_key, order_id, event_id, next_attempt_at, reason)
+      values (p_kind, p_unique_key, p_order_id, p_event_id, p_due_at, p_reason)
+      on conflict do nothing;
+      if found then return; end if;
+    end if;
+
+    select * into active_job
+    from public.checkout_recovery_jobs
+    where unique_key = p_unique_key and status in ('pending', 'review')
+    for share;
+    if found then
+      if active_job.kind is distinct from p_kind
+        or active_job.order_id is distinct from p_order_id
+        or active_job.event_id is distinct from p_event_id then
+        raise exception 'Checkout recovery key belongs to another obligation' using errcode = '23505';
+      end if;
+      return;
+    end if;
+
+    -- An event keeps one obligation even after completion or under another key.
+    if already_processed or (p_kind = 'square_event' and exists (
+      select 1 from public.checkout_recovery_jobs where event_id = p_event_id
+    )) then
+      return;
+    end if;
+    -- A conflicting order job can finish before the lookup. Retry the insert.
+  end loop;
 end;
 $$;
 
@@ -235,6 +262,11 @@ create function public.receive_checkout_square_event(
 ) returns text
 language plpgsql security invoker set search_path = ''
 as $$
+declare
+  inserted boolean;
+  previous_kind text;
+  previous_processed_at timestamptz;
+  previous_recovery_receipt boolean;
 begin
   if p_event_id is null or p_event_id !~ '^[A-Za-z0-9._:=+-]{1,128}$'
     or p_kind is null or p_kind not in (
@@ -269,15 +301,42 @@ begin
     (p_payload->>'createdAt')::timestamptz, p_payload_hash, p_payload, true
   )
   on conflict (square_event_id) do nothing;
-  if not found then return 'duplicate'; end if;
+  inserted := found;
 
-  perform public.enqueue_checkout_recovery(
-    'square_event', 'square_event:' || p_event_id, clock_timestamp(), p_event_id => p_event_id
-  );
-  if not exists (select 1 from public.checkout_recovery_jobs where event_id = p_event_id) then
-    raise exception 'Square receipt recovery key conflicts' using errcode = '23505';
+  if not inserted then
+    -- Serialize receipt promotion without blocking the job's foreign key check.
+    select event_type, processed_at, recovery_receipt
+    into previous_kind, previous_processed_at, previous_recovery_receipt
+    from public.square_webhook_events where square_event_id = p_event_id
+    for no key update;
+    if not found then
+      raise exception 'Square receipt changed during redelivery' using errcode = '40001';
+    end if;
+    if previous_processed_at is not null then return 'duplicate'; end if;
+
+    if not previous_recovery_receipt then
+      if previous_kind <> p_kind then
+        raise exception 'Square receipt kind conflicts with legacy receipt' using errcode = '23505';
+      end if;
+      -- Promote only a redelivered, unprocessed legacy event. Keep its original
+      -- identity and receipt time, and store the normalized redelivery metadata.
+      update public.square_webhook_events
+      set merchant_id = p_payload->>'merchantId',
+          location_id = p_payload->>'locationId',
+          square_created_at = (p_payload->>'createdAt')::timestamptz,
+          payload_sha256 = p_payload_hash,
+          event_data = p_payload,
+          recovery_receipt = true
+      where square_event_id = p_event_id;
+    end if;
   end if;
-  return 'stored';
+
+  if not exists (select 1 from public.checkout_recovery_jobs where event_id = p_event_id) then
+    perform public.enqueue_checkout_recovery(
+      'square_event', 'square_event:' || p_event_id, clock_timestamp(), p_event_id => p_event_id
+    );
+  end if;
+  return case when inserted then 'stored' else 'duplicate' end;
 end;
 $$;
 
