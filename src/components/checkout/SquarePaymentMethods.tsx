@@ -974,6 +974,8 @@ export function SquarePaymentMethods({
     }
     paymentInteraction.current++;
     paymentInFlight.current = true;
+    // Checkout owns focus until this interaction opens its own provider UI.
+    setProviderActive(false);
     performance.clearMarks("checkout-payment-start");
     performance.clearMarks("checkout-confirmed");
     performance.clearMeasures("checkout-click-to-confirmed");

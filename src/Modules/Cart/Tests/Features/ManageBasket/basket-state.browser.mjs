@@ -1798,3 +1798,76 @@ for (const replaceOwner of [false, true]) {
     },
   );
 }
+
+for (const method of ["card", "afterpay"]) {
+  const reviewAddress = method === "card";
+  const stage = reviewAddress ? "address review" : "permit error";
+  test(`Cash App handoff gives ${method} ${stage} native modal control`, async (t) => {
+    const f = await checkoutOwnershipFixture(t, { reviewAddress });
+    const { page } = f;
+    await page.waitForFunction(() => typeof window.beginCash === "function");
+    await page.getByRole("radio", { name: "Cash App Pay", exact: true }).click();
+    assert.equal(await page.evaluate(() => window.beginCash()), true);
+    const approval = page.getByRole("dialog", { name: "Loading Cash App Pay…" });
+    await expect(approval).toBeVisible();
+    assert.equal(await approval.evaluate((el) => el.matches(":modal")), false);
+
+    const nextMethod = page.getByRole("radio", {
+      name: reviewAddress ? "Credit card" : "Afterpay",
+      exact: true,
+    });
+    await nextMethod.click();
+    if (reviewAddress)
+      await page.getByLabel("Name on card", { exact: true }).fill("Shopper A");
+    await page
+      .getByRole("button", {
+        name: reviewAddress ? /Pay .* now/i : "Continue with Afterpay",
+      })
+      .click();
+
+    const dialog = page.getByRole("dialog", {
+      name: reviewAddress
+        ? "Review your shipping address"
+        : "Payment could not be completed",
+    });
+    await expect(dialog).toBeVisible();
+    if (!reviewAddress)
+      await expect(dialog.getByRole("alert")).toHaveText("Fixture payment paused");
+    assert.equal(
+      await dialog.evaluate((el) => el.matches(":modal")),
+      true,
+      stage + " must own native modality",
+    );
+    assert.equal(
+      await dialog.evaluate((el) => el.contains(document.activeElement)),
+      true,
+    );
+    assert.equal(
+      await page.evaluate(() => window.completeCash({ status: "Cancel" })),
+      true,
+    );
+
+    const dismiss = dialog.getByRole("button", {
+      name: reviewAddress ? "Cancel checkout" : "Return to checkout",
+    });
+    await dismiss.focus();
+    await page.locator('[autocomplete="shipping street-address"]').focus();
+    await expect(dismiss).toBeFocused();
+    if (!reviewAddress) {
+      await page
+        .getByRole("button", { name: "Continue with Afterpay", includeHidden: true })
+        .focus();
+      await expect(dismiss).toBeFocused();
+    }
+    await page.keyboard.press("Escape");
+    await expect(dialog).toHaveCount(0);
+    await nextMethod.focus();
+    await expect(nextMethod).toBeFocused();
+    assert.deepEqual(
+      f.requests.prepares.map((request) => request.paymentMethod),
+      [method],
+    );
+    assert.equal(f.requests.permits, reviewAddress ? 0 : 1);
+    assert.equal(f.requests.pays, 0);
+  });
+}
