@@ -26,16 +26,16 @@ export function CreateProductClient({
   const checkProduct = async () => {
     if (!unconfirmed) return;
     const skus = unconfirmed.variants.map((variant) => variant.sku);
-    if (!skus.length || skus.some((sku) => !sku))
+    const firstSku = skus[0];
+    if (!firstSku || skus.some((sku) => !sku))
       throw new Error("Review the submitted product in inventory.");
-    const match = await findInventoryProduct(
-      unconfirmed.name,
-      (product) =>
-        product.name === unconfirmed.name &&
-        product.variants.length === skus.length &&
-        skus.every((sku) => product.variants.some((variant) => variant.sku === sku)),
-    );
-    if (!match)
+    const match = await findInventoryProduct({ exactSku: firstSku });
+    if (
+      !match ||
+      match.name !== unconfirmed.name ||
+      match.variants.length !== skus.length ||
+      !skus.every((sku) => match.variants.some((variant) => variant.sku === sku))
+    )
       throw new Error(
         "Product creation is still unconfirmed. Check inventory again before creating another product.",
       );

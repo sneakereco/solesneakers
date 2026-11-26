@@ -1,4 +1,5 @@
 //  src/repositories/product-repo.ts
+import type { InventoryIdentity } from "@/lib/validation/product";
 import type { TypedSupabaseClient } from "@/lib/supabase/server";
 import type { Tables, TablesInsert, TablesUpdate } from "@/types/db/database.types";
 
@@ -908,6 +909,30 @@ export class ProductRepository {
     }
 
     return (data ?? []).map((row: { id: string }) => row.id);
+  }
+
+  async lookupInventoryProduct(tenantId: string, identity: InventoryIdentity) {
+    // Use a separate inner relation for the SKU filter so the returned variants include every sibling SKU.
+    const products = this.supabase.from("products");
+    const query =
+      "exactId" in identity
+        ? products
+            .select("id,name,archived_at,variants:product_variants(sku)")
+            .eq("id", identity.exactId)
+        : products
+            .select(
+              "id,name,archived_at,variants:product_variants(sku),matched:product_variants!inner(sku)",
+            )
+            .eq("matched.sku", identity.exactSku);
+    const { data, error } = await query.eq("tenant_id", tenantId).maybeSingle();
+    if (error) throw error;
+    if (!data) return null;
+    return {
+      id: data.id,
+      name: data.name,
+      archived_at: data.archived_at,
+      variants: data.variants,
+    };
   }
 
   async getById(

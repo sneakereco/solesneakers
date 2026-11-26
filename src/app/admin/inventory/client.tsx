@@ -93,10 +93,7 @@ export function InventoryClient({
   const checkDeletedProduct = async (product: ProductWithDetails) => {
     setMessage("Checking inventory…");
     try {
-      const sameProduct = (entry: { id: string }) => entry.id === product.id;
-      const row =
-        (await findInventoryProduct(product.name, sameProduct, "archived")) ??
-        (await findInventoryProduct(product.name, sameProduct));
+      const row = await findInventoryProduct({ exactId: product.id });
       setMessage(
         row?.archived_at
           ? `${product.name} is archived in inventory.`

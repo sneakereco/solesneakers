@@ -1,47 +1,28 @@
 import { withRequestDeadline } from "@/lib/http/request-deadline";
 import { readJsonResponse } from "@/lib/http/read-json-response";
+import {
+  type InventoryIdentity,
+  inventoryLookupResponseSchema,
+} from "@/lib/validation/product";
 
-type InventoryRecord = {
-  id: string;
-  name: string;
-  archived_at?: string | null;
-  variants: { sku: string }[];
-};
-/** The admin inventory endpoint searches product names. Compare identity within every matching page. */
-export function findInventoryProduct(
-  name: string,
-  matches: (product: InventoryRecord) => boolean,
-  stockStatus: "all" | "archived" = "all",
-) {
+export function findInventoryProduct(identity: InventoryIdentity) {
   return withRequestDeadline(async (signal) => {
-    const limit = 100;
-    const query = new URLSearchParams({
-      q: name,
-      stockStatus,
-      includeOutOfStock: "1",
-      searchMode: "inventory",
-      limit: String(limit),
-    });
-    let pages = 1;
-    for (let page = 1; page <= pages; page++) {
-      query.set("page", String(page));
-      const result = await readJsonResponse<{
-        products: InventoryRecord[];
-        total: number;
-      }>(
-        await fetch("/api/admin/products?" + query, { signal }),
-        "Unable to check inventory.",
-      );
-      if (
-        !Array.isArray(result.products) ||
-        !Number.isInteger(result.total) ||
-        result.total < 0
-      )
-        throw new Error("Inventory result is incomplete.");
-      if (page === 1) pages = Math.ceil(result.total / limit);
-      const match = result.products.find(matches);
-      if (match) return match;
+    const query = new URLSearchParams(identity);
+    const result = await readJsonResponse<unknown>(
+      await fetch("/api/admin/products?" + query, { signal }),
+      "Unable to check inventory.",
+    );
+    const parsed = inventoryLookupResponseSchema.safeParse(result);
+    if (!parsed.success) throw new Error("Inventory result is incomplete.");
+    const { product } = parsed.data;
+    if (
+      product &&
+      ("exactId" in identity
+        ? product.id !== identity.exactId
+        : !product.variants.some((variant) => variant.sku === identity.exactSku))
+    ) {
+      throw new Error("Inventory result does not match the request.");
     }
-    return null;
+    return product;
   });
 }

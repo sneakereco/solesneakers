@@ -68,7 +68,7 @@ type Props = {
   onClose: () => void;
   onSuccess: () => void;
   onUnconfirmed?: (orderId: string) => void;
-  onExistingLabel?: () => void;
+  onExistingLabel?: (message: string) => void;
   onResolved?: () => void;
 };
 
@@ -399,6 +399,7 @@ export function CreateLabelForm({
         success?: boolean;
         message?: string;
         code?: string;
+        requestId?: string;
       }>("/api/admin/shipping/labels", {
         method: "POST",
         headers: { "Content-Type": "application/json" },
@@ -419,11 +420,28 @@ export function CreateLabelForm({
         setError(data.error ?? "The order is not ready for shipping.");
         return;
       }
+      if (
+        res.status === 502 &&
+        data?.code === "shipping_label_purchased_without_tracking"
+      ) {
+        rememberProviderCheck(
+          "label:" + orderId,
+          "purchased_without_tracking:" + (data.requestId ?? ""),
+        );
+        setUnknown(true);
+        setError("");
+        onExistingLabel?.(
+          "The label was purchased through Shippo without a tracking number. Contact support.",
+        );
+        return;
+      }
       if (res.status === 409 && data?.code === "shipping_label_already_purchased") {
         rememberProviderCheck("label:" + orderId, "existing");
         setUnknown(true);
         setError(data.error ?? "This order already has a shipping label.");
-        onExistingLabel?.();
+        onExistingLabel?.(
+          "Existing label or fulfillment recorded. Check the order before taking further action.",
+        );
         return;
       }
       if (res.status >= 400 && res.status < 500 && res.status !== 409) {
@@ -700,7 +718,7 @@ export function CreateLabelForm({
                   </label>
                   <input
                     id={`${id}-weightInput`}
-                    disabled={isGettingRates || isPurchasing || unknown}
+                    disabled={isGettingRates || isPurchasing || needsCheck}
                     type="text"
                     inputMode="numeric"
                     value={weightInput}
@@ -717,7 +735,7 @@ export function CreateLabelForm({
                   </label>
                   <input
                     id={`${id}-lengthInput`}
-                    disabled={isGettingRates || isPurchasing || unknown}
+                    disabled={isGettingRates || isPurchasing || needsCheck}
                     type="text"
                     inputMode="numeric"
                     value={lengthInput}
@@ -734,7 +752,7 @@ export function CreateLabelForm({
                   </label>
                   <input
                     id={`${id}-widthInput`}
-                    disabled={isGettingRates || isPurchasing || unknown}
+                    disabled={isGettingRates || isPurchasing || needsCheck}
                     type="text"
                     inputMode="numeric"
                     value={widthInput}
@@ -751,7 +769,7 @@ export function CreateLabelForm({
                   </label>
                   <input
                     id={`${id}-heightInput`}
-                    disabled={isGettingRates || isPurchasing || unknown}
+                    disabled={isGettingRates || isPurchasing || needsCheck}
                     type="text"
                     inputMode="numeric"
                     value={heightInput}
@@ -779,7 +797,7 @@ export function CreateLabelForm({
                 <LabelRecovery
                   key={orderId}
                   orderId={orderId}
-                  existing={pendingProviderCheck("label:" + orderId) === "existing"}
+                  evidence={pendingProviderCheck("label:" + orderId)}
                   onResolve={() => {
                     rememberProviderCheck("label:" + orderId, null);
                     setUnknown(false);
@@ -844,6 +862,7 @@ export function CreateLabelForm({
                       <input
                         type="radio"
                         name="rate"
+                        disabled={needsCheck || isPurchasing || isGettingRates}
                         checked={selected}
                         onChange={() => setSelectedRateId(r.id)}
                         className="mt-1"

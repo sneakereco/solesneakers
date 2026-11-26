@@ -1130,10 +1130,8 @@ export default function ShippingPage() {
         onResolved={() =>
           setCommandMessage("Label check resolved. Request new rates before purchasing.")
         }
-        onExistingLabel={() => {
-          setCommandMessage(
-            "Existing label or fulfillment recorded. Check the order before taking further action.",
-          );
+        onExistingLabel={(message) => {
+          setCommandMessage(message);
           list.retry();
           totals.retry();
         }}

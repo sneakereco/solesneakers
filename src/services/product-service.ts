@@ -1,4 +1,5 @@
 // src/services/product-service.ts
+import type { InventoryIdentity } from "@/lib/validation/product";
 import type { TypedSupabaseClient } from "@/lib/supabase/server";
 import {
   ProductRepository,
@@ -54,6 +55,10 @@ export class ProductService {
   async exportInventory(filters: ProductFilters): Promise<InventoryExportRow[]> {
     const normalized = this.normalizeArchiveFilters(filters);
     return this.repo.exportInventoryRows(normalized);
+  }
+
+  lookupInventoryProduct(tenantId: string, identity: InventoryIdentity) {
+    return this.repo.lookupInventoryProduct(tenantId, identity);
   }
 
   async listProducts(filters: ProductFilters) {

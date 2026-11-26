@@ -12,17 +12,22 @@ type LabelEvidence = {
 };
 export function LabelRecovery({
   orderId,
-  existing,
+  evidence,
   onResolve,
 }: {
   orderId: string;
-  existing: boolean;
+  evidence?: string | null;
   onResolve: () => void;
 }) {
   const read = useAsyncAction();
   const [order, setOrder] = useState<LabelEvidence | null>(null);
   const [message, setMessage] = useState("");
   const [verified, setVerified] = useState(false);
+  const purchasedWithoutTracking = evidence?.startsWith("purchased_without_tracking:");
+  const supportReference = purchasedWithoutTracking
+    ? evidence?.slice("purchased_without_tracking:".length)
+    : null;
+  const existing = evidence === "existing";
   const hasLabel = !!(
     order?.label_url ||
     order?.tracking_number ||
@@ -48,10 +53,13 @@ export function LabelRecovery({
   return (
     <section aria-label="Label recovery" className="space-y-3 text-sm">
       <p>
-        {existing
-          ? "This order already has label or fulfillment evidence."
-          : "Check the order and the matching Shippo transaction before purchasing another label."}
+        {purchasedWithoutTracking
+          ? "The label was purchased through Shippo without a tracking number. Contact support to recover tracking for this order."
+          : existing
+            ? "This order already has label or fulfillment evidence."
+            : "Check the order and the matching Shippo transaction before purchasing another label."}
       </p>
+      {supportReference && <p>Support reference: {supportReference}</p>}
       <ActionButton
         type="button"
         pending={read.pending}
@@ -65,10 +73,12 @@ export function LabelRecovery({
         <p role="status">
           {hasLabel
             ? `Order label or fulfillment recorded.${order.tracking_number ? " Tracking number " + order.tracking_number + "." : ""}`
-            : "No label is recorded on this order. Check Shippo for a purchase."}
+            : purchasedWithoutTracking
+              ? "Tracking is still missing from this order."
+              : "No label is recorded on this order. Check Shippo for a purchase."}
         </p>
       )}
-      {!existing && order && !hasLabel && (
+      {!purchasedWithoutTracking && !existing && order && !hasLabel && (
         <>
           <label className="flex min-h-11 items-center gap-2">
             <input

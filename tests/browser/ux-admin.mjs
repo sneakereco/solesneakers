@@ -9,7 +9,7 @@ import {CreateProductClient} from "@/app/admin/inventory/create/client";
 import Detail from "@/app/admin/transactions/[orderId]/page";
 import Settings from "@/app/admin/settings/shipping/page";
 import {CreateLabelForm} from "@/components/admin/shipping/CreateLabelForm";
-const product={id:"fixture",name:"Fixture shoe",category:"sneakers",condition:"new",images:[],variants:[]};
+const product={id:"11111111-1111-4111-8111-111111111111",name:"Fixture shoe",category:"sneakers",condition:"new",images:[],variants:[]};
 const order={id:"fixture-order",status:"paid",fulfillment:"pickup",fulfillment_status:"unfulfilled",items:[],total:80,subtotal:80,created_at:"2026-11-01",shipping:{name:"Fixture Customer",phone:"2025550112",line1:"1 Main St",city:"Columbia",state:"SC",postal_code:"29201",country:"US"}};
 const initialSizes=[{id:"size7",label:"7",sizeType:"shoe"},{id:"size8",label:"8",sizeType:"shoe"}];
 import Dashboard from "@/app/admin/dashboard/page";
@@ -63,6 +63,41 @@ async function check(name, body) {
   } finally {
     await page.close();
   }
+}
+function inventoryRead(search, rows) {
+  const sku = search.get("exactSku");
+  const id = search.get("exactId");
+  if (sku || id)
+    return {
+      product:
+        rows.find((row) =>
+          id ? row.id === id : row.variants.some((variant) => variant.sku === sku),
+        ) ?? null,
+    };
+  const archived = search.get("stockStatus") === "archived";
+  const matching = rows.filter(
+    (row) =>
+      Boolean(row.archived_at) === archived &&
+      row.name.toLowerCase().includes((search.get("q") ?? "").toLowerCase()),
+  );
+  const page = Number(search.get("page") ?? 1),
+    limit = Number(search.get("limit") ?? 20);
+  return {
+    products: matching.slice(0, 500).slice((page - 1) * limit, page * limit),
+    total: matching.length,
+    page,
+    limit,
+  };
+}
+function olderInventoryRecord(record) {
+  return [
+    ...Array.from({ length: 550 }, (_, i) => ({
+      ...record,
+      id: "similar-" + i,
+      variants: [{ sku: "other-" + i }],
+    })),
+    record,
+  ];
 }
 function deferred() {
   let release;
@@ -609,31 +644,17 @@ try {
         return r.abort();
       }
       reads++;
-      const q = u.searchParams.get("q"),
-        page = Number(u.searchParams.get("page")),
-        limit = Number(u.searchParams.get("limit"));
       const rows =
         reads === 1
           ? []
-          : [
-              ...Array.from({ length: 100 }, (_, i) => ({
-                id: "similar" + i,
-                name: draft.name,
-                variants: [{ sku: "different" + i }],
-              })),
-              { id: "new-product", name: draft.name, variants: draft.variants },
-            ];
-      const named = rows.filter((product) =>
-        product.name.toLowerCase().includes((q ?? "").toLowerCase()),
-      );
-      return r.fulfill({
-        json: {
-          products: named.slice((page - 1) * limit, page * limit),
-          page,
-          limit,
-          total: named.length,
-        },
-      });
+          : olderInventoryRecord({
+              id: "new-product",
+              name: draft.name,
+              archived_at: null,
+              variants:
+                reads === 2 ? [...draft.variants, { sku: "extra" }] : draft.variants,
+            });
+      return r.fulfill({ json: inventoryRead(u.searchParams, rows) });
     });
     await openUxHarness(page, bundle, "https://ux.test/product");
     await page.getByLabel(/Full Title/).fill("Fixture product");
@@ -646,11 +667,16 @@ try {
     await check.click();
     await expect(page.getByText(/still unconfirmed/)).toBeVisible();
     await check.click();
-    await expect.poll(() => reads).toBe(3);
+    await expect.poll(() => reads).toBe(2);
+    await expect(page.getByText(/still unconfirmed/)).toBeVisible();
+    await expect(check).toBeEnabled();
+    expect(await page.evaluate(() => window.fixtureNavigation)).toBeUndefined();
+    await check.click();
     await expect
       .poll(() => page.evaluate(() => window.fixtureNavigation))
       .toBe("/admin/inventory/new-product/edit");
-    if (writes !== 1) throw Error("Duplicate create");
+    if (reads !== 3 || writes !== 1)
+      throw Error("Expected three exact reads and one create");
   });
   await check("switching transaction tabs discards late rows", async (page) => {
     const gate = deferred();
@@ -849,6 +875,7 @@ try {
   for (const code of [
     "shipping_order_not_fulfillment_ready",
     "shipping_label_already_purchased",
+    "shipping_label_purchased_without_tracking",
     "interrupted",
   ]) {
     await check("review label " + code, async (page) => {
@@ -879,6 +906,16 @@ try {
           });
         }
         writes++;
+        if (code === "shipping_label_purchased_without_tracking")
+          return r.fulfill({
+            status: 502,
+            json: {
+              code,
+              error:
+                "Label purchase succeeded but returned no tracking number. Please contact support.",
+              requestId: "fixture-support",
+            },
+          });
         return code === "interrupted"
           ? r.abort()
           : r.fulfill({
@@ -899,6 +936,28 @@ try {
       if (code === "shipping_order_not_fulfillment_ready") {
         await expect(page.getByRole("alert")).toContainText("not paid");
         await expect(page.getByText(/purchase is unconfirmed/i)).toHaveCount(0);
+      } else if (code === "shipping_label_purchased_without_tracking") {
+        for (const reload of [false, true]) {
+          if (reload) await openUxHarness(page, bundle, "https://ux.test/label");
+          await page.getByRole("button", { name: "Check order label" }).click();
+          await expect(
+            page.getByRole("region", { name: "Label recovery" }),
+          ).toContainText(/purchased.*support/i);
+          await expect(
+            page.getByRole("region", { name: "Label recovery" }),
+          ).toContainText("fixture-support");
+          await expect(page.getByLabel("Weight (oz)")).toBeDisabled();
+          await expect(
+            page.getByRole("checkbox", { name: /verified in Shippo/i }),
+          ).toHaveCount(0);
+          await expect(
+            page.getByRole("button", { name: "Resolve label check" }),
+          ).toHaveCount(0);
+          await expect(buy).toBeDisabled();
+          await expect(
+            page.getByRole("button", { name: /get shipping rates/i }),
+          ).toBeDisabled();
+        }
       } else {
         await page.getByRole("button", { name: "Check order label" }).click();
         await expect.poll(() => checks).toBe(1);
@@ -984,21 +1043,25 @@ try {
         return r.fulfill({ status: 200, body: "{" });
       }
       reads++;
-      const search = new URL(r.request().url()).searchParams;
-      if (search.get("stockStatus") !== "archived" || search.get("q") !== "Fixture shoe")
-        return r.fulfill({ json: { total: 0, products: [] } });
+      if (reads === 1)
+        return r.fulfill({ status: 503, json: { error: "read unavailable" } });
+      const rows = olderInventoryRecord({
+        id: "11111111-1111-4111-8111-111111111111",
+        name: "Fixture shoe",
+        archived_at: "2026-11-01",
+        variants: [],
+      });
       return r.fulfill({
-        json: {
-          total: 1,
-          products: [{ id: "fixture", name: "Fixture shoe", archived_at: "2026-11-01" }],
-        },
+        json: inventoryRead(new URL(r.request().url()).searchParams, rows),
       });
     });
     await openUxHarness(page, bundle, "https://ux.test/inventory");
     await page.getByRole("button", { name: "Delete product" }).click();
+    await expect(page.getByRole("button", { name: "Delete product" })).toBeDisabled();
+    await page.getByRole("button", { name: "Check inventory" }).click();
     await expect(page.getByRole("status").filter({ hasText: /archived/i })).toBeVisible();
     await expect(page.getByText("Fixture shoe deleted.")).toHaveCount(0);
-    if (reads !== 1 || deletes !== 1)
+    if (reads !== 2 || deletes !== 1)
       throw Error("Delete reconciliation did not use GET");
   });
   await check("review model options follow current brand", async (page) => {

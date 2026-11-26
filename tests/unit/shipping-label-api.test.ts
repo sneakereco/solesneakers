@@ -144,6 +144,23 @@ describe("POST /api/admin/shipping/labels", () => {
     expect((await response.json()).message).toContain("queued");
   });
 
+  it("returns positive purchase evidence when Shippo succeeds without tracking", async () => {
+    mockPurchaseLabel.mockResolvedValue({
+      status: "SUCCESS",
+      carrier: "USPS",
+      trackingNumber: null,
+      rate: "8.25",
+    });
+    const response = await POST(request());
+    expect(response.status).toBe(502);
+    expect(await response.json()).toMatchObject({
+      code: "shipping_label_purchased_without_tracking",
+      requestId: expect.any(String),
+    });
+    expect(mockPurchaseLabel).toHaveBeenCalledTimes(1);
+    expect(mockMarkReadyToShip).not.toHaveBeenCalled();
+    expect(scheduleCheckoutNotifications).not.toHaveBeenCalled();
+  });
   it("does not purchase a label for an order under review", async () => {
     mockGetOrder.mockResolvedValue({
       id: orderId,
