@@ -19,6 +19,66 @@ const rowSchema = z.object({
   variant: z.object({ stock: z.number() }),
   campaign: z.object({ slug: z.string(), enabled: z.boolean() }),
 });
+export type SpecialtyProductPageData = {
+  product: SpecialtyPublicProduct;
+  claimed: boolean;
+};
+function publicProduct(
+  product: z.infer<typeof rowSchema>["product"],
+  claimable: boolean,
+): SpecialtyPublicProduct {
+  const image = [...product.images].sort(
+    (a, b) => Number(b.is_primary) - Number(a.is_primary) || a.sort_order - b.sort_order,
+  )[0];
+  return {
+    id: product.id,
+    name: product.name,
+    description: product.description,
+    imageUrl: image?.url ?? null,
+    claimable,
+  };
+}
+
+export async function getSpecialtyProductPage(
+  client: AdminSupabaseClient,
+  productId: string,
+): Promise<SpecialtyProductPageData | null> {
+  productId = productId.toLowerCase();
+  const { data, error } = await client
+    .from("specialty_product_config")
+    .select(
+      "decision_ordinal,product:products!inner(id,name,description,category,is_active,archived_at,go_live_at,images:product_images(url,is_primary,sort_order)),variant:product_variants!inner(stock),campaign:specialty_campaigns!inner(slug,enabled)",
+    )
+    .eq("product_id", productId)
+    .eq("campaign.slug", env.SPECIALTY_CAMPAIGN_SLUG)
+    .eq("product.category", "specialty")
+    .eq("product.is_active", true)
+    .is("product.archived_at", null)
+    .lte("product.go_live_at", new Date().toISOString())
+    .maybeSingle();
+  if (error) throw new Error("Specialty product unavailable.");
+  if (!data) return null;
+  const {
+    product,
+    variant,
+    campaign,
+    decision_ordinal: wins,
+  } = rowSchema.extend({ decision_ordinal: z.number().int().nonnegative() }).parse(data);
+  if (
+    product.id !== productId ||
+    product.category !== "specialty" ||
+    !product.is_active ||
+    product.archived_at ||
+    !Number.isFinite(Date.parse(product.go_live_at)) ||
+    Date.parse(product.go_live_at) > Date.now() ||
+    campaign.slug !== env.SPECIALTY_CAMPAIGN_SLUG
+  )
+    return null;
+  const claimed = variant.stock <= 0 && wins > 0;
+  if (!claimed && (!campaign.enabled || variant.stock <= 0)) return null;
+  // Only public prize facts leave this server lookup; no winner/contact/claim data.
+  return { product: publicProduct(product, !claimed), claimed };
+}
 export async function listSpecialtyDiscoveryPool(
   client: AdminSupabaseClient,
 ): Promise<SpecialtyPublicProduct[]> {
@@ -51,18 +111,6 @@ export async function listSpecialtyDiscoveryPool(
         variant.stock <= 0
       )
         return [];
-      const image = [...product.images].sort(
-        (a, b) =>
-          Number(b.is_primary) - Number(a.is_primary) || a.sort_order - b.sort_order,
-      )[0];
-      return [
-        {
-          id: product.id,
-          name: product.name,
-          description: product.description,
-          imageUrl: image?.url ?? null,
-          claimable: true,
-        },
-      ];
+      return [publicProduct(product, true)];
     });
 }

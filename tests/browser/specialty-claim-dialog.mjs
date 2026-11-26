@@ -31,9 +31,10 @@ const bundle = await build({
     contents: `
     import { createRoot } from "react-dom/client";
     import { ClaimButton } from "./src/Modules/SpecialtyProducts/Source/Features/Claim/ClaimButton";
+    import { ClaimedPrizeNotice } from "./src/Modules/SpecialtyProducts/Source/Features/Discovery/ClaimedPrizeNotice";
     import { ClaimRecoveryPanel } from "./src/Modules/SpecialtyProducts/Source/Features/Claim/ClaimRecoveryPanel";
     const product = { id: "${productId}", name: "Cash prize", description: null, imageUrl: null, claimable: true };
-    createRoot(document.getElementById("root")).render(<><h1>Giveaway fixture</h1>{!location.search && <ClaimButton product={product} />}<ClaimRecoveryPanel /></>);
+    createRoot(document.getElementById("root")).render(<><h1>Giveaway fixture</h1>{(!location.search || location.search.includes("claimed-copy")) && <ClaimButton product={product} />}{location.search.includes("claimed-copy") && <ClaimedPrizeNotice productId={product.id} />}<ClaimRecoveryPanel /></>);
   `,
   },
   bundle: true,
@@ -162,10 +163,23 @@ async function fill(page) {
   await page.getByLabel("ZIP code", { exact: true }).fill(address.postalCode);
 }
 try {
+  const exhaustedCopy = await newPage();
+  await exhaustedCopy.page.goto("https://specialty-ui.test/?claimed-copy=1");
+  await expect(
+    exhaustedCopy.page.getByRole("button", { name: "Claim", exact: true }),
+  ).toBeEnabled();
+  await expect(exhaustedCopy.page.getByText(/by another customer/)).toHaveCount(0);
+  await expect(
+    exhaustedCopy.page.getByText("This product has already been claimed.", {
+      exact: true,
+    }),
+  ).toBeVisible();
+  await exhaustedCopy.context.close();
   const { page, context, errors } = await newPage();
   await page.getByRole("button", { name: "Claim", exact: true }).click();
   const dialog = page.getByRole("dialog");
   await expect(dialog).toBeVisible();
+  await expect(dialog.getByText(/Opening this form does not reserve/)).toBeVisible();
   await page.getByLabel("Instagram handle", { exact: true }).fill("@typing-only");
   assert.equal(requests.length, 0, "opening and typing create no hold or award");
   await page.getByRole("button", { name: "Submit claim", exact: true }).focus();
@@ -220,7 +234,17 @@ try {
       button.click();
       button.click();
     });
-  await expect(page.getByRole("heading", { name: "You claimed it!" })).toBeVisible();
+  await expect(page.getByText(receipt.instructions, { exact: true })).toBeVisible();
+  assert.deepEqual(
+    {
+      heading: await dialog.getByRole("heading", { level: 2 }).innerText(),
+      entryInstructions: await dialog
+        .getByText(/Opening this form does not reserve/)
+        .count(),
+    },
+    { heading: "Congrats!", entryInstructions: 0 },
+    "confirmed winners receive an unambiguous result without entry instructions",
+  );
   assert.equal(
     requests.filter((item) => item.path === "/api/specialty/claims").length,
     1,
@@ -240,7 +264,7 @@ try {
   await page.goto("https://specialty-ui.test/?sold=1");
   await page.getByText("Check your giveaway claim results", { exact: true }).click();
   await page.getByRole("button", { name: "Check claim result", exact: true }).click();
-  await expect(page.getByRole("heading", { name: "You claimed it!" })).toBeVisible();
+  await expect(page.getByRole("heading", { name: "Congrats!" })).toBeVisible();
   assert.deepEqual(
     requests.slice(beforeReopen).map((item) => item.path),
     ["/api/specialty/claims/result"],
@@ -266,6 +290,9 @@ try {
     await fill(current.page);
     await current.page.getByRole("button", { name: "Submit claim", exact: true }).click();
     await expect(current.page.getByText(text, { exact: true })).toBeVisible();
+    await expect(
+      current.page.getByText(/Opening this form does not reserve/),
+    ).toHaveCount(0);
     assert.deepEqual(current.errors, []);
     await current.context.close();
   }
@@ -278,6 +305,9 @@ try {
   await expect(
     paused.page.getByText("This giveaway is currently closed.", { exact: true }),
   ).toBeVisible();
+  await expect(paused.page.getByText(/Opening this form does not reserve/)).toHaveCount(
+    0,
+  );
   const closedAttempt = requests
     .filter((item) => item.path === "/api/specialty/claims")
     .at(-1).body;
@@ -291,9 +321,7 @@ try {
     .click();
   await expect(paused.page.getByLabel("Instagram handle", { exact: true })).toBeFocused();
   await paused.page.getByRole("button", { name: "Submit claim", exact: true }).click();
-  await expect(
-    paused.page.getByRole("heading", { name: "You claimed it!" }),
-  ).toBeVisible();
+  await expect(paused.page.getByRole("heading", { name: "Congrats!" })).toBeVisible();
   const reopenedAttempt = requests
     .filter((item) => item.path === "/api/specialty/claims")
     .at(-1).body;
@@ -331,9 +359,7 @@ try {
   await current.page
     .getByRole("button", { name: "Check result again", exact: true })
     .click();
-  await expect(
-    current.page.getByRole("heading", { name: "You claimed it!" }),
-  ).toBeVisible();
+  await expect(current.page.getByRole("heading", { name: "Congrats!" })).toBeVisible();
   assert.equal(
     requests.filter((item) => item.path === "/api/specialty/claims").length,
     submitCount,
@@ -368,9 +394,7 @@ try {
   await fill(refreshed.page);
   mode = "won";
   await refreshed.page.getByRole("button", { name: "Submit claim", exact: true }).click();
-  await expect(
-    refreshed.page.getByRole("heading", { name: "You claimed it!" }),
-  ).toBeVisible();
+  await expect(refreshed.page.getByRole("heading", { name: "Congrats!" })).toBeVisible();
   assert.equal(
     requests.filter((item) => item.path === "/api/specialty/claims").at(-1).body
       .attemptId,
@@ -384,9 +408,7 @@ try {
   await limited.page.getByRole("button", { name: "Claim", exact: true }).click();
   await fill(limited.page);
   await limited.page.getByRole("button", { name: "Submit claim", exact: true }).click();
-  await expect(
-    limited.page.getByRole("heading", { name: "You claimed it!" }),
-  ).toBeVisible();
+  await expect(limited.page.getByRole("heading", { name: "Congrats!" })).toBeVisible();
   await expect(
     limited.page.getByText(/Your browser cannot save this claim/),
   ).toBeVisible();
@@ -398,9 +420,7 @@ try {
   await quota.page.getByRole("button", { name: "Claim", exact: true }).click();
   await fill(quota.page);
   await quota.page.getByRole("button", { name: "Submit claim", exact: true }).click();
-  await expect(
-    quota.page.getByRole("heading", { name: "You claimed it!" }),
-  ).toBeVisible();
+  await expect(quota.page.getByRole("heading", { name: "Congrats!" })).toBeVisible();
   const quotaAttempt = requests
     .filter((item) => item.path === "/api/specialty/claims")
     .at(-1).body;
@@ -412,9 +432,7 @@ try {
   await quota.page
     .getByRole("button", { name: "Check claim result", exact: true })
     .click();
-  await expect(
-    quota.page.getByRole("heading", { name: "You claimed it!" }),
-  ).toBeVisible();
+  await expect(quota.page.getByRole("heading", { name: "Congrats!" })).toBeVisible();
   const quotaRecovery = requests
     .filter((item) => item.path === "/api/specialty/claims/result")
     .at(-1).body;

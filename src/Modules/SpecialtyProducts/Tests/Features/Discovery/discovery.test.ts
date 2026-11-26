@@ -3,10 +3,135 @@ import {
   isSpecialtyDiscoveryAllowed,
   insertDiscoveryItem,
   listSpecialtyDiscoveryPool,
+  getSpecialtyProductPage,
 } from "@/Modules/SpecialtyProducts/Source/Features/Discovery/discovery";
 import { ProductRepository } from "@/repositories/product-repo";
 import { FeaturedItemsService } from "@/services/featured-items-service";
 import type { ProductFilters } from "@/repositories/product-repo";
+
+test("a valid uppercase prize URL matches the database's lowercase UUID", async () => {
+  const id = "a1111111-1111-4111-8111-111111111111";
+  const row = {
+    decision_ordinal: 1,
+    product: {
+      id,
+      name: "Prize",
+      description: null,
+      category: "specialty",
+      is_active: true,
+      archived_at: null,
+      go_live_at: "2020-01-01T00:00:00Z",
+      images: [],
+    },
+    variant: { stock: 0 },
+    campaign: { slug: "black-friday-2026", enabled: true },
+  };
+  const client = createClient("https://example.supabase.co", "test", {
+    global: {
+      fetch: () =>
+        Promise.resolve(
+          new Response(JSON.stringify(row), {
+            headers: { "Content-Type": "application/json" },
+          }),
+        ),
+    },
+  });
+  expect(await getSpecialtyProductPage(client as never, id.toUpperCase())).toMatchObject({
+    claimed: true,
+    product: { id, claimable: false },
+  });
+});
+
+test.each([
+  [0, 1, true, true],
+  [0, 1, false, true],
+  [2, 1, true, false],
+])(
+  "prize permalink projects only public facts for stock %s / wins %s / open %s",
+  async (stock, wins, enabled, claimed) => {
+    const id = "11111111-1111-4111-8111-111111111111";
+    const row = {
+      decision_ordinal: wins,
+      product: {
+        id,
+        name: "Prize",
+        description: "Description",
+        category: "specialty",
+        is_active: true,
+        archived_at: null,
+        go_live_at: "2020-01-01T00:00:00Z",
+        images: [],
+        unit_cost_cents: 1234,
+      },
+      variant: { stock },
+      campaign: { slug: "black-friday-2026", enabled },
+      instagram_handle: "private",
+      eligibility_address: { line1: "private" },
+    };
+    const urls: URL[] = [];
+    const client = createClient("https://example.supabase.co", "test", {
+      global: {
+        fetch: (input) => {
+          urls.push(new URL(String(input)));
+          return Promise.resolve(
+            new Response(JSON.stringify(row), {
+              headers: { "Content-Type": "application/json" },
+            }),
+          );
+        },
+      },
+    });
+    expect(await getSpecialtyProductPage(client as never, id)).toEqual({
+      claimed,
+      product: {
+        id,
+        name: "Prize",
+        description: "Description",
+        imageUrl: null,
+        claimable: !claimed,
+      },
+    });
+    expect(urls[0].searchParams.get("product_id")).toBe("eq." + id);
+    expect(urls[0].searchParams.get("campaign.slug")).toBe("eq.black-friday-2026");
+    expect(urls[0].searchParams.has("variant.stock")).toBe(false);
+  },
+);
+
+test.each([
+  { stock: 0, wins: 0, enabled: true },
+  { stock: 1, wins: 0, enabled: false },
+])(
+  "a zero-quantity unclaimed or closed stocked prize is not falsely shown as claimed: %j",
+  async ({ stock, wins, enabled }) => {
+    const id = "11111111-1111-4111-8111-111111111111";
+    const row = {
+      decision_ordinal: wins,
+      product: {
+        id,
+        name: "Prize",
+        description: null,
+        category: "specialty",
+        is_active: true,
+        archived_at: null,
+        go_live_at: "2020-01-01T00:00:00Z",
+        images: [],
+      },
+      variant: { stock },
+      campaign: { slug: "black-friday-2026", enabled },
+    };
+    const client = createClient("https://example.supabase.co", "test", {
+      global: {
+        fetch: () =>
+          Promise.resolve(
+            new Response(JSON.stringify(row), {
+              headers: { "Content-Type": "application/json" },
+            }),
+          ),
+      },
+    });
+    expect(await getSpecialtyProductPage(client as never, id)).toBeNull();
+  },
+);
 test.each([
   { q: "prize" },
   { category: ["specialty"] },

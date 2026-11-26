@@ -1,6 +1,8 @@
 // app/store/[productId]/page.tsx
 
 import { unstable_cache } from "next/cache";
+import { cache } from "react";
+import { connection } from "next/server";
 import { notFound } from "next/navigation";
 import type { Metadata } from "next";
 import { pageMetadata } from "@/lib/metadata";
@@ -8,7 +10,9 @@ import { pageMetadata } from "@/lib/metadata";
 import { createSupabasePublicClient } from "@/lib/supabase/public";
 import { ProductRepository } from "@/repositories/product-repo";
 import { ProductDetail } from "@/components/store/ProductDetail";
-import { SpecialtyProductCard } from "@/Modules/SpecialtyProducts/Source/Features/Discovery/SpecialtyProductCard";
+import { SpecialtyProductPage } from "@/Modules/SpecialtyProducts/Source/Features/Discovery/SpecialtyProductPage";
+import { getSpecialtyProductPage } from "@/Modules/SpecialtyProducts/Source/Features/Discovery/discovery";
+import { createSupabaseAdminClient } from "@/lib/supabase/service-role";
 
 const PRODUCT_REVALIDATE_SECONDS = 60;
 export const revalidate = 60;
@@ -23,6 +27,12 @@ const getCachedProduct = (productId: string) =>
     ["storefront", "product", productId],
     { revalidate: PRODUCT_REVALIDATE_SECONDS, tags: [`product:${productId}`] },
   )();
+
+const getLiveSpecialtyProduct = cache(async (productId: string) => {
+  // Claimed prize links need current inventory, independent of the ordinary cache.
+  await connection();
+  return getSpecialtyProductPage(createSupabaseAdminClient(), productId);
+});
 
 // Generate metadata for SEO and social sharing
 export async function generateMetadata({
@@ -51,7 +61,21 @@ export async function generateMetadata({
 
   const product = await getCachedProduct(productId);
 
-  if (!product) {
+  if (!product || product.category === "specialty") {
+    const specialty = await getLiveSpecialtyProduct(productId);
+    if (specialty)
+      return {
+        ...pageMetadata(
+          specialty.product.name,
+          specialty.claimed
+            ? "This product has already been claimed."
+            : (specialty.product.description ?? "Specialty giveaway"),
+        ),
+        robots: { index: false, follow: true },
+      };
+  }
+
+  if (!product || product.category === "specialty") {
     return {
       ...pageMetadata(
         "Product Not Found",
@@ -62,11 +86,6 @@ export async function generateMetadata({
   }
 
   // Get the first variant for pricing
-  if (product.category === "specialty")
-    return {
-      ...pageMetadata(product.name, product.description ?? "Specialty giveaway"),
-      robots: { index: false, follow: true },
-    };
   const firstVariant = product.variants[0];
 
   // Construct title
@@ -110,28 +129,11 @@ export default async function ProductDetailPage({
 
   const product = await getCachedProduct(productId);
 
-  if (!product) {
+  if (!product || product.category === "specialty") {
+    const specialty = await getLiveSpecialtyProduct(productId);
+    if (specialty) return <SpecialtyProductPage {...specialty} />;
     notFound();
   }
 
-  if (product.category === "specialty")
-    return (
-      <main className="mx-auto max-w-xl px-4 py-12">
-        <SpecialtyProductCard
-          product={{
-            id: product.id,
-            name: product.name,
-            description: product.description,
-            imageUrl:
-              (product.images.find((image) => image.is_primary) ?? product.images[0])
-                ?.url ?? null,
-            claimable: product.variants.some((variant) => variant.stock > 0),
-          }}
-        />
-        <p className="mt-6 whitespace-pre-wrap text-sm text-zinc-700">
-          {product.description}
-        </p>
-      </main>
-    );
   return <ProductDetail product={product} />;
 }
