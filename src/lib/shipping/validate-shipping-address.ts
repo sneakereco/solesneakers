@@ -1,4 +1,8 @@
 import { z } from "zod";
+import { getActiveLoadTestContext } from "@/Modules/Checkout/Source/Features/LoadTesting/context";
+import { readLoadTestSettings } from "@/Modules/Checkout/Source/Features/LoadTesting/settings";
+import { createLoadRunStore } from "@/Modules/Checkout/Source/Features/LoadTesting/run-store";
+import { createLoadTestShippingFetch } from "@/Modules/Checkout/Source/Features/LoadTesting/shipping-adapter";
 
 import { checkoutShippingAddressSchema } from "@/lib/checkout/checkout-request";
 import { shippingAddressKey } from "@/lib/checkout/shipping-address-validation";
@@ -32,6 +36,12 @@ export async function requestAddressValidation(
   fetcher: typeof fetch = fetch,
   timeoutMs = 10000,
 ): Promise<z.infer<typeof shippoResponse> | null> {
+  const settings = readLoadTestSettings();
+  if (settings?.target.providerMode === "simulated") {
+    const context = getActiveLoadTestContext();
+    if (!context) return null;
+    fetcher = createLoadTestShippingFetch(context, createLoadRunStore(settings));
+  }
   if (!token) return null;
   const url = new URL("https://api.goshippo.com/v2/addresses/validate");
   url.search = new URLSearchParams({

@@ -93,6 +93,7 @@ export default defineConfig([
     ".worktrees/**",
     ".codegraph/**",
     ".superpowers/**",
+    ".load-test/**",
     "src/types/db/database.types.ts",
   ]),
 ]);

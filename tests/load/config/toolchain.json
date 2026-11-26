@@ -1,0 +1,29 @@
+{
+  "version": 1,
+  "node": "24.14.1",
+  "k6": {
+    "version": "2.4.0",
+    "checksumsUrl": "https://github.com/grafana/k6/releases/download/v2.4.0/k6-v2.4.0-checksums.txt",
+    "assets": {
+      "windows-x64": {
+        "file": "k6-v2.4.0-windows-amd64.zip",
+        "sha256": "aaa90b3afc336faf90172c7addf45c4f41305f6f188e3d564f79466e80ac68e3"
+      },
+      "linux-x64": {
+        "file": "k6-v2.4.0-linux-amd64.tar.gz",
+        "sha256": "5a5ecf23529ccf93135bc7e5b0c1cd5126ecf5f2672e22eed1556a0ab74abb87"
+      },
+      "linux-arm64": {
+        "file": "k6-v2.4.0-linux-arm64.tar.gz",
+        "sha256": "7bb415f59d81ad649a86f6da6b3e1bd2e4e64e84909deef13e9bca70608abccb"
+      }
+    }
+  },
+  "playwright": {
+    "version": "1.56.1",
+    "chromiumRevision": "1194",
+    "chromiumVersion": "141.0.7390.37",
+    "image": "mcr.microsoft.com/playwright:v1.56.1-noble@sha256:f1e7e01021efd65dd1a2c56064be399f3e4de00fd021ac561325f2bfbb2b837a"
+  },
+  "webVitals": "5.1.0"
+}

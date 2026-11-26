@@ -1,4 +1,5 @@
 import { z } from "zod";
+import { readLoadTestSettings } from "@/Modules/Checkout/Source/Features/LoadTesting/settings";
 
 const squareConfigSchema = z
   .object({
@@ -50,5 +51,12 @@ export function parseSquareConfig(
 }
 
 export function getSquareConfig(): SquareConfig {
-  return parseSquareConfig(process.env);
+  const config = parseSquareConfig(process.env),
+    settings = readLoadTestSettings();
+  return settings
+    ? {
+        ...config,
+        webhookNotificationUrl: `${settings.target.baseUrl}/api/webhooks/square`,
+      }
+    : config;
 }

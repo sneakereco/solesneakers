@@ -21,7 +21,10 @@
     "dev": "doppler run -- next dev",
     "build": "doppler run -- next build",
     "start": "doppler run -- next start",
-    "gen:types": "npx supabase gen types typescript --local --schema public > src/types/db/database.types.ts"
+    "gen:types": "npx supabase gen types typescript --local --schema public > src/types/db/database.types.ts",
+    "load:staging": "node tests/load/operator/cli.mjs",
+    "test:load": "node --test tests/load/unit/*.test.mjs",
+    "test:load:database": "node --test tests/database/load-test-*.test.mjs"
   },
   "dependencies": {
     "@dnd-kit/core": "^6.3.1",
@@ -67,7 +70,8 @@
     "supabase": "2.117.0",
     "tailwindcss": "^3.4.18",
     "tsx": "^4.20.6",
-    "typescript": "^5.9.3"
+    "typescript": "^5.9.3",
+    "load-test-web-vitals": "npm:web-vitals@5.1.0"
   },
   "private": true
 }

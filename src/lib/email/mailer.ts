@@ -3,6 +3,9 @@ import nodemailer, { type Transporter } from "nodemailer";
 
 import { env } from "@/config/env";
 import { MAIL_FROM_EMAIL, MAIL_FROM_NAME } from "@/config/constants/mail";
+import { readLoadTestSettings } from "@/Modules/Checkout/Source/Features/LoadTesting/settings";
+import { createLoadRunStore } from "@/Modules/Checkout/Source/Features/LoadTesting/run-store";
+import { captureLoadTestEmail } from "@/Modules/Checkout/Source/Features/LoadTesting/mail-sink";
 
 type SendEmailInput = {
   to: string;
@@ -39,6 +42,9 @@ const getTransporter = () => {
 const buildFrom = () => `"${MAIL_FROM_NAME}" <${MAIL_FROM_EMAIL}>`;
 
 const sendWithTransport = async (input: SendEmailInput) => {
+  const settings = readLoadTestSettings();
+  if (settings)
+    return captureLoadTestEmail(input, settings, createLoadRunStore(settings));
   const result = await getTransporter().sendMail({
     from: buildFrom(),
     to: input.to,

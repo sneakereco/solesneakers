@@ -1,0 +1,350 @@
+import { createHash, createHmac, timingSafeEqual } from "node:crypto";
+import { z } from "zod";
+import { loadDigest } from "./contracts";
+import { issuePhaseCredential } from "./context";
+import {
+  createLoadRunStore,
+  type RunRecord,
+  type RunStore,
+  type WorkerLeases,
+} from "./run-store";
+import { readLoadTestSettings, type LoadTestSettings } from "./settings";
+import { dispatchDueEvents } from "./square-adapter";
+import { getSquareConfig } from "@/lib/square/config";
+
+const operations = [
+  "attest",
+  "register",
+  "fixtures",
+  "revoke",
+  "status",
+  "events",
+  "faults",
+  "cleanup",
+  "lease",
+  "heartbeat",
+];
+const registration = z
+  .object({
+    runId: z.string().uuid(),
+    phaseId: z.string().regex(/^[\w-]{1,100}$/),
+    profile: z.string().min(1).max(100),
+    start: z.number().int().nonnegative(),
+    end: z.number().int().positive().max(12000),
+    expiresAt: z.number().int().positive(),
+  })
+  .strict();
+function json(value: unknown, status = 200) {
+  return Response.json(value, { status, headers: { "Cache-Control": "no-store" } });
+}
+export function verifyControlHeaders(
+  request: Request,
+  settings: LoadTestSettings,
+): boolean {
+  const url = new URL(request.url),
+    nonce = request.headers.get("x-load-test-nonce"),
+    issued = request.headers.get("x-load-test-issued-at"),
+    digest = request.headers.get("x-load-test-body-sha256"),
+    signature = request.headers.get("x-load-test-control");
+  if (
+    request.method !== "POST" ||
+    url.origin !== settings.target.baseUrl ||
+    !/^\/api\/internal\/load-test\/(?:attest|register|fixtures|revoke|status|events|faults|cleanup|lease|heartbeat)$/.test(
+      url.pathname,
+    ) ||
+    !nonce ||
+    !/^[\w-]{1,100}$/.test(nonce) ||
+    !issued ||
+    !Number.isFinite(Number(issued)) ||
+    Math.abs(Date.now() - Number(issued)) > 30000 ||
+    !digest ||
+    !/^[a-f0-9]{64}$/.test(digest) ||
+    !signature
+  )
+    return false;
+  const expected = createHmac("sha256", settings.signingKey)
+    .update([request.method, url.origin, url.pathname, nonce, issued, digest].join("\n"))
+    .digest("hex");
+  const a = Buffer.from(expected),
+    b = Buffer.from(signature);
+  return a.length === b.length && timingSafeEqual(a, b);
+}
+type Dependencies = { settings: LoadTestSettings | null; store: RunStore };
+export async function handleLoadTestControl(
+  request: Request,
+  operation: string,
+  dependencies?: Dependencies,
+): Promise<Response> {
+  try {
+    const settings = dependencies ? dependencies.settings : readLoadTestSettings();
+    if (!settings || !operations.includes(operation))
+      return json({ error: "Not found" }, 404);
+    if (
+      !verifyControlHeaders(request, settings) ||
+      !new URL(request.url).pathname.endsWith(`/${operation}`)
+    )
+      return json({ error: "Forbidden" }, 403);
+    const text = await request.clone().text();
+    if (Buffer.byteLength(text) > 65536) return json({ error: "Body too large" }, 413);
+    if (
+      createHash("sha256").update(text).digest("hex") !==
+      request.headers.get("x-load-test-body-sha256")
+    )
+      return json({ error: "Body signature mismatch" }, 403);
+    const store = dependencies?.store ?? createLoadRunStore(settings);
+    if (!(await store.once(request.headers.get("x-load-test-nonce")!)))
+      return json({ error: "Replayed control request" }, 403);
+    const { nonce: _nonce, ...body } = JSON.parse(text) as Record<string, unknown>;
+    if (operation === "attest")
+      return json({
+        ...settings.target.expected,
+        baseUrl: settings.target.baseUrl,
+        resourceDigest: loadDigest(settings.target.resources),
+        schema: settings.target.migrationHeads,
+        providerMode: settings.target.providerMode,
+        capabilities: ["shopping"],
+        nonce: request.headers.get("x-load-test-nonce"),
+        serverAt: Date.now(),
+      });
+    if (operation === "register") {
+      const input = registration.parse(body);
+      if (
+        input.end <= input.start ||
+        input.end > settings.target.budget.maxSessions ||
+        input.expiresAt <= Date.now() ||
+        input.expiresAt > Date.now() + 4 * 3600000
+      )
+        return json({ error: "Invalid phase bounds" }, 400);
+      await store.mutate<{ runId: string; expiresAt: number; targetDigest: string }>(
+        "lock",
+        "target",
+        { runId: input.runId, expiresAt: 0, targetDigest: settings.target.digest },
+        (old) => {
+          if (
+            old.expiresAt !== 0 &&
+            (old.runId !== input.runId || old.targetDigest !== settings.target.digest)
+          )
+            throw new Error("Another run owns this deployment");
+          return {
+            runId: input.runId,
+            expiresAt: input.expiresAt,
+            targetDigest: settings.target.digest,
+          };
+        },
+      );
+      const run: RunRecord = {
+        ...input,
+        targetDigest: settings.target.digest,
+        providerMode: settings.target.providerMode,
+        revoked: false,
+      };
+      await store.put("run", run.runId, run);
+      return json({
+        credential: issuePhaseCredential(run, settings),
+        expiresAt: run.expiresAt,
+      });
+    }
+    const runId = z.string().uuid().parse(body.runId);
+    const run = await store.get<RunRecord>("run", runId);
+    if (operation === "cleanup") {
+      if (run && (!run.revoked || run.targetDigest !== settings.target.digest))
+        return json({ error: "Revoke admission before cleanup" }, 409);
+      const lock = await store.get<{ runId: string; targetDigest: string }>(
+        "lock",
+        "target",
+      );
+      if (lock && (lock.runId !== runId || lock.targetDigest !== settings.target.digest))
+        return json({ error: "Another run or deployment owns these resources" }, 409);
+      const progress = await store.purgeRun(runId);
+      if (progress.remaining === 0) {
+        await store.remove("run", runId);
+        if (lock?.runId === runId) await store.remove("lock", "target");
+      }
+      return json({ cleaned: progress.remaining === 0, ...progress });
+    }
+    if (!run || run.targetDigest !== settings.target.digest)
+      return json({ error: "Run not found" }, 404);
+    if (operation === "lease" || operation === "heartbeat") {
+      if (run.revoked || run.expiresAt <= Date.now())
+        return json({ error: "Phase inactive" }, 403);
+      if (operation === "lease") {
+        const input = z
+          .object({
+            workerId: z.string().regex(/^[\w-]{1,100}$/),
+            start: z.number().int().nonnegative(),
+            end: z.number().int().positive(),
+          })
+          .parse(body);
+        if (input.start < run.start || input.end > run.end || input.end <= input.start)
+          return json({ error: "Invalid worker range" }, 400);
+        const expiresAt = Math.min(run.expiresAt, Date.now() + 45000);
+        await store.mutate<WorkerLeases>(
+          "leases",
+          runId,
+          { runId, workers: {} },
+          (old) => {
+            if (old.workers[input.workerId]) throw Error("Worker already leased");
+            if (
+              Object.values(old.workers).some(
+                (other) => input.start < other.end && input.end > other.start,
+              )
+            )
+              throw Error("Worker ranges overlap");
+            return {
+              ...old,
+              workers: {
+                ...old.workers,
+                [input.workerId]: { start: input.start, end: input.end, expiresAt },
+              },
+            };
+          },
+        );
+        return json({
+          credential: issuePhaseCredential({ ...run, ...input }, settings),
+          expiresAt,
+        });
+      }
+      const workerIds = z
+        .array(z.string().regex(/^[\w-]{1,100}$/))
+        .min(1)
+        .max(100)
+        .parse(body.workerIds);
+      await store.mutate<WorkerLeases>("leases", runId, { runId, workers: {} }, (old) => {
+        const workers = { ...old.workers };
+        for (const id of workerIds) {
+          if (!workers[id] || workers[id].expiresAt <= Date.now())
+            throw Error("Worker heartbeat expired");
+          workers[id] = {
+            ...workers[id],
+            expiresAt: Math.min(run.expiresAt, Date.now() + 45000),
+          };
+        }
+        return { ...old, workers };
+      });
+      return json({ renewed: true });
+    }
+    if (operation === "revoke") {
+      await store.put("run", runId, { ...run, revoked: true });
+      return json({ revoked: true });
+    }
+    if (operation === "fixtures") {
+      const fixtures = z
+        .array(
+          z
+            .object({
+              kind: z.enum([
+                "product",
+                "variant",
+                "order",
+                "square-order",
+                "payment",
+                "email",
+                "account",
+                "claim",
+                "campaign",
+                "address",
+              ]),
+              id: z.string().regex(/^[\w.@:-]{1,200}$/),
+              slot: z.number().int().nonnegative(),
+            })
+            .strict(),
+        )
+        .min(1)
+        .max(100)
+        .parse(body.fixtures);
+      if (
+        run.revoked ||
+        run.expiresAt <= Date.now() ||
+        fixtures.some((f) => f.slot < run.start || f.slot >= run.end)
+      )
+        return json({ error: "Fixture scope invalid" }, 403);
+      for (const fixture of fixtures) {
+        const key = `${fixture.kind}:${fixture.id}`;
+        const previous = await store.get<{ runId: string }>("fixture", key);
+        if (previous && previous.runId !== runId)
+          return json({ error: "Fixture already owned" }, 409);
+        await store.put("fixture", key, { runId, slot: fixture.slot });
+      }
+      return json({ registered: fixtures.length });
+    }
+    if (operation === "events") {
+      const config = getSquareConfig();
+      return json(
+        await dispatchDueEvents({ runId }, store, settings, {
+          notificationUrl: config.webhookNotificationUrl,
+          signatureKey: config.webhookSignatureKey,
+        }),
+      );
+    }
+    if (operation === "faults") {
+      const kind = z
+        .enum([
+          "none",
+          "square-timeout",
+          "timeout-after-capture",
+          "response-loss",
+          "decline",
+          "shippo-unavailable",
+          "smtp-outage",
+        ])
+        .parse(body.kind);
+      if (kind === "none") await store.remove("fault", runId);
+      else await store.put("fault", runId, { kind });
+      return json({ configured: kind });
+    }
+    const ids = z
+      .array(z.string().regex(/^[\w:-]{1,200}$/))
+      .max(100)
+      .parse(body.squareOrderIds ?? []);
+    const ledgers = await Promise.all(
+      ids.map(async (id) => {
+        const value = await store.get<{
+          runId: string;
+          order: { reference_id: string };
+          payments: Record<
+            string,
+            { payment: { id: string; status: string; amount_money: { amount: string } } }
+          >;
+        }>("square", id);
+        if (!value || value.runId !== runId) throw new Error("Unowned ledger");
+        return {
+          squareOrderId: id,
+          localOrderId: value.order.reference_id,
+          payments: Object.values(value.payments).map(({ payment }) => ({
+            id: payment.id,
+            status: payment.status,
+            totalCents: Number(payment.amount_money.amount),
+          })),
+        };
+      }),
+    );
+    const cursor = z
+      .number()
+      .int()
+      .min(0)
+      .max(1000000)
+      .parse(body.cursor ?? 0);
+    const ownedOrderIds = await store.queueItems<string>(
+      "owned-orders",
+      runId,
+      100,
+      cursor,
+    );
+    return json({
+      run,
+      ledgers,
+      ownedOrderIds,
+      nextCursor: ownedOrderIds.length === 100 ? cursor + 100 : null,
+    });
+  } catch (error) {
+    return json(
+      {
+        error:
+          error instanceof z.ZodError
+            ? "Invalid control payload"
+            : "Load control unavailable",
+      },
+      error instanceof z.ZodError ? 400 : 503,
+    );
+  }
+}

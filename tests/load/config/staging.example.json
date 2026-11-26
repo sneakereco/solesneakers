@@ -1,0 +1,34 @@
+{
+  "version": 1,
+  "purpose": "staging-load-test",
+  "baseUrl": "https://load-fixture.example.test",
+  "expected": {
+    "commit": "aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa",
+    "deploymentId": "dpl_replace_with_verified_deployment",
+    "projectId": "prj_replace_with_load_project"
+  },
+  "resources": {
+    "supabase": { "projectRef": "loadfixture", "url": "https://loadfixture.supabase.co" },
+    "redis": {
+      "id": "replace_with_load_redis_id",
+      "url": "https://load-fixture.upstash.io"
+    }
+  },
+  "productionDenylist": {
+    "hosts": ["replace-with-production.example.test"],
+    "projectIds": ["replace_with_production_project_id"],
+    "supabaseRefs": ["replace_with_production_supabase_ref"],
+    "redisIds": ["replace_with_production_redis_id"]
+  },
+  "migrationHeads": ["20261124120000"],
+  "providerMode": "simulated",
+  "requiredCapabilities": ["shopping", "specialty-claims"],
+  "telemetry": ["application", "database", "redis", "queues", "generator"],
+  "region": "us-east",
+  "budget": {
+    "maxCostUsd": 0,
+    "maxRequests": 20000000,
+    "maxDurationSeconds": 21600,
+    "maxSessions": 12000
+  }
+}

@@ -21,6 +21,11 @@ import { ProductRepository } from "@/repositories/product-repo";
 import { ShippingDefaultsRepository } from "@/repositories/shipping-defaults-repo";
 import { TenantRepository } from "@/repositories/tenant-repo";
 import { OrderAccessTokenService } from "@/services/order-access-token-service";
+import { getActiveLoadTestContext } from "@/Modules/Checkout/Source/Features/LoadTesting/context";
+import {
+  assertLoadCart,
+  reserveWithLoadOwnership,
+} from "@/Modules/Checkout/Source/Features/LoadTesting/ownership";
 
 export function createPrepareCheckoutDependencies(
   requestId: string,
@@ -43,17 +48,22 @@ export function createPrepareCheckoutDependencies(
     findTenantId: () => tenants.getFirstTenantId(),
     getAccess: assertCheckoutOpen,
     verifyBrowser: verifyCheckoutBrowser,
-    getClientIp: getTrustedClientIp,
+    getClientIp: (request) =>
+      getActiveLoadTestContext()?.networkKey ?? getTrustedClientIp(request),
     getSession: getServerSession,
     hashEmail: (email) => hashNormalizedCheckoutEmail(email, getCheckoutIdentitySecret()),
     findExisting: (tenantId, idempotencyKey) =>
       reservations.findByIdempotencyKey(tenantId, idempotencyKey),
     checkAddressValidationAttempt: (identity) => limiter.checkAddressValidation(identity),
     checkAttempt: (identity) => limiter.check(identity),
-    resolveCart: (tenantId, items) => resolveCheckoutCart(products, tenantId, items),
+    resolveCart: async (tenantId, items) => {
+      await assertLoadCart(items);
+      return resolveCheckoutCart(products, tenantId, items);
+    },
     quote: (input) => pricing.quote(input),
     calculateSquareOrder: (input) => getSquareOrders().calculate(input),
-    reserve: (input) => reservations.reserve(input),
+    reserve: (input) =>
+      reserveWithLoadOwnership(input, () => reservations.reserve(input)),
     createGuestAccessToken: async (orderId) =>
       (await accessTokens.createToken({ orderId })).token,
     getSquareClientConfig: () => {

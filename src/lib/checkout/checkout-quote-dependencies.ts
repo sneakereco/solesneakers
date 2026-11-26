@@ -9,6 +9,7 @@ import { logError } from "@/lib/utils/log";
 import { ProductRepository } from "@/repositories/product-repo";
 import { ShippingDefaultsRepository } from "@/repositories/shipping-defaults-repo";
 import { TenantRepository } from "@/repositories/tenant-repo";
+import { assertLoadCart } from "@/Modules/Checkout/Source/Features/LoadTesting/ownership";
 
 export function createCheckoutQuoteDependencies(
   requestId: string,
@@ -24,7 +25,10 @@ export function createCheckoutQuoteDependencies(
     findTenantId: () => tenants.getFirstTenantId(),
     getAccess: assertCheckoutOpen,
     verifyBrowser: verifyCheckoutBrowser,
-    resolveCart: (tenantId, items) => resolveCheckoutCart(products, tenantId, items),
+    resolveCart: async (tenantId, items) => {
+      await assertLoadCart(items);
+      return resolveCheckoutCart(products, tenantId, items);
+    },
     quote: (input) => pricing.quote(input),
     calculateSquareOrder: (input) => getSquareOrders().calculate(input),
     reportError: (error) =>

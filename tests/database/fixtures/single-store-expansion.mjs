@@ -89,11 +89,17 @@ export async function seedCatalog(client) {
 export async function reserve(
   client,
   catalog,
-  { legacy = false, key = "expansion-fixture", items } = {},
+  {
+    legacy = false,
+    key = "expansion-fixture",
+    items,
+    email = "fixture@example.invalid",
+    userId = null,
+  } = {},
 ) {
   const values = [
-    null,
-    "fixture@example.invalid",
+    userId,
+    email,
     "USD",
     "pickup",
     "card",
