@@ -116,6 +116,7 @@ export type Database = {
         Row: {
           dataset_id: string
           effective_at: string
+          export_updated_at: string
           fact: Json
           fact_id: string
           kind: string
@@ -125,6 +126,7 @@ export type Database = {
         Insert: {
           dataset_id: string
           effective_at: string
+          export_updated_at?: string
           fact: Json
           fact_id: string
           kind: string
@@ -134,6 +136,7 @@ export type Database = {
         Update: {
           dataset_id?: string
           effective_at?: string
+          export_updated_at?: string
           fact?: Json
           fact_id?: string
           kind?: string
@@ -2015,6 +2018,14 @@ export type Database = {
       analytics_record_operational_outcome: {
         Args: { p_dataset_id: string; p_outcome: Json }
         Returns: undefined
+      }
+      analytics_read_history_evidence: {
+        Args: { p_dataset_id: string }
+        Returns: Json
+      }
+      analytics_reconciliation_source: {
+        Args: { p_dataset_id: string; p_end: string; p_start: string }
+        Returns: Json
       }
       analytics_revoke_receipt: {
         Args: { p_dataset_id: string; p_receipt_id: string }

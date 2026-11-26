@@ -76,6 +76,7 @@ export function createDeliveryRepository(db: AdminSupabaseClient, datasetId: str
     async claimPublications(
       limit: number,
       leaseSeconds: number,
+      onQuarantine?: (counts: { failed: number; deferred: number }) => void,
     ): Promise<LeasedPublication[]> {
       const { data, error } = await db.rpc("analytics_claim_publications", {
         p_dataset_id: scope,
@@ -85,7 +86,7 @@ export function createDeliveryRepository(db: AdminSupabaseClient, datasetId: str
       if (error) throw new Error("Analytics publication claim failed");
       const jobs: LeasedPublication[] = [];
       const invalid: PromiseLike<unknown>[] = [];
-      let unaddressable = false;
+      let unaddressable = 0;
       for (const raw of z.array(z.unknown()).parse(data)) {
         const result = leased.safeParse(raw);
         if (result.success && result.data.fact.datasetId === scope) {
@@ -102,7 +103,7 @@ export function createDeliveryRepository(db: AdminSupabaseClient, datasetId: str
         }
         const identity = leaseIdentity.safeParse(raw);
         if (!identity.success) {
-          unaddressable = true;
+          unaddressable++;
           continue;
         }
         invalid.push(
@@ -121,6 +122,11 @@ export function createDeliveryRepository(db: AdminSupabaseClient, datasetId: str
       ) {
         throw new Error("Invalid analytics lease response");
       }
+      const failed = quarantine.filter(
+        (row) => row.status === "fulfilled" && row.value === true,
+      ).length;
+      if (quarantine.length || unaddressable)
+        onQuarantine?.({ failed, deferred: unaddressable + quarantine.length - failed });
       return jobs;
     },
     async completePublication(id: string, leaseToken: string): Promise<boolean> {

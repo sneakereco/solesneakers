@@ -99,3 +99,18 @@ it("returns healthy leases from a mixed batch and quarantines incompatible facts
       })),
   );
 });
+it("reports quarantined and fenced invalid rows to the drain for exact claim accounting", async () => {
+  const raw = { publication_id: id, lease_token: id, fact: {} };
+  const rpc = jest
+    .fn()
+    .mockResolvedValueOnce({ data: [raw, raw], error: null })
+    .mockResolvedValueOnce({ data: true, error: null })
+    .mockResolvedValueOnce({ data: false, error: null });
+  const notify = jest.fn();
+  const repo = createDeliveryRepository(
+    { rpc } as unknown as AdminSupabaseClient,
+    base.datasetId,
+  );
+  expect(await repo.claimPublications(50, 30, notify)).toEqual([]);
+  expect(notify).toHaveBeenCalledWith({ failed: 1, deferred: 1 });
+});

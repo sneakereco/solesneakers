@@ -1,3 +1,4 @@
+import { scheduleAnalyticsDrain } from "@/Modules/Analytics/Source/Features/EventDelivery/delivery-runtime";
 import { NextResponse } from "next/server";
 
 import { getRequestIdFromHeaders } from "@/lib/http/request-id";
@@ -58,6 +59,7 @@ export async function POST(request: Request) {
       createSquareShippingSyncDependencies(supabase),
     );
 
+    if ("duplicate" in result && !result.duplicate) scheduleAnalyticsDrain();
     return NextResponse.json({ ok: true }, { headers: NO_STORE_HEADERS });
   } catch (error) {
     logError(error, {

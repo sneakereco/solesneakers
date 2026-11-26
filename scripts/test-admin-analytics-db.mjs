@@ -1,3 +1,4 @@
+import { testReportingHistory } from "./test-admin-analytics-history.mjs";
 import { testCommerceSources } from "./test-admin-analytics-sources.mjs";
 import assert from "node:assert/strict";
 import { randomUUID } from "node:crypto";
@@ -105,6 +106,7 @@ try {
     (await db.query("select pg_try_advisory_lock(25111800) as locked")).rows[0].locked,
     "another fixture runner is active",
   );
+  await testReportingHistory(db);
   await testCommerceSources(db, worker);
   await db.query(
     "insert into public.analytics_datasets(dataset_id,environment,activated_at) values ($1,'staging',$2)",

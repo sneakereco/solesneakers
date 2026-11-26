@@ -1,6 +1,10 @@
 import "server-only";
 
 import { z } from "zod";
+import {
+  acquisitionDimensionsSchema,
+  privateTrackingSchema,
+} from "../CommerceFacts/repository";
 import { factFields, factPayloadSchemas, type FactKind } from "../CommerceFacts/contract";
 
 import {
@@ -125,6 +129,14 @@ export async function captureBatch(
     },
   }));
 
+  return sendBatch(batch, deps, config);
+}
+
+async function sendBatch(
+  batch: Record<string, unknown>[],
+  deps: CaptureDependencies,
+  config: ServerAnalyticsConfig,
+): Promise<CaptureResult> {
   const response = await requestPostHogJson(
     `${config.host}/batch/`,
     {
@@ -146,4 +158,58 @@ export async function captureBatch(
     return { status: "retryable", reason: "rate-limited" };
   }
   return { status: "accepted", count: batch.length };
+}
+const trackedPurchase = z.strictObject({
+  uuid,
+  timestamp,
+  datasetId: factFields.datasetId,
+  orderId: uuid,
+  visitorId: privateTrackingSchema.shape.visitorId,
+  sessionId: uuid,
+  device: privateTrackingSchema.shape.device,
+  discovery: acquisitionDimensionsSchema.nullable(),
+  purchaseSession: acquisitionDimensionsSchema.nullable(),
+});
+
+export async function captureTrackedPurchase(
+  input: z.infer<typeof trackedPurchase>,
+  deps: CaptureDependencies,
+): Promise<CaptureResult> {
+  if (!isServerAnalyticsConfig(deps.config))
+    return { status: "configuration-failure", reason: "not-configured" };
+  const checked = trackedPurchase.safeParse(input);
+  if (!checked.success || checked.data.datasetId !== "sole-" + deps.config.environment)
+    return { status: "permanent-failure", reason: "invalid-events" };
+  const row = checked.data;
+  const properties: Record<string, unknown> = {
+    schema_version: 2,
+    storefront: "sole",
+    dataset_id: row.datasetId,
+    environment: deps.config.environment,
+    order_id: row.orderId,
+    device: row.device,
+    $session_id: row.sessionId,
+    $geoip_disable: true,
+    $process_person_profile: false,
+  };
+  for (const [prefix, dimensions] of [
+    ["discovery_", row.discovery],
+    ["session_", row.purchaseSession],
+  ] as const) {
+    for (const [key, value] of Object.entries(dimensions ?? {}))
+      properties[prefix + key] = value;
+  }
+  return sendBatch(
+    [
+      {
+        uuid: row.uuid,
+        event: "purchase_confirmed",
+        timestamp: row.timestamp,
+        distinct_id: row.visitorId,
+        properties,
+      },
+    ],
+    deps,
+    deps.config,
+  );
 }

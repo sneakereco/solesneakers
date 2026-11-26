@@ -93,6 +93,7 @@ describe("checkSiteLock", () => {
       "/api/webhooks/shippo",
       "/api/cron/expire-checkouts",
       "/api/cron/checkout-notifications",
+      "/api/cron/analytics",
       "/api/healthz",
       "/api/readyz",
     ]) {
