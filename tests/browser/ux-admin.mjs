@@ -876,9 +876,30 @@ try {
     "shipping_order_not_fulfillment_ready",
     "shipping_label_already_purchased",
     "shipping_label_purchased_without_tracking",
+    "storage unavailable",
+    "storage discarded",
+    "storage quota",
+    "storage unknown transition",
     "interrupted",
   ]) {
     await check("review label " + code, async (page) => {
+      if (code.startsWith("storage ")) {
+        await page.addInitScript((mode) => {
+          const original = Storage.prototype.setItem;
+          Storage.prototype.setItem = function (key, value) {
+            if (key.startsWith("admin-check:label:")) {
+              if (mode === "storage discarded") return;
+              if (
+                mode === "storage unavailable" ||
+                (mode === "storage quota" && value.length > 7) ||
+                (mode === "storage unknown transition" && this.getItem(key) !== null)
+              )
+                throw new DOMException("Storage unavailable", "QuotaExceededError");
+            }
+            return original.call(this, key, value);
+          };
+        }, code);
+      }
       let writes = 0,
         checks = 0;
       await page.route("**/api/admin/**", async (r) => {
@@ -906,17 +927,20 @@ try {
           });
         }
         writes++;
-        if (code === "shipping_label_purchased_without_tracking")
+        if (
+          code === "shipping_label_purchased_without_tracking" ||
+          code === "storage quota"
+        )
           return r.fulfill({
             status: 502,
             json: {
-              code,
+              code: "shipping_label_purchased_without_tracking",
               error:
                 "Label purchase succeeded but returned no tracking number. Please contact support.",
               requestId: "fixture-support",
             },
           });
-        return code === "interrupted"
+        return code === "interrupted" || code === "storage unknown transition"
           ? r.abort()
           : r.fulfill({
               status: 409,
@@ -933,7 +957,35 @@ try {
       await page.getByRole("button", { name: /get shipping rates/i }).click();
       const buy = page.getByRole("button", { name: "Purchase shipping label" });
       await buy.click();
-      if (code === "shipping_order_not_fulfillment_ready") {
+      if (code === "storage unavailable" || code === "storage discarded") {
+        await expect(page.getByRole("alert")).toContainText(/tab storage/i);
+        expect(writes).toBe(0);
+        return;
+      }
+      if (code === "storage quota" || code === "storage unknown transition") {
+        for (const reload of [false, true]) {
+          if (reload) await openUxHarness(page, bundle, "https://ux.test/label");
+          expect(
+            await page.evaluate(() =>
+              sessionStorage.getItem("admin-check:label:fixture-order"),
+            ),
+          ).toBe("support");
+          await page.getByRole("button", { name: "Check order label" }).click();
+          await expect(
+            page.getByRole("region", { name: "Label recovery" }).getByRole("status"),
+          ).toBeVisible();
+          await expect(
+            page.getByRole("region", { name: "Label recovery" }),
+          ).toContainText(/support/i);
+          await expect(
+            page.getByRole("checkbox", { name: /verified in Shippo/i }),
+          ).toHaveCount(0);
+          await expect(
+            page.getByRole("button", { name: "Resolve label check" }),
+          ).toHaveCount(0);
+          await expect(buy).toBeDisabled();
+        }
+      } else if (code === "shipping_order_not_fulfillment_ready") {
         await expect(page.getByRole("alert")).toContainText("not paid");
         await expect(page.getByText(/purchase is unconfirmed/i)).toHaveCount(0);
       } else if (code === "shipping_label_purchased_without_tracking") {
@@ -963,6 +1015,8 @@ try {
         await expect.poll(() => checks).toBe(1);
         await expect(buy).toBeDisabled();
         if (code === "interrupted") {
+          await openUxHarness(page, bundle, "https://ux.test/label");
+          await page.getByRole("button", { name: "Check order label" }).click();
           await page.getByRole("checkbox", { name: /verified in Shippo/i }).check();
           await page.getByRole("button", { name: "Resolve label check" }).click();
           await expect(

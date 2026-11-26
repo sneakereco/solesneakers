@@ -20,6 +20,26 @@ export function rememberProviderCheck(key: string, evidence: string | null) {
     /* In-memory protection remains available. */
   }
 }
+/** Admit or relax a provider guard only when its prior and next values can be verified in this tab. */
+export function transitionProviderCheck(
+  key: string,
+  expected: string | null,
+  next: string | null,
+) {
+  const storageKey = "admin-check:" + key;
+  if (pendingChecks.has(key) && pendingChecks.get(key) !== expected) return false;
+  try {
+    if (sessionStorage.getItem(storageKey) !== expected) return false;
+    if (next === null) sessionStorage.removeItem(storageKey);
+    else sessionStorage.setItem(storageKey, next);
+    if (sessionStorage.getItem(storageKey) !== next) return false;
+  } catch {
+    return false;
+  }
+  if (next === null) pendingChecks.delete(key);
+  else pendingChecks.set(key, next);
+  return true;
+}
 export function pendingProviderCheck(key: string) {
   if (pendingChecks.has(key)) return pendingChecks.get(key);
   try {

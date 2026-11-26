@@ -28,6 +28,7 @@ export function LabelRecovery({
     ? evidence?.slice("purchased_without_tracking:".length)
     : null;
   const existing = evidence === "existing";
+  const canResolve = evidence === "unknown";
   const hasLabel = !!(
     order?.label_url ||
     order?.tracking_number ||
@@ -57,7 +58,9 @@ export function LabelRecovery({
           ? "The label was purchased through Shippo without a tracking number. Contact support to recover tracking for this order."
           : existing
             ? "This order already has label or fulfillment evidence."
-            : "Check the order and the matching Shippo transaction before purchasing another label."}
+            : canResolve
+              ? "Check the order and the matching Shippo transaction before purchasing another label."
+              : "Contact support with the order number to verify this label purchase."}
       </p>
       {supportReference && <p>Support reference: {supportReference}</p>}
       <ActionButton
@@ -78,7 +81,7 @@ export function LabelRecovery({
               : "No label is recorded on this order. Check Shippo for a purchase."}
         </p>
       )}
-      {!purchasedWithoutTracking && !existing && order && !hasLabel && (
+      {canResolve && order && !hasLabel && (
         <>
           <label className="flex min-h-11 items-center gap-2">
             <input

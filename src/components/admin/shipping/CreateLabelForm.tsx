@@ -5,6 +5,7 @@ import { useAsyncAction } from "@/components/ui/useAsyncAction";
 import {
   adminCommand,
   rememberProviderCheck,
+  transitionProviderCheck,
   pendingProviderCheck,
 } from "@/components/admin/admin-command";
 import { useId } from "react";
@@ -378,8 +379,9 @@ export function CreateLabelForm({
     }
   };
 
+  const checkKey = "label:" + orderId;
   const purchase = async () => {
-    if (pendingProviderCheck("label:" + orderId)) {
+    if (pendingProviderCheck(checkKey)) {
       setUnknown(true);
       return;
     }
@@ -388,10 +390,15 @@ export function CreateLabelForm({
       return;
     }
 
+    if (!transitionProviderCheck(checkKey, null, "support")) {
+      setError(
+        "Label purchase was not submitted. Enable tab storage in this browser and try again. If this persists, contact support with the order number.",
+      );
+      return;
+    }
     setError("");
     setSuccess("");
     setIsPurchasing(true);
-    rememberProviderCheck("label:" + orderId, "pending");
 
     try {
       const { response: res, data } = await adminCommand<{
@@ -408,12 +415,12 @@ export function CreateLabelForm({
 
       if (res.ok && data?.success) {
         setSuccess("Label purchased.");
-        rememberProviderCheck("label:" + orderId, null);
+        transitionProviderCheck(checkKey, "support", null);
         onSuccess();
         return;
       }
       if (res.status === 409 && data?.code === "shipping_order_not_fulfillment_ready") {
-        rememberProviderCheck("label:" + orderId, null);
+        transitionProviderCheck(checkKey, "support", null);
         setRates([]);
         setSelectedRateId(null);
         setShipmentId(null);
@@ -425,7 +432,7 @@ export function CreateLabelForm({
         data?.code === "shipping_label_purchased_without_tracking"
       ) {
         rememberProviderCheck(
-          "label:" + orderId,
+          checkKey,
           "purchased_without_tracking:" + (data.requestId ?? ""),
         );
         setUnknown(true);
@@ -436,7 +443,7 @@ export function CreateLabelForm({
         return;
       }
       if (res.status === 409 && data?.code === "shipping_label_already_purchased") {
-        rememberProviderCheck("label:" + orderId, "existing");
+        rememberProviderCheck(checkKey, "existing");
         setUnknown(true);
         setError(data.error ?? "This order already has a shipping label.");
         onExistingLabel?.(
@@ -445,12 +452,13 @@ export function CreateLabelForm({
         return;
       }
       if (res.status >= 400 && res.status < 500 && res.status !== 409) {
-        rememberProviderCheck("label:" + orderId, null);
+        transitionProviderCheck(checkKey, "support", null);
         setError(getErrorMessage(data?.error ?? "Label purchase declined."));
         return;
       }
       throw new Error("Unconfirmed purchase");
     } catch {
+      transitionProviderCheck(checkKey, "support", "unknown");
       setUnknown(true);
       setError(
         "Label purchase is unconfirmed. Check this order and the carrier transaction history before buying another label.",
@@ -462,7 +470,7 @@ export function CreateLabelForm({
   };
 
   const needsCheck =
-    unknown || (Boolean(pendingProviderCheck("label:" + orderId)) && !isPurchasing);
+    unknown || (Boolean(pendingProviderCheck(checkKey)) && !isPurchasing);
   const hasAddressErrors = Object.keys(addressErrors).length > 0;
 
   return (
@@ -797,9 +805,14 @@ export function CreateLabelForm({
                 <LabelRecovery
                   key={orderId}
                   orderId={orderId}
-                  evidence={pendingProviderCheck("label:" + orderId)}
+                  evidence={pendingProviderCheck(checkKey)}
                   onResolve={() => {
-                    rememberProviderCheck("label:" + orderId, null);
+                    if (!transitionProviderCheck(checkKey, "unknown", null)) {
+                      setError(
+                        "Unable to verify the updated tab storage. Check browser storage access and try again, or contact support with the order number.",
+                      );
+                      return;
+                    }
                     setUnknown(false);
                     setError("");
                     setRates([]);
