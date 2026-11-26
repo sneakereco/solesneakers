@@ -7,6 +7,8 @@ const { values } = parseArgs({
   options: {
     mode: { type: "string" },
     environment: { type: "string" },
+    "start-instant": { type: "string" },
+    "end-instant": { type: "string" },
     from: { type: "string" },
     to: { type: "string" },
   },
@@ -28,6 +30,9 @@ const { resolveActiveDataset } = require(feature + "Configuration/dataset.ts");
 const { createFactRepository } = require(feature + "CommerceFacts/repository.ts");
 const { executePostHogQuery, PostHogQueryError } = require(
   feature + "Reporting/posthog-query.ts",
+);
+const { SNAPSHOT_LIMIT, reconciliationWindow } = require(
+  feature + "EventDelivery/reconciliation-evidence.ts",
 );
 const { readHistoryEvidence } = require(feature + "EventDelivery/history-source.ts");
 const { reconcileAnalyticsFacts, reconciliationEndpoint } = require(
@@ -68,10 +73,15 @@ try {
   const now = () => new Date();
   const def = getDefaultCalendarRange(now());
   category = "invalid-range";
-  const range = resolveCalendarRange(
-    { ...def, from: values.from ?? def.from, to: values.to ?? def.to },
-    now(),
-  );
+  const precise =
+    values["start-instant"] !== undefined || values["end-instant"] !== undefined;
+  if (precise && (values.from !== undefined || values.to !== undefined)) throw Error();
+  const range = precise
+    ? reconciliationWindow(values["start-instant"], values["end-instant"])
+    : resolveCalendarRange(
+        { ...def, from: values.from ?? def.from, to: values.to ?? def.to },
+        now(),
+      );
   const project =
     config.projectId.length <= 2 ? "***" : "***" + config.projectId.slice(-2);
   const query = (q) => executePostHogQuery(q, { config, now, fetch });
@@ -111,8 +121,9 @@ try {
       query,
       observation,
       source: async (dataset, start, end) => {
-        const { data, error } = await db.rpc("analytics_reconciliation_source", {
+        const { data, error } = await db.rpc("analytics_reconciliation_snapshot", {
           p_dataset_id: dataset,
+          p_limit: SNAPSHOT_LIMIT,
           p_start: start,
           p_end: end,
         });

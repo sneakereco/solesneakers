@@ -2023,6 +2023,10 @@ export type Database = {
         Args: { p_dataset_id: string }
         Returns: Json
       }
+      analytics_reconciliation_snapshot: {
+        Args: { p_dataset_id: string; p_end: string; p_limit: number; p_start: string }
+        Returns: Json
+      }
       analytics_reconciliation_source: {
         Args: { p_dataset_id: string; p_end: string; p_start: string }
         Returns: Json

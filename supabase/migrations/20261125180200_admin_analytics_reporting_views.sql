@@ -80,8 +80,8 @@ create function public.analytics_reconciliation_source(p_dataset_id text,p_start
 language sql stable security invoker set search_path='' as $$
  select jsonb_build_object('revisions',count(*),'facts',count(distinct v.fact_id),
   'pending',count(*) filter(where q.status='pending'),'leased',count(*) filter(where q.status='leased'),
-  'failed',count(*) filter(where q.status='failed'),'oldestOutstandingAt',min(v.export_updated_at) filter(where q.status<>'delivered'))
- from public.analytics_fact_versions v join public.analytics_publication_outbox q using(dataset_id,fact_id,revision)
+  'failed',count(*) filter(where q.status='failed'),'oldestOutstandingAt',min(v.export_updated_at) filter(where q.status is distinct from 'delivered'))
+ from public.analytics_fact_versions v left join public.analytics_publication_outbox q using(dataset_id,fact_id,revision)
  where v.dataset_id=p_dataset_id and v.effective_at>=p_start and v.effective_at<p_end
 $$;
 revoke all on function public.analytics_reconciliation_source(text,timestamptz,timestamptz) from public,anon,authenticated;
@@ -109,3 +109,26 @@ language sql stable security definer set search_path='' as $$
 $$;
 revoke all on function public.analytics_read_history_evidence(text) from public,anon,authenticated;
 grant execute on function public.analytics_read_history_evidence(text) to service_role;
+
+-- One MVCC source snapshot. The independent total detects over-cap windows; callers may
+-- narrow their date range but cannot declare a partial comparison matched.
+create function public.analytics_reconciliation_snapshot(p_dataset_id text,p_start timestamptz,p_end timestamptz,p_limit integer)
+returns jsonb language plpgsql stable security invoker set search_path='' as $$
+begin
+ if p_limit is null or p_limit not between 1 and 2000 or p_start is null or p_end is null or p_start>=p_end then
+   raise exception 'Invalid reconciliation window' using errcode='22023';
+ end if;
+ if not exists(select from public.analytics_datasets d where d.dataset_id=p_dataset_id and d.dataset_id='sole-'||d.environment
+   and d.financial_source='warehouse' and d.schema_version=2 and d.activated_at<=statement_timestamp()) then
+   raise exception 'Reconciliation dataset unavailable' using errcode='22023';
+ end if;
+ return public.analytics_reconciliation_source(p_dataset_id,p_start,p_end) || jsonb_build_object(
+ 'publications',(select coalesce(jsonb_agg(jsonb_build_object('publicationId',s.id,'fact',s.fact) order by s.fact_id,s.revision),'[]'::jsonb)
+ from (select q.id,v.fact,v.fact_id,v.revision from public.analytics_fact_versions v
+ left join public.analytics_publication_outbox q using(dataset_id,fact_id,revision)
+ where v.dataset_id=p_dataset_id and v.effective_at>=p_start and v.effective_at<p_end
+ order by v.fact_id,v.revision limit p_limit) s));
+end;
+$$;
+revoke all on function public.analytics_reconciliation_snapshot(text,timestamptz,timestamptz,integer) from public,anon,authenticated;
+grant execute on function public.analytics_reconciliation_snapshot(text,timestamptz,timestamptz,integer) to service_role;

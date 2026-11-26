@@ -45,6 +45,60 @@ export async function testReportingHistory(db) {
       ])
     ).rows[0].value;
     assert.deepEqual([scope.facts, scope.revisions, scope.pending], [1, 3, 3]);
+    const snapshot = async (limit) =>
+      (
+        await db.query(
+          "select public.analytics_reconciliation_snapshot($1,$2,$3,$4) as result",
+          [ds, t, "2026-01-01", limit],
+        )
+      ).rows[0].result;
+    await db.query("savepoint snapshot_bounds");
+    await assert.rejects(snapshot(2001), { code: "22023" });
+    await db.query("rollback to savepoint snapshot_bounds");
+    await assert.rejects(
+      db.query("select public.analytics_reconciliation_snapshot('missing',$1,$2,1)", [
+        t,
+        "2026-01-01",
+      ]),
+      { code: "22023" },
+    );
+    await db.query("rollback to savepoint snapshot_bounds");
+    const evidence = await snapshot(3);
+    assert.equal(evidence.revisions, 3);
+    assert.deepEqual(
+      evidence.publications.map((p) => p.fact.revision),
+      [1, 2, 3],
+    );
+    assert.deepEqual(evidence.publications[2].fact, { ...fact, revision: 3 });
+    assert.equal(new Set(evidence.publications.map((p) => p.publicationId)).size, 3);
+    assert.equal((await snapshot(2)).publications.length, 2);
+    await db.query("savepoint missing_publication");
+    await db.query(
+      "delete from public.analytics_publication_outbox where dataset_id=$1 and revision=2",
+      [ds],
+    );
+    const unpublishable = await snapshot(3);
+    assert.equal(unpublishable.revisions, 3);
+    assert.equal(
+      unpublishable.publications.find((p) => p.fact.revision === 2).publicationId,
+      null,
+    );
+    await db.query("rollback to savepoint missing_publication");
+    for (const role of [
+      "anon",
+      "authenticated",
+      "sole_analytics_staging_reader",
+      "service_role",
+    ]) {
+      const auth = await db.query(
+        "select has_function_privilege($1,'public.analytics_reconciliation_snapshot(text,timestamptz,timestamptz,integer)','execute') as ok",
+        [role],
+      );
+      assert.equal(auth.rows[0].ok, role === "service_role");
+    }
+    console.log(
+      "PASS service-only bounded source reconciliation preserves all exact revision payloads and UUIDs",
+    );
     for (const role of ["sole_analytics_staging_reader", "anon", "authenticated"]) {
       const accessible = async (s) =>
         (await db.query("select has_table_privilege($1,$2,'select') as ok", [role, s]))

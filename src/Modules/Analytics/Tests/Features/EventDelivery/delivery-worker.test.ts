@@ -1,3 +1,4 @@
+import type { PublishedEvent } from "../../../Source/Features/EventDelivery/posthog-capture";
 import { reconcileAnalyticsFacts } from "../../../Source/Features/EventDelivery/reconcile";
 import { executePostHogQuery } from "../../../Source/Features/Reporting/posthog-query";
 import { resolveCalendarRange } from "../../../Source/Features/ReportContract/calendar-range";
@@ -161,10 +162,16 @@ it("bounds a stalled claim and makes no later provider call", async () => {
 it("reconciles replay after the provider received a batch whose acknowledgement was lost", async () => {
   const versions = [job(), job(2)];
   const first = setup(versions);
-  const seen = new Map<string, number>();
+  type WireEvent = {
+    uuid: string;
+    distinct_id: string;
+    timestamp: string;
+    properties: PublishedEvent["properties"];
+  };
+  const seen = new Map<string, WireEvent>();
   function ingest(body: unknown) {
     const { batch } = JSON.parse(String(body));
-    for (const e of batch) seen.set(e.uuid, e.properties.fact_revision);
+    for (const e of batch as WireEvent[]) seen.set(e.uuid, e);
   }
   first.fetch.mockImplementation((_, request) => {
     ingest(request?.body);
@@ -180,18 +187,92 @@ it("reconciles replay after the provider received a batch whose acknowledgement 
     return Promise.resolve(Response.json({ status: 1 }));
   });
   expect((await deliverAnalyticsBatch(recovery, opts)).delivered).toBe(2);
-  const provider = mockFetch().mockImplementation(() =>
-    Promise.resolve(
-      Response.json({
-        name: "sole_analytics_reconciliation",
-        execution_id: randomUUID(),
-        endpoint_version: 1,
+  const provider = mockFetch().mockImplementation((url) => {
+    const name = String(url).split("/").at(-3);
+    const columns = [
+      "dataset_id",
+      "environment",
+      "fact_id",
+      "revision",
+      "kind",
+      "effective_at",
+      "recorded_at",
+      "currency",
+      "order_id",
+      "buyer_key",
+      "payload",
+    ];
+    function factRow(f: LeasedPublication["fact"]) {
+      return [
+        f.datasetId,
+        "staging",
+        f.factId,
+        f.revision,
+        f.kind,
+        f.effectiveAt,
+        f.recordedAt,
+        f.currency,
+        f.orderId,
+        f.buyerKey,
+        f.payload,
+      ];
+    }
+    let packet: { columns: string[]; results: unknown[][] };
+    if (name === "sole_analytics_reconciliation_raw") {
+      packet = {
+        columns: [
+          ...columns,
+          "publication_id",
+          "actor",
+          "event_time",
+          "storefront",
+          "schema_version",
+          "snapshot_rows",
+        ],
+        results: Array.from(seen.values(), (e) => {
+          const p = e.properties;
+          return [
+            p.dataset_id,
+            p.environment,
+            p.fact_id,
+            p.fact_revision,
+            p.fact_kind,
+            p.effective_at,
+            p.recorded_at,
+            p.currency,
+            p.order_id,
+            p.buyer_key,
+            p.payload,
+            e.uuid,
+            e.distinct_id,
+            e.timestamp,
+            p.storefront,
+            p.schema_version,
+            seen.size,
+          ];
+        }),
+      };
+    } else if (name === "sole_analytics_reconciliation_warehouse") {
+      packet = {
+        columns: [...columns, "snapshot_rows"],
+        results: [[...factRow(versions[1].fact), 1]],
+      };
+    } else {
+      packet = {
         columns: ["visible_revisions", "warehouse_facts"],
         results: [[seen.size, 1]],
+      };
+    }
+    return Promise.resolve(
+      Response.json({
+        name,
+        execution_id: randomUUID(),
+        endpoint_version: 1,
+        ...packet,
         hasMore: false,
       }),
-    ),
-  );
+    );
+  });
   const range = resolveCalendarRange(
     { from: "2026-09-08", to: "2026-09-09", timezone: "America/New_York" },
     new Date("2026-11-01"),
@@ -200,6 +281,7 @@ it("reconciles replay after the provider received a batch whose acknowledgement 
     datasetId: "sole-staging",
     source: () =>
       Promise.resolve({
+        publications: versions.map((j) => ({ publicationId: j.id, fact: j.fact })),
         revisions: 2,
         facts: 1,
         pending: 0,

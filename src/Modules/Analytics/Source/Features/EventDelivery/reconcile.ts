@@ -5,15 +5,28 @@ import type { ResolvedRange } from "../ReportContract/types";
 import type { CompiledQuery } from "../Reporting/query-contract";
 import { REPORT_ENDPOINT_VERSIONS } from "../Reporting/query-contract";
 import { warehouseFreshness } from "./history-source";
+import {
+  compareEvidence,
+  evidenceInvocation,
+  expectedEvidence,
+  IncompleteEvidence,
+  reconciliationRawEndpoint,
+  reconciliationWarehouseEndpoint,
+  reconciliationVariables,
+  reconciliationWindow,
+  SNAPSHOT_LIMIT,
+  sourcePublication,
+} from "./reconciliation-evidence";
+export {
+  reconciliationRawEndpoint,
+  reconciliationWarehouseEndpoint,
+} from "./reconciliation-evidence";
 
 const name = "sole_analytics_reconciliation";
 export const reconciliationEndpoint = {
   name,
   version: REPORT_ENDPOINT_VERSIONS[name],
-  variables: ["dataset_id", "start_inclusive", "end_exclusive"].map((code_name) => ({
-    code_name,
-    type: "String" as const,
-  })),
+  variables: reconciliationVariables,
   sql: `SELECT
  (SELECT uniqExact(tuple(properties.fact_id, properties.fact_revision)) FROM events
    WHERE event = 'sole_analytics_fact_v2' AND properties.storefront = 'sole' AND properties.schema_version = 2
@@ -45,41 +58,96 @@ type ReconciliationDependencies = {
   observation?: { sourceFreshThrough: string; observedAt: string } | null;
   now?: () => Date;
 };
+const snapshot = sourceCoverageSchema.extend({
+  publications: z.array(sourcePublication).max(SNAPSHOT_LIMIT),
+});
 export async function reconcileAnalyticsFacts(
-  range: ResolvedRange,
+  range: Pick<ResolvedRange, "startInclusive" | "endExclusive">,
   deps: ReconciliationDependencies,
 ) {
   if (!Object.values(DATASET_IDS).some((id) => id === deps.datasetId))
     throw new Error("Invalid reconciliation dataset");
-  const [local, provider] = await Promise.all([
-    deps.source(deps.datasetId, range.startInclusive, range.endExclusive),
-    deps.query({
-      endpoint: name,
-      version: reconciliationEndpoint.version,
-      variables: {
-        dataset_id: deps.datasetId,
-        start_inclusive: range.startInclusive,
-        end_exclusive: range.endExclusive,
-      },
-      limit: 1,
-      offset: 0,
-    }),
-  ]);
-  const source = sourceCoverageSchema.parse(local);
-  const [[visibleRevisions, warehouseFacts]] = response.parse(provider).results;
-  const asOf = deps.now?.() ?? new Date();
-  const freshness = warehouseFreshness(deps.observation ?? null, asOf);
-  return {
-    status:
-      source.revisions === visibleRevisions && source.facts === warehouseFacts
-        ? ("matched" as const)
-        : ("mismatch" as const),
+  const verifiedRange = reconciliationWindow(range.startInclusive, range.endExclusive);
+  const variables = {
+    dataset_id: deps.datasetId,
+    start_inclusive: verifiedRange.startInclusive,
+    end_exclusive: verifiedRange.endExclusive,
+  };
+  const asOf = deps.now?.() ?? new Date(),
+    freshness = warehouseFreshness(deps.observation ?? null, asOf);
+  let source: z.infer<typeof sourceCoverageSchema> | null = null,
+    visibleRevisions: number | null = null,
+    warehouseFacts: number | null = null;
+  const summary = () => ({
     source,
     visibleRevisions,
     warehouseFacts,
     queryAsOf: asOf.toISOString(),
     sourceFreshThrough: freshness.sourceFreshThrough,
     freshness: freshness.status,
-  };
+  });
+  try {
+    const [local, provider] = await Promise.all([
+      deps.source(deps.datasetId, range.startInclusive, range.endExclusive),
+      deps.query({
+        endpoint: name,
+        version: reconciliationEndpoint.version,
+        variables,
+        limit: 1,
+        offset: 0,
+      }),
+    ]);
+    const checked = snapshot.parse(local);
+    const { publications, ...counts } = checked;
+    source = counts;
+    [[visibleRevisions, warehouseFacts]] = response.parse(provider).results;
+    if (Math.max(source.revisions, visibleRevisions, warehouseFacts) > SNAPSHOT_LIMIT)
+      throw new IncompleteEvidence("oversized-window");
+    const expected = expectedEvidence(
+      publications,
+      deps.datasetId,
+      range.startInclusive,
+      range.endExclusive,
+    );
+    if (
+      expected.raw.size !== source.revisions ||
+      expected.warehouse.size !== source.facts
+    )
+      throw new IncompleteEvidence("missing-rows");
+    const [raw, warehouse] = await Promise.all([
+      deps.query(evidenceInvocation(reconciliationRawEndpoint, variables)),
+      deps.query(evidenceInvocation(reconciliationWarehouseEndpoint, variables)),
+    ]);
+    const differences = {
+      raw: compareEvidence(raw, "raw", expected.raw, visibleRevisions),
+      warehouse: compareEvidence(
+        warehouse,
+        "warehouse",
+        expected.warehouse,
+        warehouseFacts,
+      ),
+    };
+    const mismatch = Object.values(differences).some(
+      (d) => d.missing + d.extra + d.conflicting > 0,
+    );
+    return {
+      ...summary(),
+      status: mismatch ? ("mismatch" as const) : ("matched" as const),
+      differences,
+    };
+  } catch (error) {
+    const reason =
+      error instanceof IncompleteEvidence
+        ? error.reason
+        : error instanceof z.ZodError || error instanceof SyntaxError
+          ? "invalid-evidence"
+          : "source-or-endpoint-unavailable";
+    return {
+      ...summary(),
+      status: "incomplete" as const,
+      reason,
+      ...(reason === "oversized-window" ? { action: "narrow-interval" as const } : {}),
+    };
+  }
 }
 export type ReconciliationResult = Awaited<ReturnType<typeof reconcileAnalyticsFacts>>;
