@@ -1,5 +1,6 @@
 // app/store/[productId]/page.tsx
 
+import { withRequestDeadline } from "@/lib/http/request-deadline";
 import { unstable_cache } from "next/cache";
 import { notFound } from "next/navigation";
 import type { Metadata } from "next";
@@ -13,15 +14,19 @@ const PRODUCT_REVALIDATE_SECONDS = 60;
 export const revalidate = 60;
 
 const getCachedProduct = (productId: string) =>
-  unstable_cache(
-    async () => {
-      const supabase = createSupabasePublicClient();
-      const repo = new ProductRepository(supabase);
-      return repo.getById(productId);
-    },
-    ["storefront", "product", productId],
-    { revalidate: PRODUCT_REVALIDATE_SECONDS, tags: [`product:${productId}`] },
-  )();
+  withRequestDeadline((signal) =>
+    unstable_cache(
+      async () => {
+        const supabase = createSupabasePublicClient();
+        const repo = new ProductRepository(supabase);
+        const product = await repo.getById(productId);
+        signal.throwIfAborted();
+        return product;
+      },
+      ["storefront", "product", productId],
+      { revalidate: PRODUCT_REVALIDATE_SECONDS, tags: [`product:${productId}`] },
+    )(),
+  );
 
 // Generate metadata for SEO and social sharing
 export async function generateMetadata({

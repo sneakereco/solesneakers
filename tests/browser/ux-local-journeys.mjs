@@ -5,6 +5,8 @@ import { chromium, expect } from "@playwright/test";
 import { createClient } from "@supabase/supabase-js";
 import { measureSurfaces } from "./helpers/measure-local-surfaces.mjs";
 import { checkLocalSession, checkLocalLogout } from "./helpers/check-local-session.mjs";
+import { checkLocalInventoryReads } from "./helpers/check-local-inventory-reads.mjs";
+import { checkLocalSegment } from "./helpers/check-local-segment.mjs";
 import { checkLocalCatalog } from "./helpers/check-local-catalog.mjs";
 import { startLocalAcceptance } from "./helpers/local-next-acceptance.mjs";
 
@@ -117,8 +119,7 @@ async function checkSpecialRoutes(shopper) {
     1,
   );
   const missing = app.origin + "/store/" + randomUUID();
-  await shopper.request.get(missing);
-  await special.goto(missing, { waitUntil: "domcontentloaded" });
+  await checkLocalSegment(app, special, missing);
   await expect(special.getByRole("main")).toHaveCount(1);
   await expect(special.getByRole("heading", { name: /find this page/i })).toBeVisible();
   await special.evaluate(() => {
@@ -287,7 +288,9 @@ try {
     );
     console.log("PASS actual soft login and session header");
 
-    if (process.argv.includes("--logout")) {
+    if (process.argv.includes("--inventory-reads")) {
+      await checkLocalInventoryReads(app, await area(admin), id);
+    } else if (process.argv.includes("--logout")) {
       await checkLocalLogout(app, shopper);
     } else {
       const adminPage = await area(admin);
@@ -369,6 +372,7 @@ try {
       console.log("PASS rendered customer/admin at 320/390/768/1440 with one main");
       await checkLocalSession(app, shopper, admin, page);
       await checkSpecialRoutes(shopper);
+      await checkLocalInventoryReads(app, await area(admin), id);
       await page.setViewportSize({ width: 390, height: 844 });
       await checkLocalCatalog(app, page);
       await checkLocalLogout(app, shopper);

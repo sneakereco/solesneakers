@@ -1,9 +1,8 @@
 // app/admin/inventory/actions.ts
 "use server";
 
-import { createSupabaseServerClient } from "@/lib/supabase/server";
-import { requireAdmin } from "@/lib/auth/session";
-import { ensureTenantId } from "@/lib/auth/tenant";
+import { readInventoryData } from "./initial-read";
+
 import { ProductService } from "@/services/product-service";
 import type { Category, Condition } from "@/types/domain/product";
 
@@ -19,32 +18,30 @@ interface InventoryFilters {
 }
 
 export async function getInventoryProducts(filters: InventoryFilters = {}) {
-  const session = await requireAdmin();
-  const supabase = await createSupabaseServerClient();
-  const tenantId = await ensureTenantId(session, supabase);
+  return readInventoryData(async (supabase, tenantId) => {
+    const service = new ProductService(supabase);
 
-  const service = new ProductService(supabase);
+    const {
+      q,
+      category,
+      condition,
+      stockStatus = "in_stock",
+      page = 1,
+      limit = 100,
+    } = filters;
 
-  const {
-    q,
-    category,
-    condition,
-    stockStatus = "in_stock",
-    page = 1,
-    limit = 100,
-  } = filters;
+    const result = await service.listProducts({
+      q,
+      category: category && category !== "all" ? [category] : undefined,
+      condition: condition && condition !== "all" ? [condition] : undefined,
+      limit,
+      page,
+      includeOutOfStock: true, // Admin needs to see all products
+      stockStatus,
+      tenantId,
+      searchMode: "inventory",
+    });
 
-  const result = await service.listProducts({
-    q,
-    category: category && category !== "all" ? [category] : undefined,
-    condition: condition && condition !== "all" ? [condition] : undefined,
-    limit,
-    page,
-    includeOutOfStock: true, // Admin needs to see all products
-    stockStatus,
-    tenantId,
-    searchMode: "inventory",
+    return result;
   });
-
-  return result;
 }

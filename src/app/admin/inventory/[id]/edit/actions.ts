@@ -1,18 +1,13 @@
 // app/admin/inventory/[id]/edit/actions.ts
 "use server";
 
-import { createSupabaseServerClient } from "@/lib/supabase/server";
-import { requireAdmin } from "@/lib/auth/session";
+import { readInventoryData } from "../../initial-read";
+
 import { TagTaxonomyRepository } from "@/repositories/tag-taxonomy-repo";
 import { ProductService } from "@/services/product-service";
-import { ensureTenantId } from "@/lib/auth/tenant";
 
 export async function getEditFormInitialData(productId: string) {
-  try {
-    const session = await requireAdmin();
-    const supabase = await createSupabaseServerClient();
-    const tenantId = await ensureTenantId(session, supabase);
-
+  return readInventoryData(async (supabase, tenantId, signal) => {
     const productService = new ProductService(supabase);
     const taxonomyRepo = new TagTaxonomyRepository(supabase);
 
@@ -28,11 +23,13 @@ export async function getEditFormInitialData(productId: string) {
       taxonomyRepo.listSizes(tenantId),
     ]);
 
+    signal.throwIfAborted();
     if (product && !brandsData.some((brand) => brand.id === product.brand.id)) {
       brandsData.push({
         ...(await taxonomyRepo.getBrandById(product.brand.id))!,
       });
     }
+    signal.throwIfAborted();
     if (product?.model && !modelsData.some((model) => model.id === product.model?.id)) {
       const selectedModel = await taxonomyRepo.getModelById(product.model.id);
       if (selectedModel) {
@@ -44,6 +41,7 @@ export async function getEditFormInitialData(productId: string) {
         if (sizesData.some((size) => size.id === variant.size.id)) {
           continue;
         }
+        signal.throwIfAborted();
         const selectedSize = await taxonomyRepo.getSizeById(variant.size.id);
         if (selectedSize) {
           sizesData.push(selectedSize);
@@ -67,8 +65,5 @@ export async function getEditFormInitialData(productId: string) {
         sizeType: size.size_type,
       })),
     };
-  } catch (error) {
-    console.error("[getEditFormInitialData] Error:", error);
-    throw error; // Re-throw so Next.js shows proper error
-  }
+  });
 }

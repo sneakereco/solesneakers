@@ -97,7 +97,7 @@ const bundle = await compileUxHarness(
     const [retry,setRetry]=useState(false);
     const [completed]=useState(()=>new Promise(resolve=>{window.completeReset=resolve;}));
     const Fallback=routeErrors[view];
-    return retry ? use(completed) : <Fallback error={boundaryError} reset={()=>setRetry(true)} />;
+    return retry ? use(completed) : <Fallback error={boundaryError} reset={()=>{}} retry={()=>setRetry(true)} />;
   }
   function Fixture() {
     const [searchOpen, setSearchOpen] = useState(false);
@@ -912,9 +912,7 @@ try {
         return;
       }
       await page.getByRole("button", { name: "Try again" }).press("Enter");
-      await expect(
-        page.getByRole("status").filter({ hasText: "Loading destination" }),
-      ).toBeVisible();
+      await expect(page.getByRole("button", { name: /retrying/i })).toBeVisible();
       await page.evaluate(() => window.completeReset("Route recovered"));
       await expect(page.getByText("Route recovered", { exact: true })).toBeVisible();
     });

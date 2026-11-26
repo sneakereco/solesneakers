@@ -1,3 +1,4 @@
+import { withRequestDeadline } from "@/lib/http/request-deadline";
 import { pageMetadata } from "@/lib/metadata";
 
 import { FeedbackLink } from "@/components/ui/FeedbackLink";
@@ -14,25 +15,29 @@ type BrandOption = {
   label: string;
 };
 
-const listBrandsCached = unstable_cache(
-  async () => {
-    const supabase = createSupabasePublicClient();
-    const repository = new TagTaxonomyRepository(supabase);
-    const brands = await repository.listBrands();
+const listBrandsCached = () =>
+  withRequestDeadline((signal) =>
+    unstable_cache(
+      async () => {
+        const supabase = createSupabasePublicClient();
+        const repository = new TagTaxonomyRepository(supabase);
+        const brands = await repository.listBrands();
+        signal.throwIfAborted();
 
-    const seen = new Set<string>();
-    return brands.reduce<BrandOption[]>((entries, brand) => {
-      if (!brand.id || !brand.canonical_label || seen.has(brand.id)) {
-        return entries;
-      }
-      seen.add(brand.id);
-      entries.push({ id: brand.id, label: brand.canonical_label });
-      return entries;
-    }, []);
-  },
-  ["storefront", "brands"],
-  { revalidate: BRANDS_REVALIDATE_SECONDS, tags: ["products:list"] },
-);
+        const seen = new Set<string>();
+        return brands.reduce<BrandOption[]>((entries, brand) => {
+          if (!brand.id || !brand.canonical_label || seen.has(brand.id)) {
+            return entries;
+          }
+          seen.add(brand.id);
+          entries.push({ id: brand.id, label: brand.canonical_label });
+          return entries;
+        }, []);
+      },
+      ["storefront", "brands"],
+      { revalidate: BRANDS_REVALIDATE_SECONDS, tags: ["products:list"] },
+    )(),
+  );
 
 function buildBrandHref(brandId: string) {
   const params = new URLSearchParams();

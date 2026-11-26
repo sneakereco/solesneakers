@@ -2,6 +2,7 @@
 "use client";
 
 import Link from "next/link";
+import { RouteRetryButton } from "@/components/ui/RouteRetryButton";
 
 import { useEffect } from "react";
 
@@ -10,10 +11,10 @@ import { BRAND_NAME } from "@/config/constants/brand";
 
 export default function ErrorPage({
   error,
-  reset,
+  retry,
 }: {
   error: Error & { digest?: string };
-  reset: () => void;
+  retry: () => void;
 }) {
   useEffect(() => {
     logError(error, { layer: "frontend", event: "error_boundary" });
@@ -44,13 +45,10 @@ export default function ErrorPage({
           </p>
 
           <div className="mt-7 flex flex-wrap items-center justify-center gap-3">
-            <button
-              type="button"
-              onClick={() => reset()}
+            <RouteRetryButton
+              retry={retry}
               className="inline-flex items-center justify-center bg-zinc-950 px-5 py-3 text-sm font-semibold text-white transition-colors hover:bg-zinc-800 focus:outline-none focus:ring-2 focus:ring-zinc-400"
-            >
-              Try again
-            </button>
+            />
 
             <Link
               href="/"
