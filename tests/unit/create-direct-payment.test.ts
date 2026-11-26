@@ -1,3 +1,7 @@
+import type {
+  RecordOutcomeInput,
+  PaymentAttempt,
+} from "@/Modules/Checkout/Source/Features/Payments/attempt-contract";
 import { createDirectPaymentHandler } from "@/lib/checkout/create-direct-payment";
 import { validateShippingAddress } from "@/lib/shipping/validate-shipping-address";
 import { PaymentPermitStore } from "@/lib/checkout/payment-permit";
@@ -14,22 +18,23 @@ function request() {
 }
 
 function dependencies() {
+  const ready: PaymentAttempt = {
+    id: "attempt-1",
+    orderId: "order-1",
+    sequence: 1,
+    state: "ready",
+    method: "card",
+    amountCents: 11800,
+    currency: "USD",
+    squareIdempotencyKey: "11111111-1111-4111-8111-111111111111",
+    providerPaymentId: null,
+    requestDigest: null,
+  };
   return {
     getSession: jest.fn().mockResolvedValue({ user: { id: "account-1" } }),
     getAccess: jest.fn().mockResolvedValue({ open: true }),
     enqueueLegacyInquiry: jest.fn().mockResolvedValue(undefined),
-    readCurrentAttempt: jest.fn().mockResolvedValue({
-      id: "attempt-1",
-      orderId: "order-1",
-      sequence: 1,
-      state: "ready",
-      method: "card",
-      amountCents: 11800,
-      currency: "USD",
-      squareIdempotencyKey: "11111111-1111-4111-8111-111111111111",
-      providerPaymentId: null,
-      requestDigest: null,
-    }),
+    readCurrentAttempt: jest.fn().mockResolvedValue(ready),
     beginDispatch: jest.fn().mockResolvedValue({
       kind: "dispatch",
       attempt: {
@@ -40,7 +45,15 @@ function dependencies() {
         squareIdempotencyKey: "11111111-1111-4111-8111-111111111111",
       },
     }),
-    recordAttemptOutcome: jest.fn().mockResolvedValue({}),
+    recordAttemptOutcome: jest.fn(
+      (input: RecordOutcomeInput): Promise<PaymentAttempt> =>
+        Promise.resolve({
+          ...ready,
+          state: input.state,
+          providerPaymentId: input.providerPaymentId,
+          requestDigest: "a".repeat(64),
+        }),
+    ),
     fingerprints: jest
       .fn()
       .mockReturnValue({ requestDigest: "a".repeat(64), sourceDigest: "b".repeat(64) }),
@@ -559,4 +572,97 @@ it("reports unavailable legacy inquiry without claiming the order is unpaid", as
     statusUrl: "/checkout/processing?orderId=order-1",
   });
   expect(deps.beginDispatch).not.toHaveBeenCalled();
+});
+
+it.each([
+  ["declined", "known-id", 402, "FAILED"],
+  ["declined", null, 402, "FAILED"],
+  ["canceled", "known-id", 402, "CANCELED"],
+  ["succeeded", "known-id", 202, "COMPLETED"],
+  ["pending", "known-id", 202, "PENDING"],
+  ["review", "known-id", 202, "UNKNOWN"],
+  ["unknown", null, 202, "UNKNOWN"],
+  ["canceled", null, 202, "UNKNOWN"],
+] as const)(
+  "returns the authorized follower's %s result for %s without counting a second decline",
+  async (state, providerPaymentId, status, httpPaymentStatus) => {
+    const deps = dependencies();
+    deps.readCurrentAttempt.mockResolvedValue({
+      ...(await deps.readCurrentAttempt()),
+      state,
+      providerPaymentId,
+      requestDigest:
+        state === "canceled" && providerPaymentId === null ? null : "d".repeat(64),
+    });
+    const response = await createDirectPaymentHandler(request(), deps);
+    expect(response.status).toBe(status);
+    expect(await response.json()).toMatchObject({
+      attemptId: "attempt-1",
+      paymentId: providerPaymentId,
+      status: httpPaymentStatus,
+    });
+    expect(deps.createPayment).not.toHaveBeenCalled();
+    expect(deps.recordDecline).not.toHaveBeenCalled();
+  },
+);
+it("uses a concurrent winner's latest verified outcome after losing the claim", async () => {
+  const deps = dependencies(),
+    initial = await deps.readCurrentAttempt(),
+    latest = { ...initial, state: "declined", providerPaymentId: "known-id" };
+  deps.readCurrentAttempt.mockResolvedValueOnce(initial).mockResolvedValueOnce(latest);
+  deps.beginDispatch.mockResolvedValue({ kind: "observe", attempt: latest });
+  const response = await createDirectPaymentHandler(request(), deps);
+  expect(response.status).toBe(402);
+  expect(await response.json()).toMatchObject({
+    attemptId: "attempt-1",
+    paymentId: "known-id",
+    status: "FAILED",
+  });
+  expect(deps.recordDecline).not.toHaveBeenCalled();
+  expect(deps.createPayment).not.toHaveBeenCalled();
+});
+
+it("counts a newly recorded decline once across the claimant and a later observer", async () => {
+  const deps = dependencies(),
+    ready = await deps.readCurrentAttempt();
+  const declined = {
+    ...ready,
+    state: "declined" as const,
+    providerPaymentId: "payment-1",
+    requestDigest: "d".repeat(64),
+  };
+  deps.createPayment.mockResolvedValue({
+    ...(await deps.createPayment()),
+    status: "FAILED",
+  });
+  deps.createPayment.mockClear();
+  deps.recordAttemptOutcome.mockResolvedValue(declined);
+  deps.readCurrentAttempt.mockResolvedValueOnce(ready).mockResolvedValue(declined);
+  for (let i = 0; i < 2; i++) {
+    const response = await createDirectPaymentHandler(request(), deps);
+    expect(response.status).toBe(402);
+    expect(await response.json()).toMatchObject({
+      status: "FAILED",
+      paymentId: "payment-1",
+      attemptId: "attempt-1",
+    });
+  }
+  expect(deps.recordDecline).toHaveBeenCalledTimes(1);
+  expect(deps.createPayment).toHaveBeenCalledTimes(1);
+});
+
+it("keeps a losing permit uncertain if the latest sequence cannot be verified", async () => {
+  const deps = dependencies(),
+    ready = await deps.readCurrentAttempt();
+  deps.readCurrentAttempt
+    .mockResolvedValueOnce(ready)
+    .mockRejectedValueOnce(new Error("latest sequence unavailable"));
+  deps.beginDispatch.mockResolvedValue({
+    kind: "observe",
+    attempt: { ...ready, state: "declined", providerPaymentId: "older-payment" },
+  });
+  const response = await createDirectPaymentHandler(request(), deps);
+  expect(response.status).toBe(202);
+  expect(await response.json()).toMatchObject({ paymentId: null, status: "UNKNOWN" });
+  expect(deps.recordDecline).not.toHaveBeenCalled();
 });

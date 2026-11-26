@@ -1,3 +1,5 @@
+import { SquarePaymentsGateway } from "@/lib/square/payments";
+import type { DirectPaymentInput } from "@/lib/square/payments";
 import { createDirectPaymentHandler } from "@/lib/checkout/create-direct-payment";
 import { issuePaymentPermitHandler } from "@/lib/checkout/issue-payment-permit";
 import { PaymentPermitStore } from "@/lib/checkout/payment-permit";
@@ -356,3 +358,66 @@ it("rechecks the order sequence after a rejected payable check", async () => {
   );
   expect(f.deps.createPayment).not.toHaveBeenCalled();
 });
+
+it.each([
+  ["declined", null, "declined"],
+  ["declined", "legacy-decline", "declined"],
+  ["canceled", "legacy-cancel", "declined"],
+  ["canceled", null, "observe"],
+] as const)(
+  "resolves %s with provider identity %s without a fresh dispatch",
+  async (state, providerPaymentId, kind) => {
+    const f = setup(),
+      attempt = {
+        ...f.current,
+        state,
+        providerPaymentId,
+        requestDigest:
+          state === "declined" && providerPaymentId === null ? "d".repeat(64) : null,
+      };
+    const result = await dispatchPayment(
+      { permit, sourceId: "" },
+      { ...f.deps, attempt },
+    );
+    expect(result).toMatchObject({ kind, attemptId });
+    expect(f.deps.beginDispatch).not.toHaveBeenCalled();
+    expect(f.deps.recordAttemptOutcome).not.toHaveBeenCalled();
+  },
+);
+
+it.each(["COMPLETED", "FAILED", "CANCELED"])(
+  "keeps out-of-location %s in inquiry after a committed claim",
+  async (status) => {
+    const f = setup();
+    const create = jest.fn().mockResolvedValue({
+      payment: {
+        id: "fixture-wrong-location",
+        orderId: order.squareOrderId,
+        referenceId: attemptId,
+        locationId: "wrong",
+        status,
+        sourceType: "CARD",
+        amountMoney: { amount: BigInt(1200), currency: "USD" },
+      },
+    });
+    const gateway = new SquarePaymentsGateway({ create, get: jest.fn() }, "expected");
+    const deps = {
+      ...f.deps,
+      createPayment: (input: DirectPaymentInput) => gateway.create(input),
+    };
+    expect((await dispatchPayment({ permit, sourceId: "fixture" }, deps)).kind).toBe(
+      "observe",
+    );
+    expect(f.current).toMatchObject({ state: "unknown", providerPaymentId: null });
+    expect(
+      (
+        await dispatchPayment(
+          { permit, sourceId: "fixture" },
+          { ...deps, attempt: f.current },
+        )
+      ).kind,
+    ).toBe("observe");
+    expect(create).toHaveBeenCalledTimes(1);
+    expect(f.deps.save).not.toHaveBeenCalled();
+  },
+);

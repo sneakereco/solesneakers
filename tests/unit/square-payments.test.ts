@@ -38,6 +38,7 @@ describe("SquarePaymentsGateway", () => {
         status: "COMPLETED",
         amountMoney: { amount: BigInt(28563), currency: "USD" },
         referenceId: input.attemptId,
+        locationId: "square-location-1",
         sourceType: "CARD",
         cardDetails: {
           card: { cardBrand: "VISA", last4: "4242" },
@@ -199,6 +200,7 @@ it.each([
           id: "p",
           orderId: input.squareOrderId,
           referenceId: input.attemptId,
+          locationId: "loc",
           status: "APPROVED",
           amountMoney: { amount: BigInt(input.totalCents), currency: "USD" },
           sourceType,
@@ -221,6 +223,7 @@ it.each([
       create: jest.fn().mockResolvedValue({
         payment: {
           id: "p",
+          locationId: "loc",
           orderId: input.squareOrderId,
           status: "APPROVED",
           amountMoney: { amount: BigInt(input.totalCents), currency: "USD" },
@@ -233,3 +236,27 @@ it.each([
   );
   await expect(gateway.create(input)).rejects.toThrow("square_payment_invalid_response");
 });
+
+it.each(["COMPLETED", "FAILED", "CANCELED", "PENDING", "APPROVED"])(
+  "requires a matching merchant location before accepting %s proof",
+  async (status) => {
+    for (const locationId of [undefined, "other-location"]) {
+      const payment = {
+        id: "fixture-payment",
+        orderId: input.squareOrderId,
+        referenceId: input.attemptId,
+        sourceType: "CARD",
+        locationId,
+        status,
+        amountMoney: { amount: BigInt(input.totalCents), currency: "USD" },
+      };
+      const gateway = new SquarePaymentsGateway(
+        { create: jest.fn().mockResolvedValue({ payment }), get: jest.fn() },
+        "loc",
+      );
+      await expect(gateway.create(input)).rejects.toThrow(
+        "square_payment_invalid_response",
+      );
+    }
+  },
+);

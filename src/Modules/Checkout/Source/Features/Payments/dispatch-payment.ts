@@ -28,12 +28,19 @@ type Dependencies = DispatchOperations & {
   order: PaymentCheckout;
   attempt: PaymentAttempt;
   ownerBinding: string;
+  onAttemptObserved?(attempt: PaymentAttempt): void;
   validate(): Promise<string | null>;
   save(payment: DirectPaymentResult): Promise<void>;
   reportError(error: Error): void;
 };
 
-function observe(attempt: PaymentAttempt): DispatchResult {
+function resolveObserved(attempt: PaymentAttempt, deps: Dependencies): DispatchResult {
+  deps.onAttemptObserved?.(attempt);
+  if (
+    attempt.state === "declined" ||
+    (attempt.state === "canceled" && attempt.providerPaymentId !== null)
+  )
+    return { kind: "declined", orderId: attempt.orderId, attemptId: attempt.id };
   return {
     kind: "observe",
     orderId: attempt.orderId,
@@ -51,7 +58,7 @@ export async function dispatchPayment(
   } catch {
     // A lost commit or provider response leaves recovery responsible for inquiry.
     deps.reportError(new Error("checkout_payment_outcome_unavailable"));
-    return observe(deps.attempt);
+    return resolveObserved(deps.attempt, deps);
   }
 }
 
@@ -61,7 +68,8 @@ async function beforeSubmission(
 ): Promise<DispatchResult> {
   const latest = await deps.readCurrentAttempt(deps.order.orderId);
   if (!latest) throw new Error("Checkout attempt unavailable");
-  if (latest.id !== deps.attempt.id || latest.state !== "ready") return observe(latest);
+  if (latest.id !== deps.attempt.id || latest.state !== "ready")
+    return resolveObserved(latest, deps);
   return { kind: "not_submitted", code: "PAYMENT_NOT_SUBMITTED", message };
 }
 
@@ -80,7 +88,7 @@ async function dispatch(
     attempt.amountCents !== permit.totalCents ||
     attempt.state !== "ready"
   )
-    return observe(attempt);
+    return resolveObserved(attempt, deps);
 
   sourceId = sourceId.trim();
   const message =
@@ -133,7 +141,10 @@ async function dispatch(
     throw error;
   }
   if (decision.kind === "observe")
-    return observe((await deps.readCurrentAttempt(order.orderId)) ?? attempt);
+    return resolveObserved(
+      (await deps.readCurrentAttempt(order.orderId)) ?? attempt,
+      deps,
+    );
   if (
     decision.attempt.orderId !== order.orderId ||
     decision.attempt.id !== attempt.id ||
@@ -150,7 +161,7 @@ async function dispatch(
   } catch (error) {
     const code = deps.declineCode(error);
     if (code) {
-      await deps.recordAttemptOutcome({
+      const recorded = await deps.recordAttemptOutcome({
         attemptId: attempt.id,
         providerPaymentId: null,
         state: "declined",
@@ -160,15 +171,15 @@ async function dispatch(
           requestDigest: digests.requestDigest,
         },
       });
-      return { kind: "declined", orderId: order.orderId, attemptId: attempt.id };
+      return resolveObserved(recorded, deps);
     }
-    await deps.recordAttemptOutcome({
+    const retained = await deps.recordAttemptOutcome({
       attemptId: attempt.id,
       providerPaymentId: null,
       state: "unknown",
       verifiedFacts: { kind: "uncertain", reason: "outcome_unavailable" },
     });
-    return observe(attempt);
+    return resolveObserved(retained, deps);
   }
   const state = {
     COMPLETED: "succeeded",
@@ -177,7 +188,7 @@ async function dispatch(
     FAILED: "declined",
     CANCELED: "canceled",
   } as const;
-  await deps.recordAttemptOutcome({
+  const recorded = await deps.recordAttemptOutcome({
     attemptId: attempt.id,
     providerPaymentId: payment.id,
     state: state[payment.status],
@@ -191,8 +202,7 @@ async function dispatch(
       currency: "USD",
     },
   });
-  if (payment.status === "FAILED" || payment.status === "CANCELED")
-    return { kind: "declined", orderId: order.orderId, attemptId: attempt.id };
-  await deps.save(payment);
-  return observe(attempt);
+  if (payment.status !== "FAILED" && payment.status !== "CANCELED")
+    await deps.save(payment);
+  return resolveObserved(recorded, deps);
 }

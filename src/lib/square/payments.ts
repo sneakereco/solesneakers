@@ -137,6 +137,7 @@ export class SquarePaymentsGateway {
             payment.details?.payment_method === "afterpay"
           : source === "CARD";
     if (
+      response.payment?.locationId !== this.locationId ||
       !correctMethod ||
       payment.referenceId !== input.attemptId ||
       payment.orderId !== input.squareOrderId ||

@@ -1,3 +1,4 @@
+import type { PaymentAttempt } from "@/Modules/Checkout/Source/Features/Payments/attempt-contract";
 import type { NextRequest } from "next/server";
 import { z } from "zod";
 import {
@@ -46,6 +47,21 @@ export type CreateDirectPaymentDependencies = DispatchOperations & {
 
 function json(body: Record<string, unknown>, status: number) {
   return Response.json(body, { status, headers: { "Cache-Control": "no-store" } });
+}
+
+function observedStatus(attempt: PaymentAttempt) {
+  switch (attempt.state) {
+    case "succeeded":
+      return "COMPLETED";
+    case "pending":
+      return "PENDING";
+    case "declined":
+      return "FAILED";
+    case "canceled":
+      return attempt.providerPaymentId ? "CANCELED" : "UNKNOWN";
+    default:
+      return "UNKNOWN";
+  }
 }
 
 type Invalid = { status: number; message: string };
@@ -159,7 +175,9 @@ export async function createDirectPaymentHandler(
     }
     observation.attemptId = attempt.id;
     let failureStatus = 409;
-    const projection: { payment?: DirectPaymentResult } = {};
+    const projection: { payment?: DirectPaymentResult; observed: PaymentAttempt } = {
+      observed: attempt,
+    };
     const source = directPaymentRequestSchema.shape.sourceId.safeParse(
       body.data.sourceId,
     );
@@ -170,6 +188,24 @@ export async function createDirectPaymentHandler(
         order,
         attempt,
         ownerBinding,
+        onAttemptObserved: (observed) => {
+          projection.observed = observed;
+        },
+        recordAttemptOutcome: async (input) => {
+          const saved = await deps.recordAttemptOutcome(input);
+          if (input.state === "declined" || input.state === "canceled") {
+            // Only the claimant records a newly received decline. Observers never increment the limiter.
+            await deps
+              .recordDecline({
+                tenantId: order.tenantId,
+                deviceSessionId: permit.deviceSessionId,
+              })
+              .catch(() =>
+                deps.reportError(new Error("checkout_decline_counter_unavailable")),
+              );
+          }
+          return saved;
+        },
         validate: async () => {
           const invalid = await validate(order, permit, deps);
           if (invalid) failureStatus = invalid.status;
@@ -184,14 +220,12 @@ export async function createDirectPaymentHandler(
     if (result.kind === "not_submitted")
       return json({ error: result.message, code: result.code }, failureStatus);
     if (result.kind === "declined") {
-      await deps.recordDecline({
-        tenantId: order.tenantId,
-        deviceSessionId: permit.deviceSessionId,
-      });
       return json(
         {
           error: "Payment was declined. Check your details and try again.",
           attemptId: result.attemptId,
+          paymentId: projection.observed.providerPaymentId,
+          status: observedStatus(projection.observed),
         },
         402,
       );
@@ -200,8 +234,8 @@ export async function createDirectPaymentHandler(
       {
         ...observation,
         attemptId: result.attemptId,
-        paymentId: projection.payment?.id ?? null,
-        status: projection.payment?.status ?? "UNKNOWN",
+        paymentId: projection.payment?.id ?? projection.observed.providerPaymentId,
+        status: projection.payment?.status ?? observedStatus(projection.observed),
       },
       202,
     );
