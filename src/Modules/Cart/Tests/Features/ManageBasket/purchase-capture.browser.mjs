@@ -1170,3 +1170,85 @@ test("a second tab still displaying the legacy basket cannot capture after the f
     attemptKey: attempt.attemptKey,
   });
 });
+
+async function interposeBasketWrite(page, boundary, replacement, revision) {
+  await page.evaluate(
+    ({ boundary, replacement, revision, proofKey }) => {
+      const set = Storage.prototype.setItem;
+      Storage.prototype.setItem = function (key, value) {
+        set.call(this, key, value);
+        const basketKey = "rdk_cart_user_a";
+        const reached =
+          boundary === "applying"
+            ? key === proofKey &&
+              JSON.parse(value).some((record) => record.stage === "applying")
+            : key === basketKey + ":revision";
+        if (this !== localStorage || !reached) return;
+        Storage.prototype.setItem = set;
+        if (replacement !== null) set.call(this, basketKey, replacement);
+        if (revision !== null) set.call(this, basketKey + ":revision", revision);
+      };
+    },
+    { boundary, replacement, revision, proofKey },
+  );
+}
+
+for (const willSubtract of [true, false]) {
+  test(
+    "legacy replacement after applying stays intact when subtraction is " +
+      (willSubtract ? "needed" : "a no-op"),
+    async (t) => {
+      const { page } = await fixture(t, "a", [item(1)]);
+      const order = await prepared(page, 1);
+      if (!willSubtract)
+        await page.evaluate((row) => window.testCart.setCartItems([row]), item(1));
+      const replacement = JSON.stringify([{ ...item(1), titleDisplay: "Replacement" }]);
+      const before = await bytes(page);
+      await interposeBasketWrite(page, "applying", replacement, null);
+      const result = await consume(page, order.orderId, lines(1));
+      const [raw, revision, journal] = await purchaseBytes(page);
+      assert.deepEqual(
+        {
+          raw,
+          revision,
+          stage: JSON.parse(journal)[0].stage,
+          matched: result.status === "matched",
+        },
+        { raw: replacement, revision: before[1], stage: "applying", matched: false },
+      );
+      assert.deepEqual(JSON.parse(journal)[0].purchased, lines(1));
+      const retry = await consume(page, order.orderId, lines(1));
+      assert.equal(retry.status, "corrupt");
+      assert.deepEqual(await purchaseBytes(page), [raw, revision, journal]);
+    },
+  );
+}
+
+for (const interference of ["raw", "revision"]) {
+  test(
+    "first capture preserves a changed " +
+      interference +
+      " after the account revision write",
+    async (t) => {
+      const { page } = await fixture(t, "a", [item(1)]);
+      const attempt = randomUUID();
+      const [original] = await bytes(page);
+      const replacement =
+        interference === "raw"
+          ? JSON.stringify([{ ...item(1), titleDisplay: "First-capture replacement" }])
+          : null;
+      const revision = interference === "revision" ? randomUUID() : null;
+      await interposeBasketWrite(page, "revision", replacement, revision);
+      const result = await capture(page, attempt, lines(1));
+      const [raw, actualRevision, proof] = await purchaseBytes(page);
+      assert.deepEqual(
+        { raw, proof, captured: result.status === "captured" },
+        { raw: replacement ?? original, proof: null, captured: false },
+      );
+      if (revision !== null) assert.equal(actualRevision, revision);
+      const resume = await capture(page, attempt, lines(1), "resume");
+      assert.notEqual(resume.status, "captured");
+      assert.deepEqual(await purchaseBytes(page), [raw, actualRevision, null]);
+    },
+  );
+}

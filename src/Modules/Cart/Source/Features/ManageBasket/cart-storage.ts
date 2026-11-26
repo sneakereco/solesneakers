@@ -35,10 +35,11 @@ import {
   type SavedLine,
 } from "./purchase-capture";
 
-type Snapshot = ReturnType<typeof decodeSavedBasket> & {
+type StoredVersion = {
   raw: string | null;
   revision: string | null;
 };
+type Snapshot = ReturnType<typeof decodeSavedBasket> & StoredVersion;
 export type BasketView = {
   items: CartItem[];
   writable: boolean;
@@ -55,7 +56,7 @@ export const unavailablePurchases: CartPurchaseActions = {
   consumeConfirmedPurchase: (_order, _items, signal) =>
     Promise.resolve(unavailablePurchase(signal)),
 };
-const sameSnapshot = (a: Snapshot, b: Snapshot) =>
+const sameSnapshot = (a: StoredVersion, b: StoredVersion) =>
   a.raw === b.raw && a.revision === b.revision;
 // Legacy migration can touch the shared rdk_cart key as well as an account key.
 const ACCOUNT_WRITE_LOCK = "rdk_cart";
@@ -152,22 +153,32 @@ export class BasketStorage {
       }
     }
   }
-  private read(): Snapshot {
-    const raw = this.area.getItem(this.key);
+  private storedVersion(): StoredVersion {
     return {
-      ...decodeSavedBasket(raw),
-      raw,
+      raw: this.area.getItem(this.key),
       revision: this.userId ? this.area.getItem(this.revisionKey) : null,
     };
   }
-  private persist(raw: string, eligible = this.observed) {
+  private read(): Snapshot {
+    const version = this.storedVersion();
+    return { ...version, ...decodeSavedBasket(version.raw) };
+  }
+  private persist(raw: string, eligible = this.observed, expected?: StoredVersion) {
     // Fence the old snapshot first. A failed data write can invalidate validation,
     // but cannot make an older revision eligible again.
-    if (!eligible()) return false;
-    if (this.userId) this.area.setItem(this.revisionKey, crypto.randomUUID());
-    if (!eligible()) return false;
+    if ((expected && !sameSnapshot(expected, this.storedVersion())) || !eligible())
+      return false;
+    const revision = this.userId ? crypto.randomUUID() : null;
+    if (revision !== null) this.area.setItem(this.revisionKey, revision);
+    // A legacy writer can change either key without joining our Web Lock.
+    if (
+      (expected &&
+        !sameSnapshot({ raw: expected.raw, revision }, this.storedVersion())) ||
+      !eligible()
+    )
+      return false;
     this.area.setItem(this.key, raw);
-    return true;
+    return { raw, revision };
   }
   private migrateLegacyAccount() {
     if (!this.userId) return;
@@ -291,7 +302,12 @@ export class BasketStorage {
       if (this.pending === snapshot) this.pending = undefined;
     }
   }
-  private save(rows: SavedLine[], invalidateProof = false, eligible = this.observed) {
+  private save(
+    rows: SavedLine[],
+    invalidateProof = false,
+    eligible = this.observed,
+    expected?: StoredVersion,
+  ) {
     if (!this.connection || this.connection.signal.aborted || !this.observed())
       return false;
     if (rows.length > maxSavedCount) return "unavailable" as const;
@@ -303,10 +319,12 @@ export class BasketStorage {
     if (raw.length > maxSavedLength) return "unavailable" as const;
     if (!eligible()) return false;
     if (invalidateProof) this.area.removeItem(this.proofKey);
-    if (!this.persist(raw, eligible)) return false;
+    const committed = this.persist(raw, eligible, expected);
+    if (!committed) return false;
     this.pending = undefined;
-    this.sync(this.read());
-    return true;
+    const observed = this.read();
+    this.sync(observed);
+    return !expected || sameSnapshot(committed, observed);
   }
   private mutation(snapshot: Snapshot, rows: SavedLine[]) {
     const hasProof = this.area.getItem(this.proofKey) !== null;
@@ -450,13 +468,19 @@ export class BasketStorage {
     if (current.rows.some((r) => r.units === null)) return { status: "corrupt" };
     // A verified new capture can replace unreadable evidence in its final insert.
     // Building an empty ledger here does not rewrite bytes on mismatch or failure.
+    let captureView: Snapshot | undefined = view;
+    const canAssociate = () =>
+      captureView !== undefined &&
+      this.published === captureView &&
+      sameSnapshot(captureView, this.storedVersion()) &&
+      eligible();
     const ledger =
-      this.proofs(origin, eligible) ??
+      this.proofs(origin, canAssociate) ??
       (mode === "new"
-        ? PurchaseProofs.empty(this.area, this.proofKey, eligible)
+        ? PurchaseProofs.empty(this.area, this.proofKey, canAssociate)
         : undefined);
     if (!ledger) return { status: "corrupt" };
-    if (!eligible()) return { status: "stale" };
+    if (!canAssociate()) return { status: "stale" };
     const existing = ledger.records.find((r) => r.attemptKey === attemptKey);
     if (!existing && mode === "resume") return { status: "missing" };
     if (existing && (existing.origin !== origin || existing.stage !== "pending"))
@@ -476,8 +500,11 @@ export class BasketStorage {
     const lines = captureLines(rows);
     if (!lines) return { status: "mismatch" };
     if (!eligible()) return { status: "stale" };
-    if (needsLineage && this.save(rows, false, eligible) !== true)
-      return { status: "unavailable" };
+    if (needsLineage) {
+      if (this.save(rows, false, eligible, current) !== true)
+        return { status: "unavailable" };
+      captureView = this.published;
+    }
     const captureId = crypto.randomUUID();
     if (
       !ledger.insert({
@@ -515,7 +542,14 @@ export class BasketStorage {
     if (!validId(orderId) || !purchased) return { status: "mismatch" };
     const origin = contextOrigin();
     if (!origin) return { status: "unavailable" };
-    const ledger = this.proofs(origin, eligible);
+    let journalView: StoredVersion | undefined;
+    const ledger = this.proofs(
+      origin,
+      () =>
+        journalView !== undefined &&
+        sameSnapshot(journalView, this.storedVersion()) &&
+        eligible(),
+    );
     if (!ledger) return { status: "corrupt" };
     if (!eligible()) return { status: "stale" };
     const record = ledger.records.find((r) => r.orderId === orderId);
@@ -528,6 +562,7 @@ export class BasketStorage {
     if (!subset(record, purchased)) return { status: "mismatch" };
     const current = this.read();
     if (!current.complete || current.raw === null) return { status: "corrupt" };
+    journalView = current;
     const rows = subtractRows(current.rows, record, purchased);
     if (!rows) return { status: "corrupt" };
     if (!eligible()) return { status: "stale" };
@@ -537,11 +572,13 @@ export class BasketStorage {
     )
       return { status: "unavailable" };
     if (
-      (rows.length !== current.rows.length ||
-        rows.some((r, i) => r !== current.rows[i])) &&
-      this.save(rows, false, eligible) !== true
-    )
-      return { status: "unavailable" };
+      rows.length !== current.rows.length ||
+      rows.some((r, i) => r !== current.rows[i])
+    ) {
+      if (this.save(rows, false, eligible, current) !== true)
+        return { status: "unavailable" };
+      journalView = this.published;
+    }
     return ledger.finish(record, orderId, purchased)
       ? matched
       : { status: "unavailable" };
