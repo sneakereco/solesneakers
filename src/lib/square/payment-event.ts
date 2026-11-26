@@ -33,9 +33,9 @@ const paymentEventSchema = z.object({
         status: z.string().min(1),
         amount_money: moneySchema,
         source_type: z.string().optional(),
-        updated_at: z.string().optional(),
-        note: z.string().optional(),
-        reference_id: z.string().optional(),
+        updated_at: z.iso.datetime({ offset: true }).optional().catch(undefined),
+        note: z.string().optional().catch(undefined),
+        reference_id: z.string().optional().catch(undefined),
         processing_fee: z
           .array(
             z.object({

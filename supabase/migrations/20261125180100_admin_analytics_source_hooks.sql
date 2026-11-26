@@ -83,18 +83,18 @@ begin
   if (result->>'reused')::boolean then return result; end if;
   oid:=(result->>'order_id')::uuid;
   ds:=analytics_source.dataset(transaction_timestamp());
-  if ds is null or (p_analytics->>'datasetId' is not null and ds<>p_analytics->>'datasetId') then return result; end if;
+  if ds is null then return result; end if;
   totals:=p_analytics->'totals';
   basis:=jsonb_build_object('grossMerchandiseCents',p_checkout->'p_subtotal_cents','discountCents',0,
     'merchandiseCents',p_checkout->'p_subtotal_cents','shippingCents',p_checkout->'p_shipping_cents',
     'taxCents',coalesce(totals->'taxCents',p_checkout->'p_tax_cents'),
     'totalCollectedCents',coalesce(totals->'totalCents',p_checkout->'p_total_cents'),
     'paymentMethod',p_checkout->'p_payment_method','fulfillment',p_checkout->'p_fulfillment','status','pending');
-  tracking:=p_analytics->'tracking';
+  tracking:=case when p_analytics->>'datasetId'=ds then p_analytics->'tracking' end;
   if tracking->>'receiptId' is not null then
     select receipt_id into receipt from public.analytics_consent_receipts
       where dataset_id=ds and receipt_id::text=tracking->>'receiptId' and revoked_at is null
-        and granted_at<=clock_timestamp() for share;
+        and granted_at<=clock_timestamp() for share skip locked;
   end if;
   if receipt is not null and (
     coalesce(tracking->>'visitorId','') !~ '^(?:[0-9a-f]{8}-[0-9a-f]{4}-[1-8][0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}|sole-buyer:v1:[a-f0-9]{64})$'
@@ -106,7 +106,8 @@ begin
   if receipt is null then tracking:=null; end if;
   insert into public.analytics_order_context(dataset_id,order_id,buyer_key,line_snapshots,order_snapshot,
     receipt_id,visitor_id,session_id,device,discovery,purchase_session)
-  values(ds,oid,p_analytics->>'buyerKey',analytics_source.lines(oid),basis,
+  values(ds,oid,case when p_analytics->>'datasetId'=ds then p_analytics->>'buyerKey' end,
+    analytics_source.lines(oid),basis,
     receipt,tracking->>'visitorId',(tracking->>'sessionId')::uuid,tracking->>'device',
     nullif(tracking->'discovery','null'),nullif(tracking->'purchaseSession','null'));
   return result;
@@ -115,18 +116,94 @@ $$;
 revoke all on function public.reserve_square_checkout_inventory_with_analytics(jsonb,jsonb) from public,anon,authenticated;
 grant execute on function public.reserve_square_checkout_inventory_with_analytics(jsonb,jsonb) to service_role;
 
--- First entry requires a live transition into authoritative paid status.
--- Later order edits can only revise lifecycle fields of that original sale.
-create index analytics_completed_payment_source on public.square_webhook_events
-  ((event_data->>'squareOrderId'),(event_data->>'paymentId'),processed_at desc)
-  where event_data->>'paymentStatus'='COMPLETED' and processed_at is not null;
+-- Share the logical order lock with provider method enrichment before reading
+-- any state used to construct a revision.
+create function analytics_source.sync_order(o public.orders,c public.analytics_order_context,
+  anchor timestamptz,sale jsonb) returns void language plpgsql set search_path='' as $$
+declare prev public.analytics_fact_versions%rowtype; line jsonb; method text; state text; fulfilled timestamptz;
+begin
+  perform pg_advisory_xact_lock(hashtextextended(c.dataset_id||':order:'||o.id,0));
+  select * into prev from public.analytics_fact_versions
+    where dataset_id=c.dataset_id and fact_id='order:'||o.id order by revision desc limit 1;
+  if not found then
+    if sale is null then return; end if;
+    for line in select value from jsonb_array_elements(c.line_snapshots) loop
+      perform analytics_source.publish(c.dataset_id,'line',(line->>'lineId')::uuid,anchor,o.id,c.buyer_key,line);
+    end loop;
+  else
+    anchor:=prev.effective_at;
+    sale:=prev.fact->'payload';
+  end if;
+  if (sale->>'totalCollectedCents')::bigint>0 then
+    select payment_method into method from public.payment_transactions where order_id=o.id
+      and square_payment_id=o.payment_transaction_id and amount_captured>0;
+    if method in ('card','applePay','googlePay','afterpay','cashAppPay') then sale:=sale||jsonb_build_object('paymentMethod',method); end if;
+  end if;
+  perform analytics_source.publish(c.dataset_id,'order',o.id,anchor,o.id,c.buyer_key,sale||jsonb_build_object('status',coalesce(o.status,sale->>'status')));
+  state:=lower(coalesce(o.fulfillment_status,'unfulfilled'));
+  if o.status='shipped' and state in ('pending','unfulfilled') then state:='shipped'; end if;
+  if state not in ('pending','processing','unfulfilled','ready','ready_for_pickup','shipped','delivered','picked_up','fulfilled','canceled') then state:='unknown'; end if;
+  if state in ('shipped','delivered','picked_up','fulfilled') then
+    select (fact->'payload'->>'fulfilledAt')::timestamptz into fulfilled from public.analytics_fact_versions
+      where dataset_id=c.dataset_id and fact_id='fulfillment:'||o.id order by revision desc limit 1;
+    fulfilled:=coalesce(fulfilled,o.shipped_at,o.updated_at,transaction_timestamp());
+  end if;
+  if sale->>'fulfillment' in ('ship','pickup') then
+    perform analytics_source.publish(c.dataset_id,'fulfillment',o.id,anchor,o.id,c.buyer_key,
+      jsonb_build_object('method',sale->'fulfillment','state',state,'paidAt',anchor,'fulfilledAt',fulfilled));
+  end if;
+  if o.label_created_at is not null and o.actual_shipping_cost_cents>=0 then
+    perform analytics_source.publish(c.dataset_id,'shipping_cost',o.id,o.label_created_at,o.id,c.buyer_key,
+      jsonb_build_object('adjustment','charge','amountCents',o.actual_shipping_cost_cents));
+  end if;
+  return;
+end;
+$$;
+-- Delegate fulfillment and idempotency to the original business function. Its
+-- returned authorization is the only first-sale proof for a positive capture.
+alter function public.process_square_payment_event(text,text,text,text,timestamptz,text,jsonb,text,text,text,bigint,text,text)
+  set schema analytics_source;
+create function public.process_square_payment_event(
+  p_square_event_id text,p_event_type text,p_merchant_id text,p_location_id text,
+  p_square_created_at timestamptz,p_payload_sha256 text,p_event_data jsonb,
+  p_square_order_id text,p_square_payment_id text,p_payment_status text,
+  p_amount_cents bigint,p_currency text,p_risk_level text
+) returns jsonb language plpgsql security definer set search_path='' as $$
+declare
+  result jsonb; o public.orders%rowtype; c public.analytics_order_context%rowtype;
+  sale jsonb; confirmed_at timestamptz;
+begin
+  result:=analytics_source.process_square_payment_event(p_square_event_id,p_event_type,p_merchant_id,p_location_id,
+    p_square_created_at,p_payload_sha256,p_event_data,p_square_order_id,p_square_payment_id,
+    p_payment_status,p_amount_cents,p_currency,p_risk_level);
+  if not (result->>'fulfillment_authorized')::boolean or p_payment_status<>'COMPLETED'
+    or p_currency<>'USD' or p_amount_cents<=0 then return result; end if;
+  select * into o from public.orders where id=(result->>'order_id')::uuid
+    and square_order_id=p_square_order_id and payment_transaction_id=p_square_payment_id;
+  if not found then return result; end if;
+  select * into c from public.analytics_order_context where order_id=o.id
+    and dataset_id=analytics_source.dataset(o.created_at) and order_snapshot is not null;
+  if not found then return result; end if;
+  confirmed_at:=coalesce((p_event_data->>'resolvedAt')::timestamptz,transaction_timestamp());
+  -- Keep the reserved basis. If the verified provider/current-order basis
+  -- differs, the original decomposition is incomplete even when tax is zero.
+  sale:=c.order_snapshot||jsonb_build_object('totalCollectedCents',p_amount_cents,'taxCents',
+    case when (c.order_snapshot->>'merchandiseCents')::bigint=round(o.subtotal*100)
+          and (c.order_snapshot->>'shippingCents')::bigint=round(o.shipping*100)
+      then o.checkout_protection_evidence->'square_final_tax_cents' end);
+  perform analytics_source.sync_order(o,c,confirmed_at,sale);
+  return result;
+end;
+$$;
+revoke all on function public.process_square_payment_event(text,text,text,text,timestamptz,text,jsonb,text,text,text,bigint,text,text) from public,anon,authenticated;
+grant execute on function public.process_square_payment_event(text,text,text,text,timestamptz,text,jsonb,text,text,text,bigint,text,text) to service_role;
 
 create function analytics_source.order_changed() returns trigger
 language plpgsql security definer set search_path='' as $$
 declare
   c public.analytics_order_context%rowtype; o public.orders%rowtype;
-  prev public.analytics_fact_versions%rowtype; ds text; anchor timestamptz;
-  sale jsonb; line jsonb; method text; state text; fulfilled timestamptz; event jsonb;
+  ds text;
+  sale jsonb;
 begin
   select * into o from public.orders where id=new.id;
   if not found then return null; end if;
@@ -153,48 +230,13 @@ begin
       'stage','reservation','method',c.order_snapshot->'paymentMethod','outcome','expired','reason','expired',
       'resolvedAt',coalesce(new.updated_at,transaction_timestamp())));
   end if;
-  select * into prev from public.analytics_fact_versions
-    where dataset_id=c.dataset_id and fact_id='order:'||o.id order by revision desc limit 1;
-  if prev.fact is null then
-    if new.status is distinct from 'paid' or (tg_op='UPDATE' and old.status is not distinct from new.status) then return null; end if;
-    select e.event_data into event from public.square_webhook_events e
-      where e.event_data->>'paymentId'=new.payment_transaction_id and e.event_data->>'squareOrderId'=o.square_order_id
-        and e.event_data->>'paymentStatus'='COMPLETED' and e.processed_at is not null
-      order by e.processed_at desc limit 1;
-    anchor:=coalesce((event->>'resolvedAt')::timestamptz,new.updated_at,transaction_timestamp());
-    sale:=c.order_snapshot;
-    if event->>'amountCents' is not null then
-      sale:=sale||jsonb_build_object('totalCollectedCents',event->'amountCents','taxCents',
-        (event->>'amountCents')::bigint-(sale->>'merchandiseCents')::bigint-(sale->>'shippingCents')::bigint);
-    end if;
-    for line in select value from jsonb_array_elements(c.line_snapshots) loop
-      perform analytics_source.publish(c.dataset_id,'line',(line->>'lineId')::uuid,anchor,o.id,c.buyer_key,line);
-    end loop;
+  if new.status='paid' and new.total=0 and new.payment_transaction_id is null
+    and (tg_op='INSERT' or old.status is distinct from new.status)
+    and (c.order_snapshot->>'totalCollectedCents')::bigint=0 then
+    perform analytics_source.sync_order(o,c,coalesce(new.updated_at,transaction_timestamp()),
+      c.order_snapshot||jsonb_build_object('paymentMethod',null));
   else
-    anchor:=prev.effective_at;
-    sale:=prev.fact->'payload';
-  end if;
-  if (sale->>'totalCollectedCents')::bigint>0 then
-    select payment_method into method from public.payment_transactions where order_id=o.id
-      and square_payment_id=o.payment_transaction_id and amount_captured>0;
-    if method in ('card','applePay','googlePay','afterpay','cashAppPay') then sale:=sale||jsonb_build_object('paymentMethod',method); end if;
-  end if;
-  perform analytics_source.publish(c.dataset_id,'order',o.id,anchor,o.id,c.buyer_key,sale||jsonb_build_object('status',coalesce(o.status,sale->>'status')));
-  state:=lower(coalesce(o.fulfillment_status,'unfulfilled'));
-  if o.status='shipped' and state in ('pending','unfulfilled') then state:='shipped'; end if;
-  if state not in ('pending','processing','unfulfilled','ready','ready_for_pickup','shipped','delivered','picked_up','fulfilled','canceled') then state:='unknown'; end if;
-  if state in ('shipped','delivered','picked_up','fulfilled') then
-    select (fact->'payload'->>'fulfilledAt')::timestamptz into fulfilled from public.analytics_fact_versions
-      where dataset_id=c.dataset_id and fact_id='fulfillment:'||o.id order by revision desc limit 1;
-    fulfilled:=coalesce(fulfilled,o.shipped_at,new.updated_at,transaction_timestamp());
-  end if;
-  if sale->>'fulfillment' in ('ship','pickup') then
-    perform analytics_source.publish(c.dataset_id,'fulfillment',o.id,anchor,o.id,c.buyer_key,
-      jsonb_build_object('method',sale->'fulfillment','state',state,'paidAt',anchor,'fulfilledAt',fulfilled));
-  end if;
-  if o.label_created_at is not null and o.actual_shipping_cost_cents>=0 then
-    perform analytics_source.publish(c.dataset_id,'shipping_cost',o.id,o.label_created_at,o.id,c.buyer_key,
-      jsonb_build_object('adjustment','charge','amountCents',o.actual_shipping_cost_cents));
+    perform analytics_source.sync_order(o,c,null,null);
   end if;
   return null;
 end;
@@ -314,6 +356,7 @@ begin
   select ctx.* into c from public.analytics_order_context ctx join public.orders o on o.id=ctx.order_id
     where o.id=new.order_id and o.payment_transaction_id=new.square_payment_id and ctx.dataset_id=analytics_source.dataset(o.created_at);
   if not found then return null; end if;
+  perform pg_advisory_xact_lock(hashtextextended(c.dataset_id||':order:'||c.order_id,0));
   select * into prev from public.analytics_fact_versions where dataset_id=c.dataset_id and fact_id='order:'||c.order_id
     order by revision desc limit 1;
   if found and (prev.fact->'payload'->>'totalCollectedCents')::bigint>0 then

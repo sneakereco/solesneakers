@@ -24,8 +24,18 @@ export async function testCommerceSources(db, worker) {
         [ds, kind, id],
       )
     ).rows.map((r) => r.fact);
-  await query("begin");
-  try {
+  const assertBlocked = async (pid) => {
+    for (let i = 0; i < 100; i++) {
+      if (
+        (await one("select pg_backend_pid()=any(pg_blocking_pids($1)) as blocked", [pid]))
+          .blocked
+      )
+        return;
+    }
+    assert.fail("independent writer did not wait for the held transaction");
+  };
+  const sizes = variants.map(() => randomUUID());
+  async function seedCatalog() {
     assert.equal((await one("select count(*)::int n from public.tenants")).n, 0);
     await query("insert into public.tenants(id,name) values($1,'Analytics fixture')", [
       owner,
@@ -47,7 +57,7 @@ export async function testCommerceSources(db, worker) {
       [product, owner, brand],
     );
     for (const [i, variant] of variants.entries()) {
-      const size = randomUUID();
+      const size = sizes[i];
       await query(
         "insert into public.tag_sizes(id,canonical_label,size_type) values($1,$2,'shoe')",
         [size, String(i + 10)],
@@ -57,59 +67,63 @@ export async function testCommerceSources(db, worker) {
         [variant, owner, product, size, "SKU-" + variant, i === 1],
       );
     }
-    const checkout = {
-      p_guest_email: "fixture@example.com",
-      p_currency: "USD",
-      p_fulfillment: "pickup",
-      p_payment_method: "applePay",
-      p_idempotency_key: randomUUID(),
-      p_cart_hash: "a".repeat(64),
-      p_expires_at: new Date(Date.now() + 600000).toISOString(),
-      p_subtotal_cents: 2000,
-      p_shipping_cents: 0,
-      p_tax_cents: 0,
-      p_total_cents: 2000,
-      p_tax_calculation_id: "square:pending",
-      p_customer_state: "SC",
-      p_pickup_contact: { name: "Fixture", phone: "5555550123" },
-      p_billing_address: {
-        given_name: "Fixture",
-        family_name: "Buyer",
-        line1: "Example",
-        city: "Example",
-        state: "SC",
-        postal_code: "29111",
-        country: "US",
-      },
-      p_items: variants.map((v, i) => ({
-        product_id: product,
-        variant_id: v,
-        quantity: 1,
-        unit_price_cents: 1000,
-        unit_cost_cents: 0,
-        line_total_cents: 1000,
-        product_name: i ? "Safe shoe" : "x@example.com",
-        size_label: String(i + 10),
-        variant_sku: "SKU-" + v,
-        category: "sneakers",
-        brand: "Fixture",
-        condition: "new",
-      })),
-      p_protection_evidence: { payment_method: "applePay" },
-    };
-    const context = {
-      datasetId: ds,
-      buyerKey,
-      tracking: null,
-      totals: { subtotalCents: 2000, shippingCents: 0, taxCents: 100, totalCents: 2100 },
-    };
-    const reserve = async (input, ctx) =>
-      (
-        await one(
-          "select public.reserve_square_checkout_inventory_with_analytics($1,$2) as r",
-          [input, ctx],
-        )
-      ).r;
+  }
+  const checkout = {
+    p_guest_email: "fixture@example.com",
+    p_currency: "USD",
+    p_fulfillment: "pickup",
+    p_payment_method: "applePay",
+    p_idempotency_key: randomUUID(),
+    p_cart_hash: "a".repeat(64),
+    p_expires_at: new Date(Date.now() + 600000).toISOString(),
+    p_subtotal_cents: 2000,
+    p_shipping_cents: 0,
+    p_tax_cents: 0,
+    p_total_cents: 2000,
+    p_tax_calculation_id: "square:pending",
+    p_customer_state: "SC",
+    p_pickup_contact: { name: "Fixture", phone: "5555550123" },
+    p_billing_address: {
+      given_name: "Fixture",
+      family_name: "Buyer",
+      line1: "Example",
+      city: "Example",
+      state: "SC",
+      postal_code: "29111",
+      country: "US",
+    },
+    p_items: variants.map((v, i) => ({
+      product_id: product,
+      variant_id: v,
+      quantity: 1,
+      unit_price_cents: 1000,
+      unit_cost_cents: 0,
+      line_total_cents: 1000,
+      product_name: i ? "Safe shoe" : "x@example.com",
+      size_label: String(i + 10),
+      variant_sku: "SKU-" + v,
+      category: "sneakers",
+      brand: "Fixture",
+      condition: "new",
+    })),
+    p_protection_evidence: { payment_method: "applePay" },
+  };
+  const context = {
+    datasetId: ds,
+    buyerKey,
+    tracking: null,
+    totals: { subtotalCents: 2000, shippingCents: 0, taxCents: 100, totalCents: 2100 },
+  };
+  const reserve = async (input, ctx) =>
+    (
+      await one(
+        "select public.reserve_square_checkout_inventory_with_analytics($1,$2) as r",
+        [input, ctx],
+      )
+    ).r;
+  await query("begin");
+  try {
+    await seedCatalog();
     await query("set local role service_role");
     const first = await reserve(checkout, context);
     assert.equal(first.reused, false);
@@ -184,8 +198,13 @@ export async function testCommerceSources(db, worker) {
       "update public.orders set square_order_id=$2,square_order_version=1 where id=$1",
       [oid, sid],
     );
-    const start = new Date(Date.now() - 1000).toISOString(),
-      resolved = new Date().toISOString();
+    const barePaidState = await one(
+      "update public.orders set status='paid' where id=$1 returning updated_at",
+      [oid],
+    );
+    const barePaidAt = barePaidState.updated_at.getTime();
+    const start = new Date(barePaidAt - 1000).toISOString(),
+      resolved = new Date(barePaidAt + 1000).toISOString();
     const op = {
       attemptId: attempt,
       effectiveAt: start,
@@ -215,7 +234,33 @@ export async function testCommerceSources(db, worker) {
         "select public.process_square_payment_event($1,'payment.updated','fixture','fixture',$2,$3,$4,$5,$6,'COMPLETED',2100,'USD',null) as r",
         [id, start, "a".repeat(64), data, sid, pid],
       );
-    await pay("evt-" + oid, event);
+    // A status correction has no money authority, even with a matching order ID.
+    await flush();
+    assert.equal(
+      (await facts("order", oid)).length,
+      0,
+      "positive status alone cannot create a sale",
+    );
+    assert.equal((await facts("line", oid)).length, 0);
+    assert.deepEqual(
+      (
+        await query(
+          "select role,has_function_privilege(role,$1,'execute') as wrapper,has_function_privilege(role,$2,'execute') as original from unnest(array['anon','authenticated','service_role']) role order by role",
+          [
+            "public.process_square_payment_event(text,text,text,text,timestamptz,text,jsonb,text,text,text,bigint,text,text)",
+            "analytics_source.process_square_payment_event(text,text,text,text,timestamptz,text,jsonb,text,text,text,bigint,text,text)",
+          ],
+        )
+      ).rows,
+      [
+        { role: "anon", wrapper: false, original: false },
+        { role: "authenticated", wrapper: false, original: false },
+        { role: "service_role", wrapper: true, original: false },
+      ],
+    );
+    await query("set local role service_role");
+    assert.equal((await pay("evt-" + oid, event)).r.fulfillment_authorized, true);
+    await query("reset role");
     await flush();
     assert.equal((await pay("evt-" + oid, event)).r.duplicate, true);
     await pay("reconcile-" + oid, {
@@ -231,11 +276,21 @@ export async function testCommerceSources(db, worker) {
       ],
     });
     await flush();
+    assert.equal(
+      (
+        await one(
+          "select count(*)::int as n from public.analytics_fact_versions where dataset_id=$1 and fact_id=$2",
+          [ds, "order:" + oid],
+        )
+      ).n,
+      1,
+    );
     const sale = (await facts("order", oid))[0];
     assert.equal(sale.payload.totalCollectedCents, 2100);
     assert.equal(sale.payload.taxCents, 100);
     assert.equal(sale.payload.paymentMethod, "applePay");
     assert.equal(Date.parse(sale.effectiveAt), Date.parse(resolved));
+    assert(Date.parse(sale.effectiveAt) > barePaidAt);
     const attempts = await facts("payment_attempt", oid);
     assert.equal(attempts.length, 1);
     assert.equal(attempts[0].payload.outcome, "succeeded");
@@ -345,6 +400,58 @@ export async function testCommerceSources(db, worker) {
       ).receipt_id,
       null,
     );
+    const conflicting = await reserve(
+      { ...checkout, p_idempotency_key: randomUUID() },
+      {
+        ...context,
+        datasetId: "sole-production",
+        tracking,
+      },
+    );
+    const frozen = await one(
+      "select * from public.analytics_order_context where order_id=$1",
+      [conflicting.order_id],
+    );
+    assert.equal(frozen.dataset_id, ds);
+    assert.equal(frozen.buyer_key, null);
+    assert.equal(frozen.receipt_id, null);
+    assert.equal(frozen.line_snapshots.length, 2);
+    const corrected = conflicting.order_id;
+    const correctedSquare = "sq-" + corrected,
+      correctedPayment = "pay-" + corrected;
+    await query(
+      "update public.orders set subtotal=18, total=18, square_order_id=$2 where id=$1",
+      [corrected, correctedSquare],
+    );
+    const correctedEvent = {
+      squareOrderId: correctedSquare,
+      paymentId: correctedPayment,
+      paymentStatus: "COMPLETED",
+      currency: "USD",
+      amountCents: 1800,
+      resolvedAt: resolved,
+    };
+    const accepted = await one(
+      "select public.process_square_payment_event($1,'payment.updated','fixture','fixture',$2,$3,$4,$5,$6,'COMPLETED',1800,'USD',null) r",
+      [
+        randomUUID(),
+        start,
+        "c".repeat(64),
+        correctedEvent,
+        correctedSquare,
+        correctedPayment,
+      ],
+    );
+    await flush();
+    assert.equal(accepted.r.fulfillment_authorized, true);
+    const correctedSale = (await facts("order", corrected))[0];
+    assert.equal(correctedSale.payload.totalCollectedCents, 1800);
+    assert.equal(correctedSale.payload.merchandiseCents, 2000);
+    assert.equal(correctedSale.payload.taxCents, null);
+    assert.equal((await facts("line", corrected)).length, 2);
+    console.log(
+      "PASS status alone cannot create positive sale; late matched completion journals once; conflicting optional dataset preserves original basis and corrected capture with incomplete decomposition",
+    );
     const plain = await reserve({ ...checkout, p_idempotency_key: randomUUID() }, null);
     assert.equal(
       (
@@ -409,11 +516,123 @@ export async function testCommerceSources(db, worker) {
 
   // The same timeout and provider resolution can race in different sessions.
   // Use committed fixture setup and a real held transaction-level fact lock.
-  await query(
-    "insert into public.analytics_datasets(dataset_id,environment,activated_at) values($1,'staging',now()-interval '1 day')",
-    [ds],
-  );
+  // Committed catalog and order let independent connections exercise both
+  // source writers through their ordinary database entry points.
+  const paymentEventId = randomUUID();
+  await query("begin");
   try {
+    await seedCatalog();
+    await query("commit");
+  } catch (error) {
+    await query("rollback");
+    throw error;
+  }
+  try {
+    const tracking = {
+      receiptId: receipt,
+      visitorId: randomUUID(),
+      sessionId: randomUUID(),
+      device: "mobile",
+    };
+    let oid;
+    await worker.query("begin");
+    try {
+      await worker.query("select public.analytics_revoke_receipt($1,$2)", [ds, receipt]);
+      await query("begin");
+      await query("set local lock_timeout='400ms'");
+      const purchase = await reserve(
+        { ...checkout, p_idempotency_key: randomUUID() },
+        { ...context, tracking },
+      );
+      oid = purchase.order_id;
+      await query("commit");
+      const snapshot = await one(
+        "select * from public.analytics_order_context where order_id=$1",
+        [oid],
+      );
+      assert.equal(snapshot.receipt_id, null);
+      assert.equal(snapshot.visitor_id, null);
+      assert.equal(snapshot.line_snapshots.length, 2);
+      assert.equal(snapshot.order_snapshot.totalCollectedCents, 2100);
+      assert.equal(
+        (
+          await one(
+            "select min(stock) as n from public.product_variants where product_id=$1",
+            [product],
+          )
+        ).n,
+        4,
+      );
+      console.log(
+        "PASS held consent revocation: checkout, stock and immutable snapshot committed without linkage before release",
+      );
+    } finally {
+      await worker.query("rollback");
+    }
+    const squareOrder = "sq-" + oid,
+      payment = "pay-" + oid;
+    await query("update public.orders set square_order_id=$2 where id=$1", [
+      oid,
+      squareOrder,
+    ]);
+    const resolved = new Date().toISOString();
+    const event = {
+      squareOrderId: squareOrder,
+      paymentId: payment,
+      amountCents: 2100,
+      currency: "USD",
+      paymentStatus: "COMPLETED",
+      resolvedAt: resolved,
+    };
+    const paid = await one(
+      "select public.process_square_payment_event($1,'payment.updated','fixture','fixture',$2,$3,$4,$5,$6,'COMPLETED',2100,'USD',null) as r",
+      [paymentEventId, resolved, "b".repeat(64), event, squareOrder, payment],
+    );
+    assert.equal(paid.r.fulfillment_authorized, true);
+    const detail = (client, method) =>
+      client.query(
+        "select public.record_square_payment_details($1,$2,'COMPLETED',2100,'USD',$3)",
+        [squareOrder, payment, { payment_method: method }],
+      );
+    const lifecycle = (client, status) =>
+      client.query("update public.orders set status=$2 where id=$1", [oid, status]);
+    await detail(db, "card");
+    const workerPid = (await worker.query("select pg_backend_pid() as pid")).rows[0].pid;
+    async function race(first, second) {
+      await query("begin");
+      await first(db);
+      await query("set constraints all immediate");
+      const waiting = second(worker);
+      try {
+        await assertBlocked(workerPid);
+      } finally {
+        await query("commit");
+        await waiting;
+      }
+    }
+    await race(
+      (client) => lifecycle(client, "shipped"),
+      (client) => detail(client, "afterpay"),
+    );
+    const firstSale = (await facts("order", oid))[0].payload;
+    await race(
+      (client) => detail(client, "cashAppPay"),
+      (client) => lifecycle(client, "refunded"),
+    );
+    const secondSale = (await facts("order", oid))[0].payload;
+    assert.deepEqual(
+      [
+        [firstSale.status, firstSale.paymentMethod],
+        [secondSale.status, secondSale.paymentMethod],
+      ],
+      [
+        ["shipped", "afterpay"],
+        ["refunded", "cashAppPay"],
+      ],
+    );
+    console.log(
+      "PASS independent lifecycle and payment-detail writers preserve both fields in both lock orders",
+    );
     const anchor = new Date().toISOString(),
       id = randomUUID();
     const pending = {
@@ -435,24 +654,17 @@ export async function testCommerceSources(db, worker) {
     const sql = "select public.analytics_record_operational_outcome($1,$2)";
     await query("begin");
     await query(sql, [ds, pending]);
-    const workerPid = (await worker.query("select pg_backend_pid() as pid")).rows[0].pid;
     const waiting = worker.query(sql, [ds, succeeded]);
     try {
-      let blocked = false;
-      for (let i = 0; i < 100 && !blocked; i++) {
-        blocked = (
-          await one("select pg_backend_pid()=any(pg_blocking_pids($1)) as blocked", [
-            workerPid,
-          ])
-        ).blocked;
-      }
-      assert(blocked, "independent provider resolution waited for the timeout writer");
+      await assertBlocked(workerPid);
     } finally {
       await query("commit");
       await waiting;
     }
     await query(sql, [ds, pending]);
-    const latest = await facts("payment_attempt", null);
+    const latest = (await facts("payment_attempt", null)).filter(
+      (f) => f.payload.attemptId === id,
+    );
     assert.equal(latest.length, 1);
     assert.equal(latest[0].revision, 2);
     assert.equal(latest[0].payload.outcome, "succeeded");
@@ -461,11 +673,25 @@ export async function testCommerceSources(db, worker) {
     );
   } finally {
     await query("rollback");
+    await query("begin");
+    await query("delete from public.square_webhook_events where square_event_id=$1", [
+      paymentEventId,
+    ]);
+    await query("delete from public.orders where tenant_id=$1", [owner]);
+    await query("delete from public.product_variants where product_id=$1", [product]);
+    await query("delete from public.products where id=$1", [product]);
+    await query("delete from public.tag_brands where id=$1", [brand]);
+    await query("delete from public.tag_sizes where id=any($1::uuid[])", [sizes]);
+    await query("delete from public.tenants where id=$1", [owner]);
+    await flush();
     for (const table of [
       "analytics_publication_outbox",
       "analytics_fact_versions",
+      "analytics_order_context",
+      "analytics_consent_receipts",
       "analytics_datasets",
     ])
       await query("delete from public." + table + " where dataset_id=$1", [ds]);
+    await query("commit");
   }
 }

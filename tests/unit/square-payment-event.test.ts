@@ -69,6 +69,41 @@ const disputeCreatedEvent = {
 };
 
 describe("SquarePaymentEventProcessor", () => {
+  it.each([null, { unrecognized: true }, "malformed-value"])(
+    "accepts business confirmation with unusable optional evidence %j",
+    async (value) => {
+      const event = structuredClone(completedPaymentEvent);
+      Object.assign(event.data.object.payment, {
+        updated_at: value,
+        note: value,
+        reference_id: value,
+        processing_fee: value,
+      });
+      const rpc = jest.fn().mockResolvedValue({
+        data: { duplicate: false, fulfillment_authorized: true, order_id: "order-1" },
+        error: null,
+      });
+      const verifier = jest.fn().mockResolvedValue(undefined);
+      const processor = new SquarePaymentEventProcessor(
+        { rpc } as never,
+        "location-1",
+        verifier,
+      );
+      await expect(processor.process(JSON.stringify(event))).resolves.toMatchObject({
+        fulfillmentAuthorized: true,
+      });
+      expect(verifier).toHaveBeenCalledTimes(1);
+      const [name, args] = rpc.mock.calls[0];
+      expect(name).toBe("process_square_payment_event");
+      expect(args.p_event_data).toMatchObject({
+        amountCents: 14980,
+        paymentId: "payment-1",
+        resolvedAt: event.created_at,
+      });
+      expect(args.p_event_data).not.toHaveProperty("attemptId");
+      expect(args.p_event_data).not.toHaveProperty("fees");
+    },
+  );
   it("accepts a completed payment with Square's nullable card expiration fields", async () => {
     const event = structuredClone(completedPaymentEvent);
     Object.assign(event.data.object.payment.card_details.card, {
