@@ -28,10 +28,11 @@ import {
 } from "@/components/checkout/SquarePaymentMethods";
 import {
   getOrCreateCheckoutDeviceSessionId,
-  getOrCreateCheckoutIdempotencyKey,
-  storeGuestOrderAccess,
-  isCurrentCheckoutAttempt,
-} from "@/lib/checkout/client-session";
+  capturePreparedAttempt,
+  readGuestOrderAccess,
+  useCheckoutRegistration,
+  useProcessingCredential,
+} from "@/Modules/Checkout/Source/Client";
 import type {
   CheckoutBillingAddress,
   CheckoutPickupContact,
@@ -48,7 +49,7 @@ import type {
   CheckoutPageData,
 } from "@/lib/checkout/checkout-page-data";
 import { ShippingAddressValidationError } from "@/lib/checkout/shipping-address-validation";
-import { clearIdempotencyKeyFromStorage } from "@/lib/checkout/idempotency";
+import { z } from "zod";
 import { captureCheckoutStarted } from "@/lib/measurement/client";
 import { hasUsableCheckout } from "@/lib/measurement/triggers";
 
@@ -90,6 +91,7 @@ type CheckoutPreparePayload = {
   quoteFingerprint: string;
   shippingConfirmation?: string;
   shippingAddressOverride?: boolean;
+  recoveryOnly?: true;
   idempotencyKey: string;
   deviceSessionId: string;
 };
@@ -142,13 +144,17 @@ function OwnerCheckout({
   initialData: CheckoutPageData;
   verified: boolean;
 }) {
-  const {
-    items,
-    isReady: cartReady,
-    clearCart,
-    applyStockConflicts,
-    scopeValidationToOrder,
-  } = useCart();
+  const cart = useCart();
+  const { items, isReady: cartReady, scopeValidationToOrder } = cart;
+  const router = useRouter();
+  const scopes = useCheckoutRegistration();
+  const remember = useProcessingCredential();
+  const credential = useRef(remember);
+  useLayoutEffect(() => {
+    credential.current = remember;
+  }, [remember]);
+  const activeAttempt = useRef<AbortController | null>(null);
+  useLayoutEffect(() => () => activeAttempt.current?.abort(), []);
   const isReady = verified && cartReady;
   // An owned prepare can finish during a visibility check; attach its reference
   // through the newly verified connection when that continuation resumes.
@@ -156,14 +162,18 @@ function OwnerCheckout({
   const readyScopeAction = useRef<typeof scopeValidationToOrder | null>(null);
   useLayoutEffect(() => {
     readyScopeAction.current = isReady ? scopeValidationToOrder : null;
+    function register(order: ValidationOrder, action: typeof scopeValidationToOrder) {
+      const release = action(order);
+      scopes?.register(order.orderId, order.guestAccessToken ?? null, release);
+    }
     if (readyScopeAction.current && pendingScope.current) {
-      readyScopeAction.current(pendingScope.current);
+      register(pendingScope.current, readyScopeAction.current);
       pendingScope.current = null;
     }
     return () => {
       readyScopeAction.current = null;
     };
-  }, [isReady, scopeValidationToOrder]);
+  }, [isReady, scopeValidationToOrder, initialData.ownerId, scopes]);
   const { isCurrent } = useSession();
   const [hasOpened, setHasOpened] = useState(false);
   if (isReady && items.length && !hasOpened) setHasOpened(true);
@@ -206,6 +216,14 @@ function OwnerCheckout({
     ]),
   );
   const currentBasket = useRef(basketKey);
+  const latestCart = useRef(cart);
+  const captureView = useRef(cart.captureForCheckout);
+  useLayoutEffect(() => {
+    if (isReady) {
+      captureView.current = cart.captureForCheckout;
+      latestCart.current = cart;
+    }
+  }, [isReady, cart]);
   useLayoutEffect(() => {
     if (isReady) currentBasket.current = basketKey;
   }, [basketKey, isReady]);
@@ -385,24 +403,49 @@ function OwnerCheckout({
       throw new Error("Enter a complete US shipping address before paying.");
     }
 
-    const cartFingerprint = JSON.stringify({
-      items: checkoutItems,
-      fulfillment,
-      buyerEmail,
-      paymentMethod: method,
-      shippingAddress: selectedShippingAddress,
-      billingAddress: selectedBillingAddress,
-      pickupContact: selectedPickupContact,
-      quoteFingerprint: selectedQuote.quoteFingerprint,
-    });
+    const fingerprint = (original: readonly (typeof checkoutItems)[number][]) =>
+      JSON.stringify({
+        items: original,
+        fulfillment,
+        buyerEmail,
+        paymentMethod: method,
+        shippingAddress: selectedShippingAddress,
+        billingAddress: selectedBillingAddress,
+        pickupContact: selectedPickupContact,
+        quoteFingerprint: selectedQuote.quoteFingerprint,
+      });
     const deviceSessionId = getOrCreateCheckoutDeviceSessionId();
-    const attemptKey = getOrCreateCheckoutIdempotencyKey(cartFingerprint);
+    activeAttempt.current?.abort();
+    const lifetime = new AbortController();
+    activeAttempt.current = lifetime;
+    const renderedCapture = latestCart.current.captureForCheckout;
+    const attempt = await capturePreparedAttempt(
+      {
+        ...latestCart.current,
+        bindPreparedOrder: async (id, order, signal) => {
+          await requireOwner();
+          return latestCart.current.bindPreparedOrder(id, order, signal);
+        },
+      },
+      checkoutItems,
+      fingerprint,
+      lifetime.signal,
+      () => setQuoteRevision((n) => n + 1),
+      () =>
+        captureView.current === renderedCapture && currentBasket.current === basketKey,
+      initialData.ownerId,
+    );
+    const attemptKey = attempt.key;
+    await requireOwner();
+    assertCurrentBasket();
+    if (!attempt.current() || lifetime.signal.aborted)
+      throw Error("Your checkout changed. Review your current order.");
     const response = await fetch("/api/checkout/prepare", {
       method: "POST",
       headers: { "Content-Type": "application/json" },
       body: JSON.stringify(
         buildCheckoutPreparePayload({
-          items: checkoutItems,
+          items: attempt.items,
           fulfillment,
           paymentMethod: method,
           buyerEmail,
@@ -412,6 +455,7 @@ function OwnerCheckout({
           quoteFingerprint: selectedQuote.quoteFingerprint,
           shippingConfirmation: context?.shippingConfirmation,
           shippingAddressOverride: context?.shippingAddressOverride,
+          ...(attempt.recoveryOnly ? { recoveryOnly: true as const } : {}),
           idempotencyKey: attemptKey,
           deviceSessionId,
         }),
@@ -419,6 +463,12 @@ function OwnerCheckout({
     });
     const data = await response.json().catch(() => null);
     await requireOwner();
+    if (lifetime.signal.aborted || !attempt.current())
+      throw Error(
+        data?.code === "INVENTORY_CONFLICT"
+          ? "Your cart changed. Review your items before paying."
+          : "Your checkout changed. Review your current order.",
+      );
     assertCurrentBasket();
     if (!response.ok) {
       if (
@@ -427,7 +477,7 @@ function OwnerCheckout({
       ) {
         const pending =
           "Check your order status in your account or through your secure order link before trying another payment.";
-        const sameAttempt = () => isCurrentCheckoutAttempt(attemptKey, cartFingerprint);
+        const sameAttempt = () => !lifetime.signal.aborted && attempt.current();
         if (!sameAttempt())
           throw new Error("Your cart changed. Review your items before paying.");
         const conflicts = inventoryConflict.array().nonempty().safeParse(data.conflicts);
@@ -440,12 +490,16 @@ function OwnerCheckout({
             // Recovery belongs to the verified financial pair even if its Cart
             // connection has retired or its optional stock update cannot persist.
             setNeedsRecovery(true);
-            void applyStockConflicts(conflicts.data, true, sameAttempt);
+            void attempt.applyStockConflicts?.(conflicts.data, true, sameAttempt);
             throw new Error(pending);
           }
-          const saved = await applyStockConflicts(conflicts.data, false, sameAttempt);
+          const saved = await attempt.applyStockConflicts?.(
+            conflicts.data,
+            false,
+            sameAttempt,
+          );
           await requireOwner();
-          if (saved.status === "saved" && sameAttempt()) {
+          if (saved?.status === "saved" && sameAttempt()) {
             const message = conflicts.data
               .map((c) =>
                 provenConflictMessage(
@@ -457,7 +511,7 @@ function OwnerCheckout({
                 ),
               )
               .join(" ");
-            clearIdempotencyKeyFromStorage();
+            attempt.reject();
             throw new Error(message);
           }
           throw new Error("Your cart changed. Review your items before paying.");
@@ -490,13 +544,13 @@ function OwnerCheckout({
         );
       }
       if (response.status === 409) {
-        clearIdempotencyKeyFromStorage();
+        attempt.reject();
         setQuoteRevision((value) => value + 1);
       }
       throw new Error(data?.error || "Unable to prepare checkout");
     }
     if (
-      typeof data?.orderId !== "string" ||
+      !z.uuid().safeParse(data?.orderId).success ||
       typeof data?.totals?.subtotalCents !== "number" ||
       typeof data?.totals?.shippingCents !== "number" ||
       typeof data?.totals?.taxCents !== "number" ||
@@ -504,19 +558,52 @@ function OwnerCheckout({
     ) {
       throw new Error("Checkout returned invalid payment details");
     }
-    if (typeof data.guestAccessToken === "string" && data.guestAccessToken) {
-      storeGuestOrderAccess(data.orderId, data.guestAccessToken);
+    const token =
+      initialData.isGuest && typeof data.guestAccessToken === "string"
+        ? data.guestAccessToken
+        : undefined;
+    const bound = await attempt.prepared(data.orderId, token);
+    await requireOwner();
+    if (lifetime.signal.aborted || !attempt.current())
+      throw Error("Your checkout changed. Review your current order.");
+    const stored = initialData.isGuest ? readGuestOrderAccess(data.orderId) : null;
+    const guestAccessToken = token || stored || undefined;
+    const transientGuestAccessToken = token && token !== stored ? token : undefined;
+    if (!bound) {
+      onProcessing(data.orderId, transientGuestAccessToken);
+      router.replace("/checkout/processing?orderId=" + encodeURIComponent(data.orderId));
+      throw Error("Checking your original order status.");
     }
-    const orderScope = { orderId: data.orderId, guestAccessToken: data.guestAccessToken };
-    if (readyScopeAction.current) readyScopeAction.current(orderScope);
-    else pendingScope.current = orderScope;
+    const orderScope = { orderId: data.orderId, guestAccessToken };
+    if (readyScopeAction.current) {
+      const release = readyScopeAction.current(orderScope);
+      scopes?.register(data.orderId, guestAccessToken ?? null, release);
+    } else pendingScope.current = orderScope;
+    const assertFinancialAttempt = () => {
+      if (
+        lifetime.signal.aborted ||
+        !attempt.current() ||
+        (token && stored === token && readGuestOrderAccess(data.orderId) !== token)
+      )
+        throw Error("Your checkout changed. Review your current order.");
+    };
     return {
-      assertCurrentBasket,
+      assertCurrentBasket: () => {
+        assertCurrentBasket();
+        assertFinancialAttempt();
+      },
+      assertFinancialAttempt,
       orderId: data.orderId,
-      guestAccessToken: data.guestAccessToken,
+      guestAccessToken,
+      transientGuestAccessToken,
       deviceSessionId,
       totals: data.totals,
     };
+  }
+
+  function onProcessing(orderId: string, token?: string) {
+    credential.current?.(orderId, token);
+    setIsRedirecting(true);
   }
 
   if (isRedirecting) return <CheckoutPaymentDialog open={verified} />;
@@ -556,6 +643,11 @@ function OwnerCheckout({
                       ? "Check your order status before trying another payment."
                       : "Review the items in your cart before paying."}
                   </p>
+                  {needsRecovery && (
+                    <a className="mr-3 underline" href="/account">
+                      Check order status
+                    </a>
+                  )}
                   <a className="underline" href="/cart">
                     Review cart
                   </a>
@@ -580,11 +672,7 @@ function OwnerCheckout({
                 quoteWalletShippingDestination={quoteWalletShippingDestination}
                 resolveWalletShippingContact={resolveWalletShippingContact}
                 prepare={prepare}
-                clearCart={() => {
-                  setIsRedirecting(true);
-                  clearIdempotencyKeyFromStorage();
-                  void clearCart();
-                }}
+                onProcessing={onProcessing}
               >
                 <CheckoutContactSection
                   email={email}

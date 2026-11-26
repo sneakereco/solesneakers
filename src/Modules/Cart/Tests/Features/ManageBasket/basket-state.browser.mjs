@@ -1080,12 +1080,22 @@ function accountCheckoutData(id) {
     },
   };
 }
+const preparedOrderId = "33333333-3333-4333-8333-333333333333";
+const checkoutLine = (id) => ({
+  ...line(id),
+  productId: {
+    a: "11111111-1111-4111-8111-111111111111",
+    b: "11111111-1111-4111-8111-222222222222",
+    guest: "11111111-1111-4111-8111-333333333333",
+  }[id],
+  variantId: "22222222-2222-4222-8222-222222222222",
+});
 async function checkoutOwnershipFixture(
   t,
   { reviewAddress = false, stockZeroAfterPrepare = false } = {},
 ) {
   const heldLine = {
-    ...line("a"),
+    ...checkoutLine("a"),
     productId: "11111111-1111-4111-8111-111111111111",
     variantId: "22222222-2222-4222-8222-222222222222",
     maxStock: 1,
@@ -1110,8 +1120,11 @@ async function checkoutOwnershipFixture(
   const mounted = await mountCheckoutBrowser({
     view: "checkout",
     initialUser: sessionUser,
-    accountItems: { a: [stockZeroAfterPrepare ? heldLine : line("a")], b: [line("b")] },
-    guestItems: [line("guest")],
+    accountItems: {
+      a: [stockZeroAfterPrepare ? heldLine : checkoutLine("a")],
+      b: [checkoutLine("b")],
+    },
+    guestItems: [checkoutLine("guest")],
     documentData: accountCheckoutData("a"),
     setupDocument: (data) => {
       window.fixtureInitialCheckout = data;
@@ -1119,7 +1132,8 @@ async function checkoutOwnershipFixture(
       const nativeFetch = window.fetch.bind(window);
       window.fetch = async (input, init) => {
         const response = await nativeFetch(input, init);
-        if (input === "/api/checkout/prepare" || input === "/api/checkout/pay") {
+        if (input === "/api/checkout/pay") window.payRead = true;
+        if (input === "/api/checkout/prepare") {
           const json = response.json.bind(response);
           response.json = async () => {
             const body = await json();
@@ -1133,6 +1147,21 @@ async function checkoutOwnershipFixture(
       const payments = window.Square.payments();
       window.Square.payments = () => ({
         ...payments,
+        paymentRequest: (...args) => {
+          const request = payments.paymentRequest(...args);
+          return {
+            ...request,
+            update: (...values) => {
+              if (window.fixtureAppleEarlyError)
+                throw Error("Apple Pay total update failed");
+              return request.update(...values);
+            },
+          };
+        },
+        applePay: async () => ({
+          tokenize: async () => ({ status: "CANCEL" }),
+          destroy: async () => {},
+        }),
         cashAppPay: async (_request, options) => {
           const counters = (window.cashCounters ??= {
             created: 0,
@@ -1186,7 +1215,7 @@ async function checkoutOwnershipFixture(
         if (stockZeroAfterPrepare) {
           if (!requests.prepares.length)
             return route.fulfill({ json: { items: [heldLine], removed: [] } });
-          const owns = input.order?.orderId === "fixture-order";
+          const owns = input.order?.orderId === preparedOrderId;
           const availability = owns ? "available" : "unavailable";
           return route.fulfill({
             json: {
@@ -1246,7 +1275,7 @@ async function checkoutOwnershipFixture(
               shippingConfirmation: "fixture-confirmation",
             },
           });
-        return route.fulfill({ json: { orderId: "fixture-order", totals } });
+        return route.fulfill({ json: { orderId: preparedOrderId, totals } });
       }
       if (url.pathname === "/api/checkout/payment-permit") {
         requests.permits++;
@@ -1263,8 +1292,21 @@ async function checkoutOwnershipFixture(
           json: { statusUrl: "/checkout/processing?orderId=fixture-only" },
         });
       }
-      if (url.pathname === "/api/orders/fixture-only")
-        return route.fulfill({ json: { status: "pending" } });
+      if (url.pathname === "/api/orders/" + preparedOrderId)
+        return route.fulfill({
+          json: {
+            id: preparedOrderId,
+            status: "pending",
+            subtotal: 11,
+            shipping: 0,
+            tax: 0,
+            total: 11,
+            fulfillment: "ship",
+            updatedAt: "2026-11-25T00:00:00Z",
+            events: [],
+            supportEmail: "support@example.test",
+          },
+        });
       throw Error("Unexpected fixture path " + url.pathname);
     },
   });
@@ -1330,7 +1372,7 @@ for (const id of ["b", null])
       await expect.poll(() => f.requests.quotes.length).toBe(1);
       f.changeOwner(id);
       await page.evaluate(() => window.dispatchEvent(new Event("sessionUpdate")));
-      await visible(page, [line(id ?? "guest")]);
+      await visible(page, [checkoutLine(id ?? "guest")]);
       await expect(page.getByRole("textbox", { name: "Email", exact: true })).toHaveCount(
         0,
       );
@@ -1377,7 +1419,7 @@ for (const id of ["b", null])
       }
       await expect.poll(() => f.requests.quotes.length).toBeGreaterThan(1);
       const fresh = f.requests.quotes.filter((q) =>
-        q.items.some((row) => row.productId === (id ?? "guest")),
+        q.items.some((row) => row.productId === checkoutLine(id ?? "guest").productId),
       );
       assert.ok(fresh.length);
       assert.ok(
@@ -1391,7 +1433,11 @@ for (const id of ["b", null])
         assert.equal(payload.buyerEmail, "b@fixture.invalid");
         assert.equal(payload.shippingAddress.line1, "10 b St");
         assert.deepEqual(payload.items, [
-          { productId: "b", variantId: "b-v", quantity: 1 },
+          {
+            productId: checkoutLine("b").productId,
+            variantId: checkoutLine("b").variantId,
+            quantity: 1,
+          },
         ]);
       }
     },
@@ -1437,7 +1483,7 @@ test("same-owner visibility preserves active checkout method, billing and a sing
     await expect.poll(() => f.requests.permits).toBe(1);
     await expect(page.getByText("Fixture payment paused", { exact: true })).toBeVisible();
     await page.evaluate(() => window.testCart.recheckAvailability());
-    assert.deepEqual(f.requests.validations.at(-1).order, { orderId: "fixture-order" });
+    assert.deepEqual(f.requests.validations.at(-1).order, { orderId: preparedOrderId });
     assert.ok(
       await page.evaluate(
         () =>
@@ -1515,7 +1561,7 @@ for (const stage of ["preparation", "dispatched payment"])
         .toBe(1);
       f.changeOwner("b");
       await page.evaluate(() => window.dispatchEvent(new Event("sessionUpdate")));
-      await visible(page, [line("b")]);
+      await visible(page, [checkoutLine("b")]);
       await page.evaluate(
         (data) =>
           window.dispatchEvent(
@@ -1541,7 +1587,7 @@ for (const stage of ["preparation", "dispatched payment"])
       assert.equal(f.requests.permits, stage === "preparation" ? 0 : 1);
       assert.equal(f.requests.pays, stage === "preparation" ? 0 : 1);
       assert.equal(new URL(page.url()).pathname, "/checkout");
-      assert.deepEqual(await stored(page, account("b")), [line("b")]);
+      assert.deepEqual(await stored(page, account("b")), [checkoutLine("b")]);
     } finally {
       release();
     }
@@ -1583,7 +1629,7 @@ for (const nextOwner of ["a", "b"])
         await expect.poll(() => f.requests.prepares.length).toBe(2);
         assert.equal(f.requests.prepares[1].shippingAddress.line1, "20 Suggested St");
       } else {
-        await visible(page, [line("b")]);
+        await visible(page, [checkoutLine("b")]);
         await expect(
           page.getByRole("button", { name: "Refresh checkout" }),
         ).toBeVisible();
@@ -1615,7 +1661,7 @@ test("accepted payment resumes once after unavailable session is verified", asyn
     await expect
       .poll(() => new URL(page.url()).pathname, { timeout: 3000 })
       .toBe("/checkout/processing");
-    assert.equal(new URL(page.url()).searchParams.get("orderId"), "fixture-only");
+    assert.equal(new URL(page.url()).searchParams.get("orderId"), preparedOrderId);
     assert.equal(f.requests.prepares.length, 1);
     assert.equal(f.requests.permits, 1);
     assert.equal(f.requests.pays, 1);
@@ -1646,7 +1692,7 @@ test("prepared Cash App payment keeps its stock-zero own hold and SDK through sa
     await expect.poll(() => f.requests.validations.length).toBeGreaterThan(after);
     await expect.poll(() => page.evaluate(() => window.testCart.isReady)).toBe(true);
     await page.evaluate(() => window.testCart.recheckAvailability());
-    assert.deepEqual(f.requests.validations.at(-1).order, { orderId: "fixture-order" });
+    assert.deepEqual(f.requests.validations.at(-1).order, { orderId: preparedOrderId });
     const line = await page.evaluate(() => window.testCart.items[0]);
     assert.equal(line.maxStock, 1);
     assert.equal(line.orderScoped, true);
@@ -1693,7 +1739,7 @@ for (const outcome of ["same quote", "changed quote", "new owner"]) {
       assert.equal(f.requests.prepares.length, 0);
       releaseSession();
       if (outcome === "new owner") {
-        await visible(page, [line("b")]);
+        await visible(page, [checkoutLine("b")]);
         await expect(
           page.getByRole("button", { name: "Refresh checkout" }),
         ).toBeVisible();
@@ -1849,7 +1895,7 @@ for (const replaceOwner of [false, true]) {
       if (replaceOwner) {
         f.changeOwner("b");
         await page.evaluate(() => window.dispatchEvent(new Event("sessionUpdate")));
-        await visible(page, [line("b")]);
+        await visible(page, [checkoutLine("b")]);
         await page.evaluate(
           (data) =>
             window.dispatchEvent(
@@ -1962,3 +2008,19 @@ for (const method of ["card", "afterpay"]) {
     assert.equal(f.requests.pays, 0);
   });
 }
+
+test("Apple Pay request update error survives late Cash App Cancel", async (t) => {
+  const { page } = await checkoutOwnershipFixture(t);
+  await page.waitForFunction(() => typeof window.beginCash === "function");
+  await page.getByRole("radio", { name: "Cash App Pay", exact: true }).click();
+  assert.equal(await page.evaluate(() => window.beginCash()), true);
+  await page.evaluate(() => {
+    window.fixtureAppleEarlyError = true;
+    window.oldCash = window.deliverCash;
+  });
+  await page.getByRole("button", { name: "Pay with Apple Pay" }).click();
+  const error = page.getByText("Apple Pay total update failed", { exact: true });
+  await expect(error.first()).toBeVisible();
+  await page.evaluate(() => window.oldCash({ status: "Cancel" }));
+  await expect(page.getByRole("dialog")).toContainText("Apple Pay total update failed");
+});

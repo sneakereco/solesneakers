@@ -696,13 +696,39 @@ export class BasketStorage {
       return { status: "stale" };
     if (current.rows.some((r) => !r.units) && ledger.records.length)
       return { status: "corrupt" };
-    if (existing && existing.stage === "pending") {
-      if (!sameProjection(existing.lines, expected)) return { status: "mismatch" };
+    // Capture can initialize unit lineage. A prepare conflict must target that exact
+    // resulting view, never an unrelated view published while the request was in flight.
+    const captured = (
+      captureId: string,
+      items: readonly PurchaseLine[],
+    ): CaptureResult => {
+      const capturedView = captureView!;
       return {
         status: "captured",
-        captureId: existing.captureId,
-        items: projection(existing.lines)!,
+        captureId,
+        items,
+        applyStockConflicts: (conflicts, recoveryRequired, currentAttempt = () => true) =>
+          this.reviewEdit(
+            capturedView,
+            (rows) => this.markConflicts(rows, conflicts, recoveryRequired),
+            () => {
+              if (!eligible() || !currentAttempt()) return false;
+              return (
+                this.proofs(origin, eligible)?.records.some(
+                  (record) =>
+                    record.captureId === captureId &&
+                    record.attemptKey === attemptKey &&
+                    record.origin === origin &&
+                    record.stage === "pending",
+                ) === true
+              );
+            },
+          ),
       };
+    };
+    if (existing && existing.stage === "pending") {
+      if (!sameProjection(existing.lines, expected)) return { status: "mismatch" };
+      return captured(existing.captureId, projection(existing.lines)!);
     }
     const needsLineage = current.rows.some((r) => !r.units);
     const rows = current.rows.map(initialize);
@@ -726,7 +752,7 @@ export class BasketStorage {
       })
     )
       return { status: "unavailable" };
-    return { status: "captured", captureId, items: projection(lines)! };
+    return captured(captureId, projection(lines)!);
   }
   private bind(captureId: string, orderId: string, eligible: () => boolean) {
     if (!eligible() || !validId(captureId) || !validId(orderId)) return false;

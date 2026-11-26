@@ -59,9 +59,9 @@ const bundle = await build({
           loader: "js",
           contents:
             args.path === "next/navigation"
-              ? 'const router = { replace: url => history.replaceState({}, "", url) }; export const useRouter = () => router;'
+              ? 'const router = { replace: url => history.replaceState({}, "", url) }; export const useRouter = () => router; export const useSearchParams=()=>new URLSearchParams(location.search);'
               : args.path.endsWith("CartProvider")
-                ? "const items = [{productId:'11111111-1111-4111-8111-111111111111',variantId:'22222222-2222-4222-8222-222222222222',titleDisplay:'Test shoes',quantity:1,priceCents:10000}]; export const useCart = () => ({items,itemCount:1,isReady:true,clearCart(){},scopeValidationToOrder(order){window.test.validationOrder=order;}});"
+                ? "const items = [{productId:'11111111-1111-4111-8111-111111111111',variantId:'22222222-2222-4222-8222-222222222222',titleDisplay:'Test shoes',quantity:1,priceCents:10000}]; export const useCart = () => ({items,itemCount:1,isReady:true,captureForCheckout:async request=>({status:'captured',captureId:'fixture',items:request.expectedItems}),bindPreparedOrder:async()=>true,scopeValidationToOrder(order){window.test.validationOrder=order;return ()=>{};}});"
                 : args.path.endsWith("SessionContext")
                   ? "const session={user:{id:'fixture-buyer'},status:'ready',isCurrent:()=>true}; export const useSession=()=>session;"
                   : args.path.endsWith("client-env")
@@ -133,13 +133,17 @@ try {
         await new Promise((resolve) => {
           releasePrepare = resolve;
         });
-        return route.fulfill({ json: { orderId: "test-order", totals } });
+        return route.fulfill({
+          json: { orderId: "10000000-0000-4000-8000-000000000001", totals },
+        });
       }
       if (
         body.shippingAddressOverride === true &&
         body.shippingConfirmation === "entered-confirmation"
       ) {
-        return route.fulfill({ json: { orderId: "test-order", totals } });
+        return route.fulfill({
+          json: { orderId: "10000000-0000-4000-8000-000000000001", totals },
+        });
       }
       if (holdAddressValidation) {
         holdAddressValidation = false;
@@ -181,7 +185,7 @@ try {
         });
       return route.fulfill({
         json: {
-          orderId: "test-order",
+          orderId: "10000000-0000-4000-8000-000000000001",
           totals: {
             ...totals,
             taxCents: changeTotal ? 100 : 0,
@@ -199,7 +203,9 @@ try {
         releasePay = resolve;
       });
       return route.fulfill({
-        json: { statusUrl: "/checkout/processing?orderId=test-order" },
+        json: {
+          statusUrl: "/checkout/processing?orderId=10000000-0000-4000-8000-000000000001",
+        },
       });
     }
     return route.fulfill({ contentType: "text/html", body: '<div id="root"></div>' });
@@ -218,7 +224,9 @@ try {
       window.test.spinner = document.querySelector("dialog .animate-spin");
     });
     releasePay();
-    await page.waitForURL("**/checkout/processing?orderId=test-order");
+    await page.waitForURL(
+      "**/checkout/processing?orderId=10000000-0000-4000-8000-000000000001",
+    );
     assert.equal(
       await page.evaluate(
         () =>
@@ -256,7 +264,7 @@ try {
   await page.waitForFunction(() => window.test.tokenized === 1);
   assert.equal(
     await page.evaluate(() => window.test.validationOrder?.orderId),
-    "test-order",
+    "10000000-0000-4000-8000-000000000001",
   );
   assert.equal(prepares.at(-1).shippingAddress.postalCode, "20500-0005");
   assert.equal(prepares.at(-1).billingAddress.postalCode, "20500-0005");

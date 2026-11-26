@@ -125,6 +125,7 @@ export const prepareCheckoutRequestSchema = z
     paymentMethod: paymentMethodSchema,
     shippingConfirmation: z.string().max(100).optional(),
     shippingAddressOverride: z.boolean().optional(),
+    recoveryOnly: z.literal(true).optional(),
     quoteFingerprint: z.string().regex(/^[a-f0-9]{64}$/),
     buyerEmail: z.string().trim().toLowerCase().email().max(254).nullable().optional(),
     shippingAddress: checkoutShippingAddressSchema.nullable(),

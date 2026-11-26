@@ -171,6 +171,51 @@ describe("prepareCheckoutHandler", () => {
     return { deps, body, existing };
   }
 
+  it.each(["missing", "unfinished", "wrong-context", "wrong-account", "authorized"])(
+    "recovery-only prepare %s can only read the original owned attached order",
+    async (kind) => {
+      const { deps, body } = await existingCheckout(
+        3,
+        kind === "unfinished"
+          ? { squareOrderId: null, squareOrderVersion: null }
+          : kind === "wrong-context"
+            ? { guestContextHash: "other" }
+            : {},
+      );
+      if (kind === "missing") deps.findExisting.mockResolvedValue(null);
+      if (kind === "wrong-account")
+        deps.getSession.mockResolvedValue({
+          user: { id: "other", email: body.buyerEmail },
+        });
+      const req = new Request("https://shop.example.com/api/checkout/prepare", {
+        method: "POST",
+        headers: { cookie },
+        body: JSON.stringify({ ...body, recoveryOnly: true }),
+      });
+      const response = await prepareCheckoutHandler(req as never, deps);
+      expect(response.status).toBe(kind === "authorized" ? 200 : 409);
+      const data = await response.json();
+      if (kind === "authorized") {
+        expect(data.orderId).toBe("order-1");
+        expect(data.guestAccessToken).toBe("guest-token");
+      } else {
+        expect(data.code).toBe("CHECKOUT_RECOVERY_REQUIRED");
+        expect(data.orderId).toBeUndefined();
+        expect(deps.createGuestAccessToken).not.toHaveBeenCalled();
+      }
+      for (const dependency of [
+        deps.resolveCart,
+        deps.validateShippingAddress,
+        deps.reserve,
+        deps.createSquareOrder,
+        deps.calculateSquareOrder,
+        deps.attachSquareOrder,
+        deps.checkAttempt,
+      ])
+        expect(dependency).not.toHaveBeenCalled();
+    },
+  );
+
   it.each([3, 4] as const)(
     "reuses a persisted v%s checkout without rewriting or creating a Square order",
     async (version) => {

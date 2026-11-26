@@ -9,16 +9,9 @@ import { createSupabaseServerClient } from "@/lib/supabase/server";
 import { OrdersService } from "@/services/orders-service";
 import { createSupabaseAdminClient } from "@/lib/supabase/service-role";
 import { getRequestIdFromHeaders } from "@/lib/http/request-id";
-import { getSquareConfig } from "@/lib/square/config";
-import { createSquareClient } from "@/lib/square/client";
-import { SquarePaymentEventProcessor } from "@/lib/square/payment-event";
-import { squarePaymentDetails } from "@/lib/square/payment-details";
-import { createSquarePaymentOrderVerifier } from "@/lib/square/payment-order-verification";
-import { reconcilePendingSquarePayment } from "@/lib/square/payment-reconciliation";
-import { createSquarePaymentReconciliationCooldown } from "@/lib/square/payment-reconciliation-cooldown";
+import { readCurrentPaymentAttempt } from "@/Modules/Checkout/Source/Features/Payments/attempt-repository";
+import { CheckoutRecoveryRepository } from "@/Modules/Checkout/Source/Features/Recovery/recovery-repository";
 import { log, logError } from "@/lib/utils/log";
-import { OrdersRepository } from "@/repositories/orders-repo";
-import { scheduleCheckoutNotifications } from "@/lib/checkout/checkout-notification-scheduler";
 
 const paramsSchema = z.object({
   orderId: z.string().uuid(),
@@ -42,7 +35,7 @@ export async function GET(
     layer: "api",
     message: "order_status_request_start",
     requestId,
-    url: request.url,
+    route: "/api/orders/:orderId",
   });
 
   try {
@@ -124,9 +117,11 @@ export async function GET(
     });
 
     const supabase = await createSupabaseServerClient();
-    const {
-      data: { user },
-    } = await supabase.auth.getUser();
+    const auth = await supabase.auth.getUser().catch((error) => {
+      if (!queryParsed.data.token) throw error;
+      return null;
+    });
+    const user = auth?.data.user;
     const userId = user?.id ?? null;
 
     log({
@@ -137,7 +132,6 @@ export async function GET(
       orderId,
       hasUser: Boolean(user),
       userId,
-      userEmail: user?.email,
     });
 
     // Step 5: Get access token
@@ -168,7 +162,7 @@ export async function GET(
       hasAccessToken: Boolean(accessToken),
     });
 
-    let status = await ordersService.getOrderStatus(
+    const status = await ordersService.getOrderStatus(
       paramsParsed.data.orderId,
       userId,
       accessToken,
@@ -176,81 +170,17 @@ export async function GET(
 
     if (queryParsed.data.reconcile === "1" && status.status === "pending") {
       try {
-        const acquired =
-          await createSquarePaymentReconciliationCooldown().acquire(orderId);
-        if (!acquired) {
-          return json(status, 200);
-        }
-        const square = createSquareClient();
-        const config = getSquareConfig();
-        const processor = new SquarePaymentEventProcessor(
-          adminSupabase,
-          config.locationId,
-          createSquarePaymentOrderVerifier(adminSupabase),
-          scheduleCheckoutNotifications,
-        );
-        const orders = new OrdersRepository(adminSupabase);
-        await reconcilePendingSquarePayment(orderId, {
-          getLocalOrder: async (id) => {
-            const order = await orders.getById(id);
-            return order
-              ? {
-                  id: order.id,
-                  status: order.status,
-                  squareOrderId: order.square_order_id,
-                  paymentId: order.payment_transaction_id,
-                }
-              : null;
-          },
-          getSquareOrder: async (squareOrderId) => {
-            const response = await square.orders.get({ orderId: squareOrderId });
-            const order = response.order;
-            return order?.id && order.locationId
-              ? {
-                  id: order.id,
-                  locationId: order.locationId,
-                  referenceId: order.referenceId ?? null,
-                  tenders: (order.tenders ?? []).map((tender) => ({
-                    paymentId: tender.paymentId ?? null,
-                  })),
-                }
-              : null;
-          },
-          getSquarePayment: async (paymentId) => {
-            const response = await square.payments.get({ paymentId });
-            const payment = response.payment;
-            const amount = payment?.amountMoney?.amount;
-            if (
-              !payment?.id ||
-              !payment.orderId ||
-              !payment.locationId ||
-              !payment.status ||
-              amount === null ||
-              amount === undefined ||
-              !payment.amountMoney?.currency ||
-              !payment.createdAt ||
-              !payment.versionToken
-            ) {
-              return null;
-            }
-            return {
-              id: payment.id,
-              orderId: payment.orderId,
-              locationId: payment.locationId,
-              status: payment.status,
-              amountCents: Number(amount),
-              currency: String(payment.amountMoney.currency),
-              riskLevel: payment.riskEvaluation?.riskLevel
-                ? String(payment.riskEvaluation.riskLevel)
-                : null,
-              createdAt: payment.createdAt,
-              versionToken: payment.versionToken,
-              details: squarePaymentDetails(payment),
-            };
-          },
-          processPayment: (payment) => processor.processPaymentSnapshot(payment),
+        const attempt = await readCurrentPaymentAttempt(adminSupabase, orderId);
+        if (attempt?.state === "ready") return json(status, 200);
+        await new CheckoutRecoveryRepository(adminSupabase).enqueueRecovery({
+          kind: "reconcile_payment",
+          orderId,
+          uniqueKey: attempt
+            ? "payment_attempt:" + attempt.id
+            : "legacy_payment_order:" + orderId,
+          reason: "status_check",
+          dueAt: new Date().toISOString(),
         });
-        status = await ordersService.getOrderStatus(orderId, userId, accessToken);
       } catch (reconciliationError) {
         logError(reconciliationError, {
           layer: "api",

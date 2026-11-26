@@ -45,6 +45,7 @@ export type CaptureResult =
   | {
       status: "captured";
       captureId: string;
+      applyStockConflicts?: BasketReviewActions["applyStockConflicts"];
       items: readonly PurchaseLine[];
     };
 export type ConsumptionResult = ProofFailure | { status: "matched"; attemptKey: string };

@@ -9,7 +9,11 @@ export interface OrderStatusResponse {
   shipping: number;
   tax: number;
   total: number;
-  fulfillment: FulfillmentMethod;
+  fulfillment: FulfillmentMethod | null;
+  financialReview?: boolean;
+  purchasedLines?:
+    | readonly { productId: string; variantId: string; quantity: number }[]
+    | null;
   updatedAt: string;
   events: Array<{
     type: string;

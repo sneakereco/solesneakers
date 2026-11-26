@@ -8,8 +8,8 @@ export const metadata = {
   robots: { index: false, follow: false },
 };
 
-import { CheckoutPaymentProvider } from "@/components/checkout/CheckoutPaymentDialog";
+import { CheckoutLayoutProviders } from "./CheckoutLayoutProviders";
 
 export default function CheckoutLayout({ children }: { children: React.ReactNode }) {
-  return <CheckoutPaymentProvider>{children}</CheckoutPaymentProvider>;
+  return <CheckoutLayoutProviders>{children}</CheckoutLayoutProviders>;
 }

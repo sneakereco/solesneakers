@@ -315,11 +315,11 @@ const bundle = await build({
             "export const SquarePaymentMethods = ({ children }) => <div data-payment>{children}</div>;",
           ],
           [
-            "@/lib/checkout/client-session",
+            "@/Modules/Checkout/Source/Client",
             `
           export const getOrCreateCheckoutDeviceSessionId = () => "device";
-          export const getOrCreateCheckoutIdempotencyKey = () => "idempotency";
-          export const storeGuestOrderAccess = () => {};
+          export const useProcessingCredential=()=>undefined; export const useCheckoutRegistration=()=>undefined; export const capturePreparedAttempt=()=>{throw Error("unexpected prepare")};
+          export const readGuestOrderAccess=()=>null;
         `,
           ],
           [

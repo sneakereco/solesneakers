@@ -879,3 +879,78 @@ test("stock loss keeps the requested row, excludes it from the total, and offers
   await page.getByRole("button", { name: "Remove Air Runner from cart" }).click();
   await expect(page.getByRole("heading", { name: "Air Runner" })).toHaveCount(0);
 });
+
+for (const change of [
+  "later edit",
+  "identical replacement",
+  "new capture",
+  "queued supersession",
+]) {
+  test("post-capture conflict writer preserves " + change, async (t) => {
+    const user = { id: "owner", email: "owner@example.test" };
+    const { page, close } = await mountCheckoutBrowser({
+      initialUser: user,
+      accountItems: { owner: [runner] },
+      route: offline,
+    });
+    t.after(close);
+    const result = await page.evaluate(
+      async ({ change, runner }) => {
+        const cart = window.testCart;
+        const capture = await cart.captureForCheckout({
+          mode: "new",
+          attemptKey: crypto.randomUUID(),
+          expectedItems: [runner],
+        });
+        if (capture.status !== "captured") throw Error(capture.status);
+        let current = true;
+        const write = () =>
+          capture.applyStockConflicts(
+            [
+              {
+                productId: runner.productId,
+                variantId: runner.variantId,
+                requestedQuantity: runner.quantity,
+                availableQuantity: 0,
+                reason: "unavailable",
+              },
+            ],
+            true,
+            () => current,
+          );
+        if (change === "later edit")
+          await cart.addItem({
+            ...runner,
+            variantId: "99999999-9999-4999-8999-999999999999",
+          });
+        if (change === "identical replacement") {
+          await cart.removeItem(runner.productId, runner.variantId);
+          await cart.addItem(runner);
+        }
+        if (change === "new capture") {
+          await new Promise((resolve) =>
+            requestAnimationFrame(() => requestAnimationFrame(resolve)),
+          );
+          const next = await window.testCart.captureForCheckout({
+            mode: "new",
+            attemptKey: crypto.randomUUID(),
+            expectedItems: [runner],
+          });
+          if (next.status !== "captured") throw Error(next.status);
+        }
+        let pending;
+        if (change === "queued supersession") {
+          await navigator.locks.request("rdk_cart", async () => {
+            pending = write();
+            current = false;
+          });
+        }
+        const raw = localStorage.getItem("rdk_cart_user_owner");
+        const saved = await (pending ?? write());
+        return [saved.status, raw === localStorage.getItem("rdk_cart_user_owner")];
+      },
+      { change, runner },
+    );
+    assert.deepEqual(result, ["stale", true]);
+  });
+}

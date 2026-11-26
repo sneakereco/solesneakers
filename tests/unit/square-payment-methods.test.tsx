@@ -352,7 +352,7 @@ describe("SquarePaymentMethods", () => {
         quoteWalletShippingDestination={jest.fn()}
         resolveWalletShippingContact={jest.fn()}
         prepare={jest.fn()}
-        clearCart={jest.fn()}
+        onProcessing={jest.fn()}
       />,
     );
 
@@ -392,7 +392,7 @@ describe("SquarePaymentMethods", () => {
         quoteWalletShippingDestination={jest.fn()}
         resolveWalletShippingContact={jest.fn()}
         prepare={jest.fn()}
-        clearCart={jest.fn()}
+        onProcessing={jest.fn()}
       />,
     );
 

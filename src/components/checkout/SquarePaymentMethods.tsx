@@ -68,6 +68,21 @@ import { log } from "@/lib/utils/log";
 export type PaymentMethod = PaymentPermitRequest["method"];
 class CheckoutCancelled extends Error {}
 
+async function readUnavailablePayment(response: Response, request: AbortController) {
+  let timeout: ReturnType<typeof setTimeout> | undefined;
+  const deadline = new Promise<null>((resolve) => {
+    timeout = setTimeout(() => {
+      request.abort();
+      resolve(null);
+    }, 2_000);
+  });
+  try {
+    return await Promise.race([response.json().catch(() => null), deadline]);
+  } finally {
+    clearTimeout(timeout);
+  }
+}
+
 export type CheckoutPaymentAddress = {
   name: string;
   phone: string;
@@ -83,6 +98,8 @@ export type PreparedCheckout = {
   assertCurrentBasket?: () => void;
   orderId: string;
   guestAccessToken?: string;
+  transientGuestAccessToken?: string;
+  assertFinancialAttempt?: () => void;
   deviceSessionId: string;
   totals: ExactCheckoutQuote["totals"];
 };
@@ -432,7 +449,7 @@ export function SquarePaymentMethods({
   accessSuspended = false,
   recoveryRequired = false,
   requireOwner,
-  clearCart,
+  onProcessing,
   children,
 }: {
   paymentConfig: CheckoutPageData["paymentConfig"];
@@ -457,7 +474,7 @@ export function SquarePaymentMethods({
   accessSuspended?: boolean;
   recoveryRequired?: boolean;
   requireOwner?: (options?: { waitForQuote: true }) => Promise<void>;
-  clearCart(): void;
+  onProcessing(orderId: string, token?: string): void;
   children?: ReactNode;
 }) {
   const exactQuote = quoteReady && quote?.completeness === "exact" ? quote : null;
@@ -587,6 +604,7 @@ export function SquarePaymentMethods({
     setTurnstileToken(token);
   }
 
+  const { applicationId, environment, locationId } = paymentConfig;
   const cardState = useSquareCardState(card, submitRegularPayment);
   useEffect(() => {
     if (selectedMethod !== "card") {
@@ -601,7 +619,11 @@ export function SquarePaymentMethods({
     let phase: SquarePaymentPhase = "load";
     void (async () => {
       try {
-        const nextPayments = await loadSquareWebPayments(paymentConfig);
+        const nextPayments = await loadSquareWebPayments({
+          applicationId,
+          environment,
+          locationId,
+        });
         if (!active) {
           return;
         }
@@ -636,12 +658,7 @@ export function SquarePaymentMethods({
       active = false;
       void lifecycles.card.dispose();
     };
-  }, [
-    lifecycles,
-    paymentConfig.applicationId,
-    paymentConfig.environment,
-    paymentConfig.locationId,
-  ]);
+  }, [lifecycles, applicationId, environment, locationId]);
 
   useEffect(() => {
     if (!payments || !hasQuote || !latest.current.quote) {
@@ -650,6 +667,7 @@ export function SquarePaymentMethods({
     let active = true;
     setExpressLoading(true);
     const initialQuote = latest.current.quote;
+    const requests = walletRequests.current;
     void lifecycles.applePay
       .replace(
         () => {
@@ -668,7 +686,7 @@ export function SquarePaymentMethods({
             },
             fulfillment,
           );
-          walletRequests.current.applePay = request;
+          requests.applePay = request;
           return payments.applePay(request);
         },
         (method) => {
@@ -683,7 +701,7 @@ export function SquarePaymentMethods({
     return () => {
       active = false;
       setApplePay(null);
-      delete walletRequests.current.applePay;
+      delete requests.applePay;
       void lifecycles.applePay
         .dispose()
         .catch((methodError) => reportUnavailable("applePay", "create", methodError));
@@ -700,6 +718,7 @@ export function SquarePaymentMethods({
     }
     let active = true;
     setMethodErrors((errors) => ({ ...errors, afterpay: undefined }));
+    const requests = walletRequests.current;
     void lifecycles.afterpay
       .replace(
         () => {
@@ -725,7 +744,7 @@ export function SquarePaymentMethods({
               );
             return afterpayShippingUpdate(context, value);
           });
-          walletRequests.current.afterpay = request;
+          requests.afterpay = request;
           return payments.afterpayClearpay(request);
         },
         async (method) => {
@@ -751,7 +770,7 @@ export function SquarePaymentMethods({
     return () => {
       active = false;
       setAfterpay(null);
-      delete walletRequests.current.afterpay;
+      delete requests.afterpay;
       void lifecycles.afterpay
         .dispose()
         .catch((methodError) => reportUnavailable("afterpay", "create", methodError));
@@ -939,18 +958,46 @@ export function SquarePaymentMethods({
     checkout.assertCurrentBasket?.();
     setLoadingProvider(null);
     setPaymentDialogOpen(true);
-    const response = await fetch("/api/checkout/pay", {
-      method: "POST",
-      headers: { "Content-Type": "application/json" },
-      body: JSON.stringify(authorization),
+    const paymentRequest = new AbortController();
+    // Once the request leaves the tab, losing even its response headers requires status recovery.
+    let timeout: ReturnType<typeof setTimeout> | undefined;
+    const deadline = new Promise<null>((resolve) => {
+      timeout = setTimeout(() => {
+        paymentRequest.abort();
+        resolve(null);
+      }, 10_000);
     });
-    const data = await response.json().catch(() => null);
-    if (!response.ok || typeof data?.statusUrl !== "string") {
-      throw new Error(data?.error || "Payment could not be completed");
+    let response: Response | null;
+    try {
+      response = await Promise.race([
+        fetch("/api/checkout/pay", {
+          method: "POST",
+          signal: paymentRequest.signal,
+          headers: { "Content-Type": "application/json" },
+          body: JSON.stringify(authorization),
+        }).catch(() => null),
+        deadline,
+      ]);
+    } finally {
+      clearTimeout(timeout);
+    }
+
+    if (response && !response.ok && (response.status < 500 || response.status === 503)) {
+      const data = await readUnavailablePayment(response, paymentRequest);
+      if (
+        ([400, 401, 402, 403, 409].includes(response.status) &&
+          typeof data?.error === "string" &&
+          data.status !== "UNKNOWN") ||
+        data?.code === "PAYMENT_NOT_SUBMITTED"
+      )
+        throw Error(data?.error || "Payment could not be completed");
     }
     await requireOwner?.();
-    clearCart();
-    router.replace(data.statusUrl);
+    checkout.assertFinancialAttempt?.();
+    onProcessing(checkout.orderId, checkout.transientGuestAccessToken);
+    router.replace(
+      "/checkout/processing?orderId=" + encodeURIComponent(checkout.orderId),
+    );
   }
 
   function permitRequest(checkout: PreparedCheckout, method: PaymentMethod) {
@@ -1210,6 +1257,9 @@ export function SquarePaymentMethods({
         requestBillingContact: true,
       });
     } catch (walletError) {
+      paymentInteraction.current++;
+      setProviderActive(false);
+      setLoadingProvider(null);
       setPaymentDialogOpen(true);
       setError(
         walletError instanceof Error

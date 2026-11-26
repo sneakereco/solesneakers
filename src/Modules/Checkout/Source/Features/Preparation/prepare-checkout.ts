@@ -234,6 +234,7 @@ export async function prepareCheckoutHandler(
       : readGuestContexts(request, deps.shippingConfirmationSecret());
     if (!session && contexts.length === 0) return recoveryRequired();
     const existing = await deps.findExisting(tenantId, parsed.data.idempotencyKey);
+    if (parsed.data.recoveryOnly && !existing?.squareOrderId) return recoveryRequired();
     const contextHash = existing
       ? contexts.find((hash) => verifyGuestPreparationReuse(existing, hash))
       : contexts[0];
@@ -432,6 +433,20 @@ export async function prepareCheckoutHandler(
       );
     }
 
+    if (parsed.data.recoveryOnly) {
+      if (!existing?.squareOrderId) return recoveryRequired();
+      return json(
+        {
+          orderId: existing.orderId,
+          expiresAt: existing.expiresAt,
+          reused: true,
+          totals: totals(existing),
+          guestAccessToken: await guestToken(existing.orderId, !session, deps),
+          paymentConfig,
+        },
+        200,
+      );
+    }
     const expiresAt = new Date(deps.now().getTime() + 15 * 60 * 1000);
     const reservation = await deps.reserve({
       ownerBinding,
