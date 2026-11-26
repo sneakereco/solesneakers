@@ -172,6 +172,7 @@ create function public.process_square_payment_event(
 declare
   result jsonb; o public.orders%rowtype; c public.analytics_order_context%rowtype;
   sale jsonb; confirmed_at timestamptz; capture text;
+  timestamp_schema json;
 begin
   result:=analytics_source.process_square_payment_event(p_square_event_id,p_event_type,p_merchant_id,p_location_id,
     p_square_created_at,p_payload_sha256,p_event_data,p_square_order_id,p_square_payment_id,
@@ -189,9 +190,17 @@ begin
   -- keeps its independent updated/event timestamp in payment_event().
   -- Truncate sub-microsecond precision so conversion cannot round past midnight.
   capture:=regexp_replace(p_event_data->>'capturedAt','([.][0-9]{6})[0-9]+','\1');
-  confirmed_at:=case when capture is not null and extensions.jsonb_matches_schema(
-    (public.analytics_fact_scalar_schemas()->'timestamp')::json,to_jsonb(capture))
-    then capture::timestamptz else clock_timestamp() end;
+  timestamp_schema:=(public.analytics_fact_scalar_schemas()->'timestamp')::json;
+  if capture is not null and extensions.jsonb_matches_schema(timestamp_schema,to_jsonb(capture)) then
+    confirmed_at:=capture::timestamptz;
+  end if;
+  -- An offset may roll the instant outside the supported UTC calendar years
+  -- or outside the timestamp schema in the session that serializes the fact.
+  if confirmed_at is null or extract(year from confirmed_at at time zone 'UTC') not between 1 and 9999
+    or not extensions.jsonb_matches_schema(timestamp_schema,to_jsonb(confirmed_at))
+    or analytics_source.dataset(confirmed_at) is distinct from c.dataset_id then
+    confirmed_at:=clock_timestamp();
+  end if;
   -- Keep the reserved basis. If the verified provider/current-order basis
   -- differs, the original decomposition is incomplete even when tax is zero.
   sale:=c.order_snapshot||jsonb_build_object('totalCollectedCents',p_amount_cents,'taxCents',

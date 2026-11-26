@@ -511,12 +511,61 @@ export async function testCommerceSources(db, worker) {
       amountCents: 1800,
       resolvedAt: resolved,
     };
-    const beforeConfirmation = (await one("select clock_timestamp() as at")).at;
     const confirmCorrection = (data) =>
       one(
         "select public.process_square_payment_event($1,'payment.updated','fixture','fixture',$2,$3,$4,$5,$6,'COMPLETED',1800,'USD',null) r",
         [randomUUID(), start, "c".repeat(64), data, correctedSquare, correctedPayment],
       );
+    const beforeActivation = (
+      await one(
+        "select activated_at - interval '1 second' as at from public.analytics_datasets where dataset_id=$1",
+        [ds],
+      )
+    ).at.toISOString();
+    for (const [capturedAt, zone] of [
+      ["9999-12-31T23:59:59-05:00", "UTC"],
+      ["9999-12-31T23:59:59-05:00", "America/New_York"],
+      ["9999-12-31T23:59:59Z", "Pacific/Kiritimati"],
+      [beforeActivation, "UTC"],
+    ]) {
+      await query("savepoint unsupported_capture");
+      await query("select set_config('TimeZone',$1,true)", [zone]);
+      const lower = (await one("select clock_timestamp() as at")).at;
+      const result = await confirmCorrection({ ...correctedEvent, capturedAt });
+      await flush();
+      const upper = (await one("select clock_timestamp() as at")).at;
+      assert.deepEqual(result.r, {
+        order_id: corrected,
+        duplicate: false,
+        fulfillment_authorized: true,
+      });
+      assert.equal(
+        (await one("select status from public.orders where id=$1", [corrected])).status,
+        "paid",
+      );
+      assert.equal(
+        (
+          await one(
+            "select count(*)::int n from public.inventory_reservations where order_id=$1 and status='consumed'",
+            [corrected],
+          )
+        ).n,
+        2,
+      );
+      const [sale] = await facts("order", corrected);
+      assert.equal(sale.payload.totalCollectedCents, 1800);
+      assert.equal((await facts("line", corrected)).length, 2);
+      assert(
+        Date.parse(sale.effectiveAt) >= lower.getTime() &&
+          Date.parse(sale.effectiveAt) <= upper.getTime(),
+      );
+      await query("rollback to savepoint unsupported_capture");
+      await query("release savepoint unsupported_capture");
+    }
+    console.log(
+      "PASS offset rollover and preactivation capture use bounded server confirmation while retaining paid sale and consumed reservations",
+    );
+    const beforeConfirmation = (await one("select clock_timestamp() as at")).at;
     const accepted = await confirmCorrection(correctedEvent);
     await flush();
     assert.equal(accepted.r.fulfillment_authorized, true);
