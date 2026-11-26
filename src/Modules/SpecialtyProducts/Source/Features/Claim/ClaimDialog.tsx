@@ -1,5 +1,13 @@
 "use client";
-import { useCallback, useEffect, useId, useRef, useState, type FormEvent } from "react";
+import {
+  useCallback,
+  useEffect,
+  useId,
+  useRef,
+  useState,
+  type FormEvent,
+  type ReactNode,
+} from "react";
 import { ModalPortal } from "@/components/ui/ModalPortal";
 import type {
   ClaimDecision,
@@ -34,10 +42,14 @@ export function ClaimDialog({
   product,
   open,
   onClose,
+  initialHeading,
+  recoverySelector,
 }: {
   product: SpecialtyPublicProduct;
   open: boolean;
   onClose(): void;
+  initialHeading?: string;
+  recoverySelector?: ReactNode;
 }) {
   const headingId = useId(),
     noteId = useId();
@@ -108,7 +120,7 @@ export function ClaimDialog({
     attempt.current = saved;
     const frame = requestAnimationFrame(() => {
       (
-        dialog.current?.querySelector<HTMLInputElement>("input") ??
+        dialog.current?.querySelector<HTMLElement>("input, select") ??
         dialog.current?.querySelector<HTMLButtonElement>("button")
       )?.focus();
       // Recover once the portal is visible, and cancel this work if it closes before paint.
@@ -249,14 +261,21 @@ export function ClaimDialog({
         role="dialog"
         aria-modal="true"
         aria-labelledby={headingId}
-        aria-describedby={noteId}
+        aria-describedby={phase === "form" ? noteId : undefined}
         tabIndex={-1}
         data-specialty-claim-dialog
         className="ph-no-capture ph-no-record max-h-[calc(100dvh-2rem)] w-[calc(100vw-2rem)] max-w-lg overflow-y-auto overscroll-contain rounded-xl bg-white p-5 text-zinc-950 shadow-xl sm:p-7"
       >
         <div className="flex items-start justify-between gap-4">
           <h2 id={headingId} className="text-xl font-semibold">
-            {decision?.status === "won" ? "You claimed it!" : "Claim " + product.name}
+            {phase === "decided" && decision
+              ? {
+                  won: "Congrats!",
+                  sold_out: "Already claimed",
+                  already_claimed: "Giveaway limit reached",
+                  closed: "Claims are closed",
+                }[decision.status]
+              : (initialHeading ?? "Claim " + product.name)}
           </h2>
           <button
             type="button"
@@ -267,10 +286,13 @@ export function ClaimDialog({
             ✕
           </button>
         </div>
-        <p id={noteId} className="mt-2 text-sm text-zinc-600">
-          Opening this form does not reserve the prize. The first complete, valid
-          submission accepted by the server wins.
-        </p>
+        {recoverySelector}
+        {phase === "form" && (
+          <p id={noteId} className="mt-2 text-sm text-zinc-600">
+            Opening this form does not reserve the prize. The first complete, valid
+            submission accepted by the server wins.
+          </p>
+        )}
         {checking && (
           <p role="status" aria-live="polite" className="my-6">
             {phase === "validating"
@@ -326,6 +348,7 @@ export function ClaimDialog({
           <div className="my-6 space-y-4" role="status" aria-live="polite">
             {decision.status === "won" ? (
               <>
+                <p>Your claim is confirmed. This prize is yours.</p>
                 <h3 className="font-semibold">{decision.receipt.productName}</h3>
                 <p className="whitespace-pre-wrap">{decision.receipt.instructions}</p>
                 <p className="text-sm text-zinc-600">

@@ -260,7 +260,7 @@ try {
       .getByRole("button", { name: "Submit claim", exact: true })
       .click();
     await expect(
-      retryGuest.page.getByRole("heading", { name: "You claimed it!" }),
+      retryGuest.page.getByRole("heading", { name: "Congrats!" }),
     ).toBeVisible();
     const next = await retryGuest.page.evaluate(
       () => JSON.parse(sessionStorage.getItem("sole:specialty:attempts:v1"))[0],
@@ -341,7 +341,7 @@ try {
   await fill(guest.page);
   stage = "claim form: submit and recover winning receipt";
   await guest.page.getByRole("button", { name: "Submit claim", exact: true }).click();
-  await expect(guest.page.getByRole("heading", { name: "You claimed it!" })).toBeVisible({
+  await expect(guest.page.getByRole("heading", { name: "Congrats!" })).toBeVisible({
     timeout: 30000,
   });
   assert.ok(wonReceipt);
@@ -387,16 +387,11 @@ try {
     ).toBeVisible();
     await guest.page.goto(origin + "/store");
     await expect(guest.page.getByTestId("specialty-product-card")).toHaveCount(0);
-    await guest.page
-      .getByText("Check your giveaway claim results", { exact: true })
-      .click();
     const beforeRecovery = paths.length;
     await guest.page
-      .getByRole("button", { name: "Check claim result", exact: true })
+      .getByRole("button", { name: "Check giveaway status", exact: true })
       .click();
-    await expect(
-      guest.page.getByRole("heading", { name: "You claimed it!" }),
-    ).toBeVisible();
+    await expect(guest.page.getByRole("heading", { name: "Congrats!" })).toBeVisible();
     assert.ok(paths.slice(beforeRecovery).includes("/api/specialty/claims/result"));
 
     stage = "staff follow-up and campaign close";
@@ -436,14 +431,9 @@ try {
     // A fresh navigation also proves recovery after reopening a disappeared prize.
     await guest.page.goto(origin + "/store");
     await guest.page
-      .getByText("Check your giveaway claim results", { exact: true })
+      .getByRole("button", { name: "Check giveaway status", exact: true })
       .click();
-    await guest.page
-      .getByRole("button", { name: "Check claim result", exact: true })
-      .click();
-    await expect(
-      guest.page.getByRole("heading", { name: "You claimed it!" }),
-    ).toBeVisible();
+    await expect(guest.page.getByRole("heading", { name: "Congrats!" })).toBeVisible();
     assert.deepEqual(await readBrowserRunState(app.runId), {
       winningClaims: 1,
       remainingStock: 0,
