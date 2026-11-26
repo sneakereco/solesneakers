@@ -16,7 +16,7 @@ import type {
   CartContextType,
   CartItem,
 } from "../../Contracts/Basket";
-import { BasketStorage, type BasketView } from "./cart-storage";
+import { BasketStorage, unavailablePurchases, type BasketView } from "./cart-storage";
 import { useBasketIdentity } from "./use-basket-identity";
 
 const cartContext = createContext<CartContextType | null>(null);
@@ -90,6 +90,7 @@ export function CartProvider({
   return (
     <cartContext.Provider
       value={{
+        ...(view?.basket === basket ? view.purchases : unavailablePurchases),
         items,
         repairReason: view?.basket === basket ? (view?.repairReason ?? null) : null,
         hasUnreadableItems: Boolean(view?.basket === basket && view?.hasUnreadableItems),

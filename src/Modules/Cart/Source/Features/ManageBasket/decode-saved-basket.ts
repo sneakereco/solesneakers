@@ -1,4 +1,5 @@
 import { z } from "zod";
+import { decodeUnits, uniqueLines, type SavedLine } from "./purchase-capture";
 
 import type { BasketRepairReason, CartItem } from "../../Contracts/Basket";
 
@@ -18,7 +19,7 @@ export function checkSavedCount(count: number) {
 }
 
 // Older saved lines can lack the optional stock cap or a usable image.
-const storedLine = z.looseObject({
+const storedLine = z.object({
   productId: z.string().min(1),
   variantId: z.string().min(1),
   sizeLabel: z.string(),
@@ -33,30 +34,45 @@ const storedLine = z.looseObject({
 
 export function decodeSavedBasket(raw: string | null): {
   items: CartItem[];
+  rows: SavedLine[];
   complete: boolean;
 } {
-  if (raw === null) return { items: [], complete: true };
+  if (raw === null) return { items: [], rows: [], complete: true };
   checkSavedLength(raw.length);
   let value: unknown;
   try {
     value = JSON.parse(raw);
   } catch {
-    return { items: [], complete: false };
+    return { items: [], rows: [], complete: false };
   }
-  if (!Array.isArray(value)) return { items: [], complete: false };
+  if (!Array.isArray(value)) return { items: [], rows: [], complete: false };
   checkSavedCount(value.length);
-  const items: CartItem[] = [];
+  const rows: SavedLine[] = [];
   for (const row of value) {
     const parsed = storedLine.safeParse(row);
     if (!parsed.success) continue;
     const line = parsed.data;
-    items.push({
-      ...line,
-      imageUrl:
-        !line.imageUrl || line.imageUrl === "/placeholder.png"
-          ? "/images/logo.png"
-          : line.imageUrl,
+    rows.push({
+      units: Object.hasOwn(row, "_cartUnits")
+        ? decodeUnits(row._cartUnits, line.quantity)
+        : undefined,
+      item: {
+        ...line,
+        imageUrl:
+          !line.imageUrl || line.imageUrl === "/placeholder.png"
+            ? "/images/logo.png"
+            : line.imageUrl,
+      },
     });
   }
-  return { items, complete: items.length === value.length };
+  const items = rows.map((row) => row.item);
+  const ids = rows.flatMap((row) => (row.units ? [row.units.id] : []));
+  return {
+    items,
+    rows,
+    complete:
+      rows.length === value.length &&
+      uniqueLines(items) &&
+      new Set(ids).size === ids.length,
+  };
 }

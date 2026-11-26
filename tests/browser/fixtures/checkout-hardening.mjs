@@ -45,7 +45,7 @@ const framework = {
       <img {...props} data-image-src={src} src="data:image/gif;base64,R0lGODlhAQABAAD/ACwAAAAAAQABAAACADs=" />;
   `,
   "@/lib/measurement/client": `
-    export const captureProductAddedToCart = () => {window.fixtureAdded=(window.fixtureAdded??0)+1};
+    export const captureProductAddedToCart = (...args) => {window.fixtureAdded=(window.fixtureAdded??0)+1; (window.fixtureAddedArgs??=[]).push(args)};
     export const captureProductViewed = () => {};
     export const captureCheckoutStarted = () => {};
   `,
