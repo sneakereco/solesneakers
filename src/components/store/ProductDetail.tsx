@@ -34,7 +34,8 @@ const getConditionLabel = (condition: string) => {
 };
 
 export function ProductDetail({ product }: ProductDetailProps) {
-  const { addItem, items, isReady } = useCart();
+  const { addItem, items, isReady, validationStatus, retryValidation } = useCart();
+  const cartUnavailable = !isReady && validationStatus === "error";
   const addInFlight = useRef(false);
   const [addFeedback, setAddFeedback] = useState<AddFeedback | null>(null);
   const viewedProductId = useRef<string | null>(null);
@@ -236,7 +237,9 @@ export function ProductDetail({ product }: ProductDetailProps) {
             className="mt-7 w-full cursor-pointer bg-zinc-900 px-6 py-4 text-sm font-medium uppercase text-white transition-colors hover:bg-black disabled:cursor-not-allowed disabled:bg-zinc-400"
           >
             {!isReady
-              ? "Loading cart…"
+              ? cartUnavailable
+                ? "Cart unavailable"
+                : "Loading cart…"
               : !selectedVariant || selectedVariant.stock <= 0
                 ? "Out of Stock"
                 : inCartQuantity > 0
@@ -246,6 +249,14 @@ export function ProductDetail({ product }: ProductDetailProps) {
                   : "Add to Cart"}
           </ActionButton>
 
+          {cartUnavailable && (
+            <div className="mt-3 text-sm">
+              <p role="alert">We could not load your cart.</p>
+              <button type="button" onClick={retryValidation} className="mt-2 underline">
+                Retry loading cart
+              </button>
+            </div>
+          )}
           {product.description && (
             <div className="mt-8 border-t border-zinc-300 pt-6">
               <h2 className="text-sm font-medium uppercase tracking-[0.02em]">

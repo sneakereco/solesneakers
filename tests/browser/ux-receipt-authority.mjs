@@ -68,6 +68,8 @@ createRoot(document.getElementById("root")).render(<SessionProvider initialUser=
 const browser = await chromium.launch();
 try {
   for (const scenario of [
+    "read-failure",
+    "save-failure",
     "denied",
     "forged",
     "pending",
@@ -115,17 +117,63 @@ try {
     await openUxHarness(page, bundle, url);
     await page.waitForFunction(() => window.cart?.isReady);
     await expect(page.locator("output")).toHaveText("1");
-    if (["bound", "denied", "pending", "review", "failed"].includes(scenario))
+    if (
+      [
+        "read-failure",
+        "save-failure",
+        "bound",
+        "denied",
+        "pending",
+        "review",
+        "failed",
+      ].includes(scenario)
+    )
       await page.evaluate(() =>
         window.cart.bindCheckoutSnapshot("order", window.cart.captureCheckoutSnapshot()),
       );
+    if (scenario === "save-failure")
+      await page.evaluate(() => {
+        const original = Storage.prototype.setItem;
+        Storage.prototype.setItem = function (key, value) {
+          if (key === "rdk_cart_session") throw Error("Quota");
+          return original.call(this, key, value);
+        };
+        window.restoreWrites = () => {
+          Storage.prototype.setItem = original;
+        };
+      });
+    if (scenario === "read-failure")
+      await page.evaluate(() => {
+        const original = Storage.prototype.getItem;
+        Storage.prototype.getItem = function (key) {
+          if (key === "rdk_cart_session") throw Error("Storage unavailable");
+          return original.call(this, key);
+        };
+        window.restoreWrites = () => {
+          Storage.prototype.getItem = original;
+        };
+      });
     await page.evaluate(() => window.showReceipt());
     if (scenario === "forged") {
       await expect.poll(() => Boolean(release)).toBe(true);
       await expect(page.getByText("Order Confirmed!")).toHaveCount(0);
       release();
     }
-    if (scenario === "missing") {
+    if (scenario === "save-failure" || scenario === "read-failure") {
+      await expect(page.getByText("Order Confirmed!")).toBeVisible();
+      const retry = page.getByRole("button", { name: "Retry cart update" });
+      await expect(retry).toBeVisible();
+      await expect(page.locator("output")).toHaveText("1");
+      await page.evaluate(() => window.restoreWrites());
+      const requests = [];
+      page.on("request", (request) => requests.push(request.url()));
+      await retry.click();
+      await expect(page.locator("output")).toHaveText("");
+      await expect(retry).toHaveCount(0);
+      await expect(page.getByText("Order Confirmed!")).toBeVisible();
+      assert.deepEqual(requests, [], "cart recovery only writes local storage");
+      assert.equal(reads, 1);
+    } else if (scenario === "missing") {
       await expect(page.locator("output")).toHaveText("1");
       assert.equal(reads, 0);
     } else if (scenario === "unbound") {
@@ -153,6 +201,7 @@ try {
       await expect(page.getByText("Order Confirmed!")).toHaveCount(0);
       await expect(page.locator("output")).toHaveText("1");
     }
+    await expect(page.getByRole("button", { name: "Retry cart update" })).toHaveCount(0);
     assert.deepEqual(errors, []);
     await page.close();
   }

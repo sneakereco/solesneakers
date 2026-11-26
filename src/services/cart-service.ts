@@ -36,12 +36,12 @@ export class CartService {
     return this.read().items;
   }
 
-  private async locked(work: () => boolean): Promise<boolean> {
+  private async locked<T>(work: () => T, unavailable: T): Promise<T> {
     try {
       if (!this.owner) return work(); // Session storage is tab-scoped; no await inside its commit.
       return await navigator.locks.request(this.key, work);
     } catch {
-      return false;
+      return unavailable;
     }
   }
 
@@ -80,7 +80,7 @@ export class CartService {
           return false;
         if (legacy !== null) storage.removeItem("rdk_cart");
         return true;
-      });
+      }, false);
     try {
       if (this.owner && this.storage.getItem("rdk_cart") !== null)
         return await navigator.locks.request("rdk_cart_migration", hydrate);
@@ -103,7 +103,7 @@ export class CartService {
       const next = change(lines);
       if (next === lines && current) return true;
       return next !== null && this.save(raw, next);
-    });
+    }, false);
   }
 
   async addItem(item: Omit<CartItem, "quantity">, active: Guard = () => true) {
@@ -223,26 +223,39 @@ export class CartService {
       if (existing !== null) return existing === value;
       storage.setItem(key, value);
       return storage.getItem(key) === value;
-    });
+    }, false);
   }
 
   private bindingKey(orderId: string) {
     return JSON.stringify([this.key, "checkout", orderId]);
   }
 
-  consumeConfirmedOrder(order: OrderStatusResponse, active: Guard = () => true) {
-    return this.edit((lines) => {
-      if (
-        !order.id ||
-        classifyCheckoutOrderStatus(order.status) !== "paid" ||
-        order.customerId !== this.owner ||
-        !order.purchasedItems?.length
-      )
-        return null;
-      const binding = this.storage.getItem(this.bindingKey(order.id));
-      if (!binding) return null;
+  async consumeConfirmedOrder(
+    order: OrderStatusResponse,
+    active: Guard = () => true,
+    onUpdateUnavailable?: () => void,
+  ) {
+    if (
+      !active() ||
+      !order.id ||
+      classifyCheckoutOrderStatus(order.status) !== "paid" ||
+      order.customerId !== this.owner ||
+      !order.purchasedItems?.length
+    )
+      return false;
+    const outcome = await this.locked<"unchanged" | "consumed" | "unavailable">(() => {
+      if (!active()) return "unchanged";
+      const storage = this.storage;
+      const binding = storage.getItem(this.bindingKey(order.id));
+      if (!binding) return "unchanged";
       const snapshot = JSON.parse(binding) as CartCheckoutSnapshot;
-      return snapshot.owner === this.owner ? consumeUnits(lines, snapshot, order) : null;
-    }, active);
+      if (snapshot.owner !== this.owner) return "unchanged";
+      const raw = storage.getItem(this.key);
+      const next = consumeUnits(decodeCart(raw).lines, snapshot, order);
+      if (!next) return "unchanged";
+      return this.save(raw, next) ? "consumed" : "unavailable";
+    }, "unavailable");
+    if (outcome === "unavailable" && active()) onUpdateUnavailable?.();
+    return outcome === "consumed";
   }
 }

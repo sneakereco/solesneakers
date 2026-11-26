@@ -45,7 +45,10 @@ interface CartContextType {
     orderId: string,
     snapshot: CartCheckoutSnapshot,
   ) => Promise<boolean>;
-  consumeConfirmedOrder: (order: OrderStatusResponse) => Promise<boolean>;
+  consumeConfirmedOrder: (
+    order: OrderStatusResponse,
+    onUpdateUnavailable?: () => void,
+  ) => Promise<boolean>;
 }
 const cartContext = createContext<CartContextType | null>(null);
 const empty: CartItem[] = [];
@@ -254,9 +257,12 @@ export function CartProvider({
     return saved;
   };
   const consumeConfirmedOrder = useCallback(
-    async (order: OrderStatusResponse) =>
+    async (order: OrderStatusResponse, onUpdateUnavailable?: () => void) =>
       Boolean(
-        cart && ready && current() && (await cart.consumeConfirmedOrder(order, current)),
+        cart &&
+          ready &&
+          current() &&
+          (await cart.consumeConfirmedOrder(order, current, onUpdateUnavailable)),
       ),
     [cart, current, ready],
   );
@@ -278,7 +284,10 @@ export function CartProvider({
         retryValidation: () => {
           if (isSessionUnavailable) void refreshSession();
           else if (ready) void validate();
-          else void hydrate();
+          else if (cart) {
+            setValidation({ cart, status: "loading" });
+            void hydrate();
+          }
         },
         writeError: error && error.cart === cart ? error.message : null,
         writePending: Boolean(cart && saving === cart),

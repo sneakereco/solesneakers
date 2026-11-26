@@ -176,3 +176,83 @@ test("a reduced stock cap trims existing units without reporting a successful ad
   expect(await cart.addItem({ ...row, maxStock: 1 })).toBe(false);
   expect(cart.getCart()).toMatchObject([{ quantity: 1, maxStock: 1 }]);
 });
+
+test("receipt reports only a failed save of matched units and can retry without consuming later additions", async () => {
+  await bindTwo();
+  const onSaveFailure = jest.fn();
+  for (const order of [
+    { ...paid, id: "unbound" },
+    { ...paid, purchasedItems: undefined },
+  ]) {
+    expect(await cart.consumeConfirmedOrder(order, () => true, onSaveFailure)).toBe(
+      false,
+    );
+  }
+  expect(onSaveFailure).not.toHaveBeenCalled();
+  session.setItem.mockImplementationOnce(() => {
+    throw Error("Quota");
+  });
+  expect(await cart.consumeConfirmedOrder(paid, () => true, onSaveFailure)).toBe(false);
+  expect(onSaveFailure).toHaveBeenCalledTimes(1);
+  expect(cart.getCart()[0].quantity).toBe(2);
+  await cart.addItem(row);
+  expect(await cart.consumeConfirmedOrder(paid, () => true, onSaveFailure)).toBe(true);
+  expect(await cart.consumeConfirmedOrder(paid, () => true, onSaveFailure)).toBe(false);
+  expect(onSaveFailure).toHaveBeenCalledTimes(1);
+  expect(cart.getCart()[0].quantity).toBe(1);
+});
+
+test.each(["binding", "primary", "lock"])(
+  "reports a confirmed owner's unavailable %s and retries without changing the paid order",
+  async (denial) => {
+    const buyer = new CartService("buyer");
+    expect(await buyer.hydrate()).toBe(true);
+    await buyer.addItem(row);
+    expect(
+      await buyer.bindCheckoutSnapshot(
+        "order",
+        buyer.captureCheckoutSnapshot(buyer.read().revision),
+      ),
+    ).toBe(true);
+    const originalRead = account.getItem;
+    const originalLocks = navigator.locks;
+    const onUnavailable = jest.fn();
+    try {
+      if (denial === "lock")
+        Object.defineProperty(navigator, "locks", {
+          value: { request: () => Promise.reject(Error("Denied")) },
+        });
+      else
+        account.getItem = (storageKey: string) => {
+          if ((denial === "primary") === (storageKey === buyer.key))
+            throw Error("Unavailable");
+          return originalRead(storageKey);
+        };
+      const order = { ...paid, customerId: "buyer" };
+      expect(
+        await buyer.consumeConfirmedOrder(
+          { ...order, purchasedItems: undefined },
+          () => true,
+          onUnavailable,
+        ),
+      ).toBe(false);
+      expect(onUnavailable).not.toHaveBeenCalled();
+      expect(await buyer.consumeConfirmedOrder(order, () => true, onUnavailable)).toBe(
+        false,
+      );
+      expect(onUnavailable).toHaveBeenCalledTimes(1);
+    } finally {
+      account.getItem = originalRead;
+      Object.defineProperty(navigator, "locks", { value: originalLocks });
+    }
+    expect(buyer.getCart()[0].quantity).toBe(1);
+    expect(
+      await buyer.consumeConfirmedOrder(
+        { ...paid, customerId: "buyer" },
+        () => true,
+        onUnavailable,
+      ),
+    ).toBe(true);
+    expect(buyer.getCart()).toEqual([]);
+  },
+);

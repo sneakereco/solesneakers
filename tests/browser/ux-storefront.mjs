@@ -455,6 +455,44 @@ async function checkRetainedCart(page, drawer) {
   await expect(saved).toHaveCount(0);
 }
 
+async function checkProductCartRecovery(page, sessionFailure) {
+  await page.route("**/placeholder.png", (route) => route.fulfill({ status: 204 }));
+  if (!sessionFailure)
+    await page.addInitScript(() => {
+      const original = Storage.prototype.getItem;
+      Storage.prototype.getItem = function (key) {
+        if (key === "rdk_cart_session") throw Error("Storage denied");
+        return original.call(this, key);
+      };
+      window.restoreCartReads = () => {
+        Storage.prototype.getItem = original;
+      };
+    });
+  await openUxHarness(page, bundle, "https://ux.test/product");
+  if (sessionFailure) {
+    await expect(
+      page.getByRole("button", { name: "Add to Cart", exact: true }),
+    ).toBeEnabled();
+    await page.route("**/api/auth/session", (route) =>
+      route.fulfill({ status: 503, json: {} }),
+    );
+    await page.evaluate(() => window.dispatchEvent(new Event("sessionUpdate")));
+  }
+  await expect(page.getByRole("alert")).toContainText(/cart/i, options);
+  await expect(page.getByRole("button", { name: "Loading cart…" })).toHaveCount(0);
+  if (sessionFailure) {
+    await page.unroute("**/api/auth/session");
+    await page.route("**/api/auth/session", (route) =>
+      route.fulfill({ json: { user: null, role: null } }),
+    );
+  } else await page.evaluate(() => window.restoreCartReads());
+  await page.getByRole("button", { name: "Retry loading cart" }).click();
+  const add = page.getByRole("button", { name: "Add to Cart", exact: true });
+  await expect(add).toBeEnabled(options);
+  await add.click();
+  await expect(page.getByText("Added to cart.", { exact: true })).toBeVisible(options);
+}
+
 async function checkAdd(page) {
   await page.route("**/placeholder.png", (route) => route.fulfill({ status: 204 }));
   await openUxHarness(page, bundle, "https://ux.test/product");
@@ -829,6 +867,10 @@ async function checkMenu(page) {
 }
 
 try {
+  for (const failure of ["storage", "session"])
+    await check(320, "product can retry unavailable cart after " + failure, (page) =>
+      checkProductCartRecovery(page, failure === "session"),
+    );
   for (const drawer of [false, true])
     await check(
       320,

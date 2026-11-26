@@ -81,6 +81,45 @@ function Notice({ message, retry }: { message: string; retry?: () => void }) {
   );
 }
 
+function ReceiptCartUpdate({ order }: { order: OrderStatusResponse }) {
+  const { consumeConfirmedOrder } = useCart();
+  const [attempt, setAttempt] = useState(0);
+  const [status, setStatus] = useState<"quiet" | "failed" | "retrying">("quiet");
+  useEffect(() => {
+    let current = true;
+    let unavailable = false;
+    void consumeConfirmedOrder(order, () => {
+      unavailable = true;
+    }).then(() => {
+      if (current) setStatus(unavailable ? "failed" : "quiet");
+    });
+    return () => {
+      current = false;
+    };
+  }, [order, consumeConfirmedOrder, attempt]);
+  if (status === "quiet") return null;
+  return (
+    <div className="mb-6 border border-zinc-300 p-4 text-sm">
+      <p role="status">
+        {status === "retrying"
+          ? "Updating your cart…"
+          : "We could not check or update your cart after this purchase."}
+      </p>
+      <button
+        type="button"
+        className="mt-2 underline"
+        disabled={status === "retrying"}
+        onClick={() => {
+          setStatus("retrying");
+          setAttempt((value) => value + 1);
+        }}
+      >
+        Retry cart update
+      </button>
+    </div>
+  );
+}
+
 function Receipt({
   orderId,
   token,
@@ -91,7 +130,7 @@ function Receipt({
   isAuthenticated: boolean;
 }) {
   const router = useRouter();
-  const { consumeConfirmedOrder, isReady } = useCart();
+  const { isReady } = useCart();
   const [retry, setRetry] = useState(0);
   const [visibleStatus, setStatus] = useState<OrderStatusResponse | null>(null);
   const [message, setMessage] = useState<string | null>(null);
@@ -165,9 +204,6 @@ function Receipt({
       clearTimeout(deadline);
     };
   }, [orderId, token, retry]);
-  useEffect(() => {
-    if (visibleStatus && isReady) void consumeConfirmedOrder(visibleStatus);
-  }, [visibleStatus, isReady, consumeConfirmedOrder]);
 
   if (message)
     return (
@@ -190,6 +226,7 @@ function Receipt({
         Thank you for your purchase. Your order has been successfully processed.
       </p>
 
+      {isReady && <ReceiptCartUpdate order={visibleStatus} />}
       <div className="mb-6 border border-zinc-300 bg-white p-6 text-left">
         <h2 className="mb-4 text-xl font-semibold text-zinc-950">Order Details</h2>
         <div className="space-y-2 text-zinc-600">
