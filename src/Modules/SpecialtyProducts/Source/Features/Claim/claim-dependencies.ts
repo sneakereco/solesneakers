@@ -17,10 +17,17 @@ import {
   SPECIALTY_BROWSER_TTL_SECONDS,
 } from "../RequestProtection/claim-protection";
 import { recordClaimMetric } from "../RequestProtection/claim-telemetry";
+import { createInFlightLookup } from "../RequestProtection/in-flight-lookup";
+import type { SpecialtyContext } from "./claim-contract";
 import type { ClaimDependencies } from "./claim-handler";
 import { SpecialtyClaimRepository } from "./claim-repository";
 
 const limiters = new Map<number, Ratelimit>();
+const readContextMetadata = createInFlightLookup<Omit<
+  SpecialtyContext,
+  "productId" | "browserId"
+> | null>();
+const readStoreOpen = createInFlightLookup<boolean>();
 function limiter(max: number): Ratelimit {
   let value = limiters.get(max);
   if (!value) {
@@ -69,28 +76,32 @@ export function createSpecialtyClaimDependencies(): ClaimDependencies {
     secret: () => env.SPECIALTY_CLAIMS_SECRET ?? null,
     nowMs: Date.now,
     getContext: async (_request, productId) => {
-      const { data: config, error } = await client
-        .from("specialty_product_config")
-        .select("campaign_id")
-        .eq("product_id", productId)
-        .maybeSingle();
-      if (error) throw new Error("specialty_context_unavailable");
-      if (!config) return null;
-      const { data: campaign, error: campaignError } = await client
-        .from("specialty_campaigns")
-        .select("id,normalization_version,identity_key_fingerprint")
-        .eq("id", config.campaign_id)
-        .eq("slug", env.SPECIALTY_CAMPAIGN_SLUG)
-        .maybeSingle();
-      if (campaignError) throw new Error("specialty_context_unavailable");
-      if (!campaign || campaign.normalization_version !== 1) return null;
-      return {
-        campaignId: campaign.id,
-        productId,
-        browserId: await browser(),
-        normalizationVersion: 1,
-        identityKeyFingerprint: campaign.identity_key_fingerprint,
-      };
+      const metadata = await readContextMetadata(
+        env.SPECIALTY_CAMPAIGN_SLUG + ":" + productId,
+        async () => {
+          const { data: config, error } = await client
+            .from("specialty_product_config")
+            .select("campaign_id")
+            .eq("product_id", productId)
+            .maybeSingle();
+          if (error) throw new Error("specialty_context_unavailable");
+          if (!config) return null;
+          const { data: campaign, error: campaignError } = await client
+            .from("specialty_campaigns")
+            .select("id,normalization_version,identity_key_fingerprint")
+            .eq("id", config.campaign_id)
+            .eq("slug", env.SPECIALTY_CAMPAIGN_SLUG)
+            .maybeSingle();
+          if (campaignError) throw new Error("specialty_context_unavailable");
+          if (!campaign || campaign.normalization_version !== 1) return null;
+          return {
+            campaignId: campaign.id,
+            normalizationVersion: 1,
+            identityKeyFingerprint: campaign.identity_key_fingerprint,
+          };
+        },
+      );
+      return metadata ? { ...metadata, productId, browserId: await browser() } : null;
     },
     protect: async (request, operation, browserId) =>
       checkSpecialtyProtection(request, operation, browserId || (await browser()), {
@@ -101,10 +112,11 @@ export function createSpecialtyClaimDependencies(): ClaimDependencies {
             headers: input.headers,
             nextUrl: new URL(input.url),
           } as NextRequest),
-        storeOpen: async () => {
-          const access = await getStoreAccessSettings();
-          return Boolean(access && !access.isSiteLocked);
-        },
+        storeOpen: () =>
+          readStoreOpen("store", async () => {
+            const access = await getStoreAccessSettings();
+            return Boolean(access && !access.isSiteLocked);
+          }),
         verifyBrowser: verifyCheckoutBrowser,
         limit: async (key, max) => {
           const result = await limiter(max).limit(key);
