@@ -35,6 +35,7 @@ export default async function EditProductPage(props: EditProductPageProps) {
       />
 
       <EditProductClient
+        specialtyInitial={initialData.specialtyInitial}
         productId={id}
         product={initialData.product}
         isArchived={Boolean(initialData.product.archived_at)}

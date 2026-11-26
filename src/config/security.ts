@@ -30,6 +30,7 @@ export const security = {
     botCheckPrefixes: ["/admin", "/api", "/auth", "/products", "/store"],
     rateLimitPrefixes: ["/api", "/store"],
     siteLockBypassExactPaths: [
+      "/api/specialty/claims/result",
       "/api/webhooks/shippo",
       "/api/webhooks/square",
       "/api/cron/expire-checkouts",

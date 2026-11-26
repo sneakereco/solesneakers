@@ -8,6 +8,7 @@ import { pageMetadata } from "@/lib/metadata";
 import { createSupabasePublicClient } from "@/lib/supabase/public";
 import { ProductRepository } from "@/repositories/product-repo";
 import { ProductDetail } from "@/components/store/ProductDetail";
+import { SpecialtyProductCard } from "@/Modules/SpecialtyProducts/Source/Features/Discovery/SpecialtyProductCard";
 
 const PRODUCT_REVALIDATE_SECONDS = 60;
 export const revalidate = 60;
@@ -61,6 +62,11 @@ export async function generateMetadata({
   }
 
   // Get the first variant for pricing
+  if (product.category === "specialty")
+    return {
+      ...pageMetadata(product.name, product.description ?? "Specialty giveaway"),
+      robots: { index: false, follow: true },
+    };
   const firstVariant = product.variants[0];
 
   // Construct title
@@ -108,5 +114,24 @@ export default async function ProductDetailPage({
     notFound();
   }
 
+  if (product.category === "specialty")
+    return (
+      <main className="mx-auto max-w-xl px-4 py-12">
+        <SpecialtyProductCard
+          product={{
+            id: product.id,
+            name: product.name,
+            description: product.description,
+            imageUrl:
+              (product.images.find((image) => image.is_primary) ?? product.images[0])
+                ?.url ?? null,
+            claimable: product.variants.some((variant) => variant.stock > 0),
+          }}
+        />
+        <p className="mt-6 whitespace-pre-wrap text-sm text-zinc-700">
+          {product.description}
+        </p>
+      </main>
+    );
   return <ProductDetail product={product} />;
 }

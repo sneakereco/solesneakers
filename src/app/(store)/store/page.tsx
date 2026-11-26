@@ -10,6 +10,7 @@ import type { ProductFilters } from "@/repositories/product-repo";
 import { TagTaxonomyRepository } from "@/repositories/tag-taxonomy-repo";
 import { StorefrontService } from "@/services/storefront-service";
 import { pageMetadata } from "@/lib/metadata";
+import { isSpecialtyDiscoveryAllowed } from "@/Modules/SpecialtyProducts/Source/Features/Discovery/discovery-policy";
 
 export const revalidate = 60;
 
@@ -57,7 +58,7 @@ const formatPriceLabel = (min?: number, max?: number) => {
 export async function generateMetadata({
   searchParams,
 }: {
-  searchParams?: Promise<StoreSearchParams> | StoreSearchParams;
+  searchParams?: Promise<StoreSearchParams>;
 }): Promise<Metadata> {
   const params = await searchParams;
   const query = getStringParam(params, "q")?.trim().slice(0, 100);
@@ -107,7 +108,7 @@ export async function generateMetadata({
 export default async function StorePage({
   searchParams,
 }: {
-  searchParams?: Promise<StoreSearchParams> | StoreSearchParams;
+  searchParams?: Promise<StoreSearchParams>;
 }) {
   const resolvedSearchParams = searchParams ? await searchParams : undefined;
   const query = getStringParam(resolvedSearchParams, "q")?.trim() ?? "";
@@ -270,6 +271,7 @@ export default async function StorePage({
         }
       >
         <ProductGrid
+          allowSpecialty={isSpecialtyDiscoveryAllowed({ ...rawFilters, sort: undefined })}
           products={productsResult.products}
           storeHref={storeHref}
           view={view}

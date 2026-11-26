@@ -30,8 +30,18 @@ export async function proxy(request: NextRequest): Promise<NextResponse> {
     return finalizeProxyResponse(canonicalizeResponse, requestId, pathname);
   }
 
-  // Refresh Supabase session and get response with cookies
-  const sessionResponse = await refreshSession(request);
+  // Public claim identity is the signed browser cookie plus submitted eligibility,
+  // never a Supabase account. Auth outages must not block claims or recovery.
+  const specialtyPost =
+    request.method === "POST" &&
+    [
+      "/api/specialty/eligibility",
+      "/api/specialty/claims",
+      "/api/specialty/claims/result",
+    ].includes(pathname);
+  const sessionResponse = specialtyPost
+    ? NextResponse.next()
+    : await refreshSession(request);
 
   // Create forwarded headers with request ID for downstream handlers
   const forwardedHeaders = new Headers(request.headers);

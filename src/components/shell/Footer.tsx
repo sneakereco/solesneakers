@@ -3,6 +3,7 @@ import Link from "next/link";
 import { SUPPORT_EMAIL } from "@/config/constants/mail";
 import { INSTAGRAM_HANDLE, INSTAGRAM_URL } from "@/config/constants/contact";
 import { PICKUP_LOCATION_SUMMARY } from "@/config/pickup";
+import { ClaimRecoveryPanel } from "@/Modules/SpecialtyProducts/Source/Features/Claim/ClaimRecoveryPanel";
 
 const TERMS_LINKS = [
   { label: "Privacy Policy", href: "/privacy" },
@@ -92,6 +93,7 @@ export function Footer() {
                 </li>
               ))}
             </ul>
+            <ClaimRecoveryPanel />
           </section>
         </div>
 

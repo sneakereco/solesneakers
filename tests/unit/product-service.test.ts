@@ -14,6 +14,30 @@ jest.mock("@/repositories/tag-taxonomy-repo", () => ({
 }));
 
 describe("variant SKU assignment", () => {
+  it("rejects ordinary mutations and duplication of specialty products before writes", async () => {
+    const service = new ProductService({} as never);
+    (service as unknown as { repo: unknown }).repo = {
+      getById: () => Promise.resolve({ category: "specialty" }),
+      update: () => {
+        return Promise.reject(new Error("unexpected write"));
+      },
+    };
+    await expect(
+      service.updateProduct("product", { category: "specialty" } as never, {
+        userId: "admin",
+        tenantId: "tenant",
+      }),
+    ).rejects.toThrow(/specialty/i);
+    await expect(
+      service.duplicateProduct("product", { userId: "admin", tenantId: "tenant" }),
+    ).rejects.toThrow(/specialty/i);
+    await expect(
+      service.createProduct({ category: "specialty" } as never, {
+        userId: "admin",
+        tenantId: "tenant",
+      }),
+    ).rejects.toThrow(/specialty/i);
+  });
   beforeEach(() => jest.clearAllMocks());
 
   it("generates numeric SKUs for variants missing a SKU", () => {
