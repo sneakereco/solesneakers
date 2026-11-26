@@ -70,7 +70,7 @@ export const commerceSourceSql = `WITH ranked_facts AS (
  LEFT JOIN matching_lines ml ON ml.matching_order=o.oid
  WHERE ${filter("fulfillment", textField("fulfillment", "o.order_payload"))}
  AND ${filter("status", textField("status", "o.order_payload"))}
- AND ({variables.customer}='' OR (o.buyer IS NOT NULL AND CASE WHEN o.first_purchase_time >= ${start} THEN 'new' ELSE 'returning' END={variables.customer}))
+ AND ({variables.customer}='' OR (o.buyer IS NOT NULL AND (({variables.customer}='new' AND ${inRange("o.first_purchase_time")}) OR ({variables.customer}='returning' AND o.first_purchase_time < ${start}))))
  AND ((${productFilters.map((k) => variable(k.toLowerCase()) + "=''").join(" AND ")}) OR nullIf(ml.matching_order,'') IS NOT NULL)
 ), enriched AS (
  SELECT f.*,o.oid AS confirmed_id,o.buyer AS confirmed_buyer,o.order_time AS confirmed_at,o.order_payload AS order_basis,

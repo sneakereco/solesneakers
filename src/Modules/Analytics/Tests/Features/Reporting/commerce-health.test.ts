@@ -43,3 +43,37 @@ test("health uses latest fulfillment states of orders in confirmation range and 
   });
   expect(h.funnel[0].sessions).toBeNull();
 });
+test("new and returning buyer outcome counts use both boundaries of each activity period", async () => {
+  const f = fixture();
+  for (const [id, purchase] of [
+    ["old", older],
+    ["prior", "2026-06-09T04:00:00.000Z"],
+    ["current", "2026-06-10T04:00:00.000Z"],
+    ["future", "2026-06-11T04:00:00.000Z"],
+  ]) {
+    f.put("order", id, sale, { at: purchase, order: id, buyer: id });
+    for (const [d, at] of [
+      ["9", "2026-06-09T13:00:00.000Z"],
+      ["10", day],
+    ]) {
+      f.put(
+        "payment_attempt",
+        id + d,
+        {
+          stage: "payment",
+          method: "card",
+          outcome: "failed",
+          reason: "declined",
+          resolvedAt: at,
+        },
+        { at, order: id, buyer: id },
+      );
+    }
+  }
+  const n = (await f.report("health", "customer=new&compare=true")) as HealthData;
+  expect(n.outcomes[0].count).toBe(1);
+  expect(n.comparison?.outcomes[0].count).toBe(1);
+  const r = (await f.report("health", "customer=returning&compare=true")) as HealthData;
+  expect(r.outcomes[0].count).toBe(2);
+  expect(r.comparison?.outcomes[0].count).toBe(1);
+});

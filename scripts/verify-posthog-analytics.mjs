@@ -52,6 +52,12 @@ try {
     !["staging", "production"].includes(environment)
   )
     throw Error();
+  let fixtures;
+  if (mode === "queries" && values.fixture) {
+    category = "invalid-fixture";
+    const { validateQueryFixtures } = require("./analytics-query-fixtures.ts");
+    fixtures = validateQueryFixtures(JSON.parse(readFileSync(values.fixture, "utf8")));
+  }
   category = "configuration-unavailable";
   const config = readServerAnalyticsConfig(process.env);
   if (
@@ -89,6 +95,16 @@ try {
   const project =
     config.projectId.length <= 2 ? "***" : "***" + config.projectId.slice(-2);
   const query = (q) => executePostHogQuery(q, { config, now, fetch });
+  const sourceSnapshot = async (dataset, start, end) => {
+    const { data, error } = await db.rpc("analytics_reconciliation_snapshot", {
+      p_dataset_id: dataset,
+      p_limit: SNAPSHOT_LIMIT,
+      p_start: start,
+      p_end: end,
+    });
+    if (error) throw Error();
+    return data;
+  };
   category = "provider-unavailable";
   if (mode === "transport") {
     const data = await query({
@@ -122,26 +138,29 @@ try {
     // The operator supplies independently expected DTOs for an isolated staging
     // fixture window. This mode has no API for creating fixtures or Endpoints.
     category = "fixture-unavailable";
-    if (!values.fixture || precise || values.from || values.to) throw Error();
-    const fixtures = JSON.parse(readFileSync(values.fixture, "utf8"));
-    if (!Array.isArray(fixtures) || !fixtures.length || fixtures.length > 8)
-      throw Error();
-    if (
-      !fixtures.some(
-        (f) =>
-          f?.sales?.grossMerchandise?.cents === 4800000 &&
-          f.sales.discounts?.cents === 480000 &&
-          f.sales.merchandiseRefunds?.cents === 90000 &&
-          f.sales.netMerchandise?.cents === 4230000 &&
-          f.sales.netShipping?.cents === 172500 &&
-          f.sales.netTax?.cents === 329700 &&
-          f.sales.totalCollected?.cents === 4732200,
-      )
-    )
-      throw Error();
+    if (!fixtures || precise || values.from || values.to) throw Error();
     const { parseReportRequest } = require(feature + "ReportContract/filters.ts");
     const { executeCommerceReport } = require(feature + "Reporting/report-service.ts");
     for (const fixture of fixtures) {
+      if (fixture.scenario === "corrected") {
+        category = "correction-evidence-unavailable";
+        const window = resolveCalendarRange(
+          { from: fixture.from, to: fixture.to, timezone: def.timezone },
+          now(),
+        );
+        const snapshot = await sourceSnapshot(
+          scope.datasetId,
+          window.startInclusive,
+          window.endExclusive,
+        );
+        const { verifyFixtureCorrection } = require("./analytics-query-fixtures.ts");
+        verifyFixtureCorrection(
+          snapshot,
+          scope.datasetId,
+          window.startInclusive,
+          window.endExclusive,
+        );
+      }
       for (const report of ["sales", "payments", "health"]) {
         category = "invalid-fixture";
         if (
@@ -181,16 +200,7 @@ try {
       datasetId: scope.datasetId,
       query,
       observation,
-      source: async (dataset, start, end) => {
-        const { data, error } = await db.rpc("analytics_reconciliation_snapshot", {
-          p_dataset_id: dataset,
-          p_limit: SNAPSHOT_LIMIT,
-          p_start: start,
-          p_end: end,
-        });
-        if (error) throw Error();
-        return data;
-      },
+      source: sourceSnapshot,
     });
     console.log(JSON.stringify({ mode, environment, project, ...result }));
     if (result.status !== "matched") process.exitCode = 1;

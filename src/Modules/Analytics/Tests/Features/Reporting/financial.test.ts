@@ -338,3 +338,74 @@ test.each(["week", "month"])(
     });
   },
 );
+test("partially observed original merchandise lines keep their known COGS subtotal with missing coverage", async () => {
+  const f = fixture();
+  f.put("order", "o", {
+    ...sale,
+    grossMerchandiseCents: 10000,
+    discountCents: 0,
+    merchandiseCents: 10000,
+    shippingCents: 0,
+    taxCents: 0,
+    totalCollectedCents: 10000,
+  });
+  f.put("line", "l", {
+    ...line,
+    quantity: 1,
+    merchandiseCents: 6000,
+    unitCostCents: 2000,
+  });
+  expect(((await f.report("sales")) as SalesData).recordedCogs).toEqual({
+    cents: 2000,
+    complete: false,
+    missingCount: 1,
+  });
+  f.put(
+    "line",
+    "l",
+    { ...line, quantity: 1, merchandiseCents: 10000, unitCostCents: 2000 },
+    { revision: 2 },
+  );
+  f.put(
+    "order",
+    "o",
+    {
+      ...sale,
+      grossMerchandiseCents: 10000,
+      discountCents: 0,
+      merchandiseCents: 10000,
+      shippingCents: 0,
+      taxCents: null,
+      totalCollectedCents: 9000,
+    },
+    { revision: 2 },
+  );
+  const corrected = (await f.report("sales")) as SalesData;
+  expect(corrected.recordedCogs).toEqual({
+    cents: 2000,
+    complete: true,
+    missingCount: 0,
+  });
+  expect(corrected.recordedProfit.complete).toBe(false);
+});
+test.each([
+  [1, "bin_5", "0"],
+  [1, "middle_count", "0"],
+  [2, "middle_count", "1"],
+  [0, "middle_count", "1"],
+])(
+  "rejects inconsistent order-value population %s column %s",
+  async (population, key, bad) => {
+    const f = fixture();
+    for (let i = 0; i < Number(population); i++)
+      f.put("order", String(i), sale, { order: String(i) });
+    const r = request("sales"),
+      { queries } = compileFinancialQueries(r, scope);
+    const summary = await f.execute(queries.summary),
+      series = await f.execute(queries.series);
+    const raw = { request: r, activatedAt: scope.activatedAt, summary, series };
+    expect(mapSalesResult(raw).confirmedOrders).toBe(population);
+    summary.results[0][summary.columns.indexOf(String(key))] = bad;
+    expect(() => mapSalesResult(raw)).toThrow();
+  },
+);

@@ -45,6 +45,7 @@ const dayLabel = (d: string) => `formatDateTime(${d},'%Y-%m-%d','America/New_Yor
 const localBucket = `CASE WHEN {variables.bucket}='week' THEN ${dayLabel("toStartOfWeek(report_at,1,'America/New_York')")} WHEN {variables.bucket}='month' THEN ${dayLabel("toStartOfMonth(toTimeZone(report_at,'America/New_York'))")} ELSE ${dayLabel("report_at")} END`;
 const saleValue = amount("merchandiseCents", "order_basis");
 const decomposed = `(${saleValue}=${amount("grossMerchandiseCents", "order_basis")}-${amount("discountCents", "order_basis")} AND ${amount("totalCollectedCents", "order_basis")}=${saleValue}+${amount("shippingCents", "order_basis")}+${amount("taxCents", "order_basis")})`;
+const originalLinesReconcile = `e.line_count>0 AND e.unknown_line_amounts=0 AND e.line_revenue=${saleValue}`;
 const evidenceSql = `, order_evidence AS (
  SELECT order_id AS evidence_order, ${sum(line)} AS line_count,
  ${sum(line, amount("merchandiseCents"))} AS line_revenue,
@@ -63,7 +64,8 @@ const evidenceSql = `, order_evidence AS (
 ), basis AS (
  SELECT s.*, e.line_count,e.unknown_costs,e.fee_charges,e.shipping_charges,
  CASE WHEN ${decomposed} THEN 0 ELSE 1 END AS bad_order,
- CASE WHEN ${decomposed} AND e.line_count>0 AND e.unknown_line_amounts=0 AND e.line_revenue=${saleValue} THEN 0 ELSE 1 END AS bad_lines,
+ CASE WHEN ${originalLinesReconcile} THEN 0 ELSE 1 END AS incomplete_original_lines,
+ CASE WHEN ${decomposed} AND ${originalLinesReconcile} THEN 0 ELSE 1 END AS bad_lines,
  l.original_cost AS return_cost,rl.detail_count,rl.assigned_merchandise
  FROM selected s LEFT JOIN order_evidence e ON s.order_id=e.evidence_order
  LEFT JOIN original_lines l ON s.kind='refund_line' AND s.order_id=l.original_order AND ${str("lineId", "s.payload")}=l.original_line
@@ -123,7 +125,7 @@ Object.assign(metrics, {
     `(${line} AND ${cost} IS NOT NULL) OR (${detail} AND (${restock}=0 OR (return_cost IS NOT NULL AND ${restock} IS NOT NULL)))`,
   ),
   missing_costs: sum(
-    `(${line} AND ${cost} IS NULL) OR (${detail} AND (${restock} IS NULL OR (${restock}>0 AND return_cost IS NULL))) OR (${order} AND coalesce(line_count,0)=0) OR (${unknownReturn})`,
+    `(${line} AND ${cost} IS NULL) OR (${detail} AND (${restock} IS NULL OR (${restock}>0 AND return_cost IS NULL))) OR (${order} AND incomplete_original_lines=1) OR (${unknownReturn})`,
   ),
   costed_revenue: sum(`${line} AND ${cost} IS NOT NULL AND bad_lines=0`, merch),
   profit_line_cost: sum(
@@ -345,13 +347,20 @@ function salesPeriod(raw: unknown): SalesPeriod {
   const summaries = rows(raw, salesColumns, 1);
   if (summaries.length !== 1) throw new RangeError("Missing sales summary.");
   const { period, v } = readSales(summaries[0]);
+  const knownOrders = v.orders - v.missing_values;
+  const binnedOrders = valueBins.reduce<number>(
+    (total, _, i) => exact(total, v["bin_" + i]),
+    0,
+  );
+  const expectedMiddleCount = knownOrders === 0 ? 0 : knownOrders % 2 === 0 ? 2 : 1;
   if (
     period !== "summary" ||
     v.missing_values > v.orders ||
     v.attributed_orders > v.eligible_orders ||
     v.missing_buyers > v.orders ||
     v.buyers > v.orders - v.missing_buyers ||
-    v.middle_count > 2
+    binnedOrders !== knownOrders ||
+    v.middle_count !== expectedMiddleCount
   )
     throw new RangeError("Invalid sales denominators.");
   const netShipping = net(v, "shipping", "refund_shipping");
