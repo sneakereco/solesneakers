@@ -113,14 +113,12 @@ export function verifyRefundInquiry(
   refundId: string,
   payment: VerifiedFinancialFact,
   locationId: string,
-  squareOrderId: string,
 ) {
   if (
     !refund ||
     refund.id !== refundId ||
     refund.paymentId !== payment.paymentId ||
     refund.locationId !== locationId ||
-    (refund.orderId && refund.orderId !== squareOrderId) ||
     refund.amountMoney.currency !== "USD" ||
     !refund.updatedAt ||
     !refund.status ||

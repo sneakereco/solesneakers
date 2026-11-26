@@ -174,7 +174,7 @@ export function normalizeSquareReceipt(
       locationId,
       createdAt,
       paymentId,
-      ...(obj.order_id ? { squareOrderId: obj.order_id } : {}),
+      ...(data.type === "payment" && obj.order_id ? { squareOrderId: obj.order_id } : {}),
       ...(data.type === "refund" ? { refundId: obj.id } : {}),
       ...(data.type === "dispute" ? { disputeId: obj.id } : {}),
     },

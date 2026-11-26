@@ -59,3 +59,29 @@ it("preserves prior settlement while flagging contradictory immutable amounts", 
     reviewReason: "square_amount_conflict",
   });
 });
+it("retains the successful payment when a different declined attempt is replayed", () => {
+  const declined = {
+    ...capture,
+    paymentId: "earlier",
+    providerId: "earlier",
+    status: "FAILED",
+  } as const;
+  expect(projectOrderFinancialState([declined, capture, declined])).toMatchObject({
+    capturedCents: 1000,
+    financialState: "paid",
+    reviewReason: null,
+  });
+});
+it.each([false, true])(
+  "retains confirmed money and review for terminal disagreement, reversed %s",
+  (reverse) => {
+    const done = refund("r", 400);
+    const denied = { ...done, providerVersion: "other", status: "FAILED" } as const;
+    const facts = reverse ? [done, denied] : [denied, done];
+    expect(projectOrderFinancialState([capture, ...facts])).toMatchObject({
+      refundedCents: 400,
+      financialState: "partially_refunded",
+      reviewReason: "square_status_conflict",
+    });
+  },
+);

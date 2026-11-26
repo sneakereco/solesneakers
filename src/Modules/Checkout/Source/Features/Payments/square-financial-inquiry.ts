@@ -51,7 +51,12 @@ export class SquareFinancialInquiry {
         receipt.payload.locationId !== this.identity.locationId
       )
         throw new Error("Foreign receipt");
-      await this.apply(receipt.payload, receipt);
+      // Older refund receipts placed the return order in squareOrderId. The
+      // exact authenticated payment supplies the original sale order.
+      const lookup = receipt.payload.refundId
+        ? { paymentId: receipt.payload.paymentId }
+        : receipt.payload;
+      await this.apply(lookup, receipt);
       if (!receipt.payload.disputeId) {
         const { error: markError } = await this.db
           .from("square_webhook_events")
@@ -233,12 +238,39 @@ export class SquareFinancialInquiry {
         refundId,
         fact,
         this.identity.locationId,
-        squareOrderId,
       );
       await new FinancialProjectionRepository(
         this.db,
         refund!.updatedAt!,
       ).applyFinancialFact(verified);
+      const { data: stored, error: refundError } = await this.db
+        .from("square_refunds")
+        .select("checkout_status_conflict,amount_cents")
+        .eq("square_refund_id", refundId)
+        .eq("order_id", local.id)
+        .eq("square_payment_id", payment.id)
+        .single();
+      if (refundError || !stored) throw new Error("Missing verified refund");
+      if (stored.checkout_status_conflict) {
+        // A fresh provider read can corroborate completed money. Uncertainty
+        // leaves this receipt pending, and historical conflict remains visible.
+        const { refund: refreshed } = await this.square.refunds.get({ refundId });
+        const confirmed = verifyRefundInquiry(
+          refreshed,
+          refundId,
+          fact,
+          this.identity.locationId,
+        );
+        if (
+          confirmed.status !== "COMPLETED" ||
+          confirmed.amountCents !== stored.amount_cents
+        )
+          throw new Error("refund_refresh_required");
+        await new FinancialProjectionRepository(
+          this.db,
+          refreshed!.updatedAt!,
+        ).applyFinancialFact(confirmed);
+      }
     }
     const snapshot = await repo.applyFinancialFact(fact);
     const details = squarePaymentDetails(payment);

@@ -1529,6 +1529,7 @@ export type Database = {
       square_refunds: {
         Row: {
           amount_cents: number
+          checkout_status_conflict: boolean
           currency: string
           order_id: string
           reason: string | null
@@ -1541,6 +1542,7 @@ export type Database = {
         }
         Insert: {
           amount_cents: number
+          checkout_status_conflict?: boolean
           currency: string
           order_id: string
           reason?: string | null
@@ -1553,6 +1555,7 @@ export type Database = {
         }
         Update: {
           amount_cents?: number
+          checkout_status_conflict?: boolean
           currency?: string
           order_id?: string
           reason?: string | null

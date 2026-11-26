@@ -41,18 +41,17 @@ export function projectOrderFinancialState(
 ): FinancialSnapshot {
   const first = facts[0];
   if (!first) throw new Error("Missing financial facts");
-  let capturedCents = 0;
+  const captures = new Map<string, number>();
+  const refundPayments = new Map<string, string>();
+  const terminalRefunds = new Map<string, string>();
+  let statusConflict = false;
   let reviewReason: string | null = null;
   const refunds = new Map<string, number>();
   const versions = new Set<string>();
   const fulfillment = new Set(facts.map((f) => f.fulfillmentStatus));
   for (const value of facts) {
     const f = financialFact.parse(value);
-    if (
-      f.orderId !== first.orderId ||
-      f.paymentId !== first.paymentId ||
-      f.expectedTotalCents !== first.expectedTotalCents
-    )
+    if (f.orderId !== first.orderId || f.expectedTotalCents !== first.expectedTotalCents)
       throw new Error("Financial fact binding mismatch");
     versions.add(JSON.stringify([f.kind, f.providerId, f.providerVersion]));
     if (
@@ -62,8 +61,19 @@ export function projectOrderFinancialState(
       reviewReason = "square_amount_conflict";
       continue;
     }
+    if (f.kind === "refund") {
+      const binding = refundPayments.get(f.providerId);
+      if (binding && binding !== f.paymentId)
+        throw new Error("Financial fact binding mismatch");
+      refundPayments.set(f.providerId, f.paymentId);
+      if (["COMPLETED", "FAILED", "REJECTED"].includes(f.status)) {
+        const terminal = terminalRefunds.get(f.providerId);
+        if (terminal && terminal !== f.status) statusConflict = true;
+        terminalRefunds.set(f.providerId, f.status);
+      }
+    }
     if (f.status !== "COMPLETED") continue;
-    if (f.kind === "payment") capturedCents = f.amountCents;
+    if (f.kind === "payment") captures.set(f.paymentId, f.amountCents);
     else {
       const existing = refunds.get(f.providerId);
       if (existing !== undefined && existing !== f.amountCents)
@@ -71,6 +81,9 @@ export function projectOrderFinancialState(
       refunds.set(f.providerId, f.amountCents);
     }
   }
+  const capturedCents = [...captures.values()].reduce((a, b) => a + b, 0);
+  if (captures.size > 1) reviewReason ??= "square_multiple_captures";
+  if (statusConflict) reviewReason ??= "square_status_conflict";
   const refundedCents = [...refunds.values()].reduce((a, b) => a + b, 0);
   if (refundedCents > first.expectedTotalCents) reviewReason = "square_amount_conflict";
   const fulfillmentStatus =

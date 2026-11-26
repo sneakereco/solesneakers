@@ -86,3 +86,35 @@ it("acknowledges an unsupported signed kind without storage", async () => {
   expect((await post(JSON.stringify({ type: "invoice.updated" }))).status).toBe(200);
   expect(mockRpc).not.toHaveBeenCalled();
 });
+it("stores a signed linked-refund payment reference independently of the return order", async () => {
+  mockRpc.mockResolvedValue({ data: "stored", error: null });
+  const raw = JSON.stringify({
+    ...event,
+    type: "refund.updated",
+    data: {
+      type: "refund",
+      id: "r",
+      object: {
+        refund: {
+          id: "r",
+          location_id: "loc",
+          order_id: "return-order",
+          payment_id: "pay",
+        },
+      },
+    },
+  });
+  expect((await post(raw)).status).toBe(200);
+  expect(mockRpc).toHaveBeenCalledWith(
+    "receive_checkout_square_event",
+    expect.objectContaining({
+      p_payload: {
+        merchantId: "merchant",
+        locationId: "loc",
+        createdAt: event.created_at,
+        paymentId: "pay",
+        refundId: "r",
+      },
+    }),
+  );
+});

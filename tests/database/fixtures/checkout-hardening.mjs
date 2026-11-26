@@ -838,11 +838,16 @@ async function replay(client, { migrations }, lease) {
       ...(await seedOrder(client, { status: "paid", totalCents: 1987 })),
       legacySquareEvents: await seedLegacySquareEvents(client),
     };
+    const legacyReview = await seedOrder(client, { status: "review" });
+    await client.query(
+      "update public.orders set failure_reason='square_payment_high_risk',square_order_id=$2,payment_transaction_id=$3 where id=$1",
+      [legacyReview.orderId, "sq-" + legacyReview.orderId, "pay-" + legacyReview.orderId],
+    );
     const before = await populatedRows(client, catalog, order);
     await applyMigrations(client, migrations.slice(prefix.length));
     const after = await populatedRows(client, catalog, order);
     assertPopulatedRowsPreserved(before, after);
-    lease.populated = { ...catalog, ...order };
+    lease.populated = { ...catalog, ...order, legacyReview };
   }
   await verifyRegistry(client, migrations);
 }

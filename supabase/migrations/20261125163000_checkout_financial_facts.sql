@@ -18,6 +18,9 @@ revoke all on public.checkout_financial_facts from public,anon,authenticated,ser
 grant select on public.checkout_financial_facts to service_role;
 
 alter table public.orders add column checkout_financial_review text;
+update public.orders set checkout_financial_review=failure_reason
+where status='review' and failure_reason in ('square_payment_high_risk','square_payment_amount_mismatch','late_or_released_square_payment');
+alter table public.square_refunds add column checkout_status_conflict boolean not null default false;
 
 -- Keep established settlement and fulfillment visible while a separate review
 -- prevents a new staff fulfillment transition under the same order lock.
@@ -41,7 +44,8 @@ declare
   old_refund public.square_refunds;
   k text:=p_fact->>'kind'; obj text:=p_fact->>'providerId'; pay text:=p_fact->>'paymentId';
   ver text:=p_fact->>'providerVersion'; st text:=p_fact->>'status'; amount integer:=(p_fact->>'amountCents')::integer;
-  captured integer; refunded bigint; revision bigint; financial text; compatible text;
+  capture_payment text; capture_time timestamptz; capture_count integer;
+  captured bigint; refunded bigint; revision bigint; financial text; compatible text;
   review text; hold_count integer; valid_count integer; consumed_count integer;
 begin
   select * into strict o from public.orders where id=(p_fact->>'orderId')::uuid for update;
@@ -55,7 +59,8 @@ begin
     or (k='payment' and obj is distinct from pay) or (st='COMPLETED' and a.state <> 'succeeded')
     or (k='payment' and st='REJECTED') or (k='refund' and st in ('APPROVED','CANCELED'))
     then raise exception 'invalid_verified_financial_fact'; end if;
-  review:=coalesce(o.checkout_financial_review,p_review);
+  review:=coalesce(o.checkout_financial_review,case when o.status='review' and o.failure_reason in
+    ('square_payment_high_risk','square_payment_amount_mismatch','late_or_released_square_payment') then o.failure_reason end,p_review);
   -- A business object cannot migrate across orders even on a different revision.
   perform pg_advisory_xact_lock(hashtextextended(k || ':' || obj, 0));
   if exists(select 1 from public.checkout_financial_facts f where f.kind=k and f.provider_id=obj and
@@ -63,7 +68,7 @@ begin
   insert into public.checkout_financial_facts(kind,provider_id,provider_version,order_id,payment_id,status,amount_cents,currency,provider_time)
   values(k,obj,ver,o.id,pay,st,amount,'USD',p_provider_time) on conflict do nothing;
   select * into strict old_fact from public.checkout_financial_facts where kind=k and provider_id=obj and provider_version=ver;
-  if old_fact.status<>st or old_fact.amount_cents<>amount or
+  if (k='payment' and old_fact.status<>st) or old_fact.amount_cents<>amount or
      (k='payment' and amount<>a.amount_cents) or amount>a.amount_cents or
      exists(select 1 from public.checkout_financial_facts where kind=k and provider_id=obj and amount_cents<>amount)
      then review:=coalesce(review,'square_amount_conflict'); end if;
@@ -76,13 +81,17 @@ begin
     -- An opaque version is never compared as a timestamp. Terminal facts win
     -- over pending. Inconsistent terminal observations remain reviewable.
     if old_refund.status in ('COMPLETED','FAILED','REJECTED') and st in ('COMPLETED','FAILED','REJECTED') and old_refund.status<>st
-      then review:=coalesce(review,'square_status_conflict'); end if;
+      then
+        review:=coalesce(review,'square_status_conflict');
+        update public.square_refunds set checkout_status_conflict=true where square_refund_id=obj and not checkout_status_conflict;
+      end if;
     -- A separate payment or inventory review cannot erase a verified refund.
     -- Only contradiction about this refund object prevents its projection.
-    if old_fact.status=st and old_fact.amount_cents=amount and amount<=a.amount_cents
+    if (old_fact.status=st or st='COMPLETED') and old_fact.amount_cents=amount and amount<=a.amount_cents
       and (old_refund.amount_cents is null or old_refund.amount_cents=amount)
       and not exists(select 1 from public.checkout_financial_facts where kind=k and provider_id=obj and amount_cents<>amount)
-      and (old_refund.status is null or (old_refund.status='PENDING' and st<>'PENDING')) then
+      and (old_refund.status is null or (old_refund.status='PENDING' and st<>'PENDING') or
+        (old_refund.status in ('FAILED','REJECTED') and st='COMPLETED')) then
       insert into public.square_refunds(square_refund_id,order_id,tenant_id,square_payment_id,status,amount_cents,currency,square_created_at)
       values(obj,o.id,o.tenant_id,pay,st,amount,'USD',p_provider_time)
       on conflict(square_refund_id) do update set status=excluded.status, updated_at=now();
@@ -92,8 +101,18 @@ begin
     end if;
   end if;
 
-  select coalesce(max(amount_cents),0) into captured from public.checkout_financial_facts
-    where order_id=o.id and kind='payment' and status='COMPLETED' and payment_id=pay and amount_cents=a.amount_cents;
+  -- The incoming observation can refer to an earlier declined sequence.
+  -- Each completed payment is counted once against its own immutable quote.
+  select count(*),coalesce(sum(c.amount),0),min(c.payment_id),min(c.paid_at)
+  into capture_count,captured,capture_payment,capture_time from (
+    select f.payment_id,ledger.amount_cents as amount,min(f.provider_time) as paid_at
+    from public.checkout_financial_facts f join public.checkout_payment_attempts ledger
+      on ledger.order_id=f.order_id and ledger.provider_payment_id=f.payment_id
+    where f.order_id=o.id and f.kind='payment' and f.status='COMPLETED' and ledger.state='succeeded'
+      and ledger.amount_cents=f.amount_cents and ledger.currency=f.currency
+    group by f.payment_id,ledger.amount_cents
+  ) c;
+  if capture_count>1 then review:=coalesce(review,'square_multiple_captures'); end if;
   select greatest(coalesce(sum(amount_cents),0),coalesce(o.refund_amount,0),
     case when o.status='refunded' then a.amount_cents else 0 end) into refunded from public.square_refunds
     where order_id=o.id and status='COMPLETED';
@@ -104,11 +123,11 @@ begin
   if captured>0 and review is null and o.status not in ('shipped','refunded','partially_refunded')
     and coalesce(o.fulfillment_status,'unfulfilled') not in ('shipped','picked_up','delivered') then
     perform id from public.inventory_reservations where order_id=o.id order by id for update;
-    select count(*),count(*) filter(where status='active' and expires_at>p_provider_time),
+    select count(*),count(*) filter(where status='active' and expires_at>capture_time),
       count(*) filter(where status='consumed') into hold_count,valid_count,consumed_count
       from public.inventory_reservations where order_id=o.id;
     if consumed_count=hold_count and hold_count>0 then compatible:='paid';
-    elsif hold_count=valid_count and hold_count>0 and o.expires_at>p_provider_time and
+    elsif hold_count=valid_count and hold_count>0 and o.expires_at>capture_time and
       not exists(select 1 from (select variant_id,sum(quantity) quantity from public.order_items where order_id=o.id group by variant_id) i
         full join (select variant_id,quantity from public.inventory_reservations where order_id=o.id) r using(variant_id)
         where i.quantity is distinct from r.quantity) then
@@ -116,15 +135,19 @@ begin
       compatible:='paid';
     else review:='late_or_released_square_payment'; end if;
   end if;
+  -- Queue the two capture effects before refund state overlays the status.
+  if captured>0 and compatible='paid' and review is null then
+    insert into public.checkout_notification_outbox(event_key,order_id,tenant_id,kind)
+      values('order_confirmation:'||o.id,o.id,o.tenant_id,'order_confirmation') on conflict(event_key) do nothing;
+    if o.fulfillment='pickup' then
+      insert into public.checkout_notification_outbox(event_key,order_id,tenant_id,kind)
+        values('pickup_instructions:'||o.id,o.id,o.tenant_id,'pickup_instructions') on conflict(event_key) do nothing;
+    end if;
+  end if;
   -- A refund can reach us before capture. Preserve the money fact immediately
   -- while keeping the legacy eligibility predicate closed until capture proof.
   if financial in ('refunded','partially_refunded') and
     (captured>0 or o.status in ('paid','shipped','partially_refunded','refunded')) then
-    if compatible='paid' and review is null then
-      insert into public.checkout_notification_outbox(event_key,order_id,tenant_id,kind)
-        values('order_confirmation:'||o.id,o.id,o.tenant_id,'order_confirmation')
-        on conflict(event_key) do nothing;
-    end if;
     compatible:=financial;
   elsif review is not null and o.status not in ('paid','shipped','refunded','partially_refunded') then compatible:='review';
   elsif o.status not in ('shipped','refunded','partially_refunded') and refunded=0 and review is null then
@@ -133,7 +156,7 @@ begin
     end if;
   end if;
   update public.orders set status=compatible,checkout_financial_review=review,
-    payment_transaction_id=case when captured>0 then pay else payment_transaction_id end,
+    payment_transaction_id=case when capture_count=1 then capture_payment else payment_transaction_id end,
     refund_amount=case when refunded>0 then refunded else refund_amount end,
     refunded_at=case when refunded>0 then coalesce(refunded_at,now()) else refunded_at end,
     failure_reason=coalesce(review,failure_reason),updated_at=now() where id=o.id;
