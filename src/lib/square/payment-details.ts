@@ -6,6 +6,7 @@ type ProviderEvidenceInput = {
   note?: string | null;
   referenceId?: string | null;
   updatedAt?: string | null;
+  cardDetails?: { cardPaymentTimeline?: { capturedAt?: string | null } | null } | null;
   processingFee?:
     | {
         effectiveAt?: string | null;
@@ -18,6 +19,9 @@ type ProviderEvidenceInput = {
     | null;
 };
 export function squareSourceEvidence(payment: ProviderEvidenceInput) {
+  const capture = z.iso
+    .datetime({ offset: true })
+    .safeParse(payment.cardDetails?.cardPaymentTimeline?.capturedAt);
   const reference = payment.referenceId;
   const prefix = `Sole Sneakers order ${reference} attempt `;
   const attempt = payment.note?.startsWith(prefix)
@@ -54,6 +58,7 @@ export function squareSourceEvidence(payment: ProviderEvidenceInput) {
       ? { orderReference: reference, attemptId: attempt }
       : {}),
     ...(fees.length ? { fees } : {}),
+    ...(capture.success ? { capturedAt: capture.data } : {}),
     ...(payment.updatedAt &&
     z.iso.datetime({ offset: true }).safeParse(payment.updatedAt).success
       ? { resolvedAt: payment.updatedAt }

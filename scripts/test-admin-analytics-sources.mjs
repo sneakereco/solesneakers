@@ -198,13 +198,83 @@ export async function testCommerceSources(db, worker) {
       "update public.orders set square_order_id=$2,square_order_version=1 where id=$1",
       [oid, sid],
     );
+    // The legacy service has nullable SQL arguments. Verify each incomplete
+    // proof independently while retaining the delegated result and inventory behavior.
+    const incomplete = [];
+    for (const [status, currency] of [
+      [null, "USD"],
+      ["COMPLETED", null],
+    ]) {
+      await query("savepoint incomplete_payment");
+      const data = {
+        squareOrderId: sid,
+        paymentId: pid,
+        paymentStatus: status,
+        currency,
+        amountCents: 2100,
+        fees: [
+          {
+            type: "INITIAL",
+            adjustment: "charge",
+            amountCents: 31,
+            effectiveAt: new Date().toISOString(),
+          },
+        ],
+      };
+      const result = await one(
+        "select public.process_square_payment_event($1,'payment.updated','fixture','fixture',now(),$2,$3,$4,$5,$6,2100,$7,null) r",
+        [randomUUID(), "d".repeat(64), data, sid, pid, status, currency],
+      );
+      await flush();
+      assert.deepEqual(result.r, {
+        order_id: oid,
+        duplicate: false,
+        fulfillment_authorized: true,
+      });
+      assert.equal(
+        (await one("select status from public.orders where id=$1", [oid])).status,
+        "paid",
+      );
+      assert.equal(
+        (
+          await one(
+            "select count(*)::int n from public.inventory_reservations where order_id=$1 and status='consumed'",
+            [oid],
+          )
+        ).n,
+        2,
+      );
+      incomplete.push({
+        status,
+        currency,
+        orders: (await facts("order", oid)).length,
+        lines: (await facts("line", oid)).length,
+        fees: (await facts("fee", oid)).length,
+      });
+      await query("rollback to savepoint incomplete_payment");
+      await query("release savepoint incomplete_payment");
+    }
+    assert.deepEqual(incomplete, [
+      { status: null, currency: "USD", orders: 0, lines: 0, fees: 0 },
+      { status: "COMPLETED", currency: null, orders: 0, lines: 0, fees: 0 },
+    ]);
+    console.log(
+      "PASS separate NULL status and NULL currency preserve business authorization and consumed inventory without monetary facts",
+    );
     const barePaidState = await one(
       "update public.orders set status='paid' where id=$1 returning updated_at",
       [oid],
     );
     const barePaidAt = barePaidState.updated_at.getTime();
+    const { midnight } = await one(
+      "select ((($1::timestamptz at time zone 'America/New_York')::date+1)::timestamp at time zone 'America/New_York') as midnight",
+      [new Date(barePaidAt + 60000)],
+    );
     const start = new Date(barePaidAt - 1000).toISOString(),
-      resolved = new Date(barePaidAt + 1000).toISOString();
+      captured = new Date(midnight.getTime() - 1)
+        .toISOString()
+        .replace(".999Z", ".9999999Z"),
+      resolved = new Date(midnight.getTime() + 1000).toISOString();
     const op = {
       attemptId: attempt,
       effectiveAt: start,
@@ -223,6 +293,7 @@ export async function testCommerceSources(db, worker) {
       currency: "USD",
       paymentStatus: "COMPLETED",
       resolvedAt: resolved,
+      capturedAt: captured,
       orderReference: oid,
       attemptId: attempt,
       fees: [
@@ -289,11 +360,20 @@ export async function testCommerceSources(db, worker) {
     assert.equal(sale.payload.totalCollectedCents, 2100);
     assert.equal(sale.payload.taxCents, 100);
     assert.equal(sale.payload.paymentMethod, "applePay");
-    assert.equal(Date.parse(sale.effectiveAt), Date.parse(resolved));
+    assert.equal(Date.parse(sale.effectiveAt), Date.parse(captured));
+    const nyDay = new Intl.DateTimeFormat("en-US", {
+      timeZone: "America/New_York",
+      dateStyle: "short",
+    });
+    assert.notEqual(
+      nyDay.format(Date.parse(sale.effectiveAt)),
+      nyDay.format(Date.parse(resolved)),
+    );
     assert(Date.parse(sale.effectiveAt) > barePaidAt);
     const attempts = await facts("payment_attempt", oid);
     assert.equal(attempts.length, 1);
     assert.equal(attempts[0].payload.outcome, "succeeded");
+    assert.equal(Date.parse(attempts[0].payload.resolvedAt), Date.parse(resolved));
     assert.equal(Date.parse(attempts[0].effectiveAt), Date.parse(start));
     assert.deepEqual(
       (await facts("fee", oid)).map((f) => f.payload.amountCents).sort((a, b) => a - b),
@@ -431,20 +511,29 @@ export async function testCommerceSources(db, worker) {
       amountCents: 1800,
       resolvedAt: resolved,
     };
-    const accepted = await one(
-      "select public.process_square_payment_event($1,'payment.updated','fixture','fixture',$2,$3,$4,$5,$6,'COMPLETED',1800,'USD',null) r",
-      [
-        randomUUID(),
-        start,
-        "c".repeat(64),
-        correctedEvent,
-        correctedSquare,
-        correctedPayment,
-      ],
-    );
+    const beforeConfirmation = (await one("select clock_timestamp() as at")).at;
+    const confirmCorrection = (data) =>
+      one(
+        "select public.process_square_payment_event($1,'payment.updated','fixture','fixture',$2,$3,$4,$5,$6,'COMPLETED',1800,'USD',null) r",
+        [randomUUID(), start, "c".repeat(64), data, correctedSquare, correctedPayment],
+      );
+    const accepted = await confirmCorrection(correctedEvent);
     await flush();
     assert.equal(accepted.r.fulfillment_authorized, true);
+    const afterConfirmation = (await one("select clock_timestamp() as at")).at;
     const correctedSale = (await facts("order", corrected))[0];
+    assert(Date.parse(correctedSale.effectiveAt) >= beforeConfirmation.getTime());
+    assert(Date.parse(correctedSale.effectiveAt) <= afterConfirmation.getTime());
+    assert.notEqual(Date.parse(correctedSale.effectiveAt), Date.parse(resolved));
+    await confirmCorrection({ ...correctedEvent, capturedAt: captured });
+    await flush();
+    assert.equal(
+      (await facts("order", corrected))[0].effectiveAt,
+      correctedSale.effectiveAt,
+    );
+    console.log(
+      "PASS verified card capture sets the New York sale day; missing capture uses first authorized server observation",
+    );
     assert.equal(correctedSale.payload.totalCollectedCents, 1800);
     assert.equal(correctedSale.payload.merchandiseCents, 2000);
     assert.equal(correctedSale.payload.taxCents, null);
@@ -579,16 +668,24 @@ export async function testCommerceSources(db, worker) {
     const event = {
       squareOrderId: squareOrder,
       paymentId: payment,
+      capturedAt: "2026-02-31T00:00:00Z",
       amountCents: 2100,
       currency: "USD",
       paymentStatus: "COMPLETED",
       resolvedAt: resolved,
     };
+    const observationStart = (await one("select clock_timestamp() as at")).at;
     const paid = await one(
       "select public.process_square_payment_event($1,'payment.updated','fixture','fixture',$2,$3,$4,$5,$6,'COMPLETED',2100,'USD',null) as r",
       [paymentEventId, resolved, "b".repeat(64), event, squareOrder, payment],
     );
     assert.equal(paid.r.fulfillment_authorized, true);
+    const observationEnd = (await one("select clock_timestamp() as at")).at;
+    const fallbackDate = Date.parse((await facts("order", oid))[0].effectiveAt);
+    assert(
+      fallbackDate >= observationStart.getTime() &&
+        fallbackDate <= observationEnd.getTime(),
+    );
     const detail = (client, method) =>
       client.query(
         "select public.record_square_payment_details($1,$2,'COMPLETED',2100,'USD',$3)",

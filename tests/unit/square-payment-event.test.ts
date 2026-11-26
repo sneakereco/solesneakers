@@ -69,6 +69,31 @@ const disputeCreatedEvent = {
 };
 
 describe("SquarePaymentEventProcessor", () => {
+  it("carries only actual card capture as sale-time evidence across New York midnight", async () => {
+    const event = structuredClone(completedPaymentEvent);
+    const capturedAt = "2026-11-25T23:59:59-05:00",
+      updatedAt = "2026-11-26T00:00:01-05:00";
+    Object.assign(event.data.object.payment, { updated_at: updatedAt });
+    Object.assign(event.data.object.payment.card_details, {
+      card_payment_timeline: { captured_at: capturedAt },
+    });
+    const rpc = jest.fn().mockResolvedValue({
+      data: { duplicate: false, fulfillment_authorized: true, order_id: "order-1" },
+      error: null,
+    });
+    const processor = new SquarePaymentEventProcessor(
+      { rpc } as never,
+      "location-1",
+      async () => {},
+    );
+    await processor.process(JSON.stringify(event));
+    expect(rpc).toHaveBeenCalledWith(
+      "process_square_payment_event",
+      expect.objectContaining({
+        p_event_data: expect.objectContaining({ capturedAt, resolvedAt: updatedAt }),
+      }),
+    );
+  });
   it.each([null, { unrecognized: true }, "malformed-value"])(
     "accepts business confirmation with unusable optional evidence %j",
     async (value) => {
@@ -78,6 +103,9 @@ describe("SquarePaymentEventProcessor", () => {
         note: value,
         reference_id: value,
         processing_fee: value,
+      });
+      Object.assign(event.data.object.payment.card_details, {
+        card_payment_timeline: value,
       });
       const rpc = jest.fn().mockResolvedValue({
         data: { duplicate: false, fulfillment_authorized: true, order_id: "order-1" },
@@ -100,6 +128,7 @@ describe("SquarePaymentEventProcessor", () => {
         paymentId: "payment-1",
         resolvedAt: event.created_at,
       });
+      expect(args.p_event_data).not.toHaveProperty("capturedAt");
       expect(args.p_event_data).not.toHaveProperty("attemptId");
       expect(args.p_event_data).not.toHaveProperty("fees");
     },

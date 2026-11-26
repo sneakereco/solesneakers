@@ -61,6 +61,10 @@ const paymentEventSchema = z.object({
                 exp_year: z.number().int().nullish(),
               })
               .optional(),
+            card_payment_timeline: z
+              .object({ captured_at: z.string().nullish() })
+              .optional()
+              .catch(undefined),
             avs_status: z.string().optional(),
             cvv_status: z.string().optional(),
           })
@@ -210,6 +214,11 @@ export class SquarePaymentEventProcessor {
           note: payment.note,
           referenceId: payment.reference_id,
           updatedAt: payment.updated_at ?? event.created_at,
+          cardDetails: {
+            cardPaymentTimeline: {
+              capturedAt: payment.card_details?.card_payment_timeline?.captured_at,
+            },
+          },
           processingFee: payment.processing_fee?.map((f) => ({
             effectiveAt: f.effective_at,
             type: f.type,
