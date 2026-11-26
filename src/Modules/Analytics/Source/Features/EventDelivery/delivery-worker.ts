@@ -169,7 +169,8 @@ export async function deliverAnalyticsBatch(
       );
       const trackedIds = new Set(tracked.map((j) => j.id));
       await Promise.all(jobs.filter((j) => !trackedIds.has(j.id)).map((j) => settle(j)));
-      for (const [index, job] of tracked.entries()) {
+      let sharedFailure: DeliveryFailure | undefined;
+      for (const job of tracked) {
         if (!active()) break;
         const fact = job.fact as OrderFact;
         try {
@@ -177,26 +178,23 @@ export async function deliverAnalyticsBatch(
             fact.datasetId,
             fact.orderId!,
           );
-          if (context && active())
+          if (context && !sharedFailure && active())
             await publishTrackedPurchase(fact, context.tracking, captureDeps());
-          await settle(job);
+          // Accepted business delivery is complete when the current grant is absent.
+          await settle(job, context ? sharedFailure : undefined);
         } catch (error) {
           if (
             error instanceof PublicationFailure &&
             error.failure.status !== "permanent-failure"
           ) {
-            // The same provider and credentials serve every remaining optional publication.
-            // Persist its backoff against all still-leased jobs; replay rechecks consent.
-            await Promise.all(
-              tracked.slice(index).map((pending) => settle(pending, error.failure)),
-            );
-            break;
+            // Suppress further provider sends while continuing bounded receipt lookups.
+            sharedFailure = error.failure;
           }
           await settle(
             job,
             error instanceof PublicationFailure
               ? error.failure
-              : { status: "retryable", reason: "network" },
+              : (sharedFailure ?? { status: "retryable", reason: "network" }),
           );
         }
       }
