@@ -78,9 +78,10 @@ begin
     if old_refund.order_id is not null and (old_refund.order_id<>o.id or old_refund.square_payment_id<>pay)
       then raise exception 'financial_object_binding_conflict'; end if;
     if old_refund.amount_cents is not null and old_refund.amount_cents<>amount then review:=coalesce(review,'square_amount_conflict'); end if;
-    -- An opaque version is never compared as a timestamp. Terminal facts win
-    -- over pending. Inconsistent terminal observations remain reviewable.
-    if old_refund.status in ('COMPLETED','FAILED','REJECTED') and st in ('COMPLETED','FAILED','REJECTED') and old_refund.status<>st
+    -- One opaque object/version must describe one status. A mismatch needs
+    -- independent corroboration even when the retained observation is pending.
+    if old_fact.status<>st or (old_refund.status in ('COMPLETED','FAILED','REJECTED')
+      and st in ('COMPLETED','FAILED','REJECTED') and old_refund.status<>st)
       then
         review:=coalesce(review,'square_status_conflict');
         update public.square_refunds set checkout_status_conflict=true where square_refund_id=obj and not checkout_status_conflict;

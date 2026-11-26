@@ -81,10 +81,20 @@ it("allows an already bound legacy payment without a new local dispatch", () => 
     }),
   ).toThrow();
 });
-it.each(["payment.updated", "dispute.created", "refund.updated", "conflicting refund"])(
+it.each([
+  "payment.updated",
+  "dispute.created",
+  "refund.updated",
+  "conflicting refund",
+  "same version FAILED",
+  "same version REJECTED",
+])(
   "replays the stored %s effects against authenticated provider reads",
   async (scenario) => {
-    const conflict = scenario === "conflicting refund";
+    const collisionStatus = scenario.startsWith("same version ")
+      ? scenario.slice("same version ".length)
+      : null;
+    const conflict = scenario === "conflicting refund" || collisionStatus !== null;
     const kind = conflict ? "refund.updated" : scenario;
     const receipt = {
       square_event_id: "evt",
@@ -176,7 +186,7 @@ it.each(["payment.updated", "dispute.created", "refund.updated", "conflicting re
       refunds: {
         get: () => {
           refundReads++;
-          if (conflict && refundReads === 2)
+          if (scenario === "conflicting refund" && refundReads === 2)
             return Promise.reject(new Error("fixture timeout"));
           return Promise.resolve({
             refund: {
@@ -186,7 +196,12 @@ it.each(["payment.updated", "dispute.created", "refund.updated", "conflicting re
               locationId: "l",
               amountMoney: { currency: "USD", amount: 400n },
               updatedAt: "2026-11-25T11:00:00Z",
-              status: conflict && refundReads === 4 ? "FAILED" : "COMPLETED",
+              status:
+                collisionStatus && refundReads <= 4
+                  ? collisionStatus
+                  : conflict && refundReads === 4
+                    ? "FAILED"
+                    : "COMPLETED",
             },
           });
         },

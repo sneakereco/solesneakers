@@ -47,13 +47,17 @@ export function projectOrderFinancialState(
   let statusConflict = false;
   let reviewReason: string | null = null;
   const refunds = new Map<string, number>();
-  const versions = new Set<string>();
+  const versions = new Map<string, string>();
   const fulfillment = new Set(facts.map((f) => f.fulfillmentStatus));
   for (const value of facts) {
     const f = financialFact.parse(value);
     if (f.orderId !== first.orderId || f.expectedTotalCents !== first.expectedTotalCents)
       throw new Error("Financial fact binding mismatch");
-    versions.add(JSON.stringify([f.kind, f.providerId, f.providerVersion]));
+    const versionKey = JSON.stringify([f.kind, f.providerId, f.providerVersion]);
+    const priorStatus = versions.get(versionKey);
+    if (f.kind === "refund" && priorStatus !== undefined && priorStatus !== f.status)
+      statusConflict = true;
+    versions.set(versionKey, f.status);
     if (
       (f.kind === "payment" && f.amountCents !== first.expectedTotalCents) ||
       f.amountCents > first.expectedTotalCents

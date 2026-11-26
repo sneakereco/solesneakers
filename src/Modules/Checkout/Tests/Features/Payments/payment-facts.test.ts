@@ -85,3 +85,28 @@ it.each([false, true])(
     });
   },
 );
+it.each(["FAILED", "REJECTED"] as const)(
+  "flags PENDING and %s on the very same refund version",
+  (status) => {
+    const pending = { ...refund("collision", 400), status: "PENDING" } as const;
+    const changed = { ...pending, status };
+    for (const observations of [
+      [pending, changed],
+      [changed, pending],
+    ]) {
+      expect(projectOrderFinancialState([capture, ...observations])).toMatchObject({
+        revision: "2",
+        financialState: "paid",
+        refundedCents: 0,
+        reviewReason: "square_status_conflict",
+      });
+    }
+    expect(
+      projectOrderFinancialState([
+        capture,
+        pending,
+        { ...changed, providerVersion: "another" },
+      ]).reviewReason,
+    ).toBeNull();
+  },
+);

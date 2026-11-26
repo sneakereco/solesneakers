@@ -216,6 +216,45 @@ test("verified settlement, fulfillment and distinct refund obligations", async (
             },
           );
       }
+      for (const status of ["FAILED", "REJECTED"]) {
+        await rollbackCase(
+          "same opaque refund version PENDING then " + status,
+          async () => {
+            await apply(service, initial);
+            const pending = {
+              ...initial,
+              kind: "refund",
+              providerId: "sameversion",
+              status: "PENDING",
+              amountCents: 350,
+            };
+            await apply(service, pending);
+            const changed = { ...pending, status };
+            const snap = await apply(service, changed);
+            assert.equal(snap.reviewReason, "square_status_conflict");
+            assert.equal(snap.refundedCents, 0);
+            assert.equal(
+              (
+                await service.query(
+                  "select checkout_status_conflict from public.square_refunds where square_refund_id=$1",
+                  [pending.providerId],
+                )
+              ).rows[0].checkout_status_conflict,
+              true,
+            );
+            assert.deepEqual(await apply(service, changed), snap);
+            assert.equal(
+              (
+                await service.query(
+                  "select count(*)::int n from public.checkout_notification_outbox where order_id=$1 and kind='refund_confirmation'",
+                  [orderId],
+                )
+              ).rows[0].n,
+              0,
+            );
+          },
+        );
+      }
       for (const first of [true, false])
         await rollbackCase("contradictory refund completion first=" + first, async () => {
           await apply(service, initial);
