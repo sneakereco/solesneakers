@@ -77,13 +77,13 @@ function Root(){const [seed,change]=useState(user);window.reseed=change;return <
 );
 
 const sdk = `window.Square={payments:()=>({
-  async card(){const m={async attach(selector){const host=document.querySelector(selector);if(window.hangAttach){window.hangAttach=false;await new Promise(r=>window.releaseAttach=r)}host.textContent="Secure fields ready";m.host=host;},async destroy(){m.host?.replaceChildren();window.destroyed=(window.destroyed||0)+1;return true;},async tokenize(){if(window.holdToken)await new Promise(r=>window.releaseToken=r);return {status:"OK",token:"synthetic"}}};
+  async card(){const m={async attach(selector){const host=document.querySelector(selector);if(window.hangAttach){window.hangAttach=false;window.retiredCard=m;m.attaching=true;await new Promise(r=>window.releaseAttach=r);m.attaching=false;m.resource=true;}host.textContent="Secure fields ready";m.host=host;},async destroy(){if(m.attaching)return false;m.resource=false;m.host?.replaceChildren();window.destroyed=(window.destroyed||0)+1;return true;},async tokenize(){if(window.holdToken)await new Promise(r=>window.releaseToken=r);return {status:"OK",token:"synthetic"}}};
     if(window.hangCreate){window.hangCreate=false;await new Promise(r=>window.releaseCreate=r)}
     return m;},
   paymentRequest(){return {update:()=>true,addEventListener(){}}},
-  async applePay(){window.appleCount=(window.appleCount||0)+1;return {async tokenize(){return {status:"CANCEL"}}}},
+  async applePay(){window.appleCount=(window.appleCount||0)+1;return {async tokenize(){return window.walletResult??{status:"CANCEL"}}}},
   async afterpayClearpay(){return {async attach(){}}},
-  async cashAppPay(){return {async attach(){},addEventListener(){}}}
+  async cashAppPay(request,options){const entry={options};(window.cashMethods??=[]).push(entry);return {async attach(){},addEventListener(type,listener){entry.complete=listener},async destroy(){entry.destroyed=true;return true}}}
 })};`;
 const prepared = (reused) => ({ orderId: "order", totals, reused });
 const gate = () => {
@@ -143,7 +143,7 @@ async function fixture(browser) {
           ? { error: "Totals unavailable" }
           : {
               completeness: "exact",
-              quoteFingerprint: "a".repeat(64),
+              quoteFingerprint: (f.fingerprint ?? "a").repeat(64),
               totals: f.invalidTotals ? { ...totals, taxCents: null } : totals,
             },
       });
@@ -152,8 +152,20 @@ async function fixture(browser) {
       const n = f.prepareCalls.push(route.request().postDataJSON());
       if (n === 1 && f.prepareHold) await f.prepareHold.promise;
       return route.fulfill({
-        status: f.prepareStatus ?? 200,
-        json: f.omitReused ? { orderId: "order", totals } : prepared(n > 1),
+        status: f.suggestion ? 422 : (f.prepareStatus ?? 200),
+        json: f.suggestion
+          ? {
+              code: "SHIPPING_ADDRESS_SUGGESTION",
+              error: "Review address",
+              suggestedAddress: {
+                ...f.prepareCalls[n - 1].shippingAddress,
+                line1: "Private Suggested Street",
+              },
+              shippingConfirmation: "fixture",
+            }
+          : f.omitReused
+            ? { orderId: "order", totals }
+            : prepared(n > 1),
       });
     }
     if (path === "/api/checkout/payment-permit")
@@ -165,14 +177,18 @@ async function fixture(browser) {
     if (path === "/api/orders/order") {
       (f.statusQueries ??= []).push(u.search);
       f.statusCalls++;
+      const ownerTag = f.statusOwner ?? "buyer";
       if (f.orderHold) await f.orderHold.promise;
-      return route.fulfill({
+      await route.fulfill({
         status: f.orderStatus ?? 200,
         json: {
           ...order,
+          supportEmail: ownerTag + "@example.test",
           status: f.firstPending && f.statusCalls === 1 ? "pending" : "paid",
         },
       });
+      (f.finishedStatus ??= []).push(ownerTag);
+      return;
     }
     return route.fulfill({ status: 404, body: "" });
   });
@@ -226,7 +242,11 @@ const cases = {
       await p.getByRole("button", { name: "Retry card fields" }).click();
       await expect(p.getByText("Secure fields ready")).toBeVisible();
       await p.evaluate((phase) => window["release" + phase](), phase);
-      await p.waitForFunction(() => window.destroyed >= 1);
+      if (phase === "Attach") {
+        await expect
+          .poll(() => p.evaluate(() => window.retiredCard.resource))
+          .toBe(false);
+      } else await p.waitForFunction(() => window.destroyed >= 1);
       await expect(p.getByText("Secure fields ready")).toBeVisible();
       assert.equal(await p.evaluate(() => window.appleCount), 1);
       await p.close();
@@ -446,6 +466,159 @@ const cases = {
       "receipt read preserves historical read-only verification",
     );
   },
+  async privateOpen(f) {
+    f.suggestion = true;
+    const p = await f.open();
+    await pay(p);
+    await expect(p.getByText("Private Suggested Street")).toBeVisible();
+    f.session = {
+      user: { id: "second", email: "second@example.test" },
+      role: "customer",
+    };
+    await p.evaluate(() => window.session.refreshSession());
+    await expect(p.getByText("Private Suggested Street")).toHaveCount(0);
+    await expect(p.getByRole("link", { name: "Reload checkout" })).toBeVisible();
+    assert.equal(f.prepareCalls.length, 1);
+    assert.equal(f.payCalls, 0);
+  },
+  async privateWallet(f) {
+    const p = await f.open();
+    await p.evaluate(() => {
+      window.walletResult = {
+        status: "OK",
+        token: "synthetic",
+        details: {
+          billing: { givenName: "Private Wallet Name" },
+          shipping: {
+            contact: {
+              givenName: "Wallet",
+              familyName: "Buyer",
+              addressLines: ["1 Test St"],
+              city: "Wilmington",
+              state: "DE",
+              postalCode: "19801",
+              countryCode: "US",
+            },
+          },
+        },
+      };
+    });
+    await p.getByRole("button", { name: "Pay with Apple Pay" }).click();
+    await expect(
+      p.getByRole("heading", { name: "Complete your checkout details" }),
+    ).toBeVisible();
+    await expect(
+      p.getByRole("dialog").locator('input[value="Private Wallet Name"]'),
+    ).toBeVisible();
+    f.session = { user: null, role: null };
+    await p.evaluate(() => window.session.refreshSession());
+    await expect(p.getByRole("link", { name: "Reload checkout" })).toBeVisible();
+    await expect(p.locator('input[value="Private Wallet Name"]')).toHaveCount(0);
+    assert.equal(f.prepareCalls.length, 0);
+  },
+  async privateLate(f) {
+    f.suggestion = true;
+    f.prepareHold = gate();
+    const p = await f.open();
+    await pay(p);
+    await expect.poll(() => f.prepareCalls.length).toBe(1);
+    f.session = { user: null, role: null };
+    await p.evaluate(() => window.session.refreshSession());
+    f.prepareHold.resolve();
+    await expect(p.getByRole("link", { name: "Reload checkout" })).toBeVisible();
+    await expect(p.getByText("Private Suggested Street")).toHaveCount(0);
+    await expect(p.getByRole("button", { name: "Accept suggested address" })).toHaveCount(
+      0,
+    );
+    assert.equal(f.prepareCalls.length, 1);
+    assert.equal(f.payCalls, 0);
+  },
+  async cashChange(f) {
+    const p = await f.open();
+    await p.getByRole("radio", { name: "Cash App Pay" }).click();
+    await p.waitForFunction(() => window.cashMethods?.[0]?.complete);
+    assert.equal(
+      await p.evaluate(() => window.cashMethods[0].options.shouldTokenize()),
+      true,
+    );
+    await expect(p.getByRole("heading", { name: "Loading Cash App Pay…" })).toBeVisible();
+    f.fingerprint = "b";
+    const hadQuotes = f.quoteCalls;
+    assert.equal(await p.evaluate((item) => window.cart.addItem(item), item), true);
+    await expect.poll(() => f.quoteCalls).toBeGreaterThan(hadQuotes);
+    await p.waitForFunction(
+      () =>
+        !document.querySelector("aside dl")?.getAttribute("aria-busy")?.includes("true"),
+    );
+    assert.equal(await p.evaluate(() => Boolean(window.cashMethods[0].destroyed)), false);
+    assert.equal(
+      await p.evaluate(() => document.querySelector("dialog").matches(":modal")),
+      false,
+    );
+    await p.evaluate(() =>
+      window.cashMethods[0].complete({
+        detail: { tokenResult: { status: "OK", token: "expired-approval" } },
+      }),
+    );
+    await expect(p.getByRole("button", { name: "Return to checkout" })).toBeVisible();
+    await p.getByRole("button", { name: "Return to checkout" }).click();
+    assert.equal(f.prepareCalls.length, 0);
+    await p.waitForFunction(
+      () => window.cashMethods.length >= 2 && window.cashMethods.at(-1).complete,
+    );
+    assert.equal(
+      await p.evaluate(() => window.cashMethods.at(-1).options.shouldTokenize()),
+      true,
+    );
+    await p.evaluate(() =>
+      window.cashMethods
+        .at(-1)
+        .complete({ detail: { tokenResult: { status: "CANCEL" } } }),
+    );
+    await expect(p.getByRole("dialog")).toHaveCount(0);
+    assert.equal(f.payCalls, 0);
+  },
+  async orderOwner(f) {
+    const p = await f.open("/order-status/order?token=fixture");
+    await expect(p.getByText("buyer@example.test")).toBeVisible();
+    f.sessionHold = gate();
+    await p.evaluate(() => void window.session.refreshSession());
+    await expect(p.getByText("buyer@example.test")).toHaveCount(0);
+    await expect(p.locator("[aria-busy=true] [data-ui-skeleton]").first()).toBeVisible();
+    f.sessionStatus = 503;
+    f.sessionHold.resolve();
+    await expect(p.getByRole("button", { name: "Retry" })).toBeVisible();
+    assert.equal(f.statusCalls, 1);
+    f.sessionStatus = 200;
+    f.session = { user: null, role: null };
+    f.statusOwner = "secure-token";
+    await p.getByRole("button", { name: "Retry" }).click();
+    await expect(p.getByText("secure-token@example.test")).toBeVisible();
+    assert.equal(f.statusCalls, 2);
+    assert.deepEqual(f.statusQueries, ["?token=fixture", "?token=fixture"]);
+  },
+  async orderOwnerLate(f) {
+    f.orderHold = gate();
+    const old = f.orderHold;
+    const p = await f.open("/order-status/order?token=fixture");
+    await expect.poll(() => f.statusCalls).toBe(1);
+    f.orderHold = gate();
+    f.statusOwner = "second";
+    f.session = {
+      user: { id: "second", email: "second@example.test" },
+      role: "customer",
+    };
+    await p.evaluate(() => window.session.refreshSession());
+    await expect.poll(() => f.statusCalls).toBe(2);
+    old.resolve();
+    await expect.poll(() => f.finishedStatus).toContain("buyer");
+    await expect(p.getByText("buyer@example.test")).toHaveCount(0);
+    await expect(p.locator("[aria-busy=true] [data-ui-skeleton]").first()).toBeVisible();
+    f.orderHold.resolve();
+    await expect(p.getByText("second@example.test")).toBeVisible();
+    await expect(p.getByText("buyer@example.test")).toHaveCount(0);
+    assert.equal(f.statusCalls, 2);
+  },
   async orderStatus(f) {
     f.orderStatus = 503;
     const p = await f.open("/order-status/order?token=fixture");
@@ -464,7 +637,7 @@ const browser = await chromium.launch();
 const failures = [];
 try {
   for (const [name, test] of Object.entries(cases)) {
-    if (process.argv[2] && process.argv[2] !== name) continue;
+    if (process.argv[2] && !process.argv.slice(2).includes(name)) continue;
     const f = await fixture(browser);
     f.ctx.setDefaultTimeout(4500);
     try {

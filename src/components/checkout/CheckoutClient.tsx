@@ -476,6 +476,7 @@ function CheckoutForm({
     if (!sameOwner && !isLoading && !isSessionUnavailable)
       return (
         <main className="mx-auto max-w-2xl px-5 py-16">
+          <CheckoutPaymentDialog open={false} />
           <p>Your checkout account changed. Reload checkout to continue.</p>
           <a className="underline" href="/checkout">
             Reload checkout
@@ -483,10 +484,16 @@ function CheckoutForm({
         </main>
       );
     if (!sameOwner || (!isReady && (!hasCartView || items.length === 0)))
-      return failed ? recovery : <CheckoutSkeleton />;
+      return (
+        <>
+          <CheckoutPaymentDialog open={false} />
+          {failed ? recovery : <CheckoutSkeleton />}
+        </>
+      );
     if (isReady && !items.length)
       return (
         <main className="mx-auto max-w-2xl px-5 py-16">
+          <CheckoutPaymentDialog open={false} />
           <h1>Your cart is empty</h1>
           <Link className="underline" href="/store">
             Continue shopping
@@ -519,6 +526,10 @@ function CheckoutForm({
           <h1 className="sr-only">Checkout</h1>
           <div className="flex flex-col">
             <SquarePaymentMethods
+              reviewOwner={{
+                verified: sameOwner && !isLoading && !isSessionUnavailable,
+                isCurrent: () => sameOwner && isIdentityCurrent(owner ?? null),
+              }}
               paymentConfig={initialData.paymentConfig}
               quote={currentQuote}
               quoteReady={quoteReady}

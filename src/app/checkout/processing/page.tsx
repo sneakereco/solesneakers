@@ -47,7 +47,7 @@ function ProcessingContent() {
             ? "Your payment was received and is being reviewed. Do not submit another payment."
             : state === "unauthorized"
               ? "This browser cannot open the order details. Check your email for your secure order link."
-              : "This checkout could not be completed. Check your email or contact support before trying again.",
+              : "We could not verify your payment status. Check again or contact support before paying again.",
       );
     });
   }, [orderId, router, retry]);

@@ -64,6 +64,8 @@ try {
       return route.fulfill({ contentType: "text/html", body: '<div id="root"></div>' });
     if (url.pathname === "/api/auth/session")
       return route.fulfill({ json: { user: { id: "buyer" } } });
+    if (url.pathname === "/api/orders/wrong-review")
+      return route.fulfill({ json: { id: "unrelated", status: "review" } });
     if (url.pathname.startsWith("/api/orders/")) {
       statusRequests++;
       await new Promise((resolve) => {
@@ -159,6 +161,13 @@ try {
       sessionStorage.getItem("checkout:confirmed:test-order"),
     ]),
     ["newer-key", "newer-fingerprint", "newer-draft", null],
+  );
+  await page.evaluate(() => window.navigate("/checkout/processing?orderId=wrong-review"));
+  await expect(
+    page.getByRole("heading", { name: "We could not confirm the order" }),
+  ).toBeVisible();
+  await expect(page.getByRole("status")).not.toContainText(
+    /received|could not be completed|failed/i,
   );
   assert.deepEqual(errors, []);
   console.log(

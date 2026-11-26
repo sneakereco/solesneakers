@@ -2,6 +2,7 @@
 import Link from "next/link";
 import { Suspense, useEffect, useState } from "react";
 import { useParams, useSearchParams } from "next/navigation";
+import { useSession } from "@/contexts/SessionContext";
 import { OrderStatusView } from "@/components/orders/OrderStatusView";
 import { OrderStatusSkeleton } from "@/components/checkout/CheckoutSkeletons";
 import { RequestError } from "@/components/ui/RequestError";
@@ -10,7 +11,16 @@ import { withRequestDeadline } from "@/lib/http/request-deadline";
 import { readJsonResponse, ResponseError } from "@/lib/http/read-json-response";
 import type { OrderStatusResponse } from "@/types/domain/checkout";
 
-function StatusRead({ orderId, token }: { orderId: string; token: string }) {
+function StatusRead({
+  orderId,
+  token,
+  owner,
+}: {
+  orderId: string;
+  token: string;
+  owner: string | null;
+}) {
+  const { isIdentityCurrent } = useSession();
   const [status, setStatus] = useState<OrderStatusResponse | null>(null);
   const [error, setError] = useState<string | null>(null);
   const [attempt, setAttempt] = useState(0);
@@ -28,7 +38,7 @@ function StatusRead({ orderId, token }: { orderId: string; token: string }) {
       controller.signal,
     )
       .then((data) => {
-        if (controller.signal.aborted) return;
+        if (controller.signal.aborted || !isIdentityCurrent(owner)) return;
         if (
           data.id !== orderId ||
           ![data.subtotal, data.shipping, data.tax, data.total].every(Number.isFinite) ||
@@ -38,7 +48,7 @@ function StatusRead({ orderId, token }: { orderId: string; token: string }) {
         setStatus(data);
       })
       .catch((failure) => {
-        if (!controller.signal.aborted)
+        if (!controller.signal.aborted && isIdentityCurrent(owner))
           setError(
             failure instanceof ResponseError && [401, 403].includes(failure.status)
               ? "Open the secure order link from your email."
@@ -46,7 +56,7 @@ function StatusRead({ orderId, token }: { orderId: string; token: string }) {
           );
       });
     return () => controller.abort();
-  }, [orderId, token, attempt]);
+  }, [orderId, token, owner, isIdentityCurrent, attempt]);
   if (error)
     return (
       <div className="mx-auto max-w-2xl px-4 py-20">
@@ -62,6 +72,7 @@ function StatusRead({ orderId, token }: { orderId: string; token: string }) {
   return status ? <OrderStatusView status={status} /> : <OrderStatusSkeleton />;
 }
 function OrderStatusContent() {
+  const { user, isLoading, isSessionUnavailable, refreshSession } = useSession();
   const orderId = useParams<{ orderId: string }>()?.orderId;
   const token = useSearchParams().get("token");
   if (!orderId || !token)
@@ -73,8 +84,24 @@ function OrderStatusContent() {
         </Link>
       </div>
     );
+  if (isLoading) return <OrderStatusSkeleton />;
+  if (isSessionUnavailable)
+    return (
+      <div className="mx-auto max-w-2xl px-4 py-20">
+        <RequestError
+          message="We could not verify access to this order."
+          onRetry={() => void refreshSession()}
+        />
+      </div>
+    );
+  const owner = user?.id ?? null;
   return (
-    <StatusRead key={JSON.stringify([orderId, token])} orderId={orderId} token={token} />
+    <StatusRead
+      key={JSON.stringify([orderId, token, owner])}
+      orderId={orderId}
+      token={token}
+      owner={owner}
+    />
   );
 }
 export default function OrderStatusPage() {

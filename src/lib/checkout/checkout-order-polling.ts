@@ -58,11 +58,12 @@ export function startCheckoutOrderPolling(
         return finish("error");
       }
       if (response.ok) {
+        if (data?.id !== orderId || typeof data.status !== "string")
+          return finish("error");
         const state = classifyCheckoutOrderStatus(String(data?.status ?? ""));
         if (state !== "waiting") {
           if (state === "paid") {
             if (
-              data?.id !== orderId ||
               ![data.subtotal, data.tax, data.shipping, data.total].every(
                 Number.isFinite,
               ) ||

@@ -1,7 +1,7 @@
 // Run: node tests/browser/checkout-success.mjs
 import assert from "node:assert/strict";
 import { build } from "esbuild";
-import { chromium } from "@playwright/test";
+import { chromium, expect } from "@playwright/test";
 
 const bundle = await build({
   stdin: {
@@ -76,6 +76,8 @@ try {
     if (url.pathname === "/api/auth/session") {
       return route.fulfill({ json: { user: null } });
     }
+    if (url.pathname === "/api/orders/wrong-review")
+      return route.fulfill({ json: { id: "other", status: "review" } });
     if (url.pathname === "/api/orders/test-order") {
       orderTokens.push(url.searchParams.get("token"));
       return route.fulfill({
@@ -108,6 +110,14 @@ try {
     await page.evaluate(() => window.cartClears),
     0,
     "Recovery must preserve an unbound basket",
+  );
+  await page.evaluate(() => {
+    history.pushState({}, "", "/checkout/success?orderId=wrong-review&token=valid-token");
+    window.dispatchEvent(new PopStateEvent("popstate"));
+  });
+  await expect(page.getByRole("status")).toContainText("could not verify");
+  await expect(page.getByRole("status")).not.toContainText(
+    /under review|received|failed/i,
   );
   assert.deepEqual(errors, []);
   console.log(
