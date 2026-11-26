@@ -957,6 +957,43 @@ try {
       ).toHaveAttribute("aria-pressed", "true");
     },
   );
+  await check(320, "canceled native checkout navigation", async (page) => {
+    await checkCart(page);
+    await page.clock.install();
+    const link = page.locator("a[data-checkout-link]");
+    const held = holdResponse();
+    await page.route("**/checkout", held.fulfill);
+    const cdp = await page.context().newCDPSession(page);
+    let announced = false;
+    await page.exposeFunction("navigationPending", () => {
+      announced = true;
+    });
+    await link.evaluate((el) => {
+      window.restoreEvents = 0;
+      window.addEventListener("pageshow", () => window.restoreEvents++);
+      const observer = new MutationObserver(() => {
+        if (el.querySelector("[role=status]")?.textContent === "Loading page") {
+          observer.disconnect();
+          window.navigationPending();
+        }
+      });
+      observer.observe(el, { childList: true, characterData: true, subtree: true });
+    });
+    try {
+      await link.press("Enter", { noWaitAfter: true });
+      await held.received;
+      await expect.poll(() => announced).toBe(true);
+      await cdp.send("Page.stopLoading");
+      await page.clock.fastForward(31000);
+      await expect(link.getByRole("status")).toHaveCount(0);
+      await expect(page).toHaveURL(/\/cart$/);
+      assert.equal(await page.evaluate(() => window.restoreEvents), 0);
+      await expect(link).toHaveAttribute("href", "/checkout");
+    } finally {
+      held.release({ body: "fixture" });
+      await cdp.detach();
+    }
+  });
   await check(320, "hard checkout navigation feedback", async (page) => {
     await checkCart(page);
     const link = page.locator("a[data-checkout-link]");

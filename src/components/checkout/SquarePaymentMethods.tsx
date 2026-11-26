@@ -531,11 +531,11 @@ export function SquarePaymentMethods({
   >(null);
   const [walletReview, setWalletReview] = useState<WalletDetailsReview | null>(null);
   const walletContinuation = useRef<((value: WalletDetails | null) => void) | null>(null);
-  const [paymentFailureMessage, setError] = useState<string | null>(null);
-  const error =
+  const [error, setError] = useState<string | null>(null);
+  const unavailableVerificationId =
     isGuest && !clientEnv.NEXT_PUBLIC_TURNSTILE_SITE_KEY
-      ? "Guest checkout verification is temporarily unavailable."
-      : paymentFailureMessage;
+      ? "checkout-verification-unavailable"
+      : undefined;
   const [addressReview, setAddressReview] =
     useState<ShippingAddressValidationError | null>(null);
   const [totalReview, setTotalReview] = useState<number | null>(null);
@@ -1685,6 +1685,7 @@ export function SquarePaymentMethods({
         onDismiss={dismissPaymentDialog}
       />
       <ExpressCheckoutMethods
+        payDescriptionId={unavailableVerificationId}
         onRetry={appleLoadError ? () => setAppleRetry((n) => n + 1) : undefined}
         applePayReady={Boolean(applePay)}
         disabled={isPaying || !quoteReady || (isGuest && !turnstileToken)}
@@ -1706,6 +1707,7 @@ export function SquarePaymentMethods({
         </div>
 
         <CheckoutPaymentPanel
+          payDescriptionId={unavailableVerificationId}
           loadingProvider={loadingProvider}
           selectedMethod={selectedMethod}
           cardHost={cardHost}
@@ -1736,7 +1738,9 @@ export function SquarePaymentMethods({
                         ((selectedMethod === "cashAppPay" ? !cashAppPay : !afterpay)
                           ? "Loading payment method�"
                           : isGuest && !turnstileToken
-                            ? "Complete the security check to continue."
+                            ? unavailableVerificationId
+                              ? null
+                              : "Complete the security check to continue."
                             : null))
           }
           onRetryMethod={
@@ -1772,6 +1776,12 @@ export function SquarePaymentMethods({
                   ref={turnstileContainer}
                   className="mt-4"
                 />
+                {unavailableVerificationId && (
+                  <p id={unavailableVerificationId} role="status">
+                    Guest checkout verification is temporarily unavailable. Please try
+                    again later.
+                  </p>
+                )}
                 {clientEnv.NEXT_PUBLIC_TURNSTILE_SITE_KEY &&
                   !turnstileToken &&
                   !verificationError && (

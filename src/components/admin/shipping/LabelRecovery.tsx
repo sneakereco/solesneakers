@@ -13,10 +13,14 @@ type LabelEvidence = {
 export function LabelRecovery({
   orderId,
   evidence,
+  isCurrent,
+  writable = true,
   onResolve,
 }: {
   orderId: string;
   evidence?: string | null;
+  isCurrent?(): boolean;
+  writable?: boolean;
   onResolve: () => void;
 }) {
   const read = useAsyncAction();
@@ -36,6 +40,7 @@ export function LabelRecovery({
     ["ready_to_ship", "shipped", "delivered"].includes(order?.fulfillment_status ?? "")
   );
   const check = async () => {
+    if (isCurrent && !isCurrent()) return;
     setVerified(false);
     setOrder(null);
     setMessage("");
@@ -94,7 +99,7 @@ export function LabelRecovery({
           <button
             type="button"
             className="min-h-11 px-2 underline"
-            disabled={!verified || read.pending}
+            disabled={!writable || !verified || read.pending}
             onClick={onResolve}
           >
             Resolve label check

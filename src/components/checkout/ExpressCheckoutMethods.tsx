@@ -3,12 +3,14 @@ import { Loader2 } from "lucide-react";
 import { CheckoutLegalNotice } from "@/components/checkout/CheckoutLegalNotice";
 
 export function ExpressCheckoutMethods({
+  payDescriptionId,
   applePayReady,
   disabled = false,
   loading,
   onRetry,
   onApplePayClick,
 }: {
+  payDescriptionId?: string;
   applePayReady: boolean;
   disabled?: boolean;
   loading: boolean;
@@ -39,6 +41,7 @@ export function ExpressCheckoutMethods({
           type="button"
           hidden={!applePayReady}
           disabled={disabled}
+          aria-describedby={payDescriptionId}
           aria-label="Pay with Apple Pay"
           className="h-12 w-full rounded bg-black [-apple-pay-button-style:black] [-apple-pay-button-type:plain] [-webkit-appearance:-apple-pay-button]"
           onClick={onApplePayClick}

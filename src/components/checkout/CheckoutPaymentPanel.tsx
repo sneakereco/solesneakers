@@ -34,6 +34,7 @@ export function CheckoutPaymentPanel({
   billingAddress,
   isPaying,
   loadingProvider,
+  payDescriptionId,
   payDisabled,
   payLabel,
   error,
@@ -64,6 +65,7 @@ export function CheckoutPaymentPanel({
   billingAddress: CheckoutBillingAddressForm;
   isPaying: boolean;
   loadingProvider?: "Afterpay" | "Cash App Pay" | null;
+  payDescriptionId?: string;
   payDisabled: boolean;
   payLabel: string;
   error: string | null;
@@ -303,6 +305,7 @@ export function CheckoutPaymentPanel({
         <button
           type="submit"
           disabled={payDisabled}
+          aria-describedby={payDescriptionId}
           onClick={(event) => {
             event.preventDefault();
             onPay();

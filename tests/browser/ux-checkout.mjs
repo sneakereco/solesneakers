@@ -404,6 +404,19 @@ const cases = {
       await p.close();
     }
   },
+  async missingGuestKey(f) {
+    f.session = { user: null, role: null };
+    const p = await f.open("/checkout?guest");
+    await p.getByLabel("Email", { exact: true }).fill("guest@example.test");
+    await p.getByLabel("Name on card").fill("Saved draft");
+    const pay = p.getByRole("button", { name: /^Pay .*now/ });
+    await expect(pay).toBeDisabled();
+
+    await expect(pay).toHaveAccessibleDescription(/verification|security check/i);
+    await expect(p.getByRole("status").filter({ hasText: /unavailable/i })).toBeVisible();
+    await expect(p.getByRole("button", { name: "Retry security check" })).toHaveCount(0);
+    assert.equal(f.payCalls, 0);
+  },
   async guestVerification(f) {
     f.session = { user: null, role: null };
     for (const failure of ["script", "stalledScript", "widget"]) {

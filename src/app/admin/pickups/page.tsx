@@ -134,14 +134,32 @@ export default function PickupsPage() {
   } | null>(null);
 
   const currentPage = pageByTab[activeTab];
-  const { list, listLabel, displayedPage, totals, orders, counts, totalPages } =
-    useAdminOrderQueue<PickupOrder, (typeof PICKUP_TABS)[number]>(
-      PICKUP_TABS,
-      orderParams,
-      activeTab,
-      currentPage,
-      PAGE_SIZE,
-    );
+  const {
+    selectionScope,
+    access,
+    list,
+    listLabel,
+    displayedPage,
+    totals,
+    orders,
+    counts,
+    totalPages,
+  } = useAdminOrderQueue<PickupOrder, (typeof PICKUP_TABS)[number]>(
+    PICKUP_TABS,
+    orderParams,
+    activeTab,
+    currentPage,
+    PAGE_SIZE,
+  );
+  const [previousScope, setPreviousScope] = useState(selectionScope);
+  if (previousScope !== selectionScope) {
+    setPreviousScope(selectionScope);
+    setSelectedItem(null);
+    setExpandedDetails({});
+    setItemInvoker(null);
+    setExpandedOrders({});
+    if (previousScope?.owner !== selectionScope?.owner) setToast(null);
+  }
   if (displayedPage === currentPage && currentPage > totalPages) {
     setPageByTab((prev) => ({ ...prev, [activeTab]: totalPages }));
   }
@@ -228,12 +246,13 @@ export default function PickupsPage() {
   };
 
   const openItemDetails = (item: OrderItem, invoker: HTMLElement) => {
+    if (!access.isCurrent()) return;
     setItemInvoker(invoker);
     setSelectedItem(item);
   };
 
   const handleMarkPickedUp = async (order: PickupOrder) => {
-    if (list.pending || list.error || markingId || activeTab !== "pending") {
+    if (!access.canCommand() || markingId || activeTab !== "pending") {
       return;
     }
     setMarkingId(order.id);
@@ -247,6 +266,7 @@ export default function PickupsPage() {
         body: JSON.stringify({}),
       });
 
+      if (!access.isCurrent()) return;
       if (response.status >= 400 && response.status < 500) {
         setToast({ message: data?.error ?? "Pickup update declined.", tone: "error" });
         return;
@@ -256,6 +276,7 @@ export default function PickupsPage() {
       list.retry();
       totals.retry();
     } catch {
+      if (!access.isCurrent()) return;
       setToast({
         message: "Pickup update is unconfirmed. Checking current order status.",
         tone: "info",

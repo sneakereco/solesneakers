@@ -314,14 +314,34 @@ export default function ShippingPage() {
   const [savedOrigin, setSavedOrigin] = useState<ShippingOrigin | null>(null);
   const originAddress = savedOrigin ?? setup.data?.origin ?? null;
   const currentPage = pageByTab[activeTab];
-  const { list, listLabel, displayedPage, totals, orders, counts, totalPages } =
-    useAdminOrderQueue<ShippingOrder, (typeof TABS)[number]>(
-      TABS,
-      orderParams,
-      activeTab,
-      currentPage,
-      PAGE_SIZE,
-    );
+  const {
+    selectionScope,
+    access,
+    list,
+    listLabel,
+    displayedPage,
+    totals,
+    orders,
+    counts,
+    totalPages,
+  } = useAdminOrderQueue<ShippingOrder, (typeof TABS)[number]>(
+    TABS,
+    orderParams,
+    activeTab,
+    currentPage,
+    PAGE_SIZE,
+  );
+  const [previousScope, setPreviousScope] = useState(selectionScope);
+  if (previousScope !== selectionScope) {
+    setPreviousScope(selectionScope);
+    setSelectedItem(null);
+    setExpandedDetails({});
+    setLabelOrder(null);
+    setConfirmMarkShipped(null);
+    setModalInvoker(null);
+    setExpandedItems({});
+    if (previousScope?.owner !== selectionScope?.owner) setCommandMessage("");
+  }
   if (displayedPage === currentPage && currentPage > totalPages) {
     setPageByTab((prev) => ({ ...prev, [activeTab]: totalPages }));
   }
@@ -356,12 +376,13 @@ export default function ShippingPage() {
   };
 
   const openItemDetails = (item: OrderItem, invoker: HTMLElement) => {
+    if (!access.isCurrent()) return;
     setModalInvoker(invoker);
     setSelectedItem(item);
   };
 
   const handleMarkShipped = async (order: ShippingOrder) => {
-    if (list.pending || list.error) return;
+    if (!access.canCommand()) return;
     restoreFulfillmentFocus.current = true;
     setMarkingShippedId(order.id);
     try {
@@ -376,6 +397,7 @@ export default function ShippingPage() {
           trackingNumber: order.tracking_number ?? null,
         }),
       });
+      if (!access.isCurrent()) return;
       if (response.status >= 400 && response.status < 500) {
         setCommandMessage(data?.error ?? "Fulfillment request declined.");
         setConfirmMarkShipped(null);
@@ -389,6 +411,7 @@ export default function ShippingPage() {
       setConfirmMarkShipped(null);
     } catch (error) {
       logError(error, { layer: "frontend", event: "admin_mark_shipped" });
+      if (!access.isCurrent()) return;
       setConfirmMarkShipped(null);
       setCommandMessage("Shipment update is unconfirmed. Checking current order status.");
       list.retry();
@@ -467,6 +490,7 @@ export default function ShippingPage() {
   };
 
   const viewLabel = (order: ShippingOrder) => {
+    if (!access.isCurrent()) return;
     // Get label URL - you'll need to add this to your order model
     const labelUrl = order.label_url ?? null;
     if (labelUrl) {
@@ -580,6 +604,7 @@ export default function ShippingPage() {
           disabled={!setup.data || list.pending || !!list.error}
           onClick={(event) => {
             event.stopPropagation();
+            if (!access.canCommand()) return;
             setModalInvoker(event.currentTarget);
             setLabelOrder(order);
           }}
@@ -593,6 +618,7 @@ export default function ShippingPage() {
           aria-haspopup="dialog"
           onClick={(event) => {
             event.stopPropagation();
+            if (!access.canCommand()) return;
             setModalInvoker(event.currentTarget);
             setConfirmMarkShipped(order);
           }}
@@ -1047,6 +1073,7 @@ export default function ShippingPage() {
           aria-haspopup="dialog"
           disabled={!setup.data}
           onClick={(event) => {
+            if (!access.canCommand()) return;
             setModalInvoker(event.currentTarget);
             setOriginError("");
             setOriginMessage("");
@@ -1117,6 +1144,8 @@ export default function ShippingPage() {
         onClose={() => setSelectedItem(null)}
       />
       <CreateLabelForm
+        key={labelOrder?.id ?? "closed"}
+        queueAccess={access}
         invoker={modalInvoker}
         open={!!labelOrder}
         order={labelOrder}

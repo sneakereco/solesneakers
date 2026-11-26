@@ -201,7 +201,7 @@ export default function TransactionsPage() {
   const [searchQuery, setSearchQuery] = useState("");
   const [page, setPage] = useState(1);
 
-  const { list, listLabel, displayedPage, totals, orders, counts, totalPages } =
+  const { access, list, listLabel, displayedPage, totals, orders, counts, totalPages } =
     useAdminOrderQueue<TransactionOrder, (typeof TRANSACTION_TABS)[number]>(
       TRANSACTION_TABS,
       orderParams,
@@ -395,17 +395,20 @@ export default function TransactionsPage() {
                   order.fulfillment === "pickup" ? "Pickup" : "Ship";
                 const orderHref = `/admin/transactions/${order.id}`;
 
+                const openTransaction = () => {
+                  if (access.isCurrent()) startNavigation(() => router.push(orderHref));
+                };
                 return (
                   <tr
                     key={order.id}
                     role="link"
                     tabIndex={0}
                     aria-label={`View transaction ${order.id}`}
-                    onClick={() => startNavigation(() => router.push(orderHref))}
+                    onClick={openTransaction}
                     onKeyDown={(event) => {
                       if (event.key === "Enter" || event.key === " ") {
                         event.preventDefault();
-                        startNavigation(() => router.push(orderHref));
+                        openTransaction();
                       }
                     }}
                     className="cursor-pointer border-b border-zinc-800/70 transition-colors hover:bg-zinc-800 focus-visible:bg-zinc-800 focus-visible:outline-none"

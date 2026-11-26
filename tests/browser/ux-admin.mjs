@@ -34,6 +34,27 @@ if(location.search==="?hydrate") {
       {
         name: "fixture-next",
         setup(build) {
+          // Hold a previously admitted label callback at the action boundary.
+          build.onResolve({ filter: /^@\/components\/ui\/useAsyncAction$/ }, (args) =>
+            args.importer.endsWith("CreateLabelForm.tsx")
+              ? { path: args.path, namespace: "label-command" }
+              : null,
+          );
+          build.onLoad({ filter: /.*/, namespace: "label-command" }, () => ({
+            loader: "js",
+            resolveDir: process.cwd(),
+            contents: `
+            import {useAsyncAction as useRealAction} from "./src/components/ui/useAsyncAction";
+            export function useAsyncAction(){
+              const action=useRealAction();
+              return {...action,run:operation=>action.run(()=>{
+                if(!window.holdLabelCommand)return operation();
+                window.holdLabelCommand=false;
+                return new Promise((resolve,reject)=>{window.releaseLabelCommand=()=>operation().then(resolve,reject);});
+              })};
+            }
+          `,
+          }));
           build.onResolve({ filter: /^next\/(navigation|image|link)$/ }, ({ path }) => ({
             path,
             namespace: "fixture",
@@ -114,6 +135,223 @@ function deferred() {
   return { promise, release };
 }
 try {
+  for (const action of [
+    "rates",
+    "purchase",
+    "submitted purchase",
+    "purchased without tracking",
+  ]) {
+    await check("label scope denial " + action, async (page) => {
+      const submitted =
+        action === "submitted purchase" || action === "purchased without tracking";
+      const counts = deferred(),
+        result = deferred();
+      let rates = 0,
+        buys = 0;
+      const address = {
+        name: "Fixture Recipient",
+        phone: "2025550112",
+        line1: "77 Fixture Street",
+        city: "Columbia",
+        state: "SC",
+        postal_code: "29201",
+        country: "US",
+      };
+      await page.route("**/api/admin/**", async (r) => {
+        const url = new URL(r.request().url());
+        if (url.pathname.endsWith("/orders")) {
+          if (url.searchParams.get("limit") === "1") {
+            await counts.promise;
+            return r.fulfill({ status: 403, json: {} });
+          }
+          return r.fulfill({
+            json: {
+              orders: [
+                {
+                  id: "fixture-order",
+                  shipping: address,
+                  status: "paid",
+                  fulfillment: "ship",
+                  fulfillment_status: "unfulfilled",
+                  items: [],
+                  total: 30,
+                },
+              ],
+              count: 1,
+            },
+          });
+        }
+        if (url.pathname.endsWith("/origin"))
+          return r.fulfill({ json: { origin: address } });
+        if (url.pathname.endsWith("/defaults"))
+          return r.fulfill({ json: { defaults: [] } });
+        if (url.pathname.endsWith("/rates")) {
+          rates++;
+          return r.fulfill({
+            json: {
+              shipment: { id: "s", rates: [{ id: "r", carrier: "Fixture", rate: "5" }] },
+            },
+          });
+        }
+        if (url.pathname.endsWith("/labels")) {
+          buys++;
+          await result.promise;
+          return action === "purchased without tracking"
+            ? r.fulfill({
+                status: 502,
+                json: {
+                  code: "shipping_label_purchased_without_tracking",
+                  requestId: "fixture-ref",
+                },
+              })
+            : r.abort();
+        }
+        return r.abort();
+      });
+      await page.setViewportSize({ width: 1280, height: 800 });
+      await page.addInitScript(() => {
+        window.labelRequests = [];
+        const request = window.fetch;
+        window.fetch = (...args) => {
+          const url = new URL(
+            args[0] instanceof Request ? args[0].url : args[0],
+            location.href,
+          );
+          if (
+            ["/api/admin/shipping/rates", "/api/admin/shipping/labels"].includes(
+              url.pathname,
+            )
+          )
+            window.labelRequests.push(url.pathname);
+          return request(...args);
+        };
+      });
+      await openUxHarness(page, bundle, "https://ux.test/shipping");
+      await page
+        .getByRole("button", { name: "Create label", exact: true })
+        .first()
+        .click();
+      const dialog = page.getByRole("dialog");
+      await expect(dialog.locator('input[value="77 Fixture Street"]')).toHaveValue(
+        "77 Fixture Street",
+      );
+      const get = dialog.getByRole("button", { name: /get shipping rates/i });
+      if (action !== "rates") await get.click();
+      if (!submitted) await page.evaluate(() => (window.holdLabelCommand = true));
+      await (
+        action === "rates"
+          ? get
+          : dialog.getByRole("button", { name: "Purchase shipping label" })
+      ).click();
+      if (submitted) await expect.poll(() => buys).toBe(1);
+      else await page.waitForFunction(() => !!window.releaseLabelCommand);
+      try {
+        counts.release();
+        await expect(
+          page.getByText("Admin access could not be verified.", { exact: true }).first(),
+        ).toBeAttached();
+        if (!submitted)
+          await page.evaluate(() => {
+            void window.releaseLabelCommand();
+          });
+        else
+          expect(
+            await page.evaluate(() =>
+              sessionStorage.getItem("admin-check:label:fixture-order"),
+            ),
+          ).toBe("support");
+        await expect(dialog).toHaveCount(0);
+        await expect(page.locator('input[value="77 Fixture Street"]')).toHaveCount(0);
+        if (submitted) {
+          result.release();
+          await expect
+            .poll(() =>
+              page.evaluate(() =>
+                sessionStorage.getItem("admin-check:label:fixture-order"),
+              ),
+            )
+            .toBe(
+              action === "purchased without tracking"
+                ? "purchased_without_tracking:fixture-ref"
+                : "unknown",
+            );
+        }
+        const requests = await page.evaluate(() => window.labelRequests);
+        expect(requests).toEqual(
+          action === "rates"
+            ? []
+            : submitted
+              ? ["/api/admin/shipping/rates", "/api/admin/shipping/labels"]
+              : ["/api/admin/shipping/rates"],
+        );
+        expect(rates).toBe(action === "rates" ? 0 : 1);
+        expect(buys).toBe(submitted ? 1 : 0);
+      } finally {
+        counts.release();
+        result.release();
+      }
+    });
+  }
+  for (const view of ["shipping", "pickups"]) {
+    await check("private item dialog " + view, async (page) => {
+      const nextOwner = deferred();
+      const counts = deferred();
+      let changed = false;
+      await page.route("**/api/admin/**", async (route) => {
+        const url = new URL(route.request().url());
+        if (url.pathname.endsWith("/orders")) {
+          if (changed) {
+            await nextOwner.promise;
+            return route.fulfill({ json: { count: 0, orders: [] } });
+          }
+          if (url.searchParams.get("limit") === "1") {
+            await counts.promise;
+            return route.fulfill({ status: view === "shipping" ? 403 : 503, json: {} });
+          }
+          return route.fulfill({
+            json: {
+              count: 1,
+              orders: [
+                {
+                  id: "fixture-order",
+                  status: "paid",
+                  fulfillment: view === "shipping" ? "ship" : "pickup",
+                  fulfillment_status: "unfulfilled",
+                  items: [
+                    { id: "item", quantity: 1, product_name: "Private fixture item" },
+                  ],
+                  total: 30,
+                },
+              ],
+            },
+          });
+        }
+        return route.fulfill({ json: {} });
+      });
+      await page.setViewportSize({ width: 1280, height: 800 });
+      await openUxHarness(page, bundle, "https://ux.test/" + view);
+      await page.getByRole("button", { name: "Details for order fixture-order" }).click();
+      await page.getByTitle("Private fixture item", { exact: true }).click();
+      const dialog = page.getByRole("dialog");
+      await expect(dialog).toContainText("Private fixture item");
+      try {
+        counts.release();
+        if (view === "pickups") {
+          await expect(
+            page.getByText("Unable to load queue counts.", { exact: true }),
+          ).toBeAttached();
+          await expect(dialog).toContainText("Private fixture item");
+          changed = true;
+          await page.evaluate(() => window.changeStaff("second"));
+        }
+        await expect(dialog).toHaveCount(0);
+        await expect(page.getByText("Private fixture item")).toHaveCount(0);
+      } finally {
+        counts.release();
+        nextOwner.release();
+      }
+    });
+  }
   await check("retained pagination and denial", async (page) => {
     let result = 503;
     const held = deferred();

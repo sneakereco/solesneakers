@@ -29,6 +29,12 @@ Transactions, Shipping and Pickups retain a confirmed page during pagination wit
 
 The local ownership runner protects partial setup before creating the runtime. Two setup-failure regressions stop during source copy and after junction creation, verify cleanup and leave the dependency target intact. Neither probe creates a user or starts a backend. The verification table below records its original evidence dates and revisions. [Final-review coverage](customer-admin-ux-coverage-2026-11-25.md#checkout-and-navigation-recovery-after-final-review)
 
+## Residual review fixes
+
+A confirmed 401 or 403 from an order list or any queue count now closes open Shipping and Pickups order dialogs. A delayed label action checks the current queue again before requesting rates or purchasing a label. Purchases already submitted still record their final or unresolved outcome for operator recovery. A transient count failure preserves the authorized item details.
+
+Stopping a native cart-to-checkout request can leave the original document visible. Its loading announcement now clears after 15 seconds or on page restoration. For guest checkout with verification unavailable, the payment panel displays the reason above Pay and associates it with the disabled payment controls. The security check still gates payment.
+
 ## Framework and local service evidence
 
 The local harness verifies the exact loopback Supabase origin before creating a fixture. It repeats both PostgREST schema projections with an empty result, then creates a disposable customer, staff account, product and two variants. It authenticates staff with local TOTP and checks six exact inventory reads. Both ID and each sibling SKU return the full variant set before and after archiving. Dedicated cleanup verifies the product, variant, profile and account IDs are absent. The harness owns its Next port, browser and forwarding server. The final fixture IDs and the interrupted run’s independently verified cleanup are recorded in the [cleanup evidence](customer-admin-ux-implementation-2026-11-25/fixture-cleanup.json).
@@ -80,4 +86,4 @@ The catalog screenshots show the native image error state after an external fixt
 
 ## Review status
 
-All eight task reviews passed for blocking findings. The last scoped review at `680b82a0` confirmed the three server-read deadline and framework-retry repairs, with no new blocking breakage. The whole-branch review and final verification remain pending. The [implementation decisions](customer-admin-ux-implementation-decisions-2026-11-25.md) preserve all 25 coordinator rulings in chronological order, including their costs if wrong.
+All eight task reviews passed for blocking findings. The last scoped review at `680b82a0` confirmed the three server-read deadline and framework-retry repairs, with no new blocking breakage. The subsequent whole-branch review led to the consolidated repair at `72351d2b`. Its scoped review accepted eight of nine original findings and identified two further feedback gaps. The residual repairs above await scoped review and final branch verification. The decision record includes the coordinator’s rulings and their costs if wrong. [Implementation decisions](customer-admin-ux-implementation-decisions-2026-11-25.md)

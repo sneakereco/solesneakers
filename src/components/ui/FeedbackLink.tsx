@@ -40,12 +40,18 @@ export function DocumentFeedbackLink({
   onClick,
   ...props
 }: ComponentPropsWithRef<"a">) {
-  const [pending, setPending] = useState(false);
+  const [attempt, setAttempt] = useState(0);
   useEffect(() => {
-    const restored = () => setPending(false);
-    window.addEventListener("pageshow", restored);
-    return () => window.removeEventListener("pageshow", restored);
-  }, []);
+    if (!attempt) return;
+    const settle = () => setAttempt(0);
+    // A browser Stop can leave this document visible without firing pageshow.
+    const timer = window.setTimeout(settle, 15_000);
+    window.addEventListener("pageshow", settle);
+    return () => {
+      window.clearTimeout(timer);
+      window.removeEventListener("pageshow", settle);
+    };
+  }, [attempt]);
   return (
     <a
       {...props}
@@ -60,14 +66,14 @@ export function DocumentFeedbackLink({
           !event.shiftKey &&
           !event.altKey &&
           props.href &&
-          !props.download &&
+          (props.download === undefined || props.download === false) &&
           (!props.target || props.target === "_self")
         )
-          setPending(true);
+          setAttempt((current) => current + 1);
       }}
     >
       {children}
-      <NavigationFeedback pending={pending} />
+      <NavigationFeedback pending={attempt !== 0} />
     </a>
   );
 }

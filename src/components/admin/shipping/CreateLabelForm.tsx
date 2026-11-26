@@ -1,5 +1,6 @@
 // src/components/admin/shipping/CreateLabelForm.tsx
 "use client";
+import type { QueueAccess } from "../useAdminOrderQueue";
 import { LabelRecovery } from "./LabelRecovery";
 import { useAsyncAction } from "@/components/ui/useAsyncAction";
 import {
@@ -61,6 +62,7 @@ type OrderSummary = {
 };
 
 type Props = {
+  queueAccess?: QueueAccess;
   open: boolean;
   invoker?: HTMLElement | null;
   order: OrderSummary | null;
@@ -176,6 +178,7 @@ const getErrorMessage = (error: string): string => {
 
 export function CreateLabelForm({
   open,
+  queueAccess,
   invoker,
   order,
   originLine,
@@ -317,6 +320,7 @@ export function CreateLabelForm({
   };
 
   const getRates = async () => {
+    if (queueAccess && !queueAccess.canCommand()) return;
     const v = validate();
     if (v) {
       setError(v);
@@ -381,6 +385,7 @@ export function CreateLabelForm({
 
   const checkKey = "label:" + orderId;
   const purchase = async () => {
+    if (queueAccess && !queueAccess.canCommand()) return;
     if (pendingProviderCheck(checkKey)) {
       setUnknown(true);
       return;
@@ -416,7 +421,7 @@ export function CreateLabelForm({
       if (res.ok && data?.success) {
         setSuccess("Label purchased.");
         transitionProviderCheck(checkKey, "support", null);
-        onSuccess();
+        if (!queueAccess || queueAccess.isCurrent()) onSuccess();
         return;
       }
       if (res.status === 409 && data?.code === "shipping_order_not_fulfillment_ready") {
@@ -437,18 +442,20 @@ export function CreateLabelForm({
         );
         setUnknown(true);
         setError("");
-        onExistingLabel?.(
-          "The label was purchased through Shippo without a tracking number. Contact support.",
-        );
+        if (!queueAccess || queueAccess.isCurrent())
+          onExistingLabel?.(
+            "The label was purchased through Shippo without a tracking number. Contact support.",
+          );
         return;
       }
       if (res.status === 409 && data?.code === "shipping_label_already_purchased") {
         rememberProviderCheck(checkKey, "existing");
         setUnknown(true);
         setError(data.error ?? "This order already has a shipping label.");
-        onExistingLabel?.(
-          "Existing label or fulfillment recorded. Check the order before taking further action.",
-        );
+        if (!queueAccess || queueAccess.isCurrent())
+          onExistingLabel?.(
+            "Existing label or fulfillment recorded. Check the order before taking further action.",
+          );
         return;
       }
       if (res.status >= 400 && res.status < 500 && res.status !== 409) {
@@ -463,7 +470,7 @@ export function CreateLabelForm({
       setError(
         "Label purchase is unconfirmed. Check this order and the carrier transaction history before buying another label.",
       );
-      onUnconfirmed?.(orderId);
+      if (!queueAccess || queueAccess.isCurrent()) onUnconfirmed?.(orderId);
     } finally {
       setIsPurchasing(false);
     }
@@ -793,7 +800,11 @@ export function CreateLabelForm({
                   void ratesAction.run(getRates);
                 }}
                 disabled={
-                  needsCheck || isPurchasing || isGettingRates || hasAddressErrors
+                  queueAccess?.writable === false ||
+                  needsCheck ||
+                  isPurchasing ||
+                  isGettingRates ||
+                  hasAddressErrors
                 }
                 aria-busy={isGettingRates}
                 className="admin-button-secondary w-full disabled:cursor-not-allowed disabled:opacity-50 md:w-auto"
@@ -801,12 +812,20 @@ export function CreateLabelForm({
                 {isGettingRates ? "Getting rates..." : "Get shipping rates"}
               </button>
 
+              {queueAccess?.writable === false && (
+                <p role="status">
+                  Order changes are unavailable until the current orders load.
+                </p>
+              )}
               {needsCheck && (
                 <LabelRecovery
                   key={orderId}
                   orderId={orderId}
+                  isCurrent={queueAccess?.isCurrent}
+                  writable={queueAccess?.writable}
                   evidence={pendingProviderCheck(checkKey)}
                   onResolve={() => {
+                    if (queueAccess && !queueAccess.canCommand()) return;
                     if (!transitionProviderCheck(checkKey, "unknown", null)) {
                       setError(
                         "Unable to verify the updated tab storage. Check browser storage access and try again, or contact support with the order number.",
@@ -909,6 +928,7 @@ export function CreateLabelForm({
                   void buyAction.run(purchase);
                 }}
                 disabled={
+                  queueAccess?.writable === false ||
                   needsCheck ||
                   isGettingRates ||
                   isPurchasing ||

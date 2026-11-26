@@ -1,8 +1,15 @@
 "use client";
 import { useSession } from "@/contexts/SessionContext";
-import { useCallback, useState } from "react";
+import { useCallback, useLayoutEffect, useMemo, useRef, useState } from "react";
 import { fetchJsonWithDeadline } from "@/lib/http/request-deadline";
+import { ResponseError } from "@/lib/http/read-json-response";
 import { useAdminRead } from "./useAdminRead";
+
+export type QueueAccess = {
+  writable: boolean;
+  isCurrent(): boolean;
+  canCommand(): boolean;
+};
 
 const emptyOrders: never[] = [];
 export function useAdminOrderQueue<Order, Tab extends { key: string }>(
@@ -12,23 +19,47 @@ export function useAdminOrderQueue<Order, Tab extends { key: string }>(
   page: number,
   pageSize: number,
 ) {
-  const { user, role } = useSession();
+  const { user, role, isIdentityCurrent } = useSession();
   const [accessRevision, recheckAccess] = useState(0);
-  const owner = JSON.stringify([user?.id, role, accessRevision]);
+  const userId = user?.id ?? null;
+  const owner = useMemo(
+    () => ({ userId, role, accessRevision }),
+    [userId, role, accessRevision],
+  );
   const tab = tabs.find((entry) => entry.key === activeTab) ?? tabs[0];
   const url = "/api/admin/orders?" + params(tab, page, pageSize);
+  const scope = useMemo(() => ({ owner, url }), [owner, url]);
+  const active = useRef<{ scope: typeof scope; writable: boolean } | null>(null);
+  const revoked = useRef<typeof owner | null>(null);
+  const [deniedOwner, setDeniedOwner] = useState<typeof owner | null>(null);
+  const recordFailure = useCallback(
+    (error: unknown, signal: AbortSignal): never => {
+      if (
+        !signal.aborted &&
+        active.current?.scope.owner === owner &&
+        error instanceof ResponseError &&
+        (error.status === 401 || error.status === 403)
+      ) {
+        // Invalidate captured callbacks before the denial render removes the dialogs.
+        revoked.current = owner;
+        setDeniedOwner(owner);
+      }
+      throw error;
+    },
+    [owner],
+  );
   const loadOrders = useCallback(
     async (signal: AbortSignal) => {
       const result = await fetchJsonWithDeadline<{ orders: Order[]; count: number }>(
         url,
         "Orders unavailable",
         signal,
-      );
+      ).catch((error: unknown) => recordFailure(error, signal));
       if (!Array.isArray(result.orders) || !Number.isFinite(result.count))
         throw new Error("Invalid order list");
       return { ...result, page };
     },
-    [url, page],
+    [url, page, recordFailure],
   );
   const loadCounts = useCallback(
     async (signal: AbortSignal) => {
@@ -39,14 +70,14 @@ export function useAdminOrderQueue<Order, Tab extends { key: string }>(
             "/api/admin/orders?" + params(entry, 1, 1),
             "Count unavailable",
             signal,
-          );
+          ).catch((error: unknown) => recordFailure(error, signal));
           if (!Number.isFinite(data.count)) throw new Error("Invalid order count");
           counts[entry.key as Tab["key"]] = data.count;
         }),
       );
       return counts;
     },
-    [tabs, params],
+    [tabs, params, recordFailure],
   );
   const listRead = useAdminRead(
     loadOrders,
@@ -54,10 +85,7 @@ export function useAdminOrderQueue<Order, Tab extends { key: string }>(
     JSON.stringify([owner, params(tab, 1, pageSize).toString()]),
   );
   const countRead = useAdminRead(loadCounts, "queue counts", owner);
-  const [deniedScope, setDeniedScope] = useState<string>();
-  if ((listRead.denied || countRead.denied) && deniedScope !== owner)
-    setDeniedScope(owner);
-  const denied = deniedScope === owner || listRead.denied || countRead.denied;
+  const denied = deniedOwner === owner || listRead.denied || countRead.denied;
   const list = denied
     ? {
         ...listRead,
@@ -70,7 +98,26 @@ export function useAdminOrderQueue<Order, Tab extends { key: string }>(
   const displayedPage = list.data?.page;
   const retained = displayedPage !== undefined && displayedPage !== page;
   const showing = retained ? "Showing page " + displayedPage + "." : "";
+  const writable = !denied && !!list.data && !list.pending && !list.error && !retained;
+  useLayoutEffect(() => {
+    active.current = { scope, writable };
+    return () => {
+      active.current = null;
+    };
+  }, [scope, writable]);
+  const isCurrent = () =>
+    active.current?.scope === scope &&
+    revoked.current !== owner &&
+    !denied &&
+    isIdentityCurrent(userId);
+  const access: QueueAccess = {
+    writable,
+    isCurrent,
+    canCommand: () => isCurrent() && active.current?.writable === true,
+  };
   return {
+    selectionScope: denied ? null : scope,
+    access,
     list: retained && list.error ? { ...list, error: list.error + " " + showing } : list,
     listLabel: retained ? showing + " Loading page " + page : "Loading orders",
     displayedPage,

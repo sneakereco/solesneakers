@@ -54,6 +54,12 @@ This inventory follows the user-facing operation through its component, route an
 - Controlled Square startup verifies Apple Pay creation and Afterpay/Cash App attachment can expire, retry on a new instance and dispose retired resources. Card startup, the native approval handoff and issuer UI keep their existing ownership. Guest verification can retry failed or stalled script/widget initialization. An interactive challenge can outlast startup and only a current widget token enables payment.
 - The homepage CTA, rate-limit and checkout recovery destinations use link-local feedback. Checkout entry uses a native document request and the staff drawer remains open on modified navigation. These browser checks use controlled routing and SDKs. Provider settlement and real device approvals require separate evidence.
 
+## Residual review coverage
+
+- The Shipping browser fixture opens a recipient form before a count returns 403. Captured callbacks attempt a rate request or label purchase after denial, and the test counts every matching browser fetch. Purchases submitted before denial retain their operator recovery record, including purchased-without-tracking evidence. Shipping and Pickups item-dialog cases cover private detail removal and preservation across a transient count failure.
+- The cart test stops a held native checkout request through Chromium. The original cart remains usable, receives zero page-restoration events and clears its loading announcement after the feedback deadline.
+- The guest checkout test omits the public verification key, fills the contact and name fields and checks the disabled payment button’s accessible description against the visible security notice. The fixture records zero payment requests. Configured challenge and retry paths retain separate coverage.
+
 ## Boundaries independent of fetch
 
 - Regular product-card, detail and thumbnail image requests reserve geometry. An undecoded photo has a visual placeholder. A native error gives the photo a neutral unavailable state while the product remains usable. The browser controls image-fetch timing. The gallery test releases the held response explicitly. The gallery regression holds actual browser image loads and switches photos after failure. The logo, slideshow, QR, upload previews, payment marks and order thumbnails have separate owners in the source census.
