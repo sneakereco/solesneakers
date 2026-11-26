@@ -1,5 +1,7 @@
 "use client";
 
+import { FeedbackLink } from "@/components/ui/FeedbackLink";
+
 import { Suspense, useEffect, useState } from "react";
 import { useRouter, useSearchParams } from "next/navigation";
 import { AlertTriangle, XCircle } from "lucide-react";
@@ -93,9 +95,9 @@ function OrderProgress({ orderId }: { orderId: string | null }) {
           Check order status
         </button>
         <p className="mt-6 text-xs text-zinc-500">Order ID: {orderId}</p>
-        <a href="/contact" className="mt-3 inline-block underline">
+        <FeedbackLink href="/contact" className="mt-3 inline-block underline">
           Contact support
-        </a>
+        </FeedbackLink>
       </div>
     </main>
   );

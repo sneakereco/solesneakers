@@ -1,6 +1,6 @@
 "use client";
 
-import Link from "next/link";
+import { FeedbackLink as Link } from "@/components/ui/FeedbackLink";
 import { RouteRetryButton } from "@/components/ui/RouteRetryButton";
 import { useEffect } from "react";
 import { CheckoutPaymentDialog } from "@/components/checkout/CheckoutPaymentDialog";

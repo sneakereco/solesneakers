@@ -3,7 +3,9 @@ import { compileUxHarness, openUxHarness } from "./helpers/ux-harness.mjs";
 
 const bundle = await compileUxHarness(
   `
+import { SessionProvider } from "./src/contexts/SessionContext";
 import {createRoot,hydrateRoot} from "react-dom/client";
+import {useState} from "react";
 import {renderToString} from "react-dom/server.browser";
 import {InventoryClient} from "@/app/admin/inventory/client";
 import {CreateProductClient} from "@/app/admin/inventory/create/client";
@@ -21,7 +23,7 @@ import Tags from "@/app/admin/tags/page";
 import {StoreAccessSettingsPanel} from "@/components/admin/settings/StoreAccessSettingsPanel";
 import {FeaturedItemsManager} from "@/app/admin/featured-items/client";
 const views={settings:Settings,detail:Detail,product:()=> <CreateProductClient initialBrands={[{id:"brand",label:"Fixture"},{id:"other",label:"Other"}]} initialSizes={location.search === '?no-sizes' ? [] : initialSizes}/>,inventory:()=> <InventoryClient initialProducts={[product]} initialTotal={1} initialSkuTotal={0} initialInventoryUnitTotal={0} initialFilters={{}}/>,label:()=> <CreateLabelForm open order={order} originLine="Fixture origin" onClose={()=>{}} onSuccess={()=>{}}/>, dashboard: Dashboard, pickups: Pickups, transactions: Transactions, shipping: Shipping, tags: Tags, access: StoreAccessSettingsPanel, featured: FeaturedItemsManager };
-const View=views[location.pathname.slice(1)];
+const Selected=views[location.pathname.slice(1)];function View(){const [id,change]=useState("staff");window.changeStaff=change;return <SessionProvider initialUser={{id,email:id+"@example.test"}} initialRole="admin"><Selected/></SessionProvider>}
 const root=document.getElementById("root");
 if(location.search==="?hydrate") {
   root.innerHTML=renderToString(<View/>);
@@ -112,6 +114,68 @@ function deferred() {
   return { promise, release };
 }
 try {
+  await check("retained pagination and denial", async (page) => {
+    let result = 503;
+    const held = deferred();
+    await page.route("**/api/admin/orders?**", async (route) => {
+      const params = new URL(route.request().url()).searchParams;
+      if (params.get("limit") === "1")
+        return route.fulfill({ json: { count: 30, orders: [] } });
+      if (params.get("page") === "2") {
+        await held.promise;
+        return route.fulfill({ status: result, json: {} });
+      }
+      return route.fulfill({
+        json: {
+          count: 30,
+          orders: [{ id: "first-page", status: "paid", items: [], total: 25 }],
+        },
+      });
+    });
+    await openUxHarness(page, bundle, "https://ux.test/transactions");
+    const old = page.getByRole("link", { name: "View transaction first-page" });
+    const next = page.getByRole("button", { name: "Next", exact: true });
+    await expect(old).toBeVisible();
+    await next.press("Enter");
+    try {
+      await expect(old).toBeVisible();
+      await expect(next).toBeFocused();
+      await expect(
+        page.getByRole("status").filter({ hasText: /showing page 1/i }),
+      ).toBeVisible();
+    } finally {
+      held.release();
+    }
+    await expect(page.getByRole("alert")).toContainText(/showing page 1/i);
+    await expect(old).toBeVisible();
+    await expect(next).toBeFocused();
+    result = 403;
+    await page.getByRole("button", { name: "Retry", exact: true }).click();
+    await expect(old).toHaveCount(0);
+    await expect(page.getByRole("alert")).toContainText("access");
+  });
+  await check("queue with changed staff owner", async (page) => {
+    const gate = deferred();
+    let owner = "first";
+    await page.route("**/api/admin/orders?**", async (route) => {
+      const id = owner;
+      if (id === "next") await gate.promise;
+      return route.fulfill({
+        json: { count: 1, orders: [{ id, status: "paid", items: [], total: 25 }] },
+      });
+    });
+    await openUxHarness(page, bundle, "https://ux.test/transactions");
+    const old = page.getByRole("link", { name: "View transaction first" });
+    await expect(old).toBeVisible();
+    owner = "next";
+    await page.evaluate(() => window.changeStaff("second"));
+    try {
+      await expect(old).toHaveCount(0);
+    } finally {
+      gate.release();
+    }
+    await expect(page.getByRole("link", { name: "View transaction next" })).toBeVisible();
+  });
   for (const failure of [401, 429, 503, "network"]) {
     await check("dashboard " + failure, async (page) => {
       const gate = deferred();

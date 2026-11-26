@@ -1,3 +1,4 @@
+import { clearConfirmedCheckoutAttempt } from "./client-session";
 import { classifyCheckoutOrderStatus } from "@/lib/checkout/checkout-order-state";
 import { buildCheckoutStatusUrl } from "@/lib/checkout/checkout-status-url";
 import type { OrderStatusResponse } from "@/types/domain/checkout";
@@ -71,6 +72,7 @@ export function startCheckoutOrderPolling(
             )
               return finish("error");
             stop();
+            clearConfirmedCheckoutAttempt(orderId);
             onState("paid", data as OrderStatusResponse);
             return;
           }

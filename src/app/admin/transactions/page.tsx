@@ -201,12 +201,15 @@ export default function TransactionsPage() {
   const [searchQuery, setSearchQuery] = useState("");
   const [page, setPage] = useState(1);
 
-  const { list, totals, orders, counts, totalPages } = useAdminOrderQueue<
-    TransactionOrder,
-    (typeof TRANSACTION_TABS)[number]
-  >(TRANSACTION_TABS, orderParams, activeTab, page, PAGE_SIZE);
-  const isLoading = list.pending;
-  if (list.data && page > totalPages) {
+  const { list, listLabel, displayedPage, totals, orders, counts, totalPages } =
+    useAdminOrderQueue<TransactionOrder, (typeof TRANSACTION_TABS)[number]>(
+      TRANSACTION_TABS,
+      orderParams,
+      activeTab,
+      page,
+      PAGE_SIZE,
+    );
+  if (displayedPage === page && page > totalPages) {
     setPage(totalPages);
   }
 
@@ -249,8 +252,8 @@ export default function TransactionsPage() {
         <button
           type="button"
           onClick={() => setPage(Math.max(1, page - 1))}
-          disabled={page === 1}
-          className="rounded-sm border border-zinc-800/70 px-3 py-2 text-sm text-gray-300 disabled:border-zinc-900 disabled:text-zinc-600"
+          aria-disabled={page === 1}
+          className="rounded-sm border border-zinc-800/70 px-3 py-2 text-sm text-gray-300 aria-disabled:border-zinc-900 aria-disabled:text-zinc-600"
         >
           Previous
         </button>
@@ -269,7 +272,7 @@ export default function TransactionsPage() {
             key={p}
             type="button"
             onClick={() => setPage(p)}
-            className={`rounded-sm border px-3 py-2 text-sm ${p === page ? "border-red-600 text-white" : "border-zinc-800/70 text-gray-300"}`}
+            className={`rounded-sm border px-3 py-2 text-sm ${p === displayedPage ? "border-red-600 text-white" : "border-zinc-800/70 text-gray-300"}`}
           >
             {p}
           </button>
@@ -287,8 +290,8 @@ export default function TransactionsPage() {
         <button
           type="button"
           onClick={() => setPage(Math.min(totalPages, page + 1))}
-          disabled={page === totalPages}
-          className="rounded-sm border border-zinc-800/70 px-3 py-2 text-sm text-gray-300 disabled:border-zinc-900 disabled:text-zinc-600"
+          aria-disabled={page === totalPages}
+          className="rounded-sm border border-zinc-800/70 px-3 py-2 text-sm text-gray-300 aria-disabled:border-zinc-900 aria-disabled:text-zinc-600"
         >
           Next
         </button>
@@ -349,7 +352,7 @@ export default function TransactionsPage() {
         data-admin-table-shell
         className="overflow-hidden rounded border border-zinc-800/70 bg-zinc-900"
       >
-        <AdminReadStatus read={list} shape="table" label="Loading orders" />
+        <AdminReadStatus read={list} shape="table" label={listLabel} />
         {!list.data ? null : filteredOrders.length === 0 ? (
           <div className="py-12 text-center text-gray-500">No transactions found.</div>
         ) : (
@@ -464,9 +467,7 @@ export default function TransactionsPage() {
       </div>
 
       {/* Pagination */}
-      {!isLoading && totalPages > 1 && (
-        <div className="flex justify-start">{renderPagination()}</div>
-      )}
+      {totalPages > 1 && <div className="flex justify-start">{renderPagination()}</div>}
     </AdminPage>
   );
 }

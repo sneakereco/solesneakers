@@ -2,13 +2,11 @@
 
 "use client";
 
-import { useRouter } from "next/navigation";
+import { FeedbackLink } from "@/components/ui/FeedbackLink";
 import { XCircle } from "lucide-react";
 import { CheckoutPaymentDialog } from "@/components/checkout/CheckoutPaymentDialog";
 
 export default function CheckoutCancelPage() {
-  const router = useRouter();
-
   return (
     <div className="mx-auto max-w-2xl px-4 py-20 text-center text-zinc-950">
       <CheckoutPaymentDialog open={false} />
@@ -20,18 +18,18 @@ export default function CheckoutCancelPage() {
       </p>
 
       <div className="space-y-3">
-        <button
-          onClick={() => router.push("/cart")}
-          className="w-full bg-zinc-950 py-3 font-bold text-white transition hover:bg-black"
+        <FeedbackLink
+          href="/cart"
+          className="block w-full bg-zinc-950 py-3 text-center font-bold text-white transition hover:bg-black"
         >
           Return to Cart
-        </button>
-        <button
-          onClick={() => router.push("/store")}
-          className="w-full rounded bg-zinc-800 py-3 font-semibold text-white transition hover:bg-zinc-700"
+        </FeedbackLink>
+        <FeedbackLink
+          href="/store"
+          className="block w-full rounded bg-zinc-800 py-3 text-center font-semibold text-white transition hover:bg-zinc-700"
         >
           Continue Shopping
-        </button>
+        </FeedbackLink>
       </div>
     </div>
   );

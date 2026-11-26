@@ -1416,16 +1416,16 @@ button:where([data-ui-action-button]:not(:disabled):active) {
   color: #18181b !important;
 }
 
-:where([data-feedback-link]) {
+:where([data-feedback-link], [data-document-link]) {
   position: relative;
 }
 
-:where([data-feedback-link]:active) {
+:where([data-feedback-link]:active, [data-document-link]:active) {
   filter: brightness(0.8);
   text-decoration: underline;
 }
 
-:where([data-feedback-link]:focus-visible),
+:where([data-feedback-link]:focus-visible, [data-document-link]:focus-visible),
 button:where([data-ui-action-button]:focus-visible) {
   outline: 2px solid #71717a;
   outline-offset: 2px;

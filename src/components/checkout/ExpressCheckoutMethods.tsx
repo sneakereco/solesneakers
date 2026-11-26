@@ -6,18 +6,20 @@ export function ExpressCheckoutMethods({
   applePayReady,
   disabled = false,
   loading,
+  onRetry,
   onApplePayClick,
 }: {
   applePayReady: boolean;
   disabled?: boolean;
   loading: boolean;
+  onRetry?(): void;
   onApplePayClick(): void;
 }) {
   return (
     <section
       className="order-1"
       aria-labelledby="express-checkout-heading"
-      hidden={!loading && !applePayReady}
+      hidden={!loading && !applePayReady && !onRetry}
     >
       <h2 id="express-checkout-heading" className="text-center text-sm text-zinc-600">
         Express checkout
@@ -42,6 +44,14 @@ export function ExpressCheckoutMethods({
           onClick={onApplePayClick}
         />
       </div>
+      {onRetry && !loading && (
+        <div className="text-center">
+          <p role="status">Apple Pay could not be loaded.</p>
+          <button type="button" className="min-h-11 underline" onClick={onRetry}>
+            Retry Apple Pay
+          </button>
+        </div>
+      )}
       {applePayReady ? <CheckoutLegalNotice express /> : null}
       <div className="my-6 flex items-center gap-4 text-xs uppercase text-zinc-400">
         <span className="h-px flex-1 bg-zinc-200" /> or

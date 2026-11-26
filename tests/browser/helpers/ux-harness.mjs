@@ -7,7 +7,7 @@ import tailwindcss from "tailwindcss";
 const root = fileURLToPath(new URL("../../../", import.meta.url));
 const siteCss = fileURLToPath(new URL("../../../src/styles/site.css", import.meta.url));
 
-export async function compileUxHarness(entry, { plugins = [] } = {}) {
+export async function compileUxHarness(entry, { plugins = [], define = {} } = {}) {
   const css = await readFile(siteCss, "utf8");
   const [bundle, stylesheet] = await Promise.all([
     build({
@@ -16,7 +16,7 @@ export async function compileUxHarness(entry, { plugins = [] } = {}) {
       write: false,
       platform: "browser",
       jsx: "automatic",
-      define: { "process.env.NODE_ENV": '"development"' },
+      define: { ...define, "process.env.NODE_ENV": '"development"' },
       plugins,
     }),
     postcss([

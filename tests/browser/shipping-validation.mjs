@@ -34,7 +34,7 @@ const bundle = await build({
       paymentRequest: (input) => ({ input, listeners: {}, addEventListener(name, callback) { this.listeners[name] = callback; }, update(value) { Object.assign(this.input, value); return true; } }),
       applePay: async (request) => ({ tokenize: async () => { window.test.walletTokenizations = (window.test.walletTokenizations || 0) + 1; window.test.walletQuote = await request.listeners.shippingcontactchanged({countryCode:'US',state:original.state,postalCode:original.postalCode}); return ({ status: 'OK', token: 'test', details: { billing: { givenName: 'Test', familyName: 'Buyer', email: 'buyer@example.com', addressLines: ['2 Billing St'], city: 'Washington', state: 'DC', postalCode: '20001', countryCode: 'US' }, shipping: { contact: { givenName: 'Test', familyName: 'Buyer', phone: window.test.omitShippingPhone ? undefined : '2025550100', addressLines: [original.line1], city: original.city, state: original.state, postalCode: original.postalCode, countryCode: 'US' } } } }); } }),
       afterpayClearpay: async (request) => ({ attach: async () => {}, tokenize: async () => { window.test.afterpayRequest = request.input; return { status: 'OK', token: 'afterpay-test', details: { shipping: { contact: request.input.shippingContact } } }; } }),
-      cashAppPay: async (request) => { let listener; return { attach: async (selector) => { const button = document.createElement('button'); button.type = 'button'; button.textContent = 'Cash test'; button.onclick = () => { window.test.cashTotal = request.input.total.amount; listener({ detail: { tokenResult: { status: 'OK', token: 'cash-' + request.input.total.amount } } }); }; document.querySelector(selector).append(button); }, addEventListener(event, callback) { listener = callback; }, destroy: async () => true }; },
+      cashAppPay: async (request) => { if(window.test.holdReapproval && request.input.total.amount==="111.00")await new Promise(resolve=>window.test.releaseReapproval=resolve); let listener; return { attach: async (selector) => { const button = document.createElement('button'); button.type = 'button'; button.textContent = 'Cash test'; button.onclick = () => { window.test.cashTotal = request.input.total.amount; listener({ detail: { tokenResult: { status: 'OK', token: 'cash-' + request.input.total.amount } } }); }; document.querySelector(selector).append(button); }, addEventListener(event, callback) { listener = callback; }, destroy: async () => true }; },
     }) };
     createRoot(document.getElementById('root')).render(<CheckoutPaymentProvider><CheckoutClient initialData={{ isGuest: false, customer: { ownerId:'buyer', email: 'buyer@example.com', address: original }, paymentConfig: { applicationId: 'test', locationId: 'test', environment: 'sandbox' } }} /></CheckoutPaymentProvider>);
   `,
@@ -317,6 +317,20 @@ try {
   assert.equal(paymentBody.sourceId, "cash-111.00");
   assert.equal(payCalls, 1);
   await finishPayment();
+  await load();
+  await page.clock.install();
+  await page.evaluate(() => {
+    window.test.holdReapproval = true;
+  });
+  await page.getByRole("radio", { name: "Cash App Pay", exact: true }).click();
+  await page.getByRole("button", { name: "Cash test" }).click();
+  await page.getByRole("button", { name: "Accept suggested address" }).click();
+  await page.getByRole("button", { name: "Confirm $111.00 and continue" }).click();
+  await page.waitForFunction(() => Boolean(window.test.releaseReapproval));
+  await page.clock.fastForward(16000);
+  await expect(page.getByRole("dialog").getByRole("alert")).toContainText("Cash App");
+  await page.evaluate(() => window.test.releaseReapproval());
+  assert.equal(payCalls, 0);
   // Wallet details remain private to this attempt while the processing overlay stays open.
   await load();
   await page.evaluate(() => {

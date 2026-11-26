@@ -1,4 +1,4 @@
-import Link from "next/link";
+import { FeedbackLink as Link, DocumentFeedbackLink } from "@/components/ui/FeedbackLink";
 
 export function CheckoutUnavailable() {
   return (
@@ -10,12 +10,12 @@ export function CheckoutUnavailable() {
       <p className="mx-auto mb-8 max-w-md text-sm leading-6 text-zinc-600">
         We couldn’t load checkout. Try again or return to your cart.
       </p>
-      <a
+      <DocumentFeedbackLink
         href="/checkout"
         className="mr-3 inline-flex min-h-11 items-center justify-center border border-zinc-700 px-5 py-3 text-sm font-medium"
       >
         Retry checkout
-      </a>
+      </DocumentFeedbackLink>
       <Link
         href="/cart"
         className="inline-flex min-w-48 justify-center bg-black px-6 py-3 text-sm uppercase tracking-wide text-white"

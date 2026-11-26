@@ -134,11 +134,15 @@ export default function PickupsPage() {
   } | null>(null);
 
   const currentPage = pageByTab[activeTab];
-  const { list, totals, orders, counts, totalPages } = useAdminOrderQueue<
-    PickupOrder,
-    (typeof PICKUP_TABS)[number]
-  >(PICKUP_TABS, orderParams, activeTab, currentPage, PAGE_SIZE);
-  if (list.data && currentPage > totalPages) {
+  const { list, listLabel, displayedPage, totals, orders, counts, totalPages } =
+    useAdminOrderQueue<PickupOrder, (typeof PICKUP_TABS)[number]>(
+      PICKUP_TABS,
+      orderParams,
+      activeTab,
+      currentPage,
+      PAGE_SIZE,
+    );
+  if (displayedPage === currentPage && currentPage > totalPages) {
     setPageByTab((prev) => ({ ...prev, [activeTab]: totalPages }));
   }
 
@@ -229,7 +233,7 @@ export default function PickupsPage() {
   };
 
   const handleMarkPickedUp = async (order: PickupOrder) => {
-    if (markingId || activeTab !== "pending") {
+    if (list.pending || list.error || markingId || activeTab !== "pending") {
       return;
     }
     setMarkingId(order.id);
@@ -286,8 +290,8 @@ export default function PickupsPage() {
               [activeTab]: Math.max(1, currentPage - 1),
             }))
           }
-          disabled={currentPage === 1}
-          className="rounded-sm border border-zinc-800/70 px-3 py-2 text-sm text-gray-300 disabled:border-zinc-900 disabled:text-zinc-600"
+          aria-disabled={currentPage === 1}
+          className="rounded-sm border border-zinc-800/70 px-3 py-2 text-sm text-gray-300 aria-disabled:border-zinc-900 aria-disabled:text-zinc-600"
         >
           Previous
         </button>
@@ -309,7 +313,7 @@ export default function PickupsPage() {
             type="button"
             onClick={() => setPageByTab((prev) => ({ ...prev, [activeTab]: p }))}
             className={`rounded-sm border px-3 py-2 text-sm ${
-              p === currentPage
+              p === displayedPage
                 ? "border-red-600 text-white"
                 : "border-zinc-800/70 text-gray-300"
             }`}
@@ -337,8 +341,8 @@ export default function PickupsPage() {
               [activeTab]: Math.min(totalPages, currentPage + 1),
             }))
           }
-          disabled={currentPage === totalPages}
-          className="rounded-sm border border-zinc-800/70 px-3 py-2 text-sm text-gray-300 disabled:border-zinc-900 disabled:text-zinc-600"
+          aria-disabled={currentPage === totalPages}
+          className="rounded-sm border border-zinc-800/70 px-3 py-2 text-sm text-gray-300 aria-disabled:border-zinc-900 aria-disabled:text-zinc-600"
         >
           Next
         </button>
@@ -427,7 +431,7 @@ export default function PickupsPage() {
         data-admin-table-shell
         className="overflow-hidden rounded border border-zinc-800/70 bg-zinc-900"
       >
-        <AdminReadStatus read={list} shape="table" label="Loading orders" />
+        <AdminReadStatus read={list} shape="table" label={listLabel} />
         {!list.data ? null : filteredOrders.length === 0 ? (
           <div className="py-12 text-center text-gray-400">No orders in this queue.</div>
         ) : (

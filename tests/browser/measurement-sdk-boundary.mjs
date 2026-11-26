@@ -46,9 +46,9 @@ const bundle = await build({
         },
       };
 
-      let addItem;
+      let cart;
       function CartProbe() {
-        addItem = useCart().addItem;
+        cart = useCart();
         return null;
       }
 
@@ -121,8 +121,9 @@ const bundle = await build({
         let root = createRoot(rootElement);
         history.replaceState(null, "", "/store/" + productId);
         root.render(<CartProvider><CartProbe /></CartProvider>);
-        await pause();
-        addItem({
+        for (let attempt=0;attempt<50 && !cart?.isReady;attempt+=1) await pause();
+        if (!cart?.isReady) throw new Error("Fixture cart did not hydrate");
+        const saved = await cart.addItem({
           productId,
           variantId,
           sizeLabel: "10",
@@ -133,7 +134,7 @@ const bundle = await build({
           imageUrl: "/shoe.png",
           maxStock: 1,
         });
-        await pause();
+        if (!saved) throw new Error("Fixture cart write did not complete");
         test.persistedCart = JSON.parse(sessionStorage.getItem("rdk_cart_session") || "[]");
 
         root.unmount();
@@ -183,7 +184,7 @@ const bundle = await build({
         const mocks = new Map([
           [
             "next/link",
-            "export default function Link({children,...props}){return <a {...props}>{children}</a>}",
+            "export const useLinkStatus=()=>({pending:false}); export default function Link({children,...props}){return <a {...props}>{children}</a>}",
           ],
           [
             "next/navigation",
@@ -223,7 +224,7 @@ const bundle = await build({
             `
               export const getOrCreateCheckoutDeviceSessionId = () => "device";
               export const getOrCreateCheckoutIdempotencyKey = () => "idempotency";
-              export const clearCheckoutAttempt = () => {}; export const storeGuestOrderAccess = () => {};
+              export const rememberPendingCheckoutAttempt = () => {}; export const clearCheckoutAttempt = () => {}; export const storeGuestOrderAccess = () => {};
             `,
           ],
           [

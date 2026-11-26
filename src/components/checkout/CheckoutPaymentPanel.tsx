@@ -1,5 +1,5 @@
 import Image from "next/image";
-import Link from "next/link";
+import { FeedbackLink as Link } from "@/components/ui/FeedbackLink";
 import type { ReactNode, RefObject } from "react";
 
 import {
@@ -307,7 +307,7 @@ export function CheckoutPaymentPanel({
             event.preventDefault();
             onPay();
           }}
-          aria-busy={selectedMethod === "afterpay" && !afterpayReady}
+          aria-busy={selectedMethod === "afterpay" && !afterpayReady && !onRetryMethod}
           className="mt-5 flex h-12 w-full items-center justify-center rounded-xl bg-zinc-950 px-6 text-sm font-semibold text-white disabled:cursor-not-allowed disabled:bg-zinc-400"
         >
           {isPaying

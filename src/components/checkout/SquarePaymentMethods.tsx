@@ -35,6 +35,7 @@ import {
   updateSquarePaymentRequest,
   assertPaymentQuoteCurrent,
 } from "@/components/checkout/square-method-lifecycle";
+import { withRequestDeadline } from "@/lib/http/request-deadline";
 import { clientEnv } from "@/config/client-env";
 import type { CheckoutPageData } from "@/lib/checkout/checkout-page-data";
 import type {
@@ -51,6 +52,7 @@ import {
   checkoutShippingAddressSchema,
 } from "@/lib/checkout/checkout-request";
 import {
+  postCheckoutJson,
   authorizeAndTokenize,
   authorizeTokenizedSource,
   loadSquareWebPayments,
@@ -66,6 +68,13 @@ import {
 import { log } from "@/lib/utils/log";
 
 let nextCardHostId = 0;
+let nextWalletHostId = 0;
+function walletHost(parentId: string) {
+  const host = document.createElement("div");
+  host.id = "checkout-wallet-" + ++nextWalletHostId;
+  document.getElementById(parentId)?.replaceChildren(host);
+  return host;
+}
 
 export type PaymentMethod = PaymentPermitRequest["method"];
 class CheckoutCancelled extends Error {}
@@ -394,30 +403,43 @@ export function turnstileErrorMessage(code: string): string | null {
     : null;
 }
 
-function loadTurnstile(): Promise<TurnstileApi> {
-  if (window.turnstile) {
-    return Promise.resolve(window.turnstile);
-  }
-  return new Promise((resolve, reject) => {
-    const existing = document.querySelector<HTMLScriptElement>(
-      'script[src^="https://challenges.cloudflare.com/turnstile/v0/api.js"]',
-    );
-    const script = existing ?? document.createElement("script");
-    const loaded = () =>
-      window.turnstile
-        ? resolve(window.turnstile)
-        : reject(new Error("turnstile_unavailable"));
-    script.addEventListener("load", loaded, { once: true });
-    script.addEventListener("error", () => reject(new Error("turnstile_unavailable")), {
-      once: true,
-    });
-    if (!existing) {
-      script.src =
-        "https://challenges.cloudflare.com/turnstile/v0/api.js?render=explicit";
-      script.async = true;
-      document.head.appendChild(script);
-    }
-  });
+function loadTurnstile(parent: AbortSignal, attempt: number): Promise<TurnstileApi> {
+  if (window.turnstile) return Promise.resolve(window.turnstile);
+  return withRequestDeadline(
+    (signal) =>
+      new Promise<TurnstileApi>((resolve, reject) => {
+        const existing = document.querySelector<HTMLScriptElement>(
+          'script[src^="https://challenges.cloudflare.com/turnstile/v0/api.js"]',
+        );
+        const script = existing ?? document.createElement("script");
+        function cleanup() {
+          script.removeEventListener("load", loaded);
+          script.removeEventListener("error", failed);
+          signal.removeEventListener("abort", failed);
+        }
+        function failed() {
+          cleanup();
+          script.remove();
+          reject(new Error("turnstile_unavailable"));
+        }
+        function loaded() {
+          if (!window.turnstile) return failed();
+          cleanup();
+          resolve(window.turnstile);
+        }
+        signal.addEventListener("abort", failed, { once: true });
+        script.addEventListener("load", loaded);
+        script.addEventListener("error", failed);
+        if (!existing) {
+          script.src =
+            "https://challenges.cloudflare.com/turnstile/v0/api.js?render=explicit" +
+            (attempt ? "&retry=" + attempt : "");
+          script.async = true;
+          document.head.appendChild(script);
+        }
+      }),
+    parent,
+  );
 }
 
 export function SquarePaymentMethods({
@@ -457,7 +479,7 @@ export function SquarePaymentMethods({
     context?: CheckoutPreparationContext,
   ): Promise<PreparedCheckout>;
   reviewOwner?: { verified: boolean; isCurrent(): boolean };
-  onPaymentSubmitted(checkout: PreparedCheckout): void;
+  onPaymentSubmitted(checkout: PreparedCheckout, outcome?: "unknown"): void;
   onPaymentPending?(pending: boolean): void;
   children?: ReactNode;
 }) {
@@ -488,7 +510,16 @@ export function SquarePaymentMethods({
   const [billingAddress, setBillingAddress] =
     useState<CheckoutBillingAddressForm>(EMPTY_BILLING_ADDRESS);
   const [turnstileToken, setTurnstileToken] = useState<string | null>(null);
+  const [verificationRetry, setVerificationRetry] = useState(0);
+  const [verificationError, setVerificationError] = useState<string | null>(null);
   const [turnstileWidget, setTurnstileWidget] = useState<string | null>(null);
+  const [verificationGuest, setVerificationGuest] = useState(isGuest);
+  if (verificationGuest !== isGuest) {
+    setVerificationGuest(isGuest);
+    setTurnstileToken(null);
+    setTurnstileWidget(null);
+    setVerificationError(null);
+  }
   const [isPaying, setIsPaying] = useState(false);
   const [preparing, setPreparing] = useState(false);
   const [cartRecovery, setCartRecovery] = useState(false);
@@ -536,6 +567,8 @@ export function SquarePaymentMethods({
     walletContinuation.current?.(null);
     totalContinuation.current?.(false);
   }, [canShowReview]);
+  const [appleRetry, setAppleRetry] = useState(0);
+  const [appleLoadError, setAppleLoadError] = useState(false);
   const [expressLoading, setExpressLoading] = useState(true);
   const { applicationId, environment, locationId } = paymentConfig;
   const configKey = JSON.stringify([applicationId, environment, locationId]);
@@ -713,6 +746,7 @@ export function SquarePaymentMethods({
     }
     let active = true;
     setExpressLoading(true);
+    setAppleLoadError(false);
     const requests = walletRequests.current;
     const initialQuote = latest.current.quote;
     void lifecycles.applePay
@@ -741,7 +775,15 @@ export function SquarePaymentMethods({
           return Promise.resolve();
         },
       )
-      .catch((methodError) => reportUnavailable("applePay", "create", methodError))
+      .catch((methodError) => {
+        reportUnavailable("applePay", "create", methodError);
+        if (
+          active &&
+          methodError instanceof DOMException &&
+          methodError.name === "TimeoutError"
+        )
+          setAppleLoadError(true);
+      })
       .finally(() => {
         if (active) setExpressLoading(false);
       });
@@ -753,7 +795,7 @@ export function SquarePaymentMethods({
         .dispose()
         .catch((methodError) => reportUnavailable("applePay", "create", methodError));
     };
-  }, [payments, hasQuote, fulfillment, lifecycles]);
+  }, [payments, hasQuote, fulfillment, appleRetry, lifecycles]);
 
   useEffect(() => {
     if (!payments || !hasAfterpayQuote) {
@@ -766,6 +808,7 @@ export function SquarePaymentMethods({
     }
     let active = true;
     setMethodErrors((errors) => ({ ...errors, afterpay: undefined }));
+    const host = walletHost("square-afterpay-container");
     void lifecycles.afterpay
       .replace(
         () => {
@@ -794,12 +837,12 @@ export function SquarePaymentMethods({
           requests.afterpay = request;
           return payments.afterpayClearpay(request);
         },
-        async (method) => {
+        async (method, currentGeneration) => {
           if (!method.attach) {
             throw new Error("square_afterpay_attach_unavailable");
           }
-          await method.attach("#square-afterpay-container", { useCustomButton: true });
-          if (active) {
+          await method.attach("#" + host.id, { useCustomButton: true });
+          if (active && currentGeneration()) {
             setAfterpay(method);
           }
         },
@@ -816,6 +859,7 @@ export function SquarePaymentMethods({
       });
     return () => {
       active = false;
+      host.remove();
       setAfterpay(null);
       delete requests.afterpay;
       void lifecycles.afterpay
@@ -834,6 +878,8 @@ export function SquarePaymentMethods({
       return;
     }
     setMethodErrors((errors) => ({ ...errors, cashAppPay: undefined }));
+    let attached = false;
+    const host = walletHost("square-cash-app-pay-container");
     void lifecycles.cashAppPay
       .replace(
         () => {
@@ -847,6 +893,7 @@ export function SquarePaymentMethods({
             referenceId: cashAppQuoteKey.slice(0, 40),
             shouldTokenize: () => {
               const ready =
+                attached &&
                 active &&
                 !paymentInFlight.current &&
                 !cashAppApproving.current &&
@@ -870,9 +917,9 @@ export function SquarePaymentMethods({
             },
           });
         },
-        async (method) => {
+        async (method, currentGeneration) => {
           method.addEventListener("ontokenization", (event) => {
-            if (!active) {
+            if (!active || !attached) {
               return;
             }
             cashAppApproving.current = false;
@@ -906,13 +953,14 @@ export function SquarePaymentMethods({
               }
             }
           });
-          await method.attach("#square-cash-app-pay-container", {
+          await method.attach("#" + host.id, {
             shape: "semiround",
             size: "medium",
             theme: "dark",
             width: "full",
           });
-          if (active) {
+          if (active && currentGeneration()) {
+            attached = true;
             setCashAppPay(method);
           }
         },
@@ -929,6 +977,7 @@ export function SquarePaymentMethods({
       });
     return () => {
       active = false;
+      host.remove();
       setCashAppPay(null);
       void lifecycles.cashAppPay
         .dispose()
@@ -944,36 +993,55 @@ export function SquarePaymentMethods({
     if (!sitekey) {
       return;
     }
-    let widgetId: string | null = null;
-    void loadTurnstile()
-      .then((api) => {
-        if (!turnstileContainer.current) {
-          return;
-        }
-        widgetId = api.render(turnstileContainer.current, {
+    const container = turnstileContainer.current;
+    const controller = new AbortController();
+    let api: TurnstileApi | undefined;
+    let widgetId: string | undefined;
+    let startup: number | undefined;
+    let failed = false;
+    const current = () => !controller.signal.aborted && !failed;
+    function unavailable(code?: string) {
+      if (!current()) return;
+      failed = true;
+      window.clearTimeout(startup);
+      updateTurnstileToken(null);
+      turnstileTerminalError.current = true;
+      setVerificationError(
+        (code && turnstileErrorMessage(code)) ||
+          "The security check could not be loaded.",
+      );
+    }
+    turnstileTokenRef.current = null;
+    turnstileTerminalError.current = false;
+    void loadTurnstile(controller.signal, verificationRetry)
+      .then((service) => {
+        if (!current()) return;
+        api = service;
+        startup = window.setTimeout(() => unavailable(), 15000);
+        widgetId = service.render(container, {
           sitekey,
           action: "checkout_payment",
           appearance: "interaction-only",
-          callback: (token: string) => updateTurnstileToken(token),
-          "expired-callback": () => updateTurnstileToken(null),
-          "error-callback": (code: string) => {
-            updateTurnstileToken(null);
-            const message = turnstileErrorMessage(code);
-            if (message) {
-              turnstileTerminalError.current = true;
-              setError(message);
-            }
+          "before-interactive-callback": () => window.clearTimeout(startup),
+          callback: (token: string) => {
+            if (!current()) return;
+            window.clearTimeout(startup);
+            updateTurnstileToken(token);
           },
+          "expired-callback": () => {
+            if (current()) updateTurnstileToken(null);
+          },
+          "error-callback": (code: string) => unavailable(code),
         });
         setTurnstileWidget(widgetId);
       })
-      .catch(() => setError("Guest checkout verification is temporarily unavailable."));
+      .catch(() => unavailable());
     return () => {
-      if (widgetId && window.turnstile) {
-        window.turnstile.remove(widgetId);
-      }
+      controller.abort();
+      window.clearTimeout(startup);
+      if (widgetId !== undefined) api?.remove(widgetId);
     };
-  }, [isGuest]);
+  }, [isGuest, verificationRetry]);
 
   async function pay(
     checkout: PreparedCheckout,
@@ -981,17 +1049,31 @@ export function SquarePaymentMethods({
   ) {
     setLoadingProvider(null);
     setPaymentDialogOpen(true);
-    const response = await fetch("/api/checkout/pay", {
-      method: "POST",
-      headers: { "Content-Type": "application/json" },
-      body: JSON.stringify(authorization),
-    });
-    const data = await response.json().catch(() => null);
-    if (!response.ok || typeof data?.statusUrl !== "string") {
-      throw new Error(data?.error || "Payment could not be completed");
+    const result = await postCheckoutJson("/api/checkout/pay", authorization).catch(
+      () => null,
+    );
+    if (result) {
+      const { response, data } = result;
+      if (response.ok && typeof data?.statusUrl === "string" && data.statusUrl) {
+        onPaymentSubmitted(checkout, data.status === "UNKNOWN" ? "unknown" : undefined);
+        router.replace(data.statusUrl);
+        return;
+      }
+      // The handler returns these explicit errors before charging or for a definite decline.
+      if (
+        typeof data?.error === "string" &&
+        ([400, 401, 402, 403, 409, 429].includes(response.status) ||
+          (response.status === 503 &&
+            (data.error === "Checkout protection is temporarily unavailable" ||
+              data.error.endsWith("You have not been charged."))))
+      ) {
+        throw new Error(data.error);
+      }
     }
-    onPaymentSubmitted(checkout);
-    router.replace(data.statusUrl);
+    onPaymentSubmitted(checkout, "unknown");
+    router.replace(
+      "/checkout/processing?orderId=" + encodeURIComponent(checkout.orderId),
+    );
   }
 
   function permitRequest(checkout: PreparedCheckout, method: PaymentMethod) {
@@ -1171,48 +1253,59 @@ export function SquarePaymentMethods({
       throw new Error("Cash App Pay is unavailable. Please try again.");
     }
     flushSync(() => setCashAppReapproval(true));
-    let method: SquareCashAppPayMethod | null = null;
-    let cancelled = false;
-    cashAppCancellation.current = () => {
-      cancelled = true;
-    };
+    const host = walletHost("cash-app-address-confirmation");
+    const lifecycle = createSquareMethodLifecycle<SquareCashAppPayMethod>();
+    let ready = false;
     try {
-      method = await payments.cashAppPay(
-        payments.paymentRequest({
-          countryCode: "US",
-          currencyCode: "USD",
-          total: walletPaymentTotal(updatedQuote),
-        }),
-        {
-          redirectURL: window.location.href,
-          referenceId: updatedQuote.quoteFingerprint.slice(0, 40),
-        },
-      );
-      if (cancelled) {
-        throw new CheckoutCancelled();
-      }
-      const attachedMethod = method;
       return await new Promise<string>((resolve, reject) => {
         cashAppCancellation.current = () => reject(new CheckoutCancelled());
-        attachedMethod.addEventListener("ontokenization", (event) => {
-          const detail = (event as { detail?: { tokenResult?: SquareTokenResult } })
-            .detail;
-          try {
-            resolve(checkedToken(detail?.tokenResult ?? { status: "ERROR" }));
-          } catch (failure) {
-            reject(failure);
-          }
-        });
-        void attachedMethod
-          .attach("#cash-app-address-confirmation", { width: "full", theme: "dark" })
-          .catch(reject);
+        void lifecycle
+          .replace(
+            () =>
+              payments.cashAppPay(
+                payments.paymentRequest({
+                  countryCode: "US",
+                  currencyCode: "USD",
+                  total: walletPaymentTotal(updatedQuote),
+                }),
+                {
+                  redirectURL: window.location.href,
+                  referenceId: updatedQuote.quoteFingerprint.slice(0, 40),
+                  shouldTokenize: () => ready,
+                },
+              ),
+            async (method, current) => {
+              method.addEventListener("ontokenization", (event) => {
+                if (!ready || !current()) return;
+                const detail = (event as { detail?: { tokenResult?: SquareTokenResult } })
+                  .detail;
+                try {
+                  resolve(checkedToken(detail?.tokenResult ?? { status: "ERROR" }));
+                } catch (failure) {
+                  reject(failure);
+                }
+              });
+              await method.attach("#" + host.id, { width: "full", theme: "dark" });
+              ready = current();
+            },
+          )
+          .catch((failure) => {
+            reportUnavailable("cashAppPay", "attach", failure);
+            reject(
+              new Error(
+                "Cash App Pay could not load the updated amount. Return to checkout and try again.",
+              ),
+            );
+          });
       });
     } finally {
+      ready = false;
       cashAppCancellation.current = null;
+      host.remove();
       setCashAppReapproval(false);
-      await method
-        ?.destroy?.()
-        .catch((failure) => reportUnavailable("cashAppPay", "create", failure));
+      void lifecycle
+        .dispose()
+        .catch((failure) => reportUnavailable("cashAppPay", "attach", failure));
     }
   }
 
@@ -1592,6 +1685,7 @@ export function SquarePaymentMethods({
         onDismiss={dismissPaymentDialog}
       />
       <ExpressCheckoutMethods
+        onRetry={appleLoadError ? () => setAppleRetry((n) => n + 1) : undefined}
         applePayReady={Boolean(applePay)}
         disabled={isPaying || !quoteReady || (isGuest && !turnstileToken)}
         loading={expressLoading}
@@ -1659,7 +1753,12 @@ export function SquarePaymentMethods({
           cardholderName={cardholderName}
           billingAddress={billingAddress}
           isPaying={isPaying}
-          payDisabled={isPaying || !quoteReady || (selectedMethod === "card" && !card)}
+          payDisabled={
+            isPaying ||
+            (isGuest && !turnstileToken) ||
+            !quoteReady ||
+            (selectedMethod === "card" && !card)
+          }
           cashAppCanPay={!cashAppDisabled}
           payLabel={selectedMethod === "afterpay" ? "Continue with Afterpay" : payLabel}
           error={paymentDialogOpen ? null : error}
@@ -1667,11 +1766,38 @@ export function SquarePaymentMethods({
           billingFields={billingFields}
           securityChallenge={
             isGuest ? (
-              <div
-                id="checkout-turnstile-container"
-                ref={turnstileContainer}
-                className="mt-4"
-              />
+              <>
+                <div
+                  id="checkout-turnstile-container"
+                  ref={turnstileContainer}
+                  className="mt-4"
+                />
+                {clientEnv.NEXT_PUBLIC_TURNSTILE_SITE_KEY &&
+                  !turnstileToken &&
+                  !verificationError && (
+                    <p role="status">
+                      {turnstileWidget === null
+                        ? "Loading security check…"
+                        : "Complete the security check to continue."}
+                    </p>
+                  )}
+                {verificationError && (
+                  <div>
+                    <p role="status">{verificationError}</p>
+                    <button
+                      type="button"
+                      className="min-h-11 underline"
+                      onClick={() => {
+                        setVerificationError(null);
+                        setTurnstileWidget(null);
+                        setVerificationRetry((n) => n + 1);
+                      }}
+                    >
+                      Retry security check
+                    </button>
+                  </div>
+                )}
+              </>
             ) : null
           }
           onSelectMethod={setSelectedMethod}

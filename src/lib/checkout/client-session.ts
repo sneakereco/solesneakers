@@ -2,6 +2,7 @@ import { generateIdempotencyKey } from "@/lib/checkout/idempotency";
 
 const IDEMPOTENCY_KEY = "checkout_idempotency_key";
 const CART_FINGERPRINT_KEY = "checkout_cart_fingerprint";
+const PENDING_ATTEMPT_KEY = "rdk_checkout_pending_attempt";
 const DEVICE_SESSION_KEY = "rdk_checkout_device_session_id";
 const GUEST_ORDER_ID_KEY = "rdk_guest_order_id";
 const GUEST_ORDER_TOKEN_KEY = "rdk_guest_order_token";
@@ -42,6 +43,28 @@ export function clearCheckoutAttempt(
     }
   } catch {
     // A local cleanup failure cannot change the payment outcome.
+  }
+}
+
+// Remember which tab attempt the processing page can retire once its order is verified.
+export function rememberPendingCheckoutAttempt(orderId: string, key: string): void {
+  try {
+    const storage = getSessionStorage();
+    if (storage?.getItem(IDEMPOTENCY_KEY) === key)
+      storage.setItem(PENDING_ATTEMPT_KEY, JSON.stringify({ orderId, key }));
+  } catch {
+    /* Status verification also works without local housekeeping. */
+  }
+}
+export function clearConfirmedCheckoutAttempt(orderId: string): void {
+  try {
+    const storage = getSessionStorage();
+    const pending = JSON.parse(storage?.getItem(PENDING_ATTEMPT_KEY) ?? "null");
+    if (pending?.orderId !== orderId || typeof pending.key !== "string") return;
+    clearCheckoutAttempt(pending.key, storage);
+    storage?.removeItem(PENDING_ATTEMPT_KEY);
+  } catch {
+    /* A storage failure does not change the confirmed outcome. */
   }
 }
 

@@ -120,7 +120,7 @@ export function AdminSidebar({
       <div className="border-b border-white/10 px-5 py-6">
         <Link
           href="/"
-          onClick={closeMenu}
+          onNavigate={closeMenu}
           className="group block"
           aria-label="Solesneakers storefront"
         >
@@ -145,7 +145,7 @@ export function AdminSidebar({
                 <Link
                   key={item.href}
                   href={item.href}
-                  onClick={closeMenu}
+                  onNavigate={closeMenu}
                   className={itemClass(active)}
                 >
                   {createElement(item.icon, {
@@ -187,7 +187,7 @@ export function AdminSidebar({
                       <Link
                         key={child.href}
                         href={child.href}
-                        onClick={closeMenu}
+                        onNavigate={closeMenu}
                         className={`flex min-h-11 items-center gap-2.5 rounded-md px-3 py-2 text-[0.72rem] transition ${
                           isActive(child.href)
                             ? "bg-white/10 text-white"
@@ -209,7 +209,7 @@ export function AdminSidebar({
       <div className="border-t border-white/10 p-4">
         <Link
           href="/admin/profile"
-          onClick={closeMenu}
+          onNavigate={closeMenu}
           className={`flex items-center gap-3 rounded-lg p-3 transition ${
             isActive("/admin/profile") ? "bg-white text-black" : "hover:bg-white/10"
           }`}
@@ -242,7 +242,7 @@ export function AdminSidebar({
         </Link>
         <Link
           href="/"
-          onClick={closeMenu}
+          onNavigate={closeMenu}
           className="mt-2 flex min-h-11 items-center gap-2 px-3 py-2 text-[0.66rem] font-medium uppercase tracking-[0.14em] text-zinc-400 transition hover:text-white"
         >
           View storefront <ExternalLink className="h-3 w-3" />

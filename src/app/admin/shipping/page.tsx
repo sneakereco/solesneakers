@@ -314,11 +314,15 @@ export default function ShippingPage() {
   const [savedOrigin, setSavedOrigin] = useState<ShippingOrigin | null>(null);
   const originAddress = savedOrigin ?? setup.data?.origin ?? null;
   const currentPage = pageByTab[activeTab];
-  const { list, totals, orders, counts, totalPages } = useAdminOrderQueue<
-    ShippingOrder,
-    (typeof TABS)[number]
-  >(TABS, orderParams, activeTab, currentPage, PAGE_SIZE);
-  if (list.data && currentPage > totalPages) {
+  const { list, listLabel, displayedPage, totals, orders, counts, totalPages } =
+    useAdminOrderQueue<ShippingOrder, (typeof TABS)[number]>(
+      TABS,
+      orderParams,
+      activeTab,
+      currentPage,
+      PAGE_SIZE,
+    );
+  if (displayedPage === currentPage && currentPage > totalPages) {
     setPageByTab((prev) => ({ ...prev, [activeTab]: totalPages }));
   }
 
@@ -357,6 +361,7 @@ export default function ShippingPage() {
   };
 
   const handleMarkShipped = async (order: ShippingOrder) => {
+    if (list.pending || list.error) return;
     restoreFulfillmentFocus.current = true;
     setMarkingShippedId(order.id);
     try {
@@ -492,8 +497,8 @@ export default function ShippingPage() {
               [activeTab]: Math.max(1, currentPage - 1),
             }))
           }
-          disabled={currentPage === 1}
-          className="rounded-sm border border-zinc-800/70 px-3 py-2 text-sm text-gray-300 disabled:border-zinc-900 disabled:text-zinc-600"
+          aria-disabled={currentPage === 1}
+          className="rounded-sm border border-zinc-800/70 px-3 py-2 text-sm text-gray-300 aria-disabled:border-zinc-900 aria-disabled:text-zinc-600"
         >
           Previous
         </button>
@@ -515,7 +520,7 @@ export default function ShippingPage() {
             type="button"
             onClick={() => setPageByTab((prev) => ({ ...prev, [activeTab]: page }))}
             className={`rounded-sm border px-3 py-2 text-sm ${
-              page === currentPage
+              page === displayedPage
                 ? "border-red-600 text-white"
                 : "border-zinc-800/70 text-gray-300"
             }`}
@@ -543,8 +548,8 @@ export default function ShippingPage() {
               [activeTab]: Math.min(totalPages, currentPage + 1),
             }))
           }
-          disabled={currentPage === totalPages}
-          className="rounded-sm border border-zinc-800/70 px-3 py-2 text-sm text-gray-300 disabled:border-zinc-900 disabled:text-zinc-600"
+          aria-disabled={currentPage === totalPages}
+          className="rounded-sm border border-zinc-800/70 px-3 py-2 text-sm text-gray-300 aria-disabled:border-zinc-900 aria-disabled:text-zinc-600"
         >
           Next
         </button>
@@ -1055,7 +1060,7 @@ export default function ShippingPage() {
         </button>
       </div>
 
-      <AdminReadStatus read={list} shape="table" label="Loading orders" />
+      <AdminReadStatus read={list} shape="table" label={listLabel} />
       {!list.data ? null : orders.length === 0 ? (
         <div className="rounded-sm border border-zinc-800/70 bg-zinc-900 p-6 text-sm text-zinc-500">
           No orders in this queue.

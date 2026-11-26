@@ -4,6 +4,7 @@ import { ResponseError } from "@/lib/http/read-json-response";
 
 type Snapshot<T> = {
   load: (signal: AbortSignal) => Promise<T>;
+  scope: unknown;
   revision: number;
   data?: T;
   error?: string;
@@ -12,6 +13,7 @@ type Snapshot<T> = {
 export function useAdminRead<T>(
   load: (signal: AbortSignal) => Promise<T>,
   label: string,
+  scope: unknown = load,
 ) {
   const [revision, setRevision] = useState(0);
   const [snapshot, setSnapshot] = useState<Snapshot<T>>();
@@ -20,7 +22,7 @@ export function useAdminRead<T>(
     const controller = new AbortController();
     void load(controller.signal)
       .then((data) => {
-        if (!controller.signal.aborted) setSnapshot({ load, revision, data });
+        if (!controller.signal.aborted) setSnapshot({ load, scope, revision, data });
       })
       .catch((reason: unknown) => {
         if (controller.signal.aborted) return;
@@ -33,17 +35,19 @@ export function useAdminRead<T>(
             : `Unable to load ${label}.`;
         setSnapshot((old) => ({
           load,
+          scope,
           revision,
           error,
           denied,
-          data: !denied && old?.load === load ? old.data : undefined,
+          data: !denied && old && old.scope === scope ? old.data : undefined,
         }));
       });
     return () => controller.abort();
-  }, [load, label, revision]);
-  const current = snapshot?.load === load ? snapshot : undefined;
+  }, [load, label, revision, scope]);
+  const retained = snapshot?.scope === scope ? snapshot : undefined;
+  const current = retained?.load === load ? retained : undefined;
   return {
-    data: current?.data,
+    data: retained?.data,
     error: current?.error,
     denied: current?.denied,
     pending: current?.revision !== revision,

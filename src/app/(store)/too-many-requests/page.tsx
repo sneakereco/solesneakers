@@ -1,21 +1,27 @@
 // app/too-many-requests/page.tsx
 "use client";
 
-import Link from "next/link";
+import { FeedbackLink as Link, DocumentFeedbackLink } from "@/components/ui/FeedbackLink";
 
 import { Suspense } from "react";
-import { useRouter, useSearchParams } from "next/navigation";
+import { useSearchParams } from "next/navigation";
 
 import { BRAND_NAME } from "@/config/constants/brand";
 
 function TooManyRequestsContent() {
-  const router = useRouter();
   const searchParams = useSearchParams();
 
   const fromParam = searchParams.get("from");
   // Prevent open redirect: only allow same-origin paths
-  const safeFrom = fromParam && fromParam.startsWith("/") ? fromParam : "/";
+  const safeFrom =
+    fromParam &&
+    fromParam.startsWith("/") &&
+    !fromParam.startsWith("//") &&
+    !fromParam.includes("\\")
+      ? fromParam
+      : "/";
 
+  const RetryLink = /^\/checkout(?:[/?#]|$)/.test(safeFrom) ? DocumentFeedbackLink : Link;
   return (
     <div className="flex min-h-screen items-center justify-center bg-[var(--storefront-surface)] px-6 text-zinc-900">
       <main className="w-full max-w-3xl">
@@ -49,13 +55,12 @@ function TooManyRequestsContent() {
               Back to home
             </Link>
 
-            <button
-              type="button"
-              onClick={() => router.push(safeFrom)}
+            <RetryLink
+              href={safeFrom}
               className="inline-flex items-center justify-center border border-zinc-300 px-5 py-3 text-sm font-semibold text-zinc-900 transition-colors hover:bg-zinc-100"
             >
               Retry
-            </button>
+            </RetryLink>
           </div>
         </div>
       </main>

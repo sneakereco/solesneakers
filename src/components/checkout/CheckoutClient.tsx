@@ -1,9 +1,10 @@
 "use client";
 
 import { useEffect, useMemo, useRef, useState } from "react";
-import Link from "next/link";
+import { FeedbackLink as Link, DocumentFeedbackLink } from "@/components/ui/FeedbackLink";
 import { useSession } from "@/contexts/SessionContext";
 import { CheckoutSkeleton } from "./CheckoutSkeletons";
+import { postCheckoutJson } from "@/lib/square/web-payments";
 import { withRequestDeadline } from "@/lib/http/request-deadline";
 
 import { useCart } from "@/components/cart/CartProvider";
@@ -27,6 +28,7 @@ import {
 } from "@/components/checkout/SquarePaymentMethods";
 import {
   clearCheckoutAttempt,
+  rememberPendingCheckoutAttempt,
   getOrCreateCheckoutDeviceSessionId,
   getOrCreateCheckoutIdempotencyKey,
   storeGuestOrderAccess,
@@ -369,27 +371,25 @@ function CheckoutForm({
     });
     const deviceSessionId = getOrCreateCheckoutDeviceSessionId();
     const idempotencyKey = getOrCreateCheckoutIdempotencyKey(cartFingerprint);
-    const response = await fetch("/api/checkout/prepare", {
-      method: "POST",
-      headers: { "Content-Type": "application/json" },
-      body: JSON.stringify(
-        buildCheckoutPreparePayload({
-          items: checkoutItems,
-          fulfillment,
-          paymentMethod: method,
-          buyerEmail,
-          shippingAddress: selectedShippingAddress,
-          billingAddress: selectedBillingAddress,
-          pickupContact: selectedPickupContact,
-          quoteFingerprint: selectedQuote.quoteFingerprint,
-          shippingConfirmation: context?.shippingConfirmation,
-          shippingAddressOverride: context?.shippingAddressOverride,
-          idempotencyKey,
-          deviceSessionId,
-        }),
-      ),
+    const { response, data } = await postCheckoutJson(
+      "/api/checkout/prepare",
+      buildCheckoutPreparePayload({
+        items: checkoutItems,
+        fulfillment,
+        paymentMethod: method,
+        buyerEmail,
+        shippingAddress: selectedShippingAddress,
+        billingAddress: selectedBillingAddress,
+        pickupContact: selectedPickupContact,
+        quoteFingerprint: selectedQuote.quoteFingerprint,
+        shippingConfirmation: context?.shippingConfirmation,
+        shippingAddressOverride: context?.shippingAddressOverride,
+        idempotencyKey,
+        deviceSessionId,
+      }),
+    ).catch(() => {
+      throw new Error("Order preparation is unavailable. Please try again.");
     });
-    const data = await response.json().catch(() => null);
     if (!response.ok) {
       if (
         selectedShippingAddress &&
@@ -467,9 +467,9 @@ function CheckoutForm({
           Retry checkout
         </button>
       )}
-      <a className="ml-3 underline" href="/cart">
+      <Link className="ml-3 underline" href="/cart">
         Review your cart
-      </a>
+      </Link>
     </div>
   );
   if (!paymentPending) {
@@ -478,9 +478,9 @@ function CheckoutForm({
         <main className="mx-auto max-w-2xl px-5 py-16">
           <CheckoutPaymentDialog open={false} />
           <p>Your checkout account changed. Reload checkout to continue.</p>
-          <a className="underline" href="/checkout">
+          <DocumentFeedbackLink className="underline" href="/checkout">
             Reload checkout
-          </a>
+          </DocumentFeedbackLink>
         </main>
       );
     if (!sameOwner || (!isReady && (!hasCartView || items.length === 0)))
@@ -546,10 +546,16 @@ function CheckoutForm({
               resolveWalletShippingContact={resolveWalletShippingContact}
               prepare={prepare}
               onPaymentPending={setPaymentPending}
-              onPaymentSubmitted={(checkout) => {
+              onPaymentSubmitted={(checkout, outcome) => {
                 setIsRedirecting(true);
-                if (checkout.idempotencyKey)
-                  clearCheckoutAttempt(checkout.idempotencyKey);
+                if (checkout.idempotencyKey) {
+                  if (outcome === "unknown")
+                    rememberPendingCheckoutAttempt(
+                      checkout.orderId,
+                      checkout.idempotencyKey,
+                    );
+                  else clearCheckoutAttempt(checkout.idempotencyKey);
+                }
               }}
             >
               <CheckoutContactSection

@@ -29,7 +29,7 @@ const bundle = await build({
   write: false,
   platform: "browser",
   jsx: "automatic",
-  define: { "process.env.NODE_ENV": '"development"' },
+  define: { "process.env": "{}", "process.env.NODE_ENV": '"development"' },
   plugins: [
     {
       name: "boundaries",

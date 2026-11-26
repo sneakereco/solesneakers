@@ -83,6 +83,8 @@ const bundle = await compileUxHarness(
     return <PasswordLoginForm onRequiresEmailVerification={handleVerification} onSwitchToOtp={() => {}} onForgotPassword={() => {}} />;
   }
 
+  import Home from "./src/app/(store)/page";
+  import Limited from "./src/app/(store)/too-many-requests/page";
   import StoreNotFound from "./src/app/(store)/not-found";
   import RootNotFound from "./src/app/not-found";
   import StoreError from "./src/app/(store)/error";
@@ -104,6 +106,8 @@ const bundle = await compileUxHarness(
     const [cartOpen, setCartOpen] = useState(false);
     if (location.pathname.startsWith("/auth/fixture/")) return <AuthFixture />;
     switch (location.pathname) {
+      case "/home": return <Home/>;
+      case "/limited": return <Limited/>;
       case "/search":
         return <><button onClick={() => setSearchOpen(true)}>Search</button>
           <SearchOverlay isOpen={searchOpen} onClose={() => setSearchOpen(false)} /></>;
@@ -162,7 +166,7 @@ const bundle = await compileUxHarness(
                 path === "next/navigation"
                   ? "export const usePathname = () => window.fixturePath ?? location.pathname; export const useRouter = () => ({push(path) {window.fixturePush?.(path);}, refresh() {window.fixturePush?.(window.fixturePath);}}); export const useSearchParams = () => new URLSearchParams(window.fixtureSearch ?? location.search);"
                   : path === "next/link"
-                    ? "export const useLinkStatus = () => ({pending: false}); export default function Link({onNavigate, ...props}) { return <a {...props} />; }"
+                    ? "import {createContext,useContext,useState} from 'react';const Status=createContext({pending:false});export const useLinkStatus=()=>useContext(Status);export default function Link({onNavigate,onClick,...props}){const [pending,set]=useState(false);return <Status.Provider value={{pending}}><a {...props} onClick={e=>{onClick?.(e);if(window.holdNavigation&&!e.defaultPrevented&&!e.metaKey&&!e.ctrlKey&&!e.shiftKey&&e.button===0){e.preventDefault();onNavigate?.(e);set(true);}}}/></Status.Provider>}"
                     : "export default function Image({ fill, quality, priority, sizes, ...props }) { return <img {...props} />; }",
             }),
           );
@@ -953,6 +957,96 @@ try {
       ).toHaveAttribute("aria-pressed", "true");
     },
   );
+  await check(320, "hard checkout navigation feedback", async (page) => {
+    await checkCart(page);
+    const link = page.locator("a[data-checkout-link]");
+    const document = holdResponse();
+    await page.route("**/checkout", document.fulfill);
+    try {
+      await link.click({ modifiers: ["Control"] });
+      await expect(link.getByRole("status")).toHaveCount(0);
+      let announced = false;
+      await page.exposeFunction("recordCheckoutPending", () => {
+        announced = true;
+      });
+      await link.evaluate((el) => {
+        const observer = new MutationObserver(() => {
+          if (el.querySelector("[role=status]")?.textContent === "Loading page") {
+            observer.disconnect();
+            window.recordCheckoutPending();
+          }
+        });
+        observer.observe(el, { childList: true, subtree: true, characterData: true });
+      });
+      await link.press("Enter", { noWaitAfter: true });
+      await expect.poll(() => announced).toBe(true);
+    } finally {
+      document.release({ body: "Complete", contentType: "text/html" });
+    }
+    await expect(page).toHaveURL(/\/checkout$/);
+  });
+  await check(320, "prominent navigation feedback", async (page) => {
+    for (const [route, name] of [
+      ["home", "Shop Now"],
+      ["limited", "Back to home"],
+      ["limited", "Retry"],
+    ]) {
+      await openUxHarness(page, bundle, "https://ux.test/" + route);
+      await page.evaluate(() => (window.holdNavigation = true));
+      const link = page.getByRole("link", { name: new RegExp("^" + name) });
+      await link.click({ modifiers: ["Control"] });
+      await expect(link.getByText("Loading page")).toHaveCount(0);
+      if (name === "Shop Now") await link.tap();
+      else await link.press("Enter");
+      await expect(link.getByText("Loading page")).toHaveCount(1);
+    }
+  });
+  await check(320, "homepage merchandise photo feedback", async (page) => {
+    const held = holdResponse();
+    await page.route("**/photo-*.png", held.fulfill);
+    await page.route("**/api/featured-items", (r) =>
+      r.fulfill({
+        json: {
+          featured: [
+            {
+              id: "one",
+              titleDisplay: "Fixture shoe",
+              primaryImage: "/photo-one.png",
+              minPrice: 500,
+            },
+          ],
+        },
+      }),
+    );
+    await page.route("**/api/store/products?**", (r) =>
+      r.fulfill({
+        json: {
+          products: [
+            {
+              id: "two",
+              name: "Fixture shirt",
+              images: [{ url: "/photo-two.png" }],
+              variants: [{ stock: 1, sale_price_cents: 500 }],
+            },
+          ],
+        },
+      }),
+    );
+    await openUxHarness(page, bundle, "https://ux.test/home");
+    try {
+      for (const name of ["Fixture shoe", "Fixture shirt"]) {
+        const link = page.getByRole("link", { name: new RegExp(name) });
+        await expect(link).toContainText("$5.00");
+        await expect(link.locator("[aria-busy=true] [data-ui-skeleton]")).toBeVisible();
+      }
+    } finally {
+      held.release({ status: 404, body: "" });
+    }
+    for (const name of ["Fixture shoe", "Fixture shirt"])
+      await expect(page.getByRole("link", { name: new RegExp(name) })).toContainText(
+        "Image unavailable",
+      );
+  });
   for (const failure of ["storage", "session"])
     await check(320, "product can retry unavailable cart after " + failure, (page) =>
       checkProductCartRecovery(page, failure === "session"),

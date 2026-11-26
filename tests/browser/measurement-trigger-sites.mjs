@@ -318,7 +318,7 @@ const bundle = await build({
             `
           export const getOrCreateCheckoutDeviceSessionId = () => "device";
           export const getOrCreateCheckoutIdempotencyKey = () => "idempotency";
-          export const clearCheckoutAttempt = () => {}; export const storeGuestOrderAccess = () => {};
+          export const rememberPendingCheckoutAttempt = () => {}; export const clearCheckoutAttempt = () => {}; export const storeGuestOrderAccess = () => {};
         `,
           ],
           [

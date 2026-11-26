@@ -283,6 +283,7 @@ const browser = await chromium.launch({ headless: true });
 const failures = [];
 
 async function check(viewport, name, run) {
+  if (process.argv[2] && !name.includes(process.argv[2])) return;
   const page = await browser.newPage({
     viewport,
     reducedMotion: viewport.width < 768 ? "reduce" : "no-preference",
@@ -518,6 +519,11 @@ try {
       const mobileSidebar = dialog.getByRole("complementary");
       await verifyPlacement(mobileSidebar, 0, 0, 304, 844);
       await verifySidebarContrast(mobileSidebar);
+      await dialog
+        .getByRole("link", { name: "Overview" })
+        .click({ modifiers: ["Control"] });
+      await expect(dialog).toBeVisible();
+      await close.focus();
       await verifyTabLoop(
         page,
         close,

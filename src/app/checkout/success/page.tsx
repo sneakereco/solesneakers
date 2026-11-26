@@ -1,5 +1,7 @@
 "use client";
 
+import { FeedbackLink } from "@/components/ui/FeedbackLink";
+
 import { useEffect, useState, Suspense } from "react";
 import { useRouter, useSearchParams } from "next/navigation";
 import { CheckCircle } from "lucide-react";
@@ -56,7 +58,6 @@ function SuccessContent() {
 }
 
 function Notice({ message, retry }: { message: string; retry?: () => void }) {
-  const router = useRouter();
   return (
     <main className="mx-auto max-w-2xl px-4 py-20 text-center">
       <CheckoutPaymentDialog open={false} />
@@ -67,16 +68,15 @@ function Notice({ message, retry }: { message: string; retry?: () => void }) {
           Check again
         </button>
       )}
-      <a href="/contact" className="ml-4 underline">
+      <FeedbackLink href="/contact" className="ml-4 underline">
         Contact support
-      </a>
-      <button
-        type="button"
-        onClick={() => router.push("/store")}
-        className="mt-6 block w-full bg-zinc-950 py-3 text-white"
+      </FeedbackLink>
+      <FeedbackLink
+        href="/store"
+        className="mt-6 block w-full bg-zinc-950 py-3 text-center text-white"
       >
         Continue shopping
-      </button>
+      </FeedbackLink>
     </main>
   );
 }
@@ -129,7 +129,6 @@ function Receipt({
   token: string | null;
   isAuthenticated: boolean;
 }) {
-  const router = useRouter();
   const [retry, setRetry] = useState(0);
   const [visibleStatus, setStatus] = useState<OrderStatusResponse | null>(null);
   const [message, setMessage] = useState<string | null>(null);
@@ -240,19 +239,19 @@ function Receipt({
 
       <div className="space-y-3">
         {isAuthenticated && (
-          <button
-            onClick={() => router.push("/account")}
-            className="w-full bg-zinc-950 py-3 font-bold text-white transition hover:bg-black"
+          <FeedbackLink
+            href="/account"
+            className="block w-full bg-zinc-950 py-3 text-center font-bold text-white transition hover:bg-black"
           >
             Go to Account
-          </button>
+          </FeedbackLink>
         )}
-        <button
-          onClick={() => router.push("/store")}
-          className="w-full bg-zinc-800 py-3 font-semibold text-white transition hover:bg-zinc-700"
+        <FeedbackLink
+          href="/store"
+          className="block w-full bg-zinc-800 py-3 text-center font-semibold text-white transition hover:bg-zinc-700"
         >
           Continue Shopping
-        </button>
+        </FeedbackLink>
       </div>
     </div>
   );

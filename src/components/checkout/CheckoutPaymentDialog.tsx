@@ -1,5 +1,7 @@
 "use client";
 
+import { FeedbackLink } from "@/components/ui/FeedbackLink";
+
 import {
   createContext,
   useContext,
@@ -170,9 +172,9 @@ function PaymentDialogContent({
                 : "This may take a few seconds. Please keep this page open while we process your payment and confirm your order. Don't submit another payment.")}
         </p>
         {cartRecovery && error && (
-          <a href="/cart" className="mt-3 block underline">
+          <FeedbackLink href="/cart" className="mt-3 block underline">
             Review your cart
-          </a>
+          </FeedbackLink>
         )}
         {walletReview}
         {addressReview && onAcceptAddress && (

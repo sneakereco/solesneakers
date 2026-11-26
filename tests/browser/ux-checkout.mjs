@@ -37,6 +37,7 @@ import {CartProvider,useCart} from "./src/components/cart/CartProvider";
 import {SessionProvider,useSession} from "./src/contexts/SessionContext";
 import {CheckoutPaymentProvider} from "./src/components/checkout/CheckoutPaymentDialog";
 import {CheckoutClient} from "./src/components/checkout/CheckoutClient";
+import Processing from "./src/app/checkout/processing/page";
 import Success from "./src/app/checkout/success/page";
 import OrderStatus from "./src/app/(store)/order-status/[orderId]/page";
 const cfg=new URLSearchParams(location.search), guest=cfg.has("guest"), user=guest?null:${JSON.stringify(buyer)};
@@ -46,7 +47,7 @@ function Outlet({seed=user}){
  const [path,route]=useState(location.pathname);
  window.navigate=url=>{history.pushState({},'',url);route(location.pathname)};
  window.cart=useCart();window.session=useSession();
- return path.includes("order-status")?<OrderStatus/>:path.includes("success")?<Success/>:<CheckoutClient initialData={{isGuest:guest,customer:{ownerId:seed?.id??null,email:seed?.email??"",address:{name:"Test Buyer",phone:"3025550100",line1:seed?.id==="second"?"2 Second St":"1 Test St",line2:"",city:"Wilmington",state:"DE",postalCode:"19801",country:"US"}}, paymentConfig:{applicationId:"test",locationId:"test",environment:"sandbox"}}}/>;
+ return path.includes("processing")?<Processing/>:path.includes("order-status")?<OrderStatus/>:path.includes("success")?<Success/>:<CheckoutClient initialData={{isGuest:guest,customer:{ownerId:seed?.id??null,email:seed?.email??"",address:{name:"Test Buyer",phone:"3025550100",line1:seed?.id==="second"?"2 Second St":"1 Test St",line2:"",city:"Wilmington",state:"DE",postalCode:"19801",country:"US"}}, paymentConfig:{applicationId:"test",locationId:"test",environment:"sandbox"}}}/>;
 }
 function Root(){const [seed,change]=useState(user);window.reseed=change;return <SessionProvider initialUser={seed} initialRole={guest?null:"customer"} initialUnavailable={cfg.has("unavailable")}><CartProvider userId={user?.id}><CheckoutPaymentProvider><Outlet seed={seed}/></CheckoutPaymentProvider></CartProvider></SessionProvider>};createRoot(document.getElementById("root")).render(<Root/>);
 `,
@@ -67,7 +68,7 @@ function Root(){const [seed,change]=useState(user);window.reseed=change;return <
               args.path === "next/navigation"
                 ? "const router={replace:u=>window.navigate(u),push:u=>window.navigate(u)};export const useRouter=()=>router,useParams=()=>({orderId:'order'}),useSearchParams=()=>new URLSearchParams(location.search);"
                 : args.path.includes("client-env")
-                  ? "export const clientEnv={};"
+                  ? "export const clientEnv={NEXT_PUBLIC_TURNSTILE_SITE_KEY:location.search.includes('guestKey')?'fixture':undefined};"
                   : "export const captureCheckoutStarted=()=>{},captureProductAddedToCart=()=>{};",
           }));
         },
@@ -77,7 +78,7 @@ function Root(){const [seed,change]=useState(user);window.reseed=change;return <
 );
 
 const sdk = `window.Square={payments:()=>({
-  async card(){const m={async attach(selector){const host=document.querySelector(selector);if(window.hangAttach){window.hangAttach=false;window.retiredCard=m;m.attaching=true;await new Promise(r=>window.releaseAttach=r);m.attaching=false;m.resource=true;}host.textContent="Secure fields ready";m.host=host;},async destroy(){if(m.attaching)return false;m.resource=false;m.host?.replaceChildren();window.destroyed=(window.destroyed||0)+1;return true;},async tokenize(){if(window.holdToken)await new Promise(r=>window.releaseToken=r);return {status:"OK",token:"synthetic"}}};
+  async card(){const m={async attach(selector){const host=document.querySelector(selector);if(window.hangAttach){window.hangAttach=false;window.retiredCard=m;m.attaching=true;await new Promise(r=>window.releaseAttach=r);m.attaching=false;m.resource=true;}host.textContent="Secure fields ready";m.host=host;},async destroy(){if(m.attaching)return false;m.resource=false;m.host?.replaceChildren();window.destroyed=(window.destroyed||0)+1;return true;},async tokenize(){window.tokenCalls=(window.tokenCalls||0)+1;if(window.holdToken)await new Promise(r=>window.releaseToken=r);return {status:"OK",token:"synthetic"}}};
     if(window.hangCreate){window.hangCreate=false;await new Promise(r=>window.releaseCreate=r)}
     return m;},
   paymentRequest(){return {update:()=>true,addEventListener(){}}},
@@ -118,7 +119,10 @@ async function fixture(browser) {
         return route.abort();
       }
       if (f.scriptHold) await f.scriptHold.promise;
-      return route.fulfill({ contentType: "text/javascript", body: sdk });
+      return route.fulfill({
+        contentType: "text/javascript",
+        body: sdk + (f.sdkExtra ?? ""),
+      });
     }
     if (u.hostname !== "ux.test") return route.abort();
     if (path === "/api/cart/validate")
@@ -212,7 +216,247 @@ async function pay(page) {
   await page.getByRole("textbox", { name: "Name on card" }).fill("Buyer");
   await page.getByRole("button", { name: "Pay $2.30 now", exact: true }).click();
 }
+async function controlledPost(f, stage, mode) {
+  const p = await f.ctx.newPage();
+  p.on("pageerror", (e) => f.errors.push(e.message));
+  await p.clock.install();
+  await p.addInitScript(
+    ({ stage, mode }) => {
+      localStorage.removeItem("rdk_cart_user_buyer");
+      const real = window.fetch;
+      window.fetch = async (url, options) => {
+        if (url !== "/api/checkout/" + stage) return real(url, options);
+        window.postCount = (window.postCount || 0) + 1;
+        if (window.postCount > 1) return real(url, options);
+        if (mode === "drop") throw new TypeError("Failed to fetch");
+        if (mode === "decline")
+          return Response.json({ error: "Payment was declined." }, { status: 402 });
+        if (mode === "unreadable") return new Response("<html>");
+        const held = new Promise((r) => (window.releasePost = r));
+        const body =
+          stage === "payment-permit"
+            ? { permit: "fixture" }
+            : stage === "prepare"
+              ? {
+                  orderId: "order",
+                  reused: false,
+                  totals: {
+                    subtotalCents: 200,
+                    shippingCents: 20,
+                    taxCents: 10,
+                    totalCents: 230,
+                  },
+                }
+              : { statusUrl: "/checkout/success?orderId=order" };
+        if (mode === "headers") {
+          await held;
+          return Response.json(body);
+        }
+        return {
+          ok: true,
+          status: 200,
+          json: async () => {
+            await held;
+            return body;
+          },
+        };
+      };
+    },
+    { stage, mode },
+  );
+  await openUxHarness(p, bundle, "https://ux.test/checkout");
+  await pay(p);
+  await p.waitForFunction(() => window.postCount === 1);
+  return p;
+}
+function installHeldWallet(name, phase) {
+  const original = window.Square.payments;
+  window.Square.payments = () => {
+    const payments = original();
+    window.walletInstances = [];
+    payments[name] = async () => {
+      const entry = { live: false };
+      const first = window.walletInstances.push(entry) === 1;
+      const wait = () =>
+        new Promise((resolve) => {
+          window.releaseWallet = resolve;
+        });
+      if (first && phase === "create") await wait();
+      return {
+        async attach(selector) {
+          entry.host = document.querySelector(selector);
+          if (first && phase === "attach") await wait();
+          entry.live = true;
+          entry.host.textContent = "Wallet " + window.walletInstances.indexOf(entry);
+        },
+        async destroy() {
+          entry.destroyed = true;
+          entry.live = false;
+          entry.host?.replaceChildren();
+          return true;
+        },
+        addEventListener() {},
+        async tokenize() {
+          return { status: "CANCEL" };
+        },
+      };
+    };
+    return payments;
+  };
+}
 const cases = {
+  async lostPayment(f) {
+    for (const mode of ["drop", "headers", "body", "unreadable"]) {
+      f.orderHold = gate();
+      const p = await controlledPost(f, "pay", mode);
+      await p.clock.fastForward(16000);
+      await expect(p).toHaveURL(/checkout\/processing\?orderId=order/);
+      await expect.poll(() => f.statusQueries?.length ?? 0).toBeGreaterThan(0);
+      const key = await p.evaluate(() =>
+        sessionStorage.getItem("checkout_idempotency_key"),
+      );
+      assert.ok(key);
+      await p.clock.fastForward(61000);
+      await expect(p.getByText(/Do not pay again/)).toBeVisible();
+      await p.evaluate(() => window.releasePost?.());
+      if (mode === "body")
+        await p.evaluate(() =>
+          sessionStorage.setItem("checkout_idempotency_key", "new-attempt"),
+        );
+      await p.getByRole("button", { name: "Check order status" }).click();
+      f.orderHold.resolve();
+      await expect(p.getByRole("heading", { name: "Order Confirmed!" })).toBeVisible();
+      assert.equal(
+        await p.evaluate(() => sessionStorage.getItem("checkout_idempotency_key")),
+        mode === "body" ? "new-attempt" : null,
+      );
+      assert.equal(await p.evaluate(() => window.postCount), 1);
+      await p.close();
+    }
+  },
+  async decline(f) {
+    const p = await controlledPost(f, "pay", "decline");
+    await expect(p.getByRole("dialog").getByText("Payment was declined.")).toBeVisible();
+    assert.equal(f.statusCalls, 0);
+  },
+  async earlyDeadline(f) {
+    for (const stage of ["prepare", "payment-permit"])
+      for (const mode of ["headers", "body"]) {
+        const p = await controlledPost(f, stage, mode);
+        const key = await p.evaluate(() =>
+          sessionStorage.getItem("checkout_idempotency_key"),
+        );
+        await p.clock.fastForward(16000);
+        await expect(p.getByRole("dialog").getByRole("alert")).toContainText(
+          /try again/i,
+        );
+        await p.evaluate(() => window.releasePost());
+        assert.equal(await p.evaluate(() => window.tokenCalls || 0), 0);
+        assert.equal(f.payCalls, 0);
+        assert.equal(
+          await p.evaluate(() => sessionStorage.getItem("checkout_idempotency_key")),
+          key,
+        );
+        await p.getByRole("dialog").getByRole("button").last().click();
+        await expect(p.getByLabel("Name on card")).toHaveValue("Buyer");
+        await p.close();
+      }
+  },
+  async walletStartup(f) {
+    for (const [name, phase, label] of [
+      ["applePay", "create", "Apple Pay"],
+      ["afterpayClearpay", "attach", "Afterpay"],
+      ["cashAppPay", "attach", "Cash App Pay"],
+    ]) {
+      f.sdkExtra =
+        "(" +
+        installHeldWallet.toString() +
+        ")(" +
+        JSON.stringify(name) +
+        "," +
+        JSON.stringify(phase) +
+        ");";
+      const p = await f.ctx.newPage();
+      await p.clock.install();
+      await openUxHarness(p, bundle, "https://ux.test/checkout");
+      if (name !== "applePay") await p.getByRole("radio", { name: label }).click();
+      await p.waitForFunction(() => Boolean(window.releaseWallet));
+      await p.clock.fastForward(16000);
+      const retry = p.getByRole("button", {
+        name: name === "applePay" ? "Retry Apple Pay" : "Retry",
+        exact: true,
+      });
+      await expect(retry).toBeVisible();
+      await retry.click();
+      await p.waitForFunction(() => window.walletInstances.length === 2);
+      await p.evaluate(() => window.releaseWallet());
+      await p.waitForFunction(
+        () => window.walletInstances[0].destroyed && !window.walletInstances[0].live,
+      );
+      if (name === "applePay")
+        await expect(p.getByRole("button", { name: "Pay with Apple Pay" })).toBeEnabled();
+      else
+        assert.equal(
+          await p.evaluate(() => window.walletInstances[1].host.textContent),
+          "Wallet 1",
+        );
+      assert.equal(f.payCalls, 0);
+      await p.close();
+    }
+  },
+  async guestVerification(f) {
+    f.session = { user: null, role: null };
+    for (const failure of ["script", "stalledScript", "widget"]) {
+      let scripts = 0;
+      const held = gate();
+      const p = await f.ctx.newPage();
+      await p.clock.install();
+      await p.route("https://challenges.cloudflare.com/**", async (r) => {
+        scripts++;
+        if (scripts === 1 && failure === "script") return r.abort();
+        if (scripts === 1 && failure === "stalledScript") {
+          await held.promise;
+          return r.abort().catch(() => {});
+        }
+        return r.fulfill({
+          contentType: "text/javascript",
+          body: "window.widgets=[];window.turnstile={render(el,options){const id=String(window.widgets.length);const node=document.createElement('div');node.dataset.testWidget=id;el.appendChild(node);window.widgets.push({id,options,node});return id;},remove(id){window.widgets[Number(id)].node.remove()},reset(){}};",
+        });
+      });
+      try {
+        await openUxHarness(p, bundle, "https://ux.test/checkout?guest&guestKey");
+        await expect.poll(() => scripts).toBe(1);
+        await p.getByLabel("Email", { exact: true }).fill("guest@example.test");
+        await p.getByLabel("Name on card").fill("Saved guest draft");
+        if (failure === "widget")
+          await p.waitForFunction(() => window.widgets?.length === 1);
+        await p.clock.fastForward(16000);
+        const retry = p.getByRole("button", { name: "Retry security check" });
+        await expect(retry).toBeVisible();
+        await expect(p.getByRole("button", { name: /Pay .*now/ })).toBeDisabled();
+        await retry.click();
+        await expect(
+          p.locator("[data-test-widget]"),
+          failure + " retry with " + scripts + " script requests",
+        ).toHaveCount(1);
+        await p.evaluate(() => {
+          window.widgets.at(-1).options["before-interactive-callback"]();
+        });
+        await p.clock.fastForward(30000);
+        await expect(retry).toHaveCount(0);
+        if (failure === "widget")
+          await p.evaluate(() => window.widgets[0].options.callback("retired"));
+        await expect(p.getByRole("button", { name: /Pay .*now/ })).toBeDisabled();
+        await p.evaluate(() => window.widgets.at(-1).options.callback("verified"));
+        await expect(p.getByRole("button", { name: /Pay .*now/ })).toBeEnabled();
+        await expect(p.getByLabel("Name on card")).toHaveValue("Saved guest draft");
+        assert.equal(f.prepareCalls.length, 0);
+      } finally {
+        held.resolve();
+        await p.close();
+      }
+    }
+  },
   async sdk(f) {
     f.scriptError = true;
     const p = await f.open();

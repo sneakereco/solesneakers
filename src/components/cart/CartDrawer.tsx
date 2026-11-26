@@ -3,7 +3,7 @@
 import { ActionButton } from "@/components/ui/ActionButton";
 import { useId } from "react";
 import Image from "next/image";
-import { FeedbackLink } from "@/components/ui/FeedbackLink";
+import { FeedbackLink, DocumentFeedbackLink } from "@/components/ui/FeedbackLink";
 import { Minus, Plus, ShoppingBag, Trash2, X } from "lucide-react";
 
 import { ModalPortal, useOverlayTransition } from "@/components/ui/ModalPortal";
@@ -211,14 +211,14 @@ export function CartDrawer({ isOpen, onClose, invoker }: CartDrawerProps) {
                 <span>Subtotal</span>
                 <span>{formatPrice(total)}</span>
               </div>
-              <a
+              <DocumentFeedbackLink
                 href={!isReady || writePending ? undefined : "/checkout"}
                 aria-disabled={!isReady || writePending || undefined}
                 data-checkout-link
                 className="mt-5 block w-full cursor-pointer bg-zinc-900 px-6 py-4 text-center text-sm font-medium uppercase text-white transition-colors hover:bg-black"
               >
                 Checkout <span aria-hidden="true">&#8226;</span> {formatPrice(total)}
-              </a>
+              </DocumentFeedbackLink>
               <FeedbackLink
                 href="/store"
                 onNavigate={onClose}

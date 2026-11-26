@@ -49,6 +49,7 @@ const owner=new URLSearchParams(location.search).get("fixtureOwner");
 createRoot(document.getElementById("root")).render(<SessionProvider initialUser={owner?{id:owner,email:"buyer@example.test"}:null} initialRole={owner?"customer":null}><CartProvider userId="stale-server-prop"><App/></CartProvider></SessionProvider>);
 `,
   {
+    define: { "process.env": "{}" },
     plugins: [
       {
         name: "router",

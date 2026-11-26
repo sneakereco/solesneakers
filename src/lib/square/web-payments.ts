@@ -1,3 +1,5 @@
+import { withRequestDeadline } from "@/lib/http/request-deadline";
+
 export type SquareEnvironment = "sandbox" | "production";
 
 type SquareWalletContact = {
@@ -169,17 +171,36 @@ export async function authorizeAndTokenize(input: {
   return { permit, sourceId: token.token };
 }
 
+// The deadline covers response headers and body. Callers perform all subsequent
+// steps only after this operation has completed within its deadline.
+export function postCheckoutJson(
+  url: string,
+  body: unknown,
+  fetchImpl: typeof fetch = fetch,
+) {
+  return withRequestDeadline(async (signal) => {
+    const response = await fetchImpl(url, {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify(body),
+      signal,
+    });
+    const data = await response.json().catch(() => null);
+    return { response, data };
+  });
+}
+
 async function requestPermit(
   permitRequest: Record<string, unknown>,
   fetchImplementation: typeof fetch | undefined,
 ): Promise<string> {
-  const fetchImpl = fetchImplementation ?? fetch;
-  const permitResponse = await fetchImpl("/api/checkout/payment-permit", {
-    method: "POST",
-    headers: { "Content-Type": "application/json" },
-    body: JSON.stringify(permitRequest),
+  const { response: permitResponse, data: permitData } = await postCheckoutJson(
+    "/api/checkout/payment-permit",
+    permitRequest,
+    fetchImplementation,
+  ).catch(() => {
+    throw new Error("Payment authorization is unavailable. Please try again.");
   });
-  const permitData = await permitResponse.json().catch(() => null);
   if (!permitResponse.ok || typeof permitData?.permit !== "string") {
     throw new Error(permitData?.error || "Unable to authorize payment");
   }

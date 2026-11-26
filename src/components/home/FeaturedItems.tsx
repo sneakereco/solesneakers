@@ -2,7 +2,7 @@
 
 import { ActionButton } from "@/components/ui/ActionButton";
 import { useCallback, useEffect, useRef, useState } from "react";
-import Image from "next/image";
+import { ProductImage } from "@/components/store/ProductImage";
 import { FeedbackLink } from "@/components/ui/FeedbackLink";
 import { ChevronLeft, ChevronRight } from "lucide-react";
 
@@ -205,7 +205,7 @@ export function FeaturedItems({ category }: { category?: "clothing" } = {}) {
                 >
                   <div className="relative h-48 w-full sm:h-52 md:h-56">
                     {product.primaryImage ? (
-                      <Image
+                      <ProductImage
                         src={product.primaryImage}
                         alt=""
                         fill

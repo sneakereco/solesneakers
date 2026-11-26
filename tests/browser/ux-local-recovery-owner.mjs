@@ -28,46 +28,17 @@ assert.ok(
   runtime.startsWith(resolve(root, "test-results/ux-implementation") + "/") ||
     runtime.startsWith(resolve(root, "test-results/ux-implementation") + "\\"),
 );
-mkdirSync(runtime, { recursive: true });
-cpSync(join(root, "src"), join(runtime, "src"), {
-  recursive: true,
-  filter(path) {
-    assert.equal(
-      lstatSync(path).isSymbolicLink(),
-      false,
-      "Source copy must not follow links",
-    );
-    return true;
-  },
-});
-for (const file of [
-  "package.json",
-  "next.config.ts",
-  "tsconfig.json",
-  "next-env.d.ts",
-  "postcss.config.js",
-  "tailwind.config.ts",
-]) {
-  cpSync(join(root, file), join(runtime, file));
-}
 const dependencyLink = join(runtime, "node_modules");
-symlinkSync(join(root, "node_modules"), dependencyLink, "junction");
-const routePath = "src/app/api/auth/update-password/route.ts";
-const hash = (path) => createHash("sha256").update(readFileSync(path)).digest("hex");
-assert.equal(hash(join(runtime, routePath)), hash(join(root, routePath)));
-const sourceHead = spawnSync("git", ["rev-parse", "HEAD"], {
-  cwd: root,
-  encoding: "utf8",
-  windowsHide: true,
-}).stdout.trim();
+let runtimeCreated = false,
+  linkCreated = false;
 const backend = createClient(backendOrigin, process.env.SUPABASE_SECRET_KEY, {
   auth: { persistSession: false, autoRefreshToken: false },
 });
 const created = [];
 let app, browser;
 const evidence = {
-  sourceHead,
-  routeSha256: hash(join(runtime, routePath)),
+  sourceHead: undefined,
+  routeSha256: undefined,
   localOnly: true,
   fixtures: [],
   checks: {},
@@ -100,6 +71,42 @@ async function post(context, path, body) {
   });
 }
 try {
+  mkdirSync(resolve(root, "test-results/ux-implementation"), { recursive: true });
+  mkdirSync(runtime);
+  runtimeCreated = true;
+  cpSync(join(root, "src"), join(runtime, "src"), {
+    recursive: true,
+    filter(path) {
+      assert.equal(
+        lstatSync(path).isSymbolicLink(),
+        false,
+        "Source copy must not follow links",
+      );
+      return true;
+    },
+  });
+  for (const file of [
+    "package.json",
+    "next.config.ts",
+    "tsconfig.json",
+    "next-env.d.ts",
+    "postcss.config.js",
+    "tailwind.config.ts",
+  ]) {
+    cpSync(join(root, file), join(runtime, file));
+  }
+  symlinkSync(join(root, "node_modules"), dependencyLink, "junction");
+  linkCreated = true;
+  const routePath = "src/app/api/auth/update-password/route.ts";
+  const hash = (path) => createHash("sha256").update(readFileSync(path)).digest("hex");
+  assert.equal(hash(join(runtime, routePath)), hash(join(root, routePath)));
+  const sourceHead = spawnSync("git", ["rev-parse", "HEAD"], {
+    cwd: root,
+    encoding: "utf8",
+    windowsHide: true,
+  }).stdout.trim();
+  evidence.sourceHead = sourceHead;
+  evidence.routeSha256 = hash(join(runtime, routePath));
   process.chdir(runtime);
   app = await startLocalAcceptance();
   assert.equal(new URL(app.origin).hostname, "127.0.0.1");
@@ -174,24 +181,30 @@ try {
   evidence.cleanup = cleanup;
   if (app) await app.close().catch(() => cleanupErrors.push("Server cleanup failed"));
   process.chdir(root);
-  assert.ok(lstatSync(dependencyLink).isSymbolicLink());
-  unlinkSync(dependencyLink); // Remove only our link, never its shared target.
-  evidence.dependencyLinkRemoved = true;
-  assert.equal(lstatSync(runtime).isSymbolicLink(), false);
-  assert.equal(realpathSync(runtime).toLowerCase(), runtime.toLowerCase());
-  assert.ok(
-    relative(resolve(root, "test-results/ux-implementation"), runtime).startsWith(
-      "ownership-runtime-",
-    ),
-  );
-  rmSync(runtime, { recursive: true, force: true }); // Checked exact owned directory, after removing its dependency link.
-  evidence.runtimeRemoved = true;
+  if (runtimeCreated) {
+    assert.equal(lstatSync(runtime).isSymbolicLink(), false);
+    assert.equal(realpathSync(runtime).toLowerCase(), runtime.toLowerCase());
+    assert.ok(
+      relative(resolve(root, "test-results/ux-implementation"), runtime).startsWith(
+        "ownership-runtime-",
+      ),
+    );
+    if (linkCreated) {
+      assert.ok(lstatSync(dependencyLink).isSymbolicLink());
+      unlinkSync(dependencyLink); // Remove only our link, never its shared target.
+      evidence.dependencyLinkRemoved = true;
+    }
+    rmSync(runtime, { recursive: true, force: true }); // Checked exact owned directory, after removing its dependency link.
+    evidence.runtimeRemoved = true;
+  }
   evidence.cleanupErrors = cleanupErrors;
-  mkdirSync(join(root, "test-results/ux-implementation"), { recursive: true });
-  writeFileSync(
-    join(root, "test-results/ux-implementation/local-recovery-owner-evidence.json"),
-    JSON.stringify(evidence, null, 2),
-  );
+  if (evidence.routeSha256) {
+    mkdirSync(join(root, "test-results/ux-implementation"), { recursive: true });
+    writeFileSync(
+      join(root, "test-results/ux-implementation/local-recovery-owner-evidence.json"),
+      JSON.stringify(evidence, null, 2),
+    );
+  }
   assert.equal(cleanup.length, created.length);
   assert.ok(
     cleanup.every((item) => item.deleted && item.profileAbsent && item.authAbsent),
