@@ -1,5 +1,17 @@
 import { createHash, createHmac, randomUUID } from "node:crypto";
 import { parseTarget, assertAttestation } from "../shared/contracts.mjs";
+import { profileLimits } from "../shared/profiles.mjs";
+export function boundedFetch(input, options = {}) {
+  const signals = [
+    AbortSignal.timeout(15000),
+    ...(options.signal ? [options.signal] : []),
+  ];
+  return fetch(input, {
+    ...options,
+    redirect: "error",
+    signal: AbortSignal.any(signals),
+  });
+}
 export const REQUIRED_SECRETS = [
   "LOAD_TEST_SIGNING_KEY",
   "SUPABASE_SECRET_KEY",
@@ -7,8 +19,15 @@ export const REQUIRED_SECRETS = [
   "UPSTASH_REDIS_REST_TOKEN",
   "NEXT_PUBLIC_SUPABASE_ANON_KEY",
 ];
-export function createControlClient(target, key, fetcher = fetch) {
+export function createControlClient(
+  target,
+  key,
+  fetcher = fetch,
+  { minimumIntervalMs = 2500 } = {},
+) {
   if (!key || key.length < 32) throw Error("Missing staging signing authorization");
+  let nextAt = 0,
+    pending = Promise.resolve();
   return async (operation, input = {}) => {
     if (
       ![
@@ -25,26 +44,36 @@ export function createControlClient(target, key, fetcher = fetch) {
       ].includes(operation)
     )
       throw Error("Unknown control operation");
+    const turn = pending.then(async () => {
+      const delay = nextAt - Date.now();
+      if (delay > 0) await new Promise((done) => setTimeout(done, delay));
+      nextAt = Date.now() + minimumIntervalMs;
+    });
+    pending = turn.catch(() => {});
+    await turn;
     const path = `/api/internal/load-test/${operation}`,
       nonce = randomUUID(),
       issued = String(Date.now()),
       body = JSON.stringify(input),
       digest = createHash("sha256").update(body).digest("hex"),
       signature = createHmac("sha256", key)
-        .update(["POST", path, nonce, issued, digest].join("\n"))
+        .update(["POST", target.baseUrl, path, nonce, issued, digest].join("\n"))
         .digest("hex");
     const response = await fetcher(target.baseUrl + path, {
       method: "POST",
       body,
       headers: {
         "Content-Type": "application/json",
+        Origin: target.baseUrl,
         "x-load-test-control": signature,
         "x-load-test-issued-at": issued,
         "x-load-test-nonce": nonce,
         "x-load-test-body-sha256": digest,
       },
       redirect: "error",
-      signal: AbortSignal.timeout(30000),
+      signal: AbortSignal.timeout(
+        ["attest", "heartbeat"].includes(operation) ? 5000 : 30000,
+      ),
     });
     if (!response.ok)
       throw Error(`Staging control ${operation} refused (${response.status})`);
@@ -70,6 +99,14 @@ export async function preflightRun(rawTarget, profile, dependencies = {}) {
     }
   };
   target = await check("target-isolation", () => parseTarget(rawTarget));
+  await check("fixture-request-budget", () => {
+    if (profile === "recovery") return;
+    const sizing = profileLimits(profile);
+    if (!sizing || !target || target.budget.maxRequests < sizing[0] * 200)
+      throw Error(
+        "Approve a request budget of at least 200 requests per configured actor before this profile; no traffic has started",
+      );
+  });
   await check("bulk-provider-mode", () => {
     if (profile !== "recovery" && target?.providerMode !== "simulated")
       throw Error(

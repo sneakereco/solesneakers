@@ -26,6 +26,9 @@ const limits = {
   soak: [10000, 20, 7200],
   faults: [500, 5, 600],
 };
+export function profileLimits(profile) {
+  return limits[profile] ? [...limits[profile]] : null;
+}
 export function createRunPlan(target, profile, options = {}) {
   if (!limits[profile])
     throw new Error(

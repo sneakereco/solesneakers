@@ -1,5 +1,9 @@
 import test from "node:test";
 import { roleForSlot } from "../shared/journeys.mjs";
+test("arrival headroom cannot put all checkout roles in VUs that never activate", () => {
+  const roles = Array.from({ length: 1000 }, (_, slot) => roleForSlot(slot, 11980));
+  assert.equal(roles.filter((x) => x >= 95).length, 50);
+});
 test("small diagnostic cohorts include search cart and checkout roles", () => {
   const roles = Array.from({ length: 8 }, (_, slot) => roleForSlot(slot, 8));
   assert.ok(roles.some((x) => x >= 55 && x < 80));

@@ -1,5 +1,18 @@
 import { createRunPlan, acceptanceProfiles } from "../shared/profiles.mjs";
 import { redactArtifact } from "../shared/redact.mjs";
+export async function executeSelectedProfile(profile, run) {
+  if (profile === "smoke") return run(profile);
+  const smoke = await run("smoke");
+  const functional =
+    /^(?:operation:|achieved-cohort$|offered-work$|browser-journeys$|browser-assertions$|eligible-checkout$|durable-invariants$)/;
+  if (
+    smoke.status === "fail" ||
+    smoke.cleanup?.status === "incomplete" ||
+    smoke.gates?.some((gate) => functional.test(gate.name) && gate.status !== "pass")
+  )
+    return { ...smoke, requestedProfile: profile };
+  return run(profile);
+}
 export async function executeRun(target, profile, dependencies) {
   const phase = dependencies.phase,
     plan = dependencies.plan ?? createRunPlan(target, profile, dependencies.options),
@@ -67,8 +80,23 @@ export async function executeRun(target, profile, dependencies) {
       });
     }
     if (enrolled) {
+      let saved = false;
+      context.report = redactArtifact(report);
       try {
-        report.cleanup = await phase.cleanup(context);
+        await phase.report(context);
+        saved = true;
+      } catch {
+        report.gates.push({
+          name: "evidence-storage",
+          status: "unmet",
+          reasons: ["Evidence could not be saved; owned fixtures retained"],
+        });
+        report.status = "unmet";
+      }
+      try {
+        report.cleanup = saved
+          ? await phase.cleanup(context)
+          : { status: "incomplete", reasons: ["Evidence was not saved before cleanup"] };
       } catch {
         report.cleanup = {
           status: "incomplete",
@@ -91,8 +119,26 @@ export async function executeRun(target, profile, dependencies) {
 }
 export async function executeAcceptance(target, dependencies) {
   const reports = [];
-  let arrivalEvidence;
-  for (const item of acceptanceProfiles()) {
+  const now = dependencies.now ?? Date.now,
+    deadline = now() + (target.budget?.maxDurationSeconds ?? 86400) * 1000;
+  let arrivalEvidence,
+    blocked = false;
+  for (const item of [
+    ...acceptanceProfiles(),
+    { profile: "perimeter" },
+    { profile: "sandbox" },
+  ]) {
+    if (blocked || now() >= deadline) {
+      blocked = true;
+      reports.push({
+        ...item,
+        status: "unmet",
+        reasons: [
+          "Not run: a lower stage or the aggregate duration budget stopped escalation",
+        ],
+      });
+      continue;
+    }
     if (
       item.profile === "claim-rush" &&
       !dependencies.capabilities?.includes("specialty-claims")
@@ -111,7 +157,8 @@ export async function executeAcceptance(target, dependencies) {
       ...(item.profile === "arrival" ? { arrivalEvidence } : {}),
     });
     reports.push(report);
-    if (report.status !== "pass" || report.cleanup?.status === "incomplete") break;
+    if (report.status !== "pass" || report.cleanup?.status === "incomplete")
+      blocked = true;
     if (item.profile === "peak") {
       const evidence = report.fullSessionEvidence;
       arrivalEvidence = evidence && {
@@ -131,6 +178,11 @@ export async function executeAcceptance(target, dependencies) {
         ? "unmet"
         : "pass",
     stages: reports,
+    cleanup: {
+      status: reports.some((report) => report.cleanup?.status === "incomplete")
+        ? "incomplete"
+        : "cleaned",
+    },
   };
 }
 export function dryRunDescription(profile) {

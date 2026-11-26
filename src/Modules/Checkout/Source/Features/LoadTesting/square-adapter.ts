@@ -299,7 +299,7 @@ export async function dispatchDueEvents(
   settings: LoadTestSettings,
   config: { notificationUrl: string; signatureKey: string },
   fetcher: typeof fetch = fetch,
-): Promise<{ delivered: number; failed: number }> {
+): Promise<{ delivered: number; failed: number; pending: number }> {
   const expected = `${settings.target.baseUrl}/api/webhooks/square`;
   if (config.notificationUrl !== expected)
     throw new Error("Simulation webhook target mismatch");
@@ -334,5 +334,9 @@ export async function dispatchDueEvents(
       break;
     }
   }
-  return { delivered, failed };
+  return {
+    delivered,
+    failed,
+    pending: (await store.queueItems<QueuedEvent>("events", context.runId, 1)).length,
+  };
 }

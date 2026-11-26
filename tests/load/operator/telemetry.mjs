@@ -60,7 +60,12 @@ export async function startTelemetry(plan, sources) {
         value: redactArtifact(value),
         overheadMs: performance.now() - started,
       });
-      availability[source] = { status: "available" };
+      availability[source] = {
+        status: "available",
+        lastStatus: "available",
+        successfulReads: (availability[source]?.successfulReads ?? 0) + 1,
+        failedReads: availability[source]?.failedReads ?? 0,
+      };
     } catch {
       samples.push({
         source,
@@ -69,7 +74,10 @@ export async function startTelemetry(plan, sources) {
         overheadMs: performance.now() - started,
       });
       availability[source] = {
-        status: "unavailable",
+        status: availability[source]?.successfulReads ? "available" : "unavailable",
+        lastStatus: "unavailable",
+        successfulReads: availability[source]?.successfulReads ?? 0,
+        failedReads: (availability[source]?.failedReads ?? 0) + 1,
         reason: "Source could not be read",
       };
     }

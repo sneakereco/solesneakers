@@ -1,3 +1,26 @@
+export function inventoryViolations(variants) {
+  return variants
+    .filter(
+      (v) =>
+        v.stock < 0 ||
+        v.active < 0 ||
+        v.consumed < 0 ||
+        v.stock + v.active + v.consumed !== v.initial,
+    )
+    .map(() => "Inventory conservation/oversell violation");
+}
+export async function collectInventoryOutcomes(db, products) {
+  return (
+    await db.query(
+      `select v.id,v.stock,coalesce(sum(r.quantity) filter(where r.status='active'),0)::int active,coalesce(sum(r.quantity) filter(where r.status='consumed'),0)::int consumed from public.product_variants v left join public.inventory_reservations r on r.variant_id=v.id where v.id=any($1::uuid[]) group by v.id`,
+      [products.map((x) => x.variantId)],
+    )
+  ).rows.map((row) => ({
+    ...row,
+    initial: products.find((x) => x.variantId === row.id).stock,
+    hot: products.find((x) => x.variantId === row.id).hot,
+  }));
+}
 export async function collectDurableOutcomes(clients, plan, journal) {
   if (journal.targetDigest !== plan.targetDigest)
     throw Error("Invariant target identity mismatch");
@@ -7,16 +30,7 @@ export async function collectDurableOutcomes(clients, plan, journal) {
     .map((x) => x.data);
   const ids = products.map((x) => x.variantId),
     db = clients.db;
-  const variants = (
-    await db.query(
-      `select v.id,v.stock,coalesce(sum(r.quantity) filter(where r.status='active'),0)::int active,coalesce(sum(r.quantity) filter(where r.status='consumed'),0)::int consumed from public.product_variants v left join public.inventory_reservations r on r.variant_id=v.id where v.id=any($1::uuid[]) group by v.id`,
-      [ids],
-    )
-  ).rows.map((row) => ({
-    ...row,
-    initial: products.find((x) => x.variantId === row.id).stock,
-    hot: products.find((x) => x.variantId === row.id).hot,
-  }));
+  const variants = await collectInventoryOutcomes(db, products);
   const orders = (
     await db.query(
       `select o.id,o.status,o.square_order_id,round(o.total*100)::int "totalCents",round(o.shipping*100)::int "shippingCents",round(o.tax_amount*100)::int "taxCents",round(sum(i.line_total)*100)::int "itemCents",count(*)::int "itemCount",bool_and(i.product_name is not null and i.variant_sku is not null and i.unit_price is not null) "hasSnapshot" from public.orders o join public.order_items i on i.order_id=o.id where o.id in(select order_id from public.order_items where variant_id=any($1::uuid[])) group by o.id`,
@@ -58,15 +72,7 @@ export function assertRunInvariants(report, plan) {
     unmet = [];
   if (!report?.variants || !report.orders || !report.captures)
     return { status: "unmet", reasons: ["Durable database/provider evidence missing"] };
-  for (const v of report.variants) {
-    if (
-      v.stock < 0 ||
-      v.active < 0 ||
-      v.consumed < 0 ||
-      v.stock + v.active + v.consumed !== v.initial
-    )
-      reasons.push("Inventory conservation/oversell violation");
-  }
+  reasons.push(...inventoryViolations(report.variants));
   const captureIds = new Map(),
     paidOrders = new Map();
   for (const capture of report.captures) {

@@ -7,8 +7,10 @@ function identity(target, journal, plan) {
     throw Error("Cleanup target identity mismatch");
 }
 function settled(value) {
-  return ["unresolvedHolds", "unresolvedPayments", "notifications"].every(
-    (key) => value?.[key] === 0,
+  return (
+    ["unresolvedHolds", "unresolvedPayments", "notifications"].every(
+      (key) => value?.[key] === 0,
+    ) && (value.providerEvents ?? 0) === 0
   );
 }
 export async function drainRun(target, plan, clients, journal) {
@@ -48,6 +50,15 @@ export async function cleanupRun(target, journal, clients) {
   identity(target, journal);
   const remaining = () => journal.records().filter((x) => x.status !== "deleted");
   try {
+    const owned = journal
+      .records()
+      .filter((x) => ["catalog", "account", "shipping", "registry"].includes(x.kind));
+    if (owned.length && owned.every((x) => x.status === "deleted")) {
+      await clients.finish();
+      await journal.intent?.("lifecycle", "cleanup-complete", { id: "cleanup-complete" });
+      await journal.commit?.("lifecycle", "cleanup-complete");
+      return { status: "cleaned", remaining: [], reasons: [] };
+    }
     if (!settled(await clients.snapshot()))
       return {
         status: "incomplete",
@@ -94,8 +105,11 @@ export function createCleanupClients({ db, admin, control, runId, journal }) {
     variants = () => catalog().map((x) => x.variantId);
   return {
     snapshot: async () => {
-      await control("events", { runId });
-      return collectQueueSnapshot(db, variants());
+      const events = await control("events", { runId });
+      return {
+        ...(await collectQueueSnapshot(db, variants())),
+        providerEvents: events.pending,
+      };
     },
     async deleteOrders() {
       await db.query("begin");
@@ -197,6 +211,12 @@ export function createCleanupClients({ db, admin, control, runId, journal }) {
       }
       throw Error("Unknown cleanup entity");
     },
-    finish: () => control("cleanup", { runId }),
+    finish: async () => {
+      for (let batch = 0; batch < 2000; batch++) {
+        const value = await control("cleanup", { runId });
+        if (value.cleaned === true) return;
+      }
+      throw Error("Adapter cleanup exceeded its ownership budget");
+    },
   };
 }

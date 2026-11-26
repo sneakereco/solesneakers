@@ -78,5 +78,20 @@ jobs:
       - name: Measurement browser suites
         run: npm run test:measurement:browser
 
+      - name: Verify locked load runner without staging access
+        run: node --input-type=module -e "import { bootstrapRunner } from './tests/load/runner/bootstrap.mjs'; const runner = await bootstrapRunner(); console.log('Verified local load toolchain', runner.toolchain.node, runner.toolchain.k6.version);"
+
+      - name: Bounded load harness checks
+        env:
+          LOAD_TEST_ENABLED: "false"
+          K6_BINARY: ${{ github.workspace }}/.load-test/tools/verified-linux-x64/k6-v2.4.0-linux-amd64/k6
+        run: npm run test:load
+
+      - name: Confirm acceptance dry run has no staging access
+        run: npm run load:staging -- --dry-run --profile acceptance
+
       - name: Build without deployment credentials
         run: npx next build
+
+      - name: Build with positively isolated load mode
+        run: node tests/load/runner/build-check.mjs isolated

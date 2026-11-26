@@ -78,6 +78,71 @@ import { EventEmitter } from "node:events";
 import { collectVitals } from "../browser/vitals.mjs";
 import { captureJourneyRequests } from "../browser/capture.mjs";
 import { installBulkProviderRoutes } from "../browser/provider-shims.mjs";
+test("enrolled Supabase traffic remains real and never receives the application phase credential", async () => {
+  let handler,
+    continued,
+    blocked = false;
+  await installBulkProviderRoutes(
+    {
+      route: async (_, fn) => {
+        handler = fn;
+      },
+    },
+    {
+      baseUrl: "https://shop.test",
+      supabaseUrl: "https://enrolled.supabase.co",
+      providerMode: "simulated",
+      runId: "run",
+      slot: 1,
+      credential: "private",
+    },
+  );
+  await handler({
+    request: () => ({
+      url: () => "https://enrolled.supabase.co/rest/v1/profiles",
+      headers: () => ({
+        "x-load-test-credential": "private",
+        "x-load-test-slot": "1",
+        authorization: "Bearer customer-session",
+      }),
+    }),
+    continue: async (options) => {
+      continued = options;
+    },
+    abort: async () => {
+      blocked = true;
+    },
+  });
+  assert.equal(blocked, false);
+  assert.equal(continued.headers["x-load-test-credential"], undefined);
+  assert.equal(continued.headers.authorization, "Bearer customer-session");
+});
+test("public image requests cannot carry a shopper credential into a forbidden proxy route", async () => {
+  let handler, continued;
+  await installBulkProviderRoutes(
+    {
+      route: async (_, fn) => {
+        handler = fn;
+      },
+    },
+    { baseUrl: "https://shop.test", providerMode: "simulated", runId: "run", slot: 1 },
+  );
+  await handler({
+    request: () => ({
+      url: () => "https://shop.test/images/logo.png",
+      headers: () => ({
+        "x-load-test-credential": "private",
+        "x-load-test-slot": "1",
+        accept: "image/*",
+      }),
+    }),
+    continue: async (options) => {
+      continued = options;
+    },
+  });
+  assert.equal(continued?.headers?.["x-load-test-credential"], undefined);
+  assert.equal(continued?.headers?.accept, "image/*");
+});
 test("missing Chromium executable blocks browser evidence unless locked runtime installs", async () => {
   let installed = false;
   await assert.rejects(

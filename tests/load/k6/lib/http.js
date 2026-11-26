@@ -55,8 +55,12 @@ export function createTransport(config, slot) {
             ...input.headers,
             "content-type": "application/json",
             Origin: config.baseUrl,
-            "x-load-test-credential": config.credential,
-            "x-load-test-slot": String(slot),
+            ...(input.operation === "asset"
+              ? {}
+              : {
+                  "x-load-test-credential": config.credential,
+                  "x-load-test-slot": String(slot),
+                }),
           },
           redirects: 0,
           timeout: "15s",

@@ -1,5 +1,6 @@
 import { Redis } from "@upstash/redis";
 import type { LoadTestSettings } from "./settings";
+import { loadDigest } from "./contracts";
 
 export type RunRecord = {
   runId: string;
@@ -31,7 +32,7 @@ export interface RunStore {
   ): Promise<T>;
   queueItems<T>(kind: string, id: string, limit: number, offset?: number): Promise<T[]>;
   acknowledge(kind: string, id: string, value: unknown): Promise<void>;
-  purgeRun(runId: string): Promise<number>;
+  purgeRun(runId: string): Promise<{ removed: number; remaining: number }>;
 }
 export type QueueEffect<T> = { kind: string; id: string; value: (next: T) => unknown };
 const COMPARE_SET = `local current = redis.call('GET', KEYS[1]); local revision = 0; if current then revision = cjson.decode(current).revision end; if revision ~= tonumber(ARGV[1]) then return 0 end; redis.call('SET', KEYS[1], ARGV[2]); if KEYS[2] ~= KEYS[1] then redis.call('SADD', KEYS[2], KEYS[1]) end; if #KEYS == 3 then redis.call('RPUSH', KEYS[3], ARGV[3]); redis.call('SADD',KEYS[2],KEYS[3]) end; return 1`;
@@ -39,10 +40,12 @@ class RedisRunStore implements RunStore {
   constructor(
     private redis: Redis,
     private prefix: string,
+    private resourceLock: string,
   ) {}
   private key(kind: string, id: string) {
     if (!/^[\w.:-]{1,250}$/.test(kind) || !/^[\w.@:-]{1,500}$/.test(id))
       throw new Error("Invalid load registry key");
+    if (kind === "lock" && id === "target") return this.resourceLock;
     return `${this.prefix}:${kind}:${id}`;
   }
   async get<T>(kind: string, id: string): Promise<T | null> {
@@ -119,11 +122,13 @@ class RedisRunStore implements RunStore {
   async purgeRun(runId: string) {
     const index = this.key("keys", runId);
     let removed = 0;
-    for (let batch = 0; batch < 10000; batch++) {
-      const keys = (await this.redis.srandmember<string[]>(index, 100)) ?? [];
+    for (let batch = 0; batch < 10; batch++) {
+      const keys = ((await this.redis.srandmember<string[]>(index, 100)) ?? []).filter(
+        (key) => key !== this.key("run", runId),
+      );
       if (!keys.length) {
         await this.redis.del(index);
-        return removed;
+        return { removed, remaining: 0 };
       }
       if (keys.some((key) => !key.startsWith(this.prefix + ":")))
         throw Error("Registry ownership index invalid");
@@ -134,12 +139,13 @@ class RedisRunStore implements RunStore {
       );
       removed += keys.length;
     }
-    throw Error("Cleanup index exceeded budget");
+    return { removed, remaining: await this.redis.scard(index) };
   }
 }
 export function createLoadRunStore(settings: LoadTestSettings): RunStore {
   return new RedisRunStore(
     new Redis({ url: settings.target.resources.redis.url, token: settings.redisToken }),
     `soles:load:{${settings.target.expected.deploymentId}}`,
+    `soles:load:resource:{${loadDigest(settings.target.resources)}}:lock`,
   );
 }

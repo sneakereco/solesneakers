@@ -9,6 +9,7 @@ import { collectVitals, evaluateVitals } from "./vitals.mjs";
 import { captureJourneyRequests } from "./capture.mjs";
 import { installBulkProviderRoutes } from "./provider-shims.mjs";
 import { runRenderedJourney, applyConsentChoice } from "./journeys.mjs";
+import { browserCookies } from "./cookies.mjs";
 const require = createRequire(import.meta.url),
   tools = require("../config/toolchain.json"),
   exec = promisify(execFile);
@@ -138,24 +139,11 @@ export async function runBrowserCohort(plan, fixtures, options) {
             isMobile: viewport === "mobile",
             hasTouch: viewport === "mobile",
             serviceWorkers: "block",
-            extraHTTPHeaders:
-              options.mode === "perimeter"
-                ? {}
-                : {
-                    "x-load-test-credential": options.credential,
-                    "x-load-test-slot": String(slot),
-                  },
+            extraHTTPHeaders: {},
           });
           if (options.mode !== "perimeter")
             await context.addCookies(
-              identity.cookies.map((cookie) => ({
-                name: cookie.name,
-                value: cookie.value,
-                url: options.target.baseUrl,
-                httpOnly: true,
-                secure: true,
-                sameSite: "Lax",
-              })),
+              browserCookies(identity.cookies, options.target.baseUrl),
             );
           egress =
             options.mode === "perimeter"
@@ -165,6 +153,8 @@ export async function runBrowserCohort(plan, fixtures, options) {
                   runId: plan.runId,
                   baseUrl: options.target.baseUrl,
                   providerMode: options.target.providerMode,
+                  credential: options.credential,
+                  supabaseUrl: options.target.resources?.supabase?.url,
                 });
           const page = await context.newPage();
           page.setDefaultTimeout(15000);
@@ -173,7 +163,17 @@ export async function runBrowserCohort(plan, fixtures, options) {
           });
           await collectVitals(page, (value) => observations.push(value), viewport);
           capture = captureJourneyRequests(page, options.target.baseUrl);
-          if (options.ready){const initial=await page.goto(options.target.baseUrl,{waitUntil:'domcontentloaded'});if(!initial?.ok()||new URL(page.url()).origin!==options.target.baseUrl)throw Error('Browser admission failed before ready barrier');admitted=true;started++;sample(1);await options.ready(slot);}
+          if (options.ready) {
+            const initial = await page.goto(options.target.baseUrl, {
+              waitUntil: "domcontentloaded",
+            });
+            if (!initial?.ok() || new URL(page.url()).origin !== options.target.baseUrl)
+              throw Error("Browser admission failed before ready barrier");
+            admitted = true;
+            started++;
+            sample(1);
+            await options.ready(slot);
+          }
           const release = options.phaseStart ?? Date.now();
           if (Date.now() < release)
             await new Promise((resolve) => setTimeout(resolve, release - Date.now()));
@@ -185,7 +185,7 @@ export async function runBrowserCohort(plan, fixtures, options) {
             });
             if (!response?.ok() || new URL(page.url()).origin !== options.target.baseUrl)
               throw Error("Storefront/perimeter admission blocked");
-            const storeLink = page.locator('a[href="/store"]').first();
+            const storeLink = page.locator('a[href="/store"]:visible').first();
             if (await storeLink.count()) {
               await storeLink.click();
               await page.waitForURL((url) => url.pathname === "/store");
@@ -207,6 +207,7 @@ export async function runBrowserCohort(plan, fixtures, options) {
               identity,
               viewport,
               baseUrl: options.target.baseUrl,
+              credential: options.credential,
               mode: options.mode,
               emit: (value) => {
                 result.operations.push(value);

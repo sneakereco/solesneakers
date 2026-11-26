@@ -1,4 +1,7 @@
-import { handleLoadTestControl } from "../../../Source/Features/LoadTesting/control-handler";
+import {
+  handleLoadTestControl,
+  verifyControlHeaders,
+} from "../../../Source/Features/LoadTesting/control-handler";
 import {
   verifyHarnessRequest,
   issuePhaseCredential,
@@ -11,6 +14,19 @@ import {
 } from "./fixtures";
 
 describe("load control plane", () => {
+  test("a signed control command cannot be retargeted to another enrolled origin sharing a key", () => {
+    const { settings } = fixtureSettings();
+    const request = signControlRequest(settings, "attest", { nonce: "origin-bound" });
+    const other = {
+      ...settings,
+      target: { ...settings.target, baseUrl: "https://other-fixture.example.test" },
+    };
+    const relocated = new Request(
+      other.target.baseUrl + "/api/internal/load-test/attest",
+      { method: "POST", headers: request.headers, body: "{}" },
+    );
+    expect(verifyControlHeaders(relocated, other)).toBe(false);
+  });
   test("only a live worker credential admits its own slots after partitioning", async () => {
     const { settings } = fixtureSettings(),
       store = new MemoryRunStore(),

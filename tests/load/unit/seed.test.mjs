@@ -21,6 +21,37 @@ function memoryJournal() {
     },
   };
 }
+test("operator stop during preparation prevents further account or catalog writes", async () => {
+  let checks = 0,
+    creates = 0;
+  await assert.rejects(
+    seedFixtures(
+      targetFixture(),
+      {
+        runId: "11111111-1111-4111-8111-111111111111",
+        accountPoolSize: 2,
+        ordinaryStockUnits: 10,
+        hotStock: 1,
+      },
+      {
+        assertActive: async () => {
+          if (checks++) throw Error("Operator stop requested");
+        },
+        accounts: {
+          ensure: async (data) => {
+            creates++;
+            return data;
+          },
+        },
+        catalog: { ensure: () => assert.fail("catalog after stop") },
+        register: () => assert.fail("registry after stop"),
+      },
+      memoryJournal(),
+    ),
+    /stop/,
+  );
+  assert.equal(creates, 1);
+});
 test("adopt account after crash between create and journal commit", async () => {
   const accounts = new Map(),
     catalog = new Map(),

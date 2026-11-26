@@ -1,7 +1,66 @@
 import test from "node:test";
 import assert from "node:assert/strict";
-import { executeRun } from "../operator/orchestrate.mjs";
+import {
+  executeRun,
+  executeAcceptance,
+  executeSelectedProfile,
+} from "../operator/orchestrate.mjs";
+test("selected diagnostic load performs a functional smoke first and stops on its failure", async () => {
+  for (const failed of [true, false]) {
+    const calls = [];
+    await executeSelectedProfile("peak", async (profile) => {
+      calls.push(profile);
+      return {
+        status: failed ? "fail" : "unmet",
+        gates: [
+          {
+            name: failed ? "durable-invariants" : "tier-parity",
+            status: failed ? "fail" : "unmet",
+          },
+        ],
+        cleanup: { status: "cleaned" },
+      };
+    });
+    assert.deepEqual(calls, failed ? ["smoke"] : ["smoke", "peak"]);
+  }
+});
 import { main } from "../operator/cli.mjs";
+test("acceptance includes bounded perimeter and Sandbox stages and preserves all absent specialty branches", async () => {
+  const calls = [];
+  const result = await executeAcceptance(
+    { budget: { maxDurationSeconds: 86400, maxRequests: 1000000 } },
+    {
+      capabilities: ["shopping"],
+      run: async (profile) => {
+        calls.push(profile);
+        return { profile, status: "pass", cleanup: { status: "cleaned" } };
+      },
+    },
+  );
+  assert.ok(calls.includes("perimeter"));
+  assert.ok(calls.includes("sandbox"));
+  assert.equal(
+    result.stages.filter((x) => x.profile === "claim-rush" && x.status === "unmet")
+      .length,
+    5,
+  );
+  assert.equal(result.status, "unmet");
+});
+test("acceptance stops later load after a lower failure and records unrun branches", async () => {
+  const calls = [];
+  const result = await executeAcceptance(
+    { budget: { maxDurationSeconds: 86400, maxRequests: 1000000 } },
+    {
+      run: async (profile) => {
+        calls.push(profile);
+        return { profile, status: "fail", cleanup: { status: "cleaned" } };
+      },
+    },
+  );
+  assert.deepEqual(calls, ["smoke"]);
+  assert.equal(result.status, "fail");
+  assert.ok(result.stages.some((x) => x.profile === "soak" && x.status === "unmet"));
+});
 function setup(failAt) {
   const order = [];
   const phase = (name) => async () => {
@@ -80,6 +139,7 @@ test("normal lifecycle orders seed sessions coordinated measurement drain assert
     "revoke",
     "drain",
     "assert",
+    "report",
     "cleanup",
     "report",
   ]);

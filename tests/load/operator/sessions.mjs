@@ -1,10 +1,34 @@
 import { randomUUID } from "node:crypto";
 import { createServerClient } from "@supabase/ssr";
+import { boundedFetch } from "./preflight.mjs";
+export function accountSlotsForPlan(plan) {
+  const slots = new Set(),
+    budget = Math.round(plan.totalSlots * 0.3);
+  let offset = plan.httpSlots;
+  for (const count of [plan.browserViewports.mobile, plan.browserViewports.desktop]) {
+    const desired = Math.min(
+      budget - slots.size,
+      count ? Math.max(1, Math.round(count * 0.3)) : 0,
+    );
+    for (let index = 0; index < desired; index++)
+      slots.add(offset + Math.floor(((index + 0.5) * count) / desired));
+    offset += count;
+  }
+  let remaining = budget - slots.size;
+  for (let slot = 0; slot < plan.httpSlots && remaining > 0; slot++)
+    if (slot % 10 < 3) {
+      slots.add(slot);
+      remaining--;
+    }
+  if (remaining) throw Error("Insufficient disjoint account slots");
+  return slots;
+}
 
 export function createSessionAuth(target, publishableKey, verify) {
   async function authenticate(account, previous) {
     let cookies = [...(previous?.cookies ?? [])];
     const client = createServerClient(target.resources.supabase.url, publishableKey, {
+      global: { fetch: boundedFetch },
       auth: { autoRefreshToken: false },
       cookies: {
         getAll: () => cookies,
@@ -36,8 +60,10 @@ export function createSessionAuth(target, publishableKey, verify) {
 export async function prepareSessionPool(target, plan, fixtures, clients) {
   const accounts = [];
   // Bounded control-plane login, outside measured storefront traffic. No OTP.
-  for (const account of fixtures.accounts)
+  for (const account of fixtures.accounts) {
+    await clients.assertActive?.();
     accounts.push({ account, session: await clients.auth.login(account), leased: false });
+  }
   return { runId: plan.runId, accounts, auth: clients.auth, activeSlots: new Set() };
 }
 export async function leaseShopper(

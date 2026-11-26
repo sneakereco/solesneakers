@@ -17,9 +17,31 @@ export async function installBulkProviderRoutes(context, fixture) {
   if (fixture.providerMode !== "simulated")
     throw Error("Browser SDK shims require explicit simulated mode");
   const counters = { square: 0, turnstile: 0, blockedThirdParty: 0, realThirdParty: 0 };
+  const primary = fixture.supabaseUrl ? new URL(fixture.supabaseUrl).origin : null;
+  if (context.routeWebSocket)
+    await context.routeWebSocket("**/*", (socket) => {
+      const url = new URL(socket.url()),
+        httpsOrigin = url.origin.replace(/^wss:/, "https:");
+      if (url.protocol === "wss:" && [fixture.baseUrl, primary].includes(httpsOrigin))
+        socket.connectToServer();
+      else void socket.close({ code: 1008, reason: "Bulk test egress is restricted" });
+    });
   await context.route("**/*", async (route) => {
     const url = new URL(route.request().url());
-    if (url.origin === fixture.baseUrl) return route.continue();
+    if (url.origin === fixture.baseUrl || url.origin === primary) {
+      const headers = { ...route.request().headers() };
+      delete headers["x-load-test-credential"];
+      delete headers["x-load-test-slot"];
+      if (
+        url.origin === fixture.baseUrl &&
+        !/^\/(?:images\/|_next\/|favicon\.ico$)/.test(url.pathname) &&
+        fixture.credential
+      ) {
+        headers["x-load-test-credential"] = fixture.credential;
+        headers["x-load-test-slot"] = String(fixture.slot);
+      }
+      return route.continue({ headers });
+    }
     if (
       url.origin === "https://sandbox.web.squarecdn.com" &&
       url.pathname === "/v1/square.js"

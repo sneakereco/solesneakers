@@ -4,6 +4,7 @@ export function roleForSlot(slot, total) {
   if (!Number.isInteger(slot) || slot < 0 || slot >= total)
     throw Error("Invalid shopper slot");
   if (total < 20 && slot === total - 1) return 97.5;
+  if (total >= 100) return ((slot * 37) % 100) + 0.5;
   return (((slot + 0.5) * 100) / total) % 100;
 }
 function json(response) {

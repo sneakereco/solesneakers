@@ -59,14 +59,14 @@ export class MemoryRunStore implements RunStore {
   purgeRun(runId: string) {
     let removed = 0;
     for (const [key, value] of this.values) {
-      if ((value as { runId?: string })?.runId === runId) {
+      if ((value as { runId?: string })?.runId === runId && !key.startsWith("run:")) {
         this.values.delete(key);
         removed++;
       }
     }
     for (const key of this.queues.keys())
       if (key.endsWith(":" + runId)) this.queues.delete(key);
-    return Promise.resolve(removed);
+    return Promise.resolve({ removed, remaining: 0 });
   }
 }
 export function fixtureSettings() {
@@ -126,7 +126,7 @@ export function signControlRequest(
     path = `/api/internal/load-test/${operation}`,
     digest = createHash("sha256").update(text).digest("hex"),
     signature = createHmac("sha256", settings.signingKey)
-      .update(["POST", path, nonce, issued, digest].join("\n"))
+      .update(["POST", settings.target.baseUrl, path, nonce, issued, digest].join("\n"))
       .digest("hex");
   return new Request(`${settings.target.baseUrl}${path}`, {
     method: "POST",

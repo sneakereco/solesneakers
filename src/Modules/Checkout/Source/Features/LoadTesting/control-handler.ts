@@ -63,7 +63,7 @@ export function verifyControlHeaders(
   )
     return false;
   const expected = createHmac("sha256", settings.signingKey)
-    .update([request.method, url.pathname, nonce, issued, digest].join("\n"))
+    .update([request.method, url.origin, url.pathname, nonce, issued, digest].join("\n"))
     .digest("hex");
   const a = Buffer.from(expected),
     b = Buffer.from(signature);
@@ -115,14 +115,21 @@ export async function handleLoadTestControl(
         input.expiresAt > Date.now() + 4 * 3600000
       )
         return json({ error: "Invalid phase bounds" }, 400);
-      await store.mutate<{ runId: string; expiresAt: number }>(
+      await store.mutate<{ runId: string; expiresAt: number; targetDigest: string }>(
         "lock",
         "target",
-        { runId: input.runId, expiresAt: 0 },
+        { runId: input.runId, expiresAt: 0, targetDigest: settings.target.digest },
         (old) => {
-          if (old.expiresAt !== 0 && old.runId !== input.runId)
+          if (
+            old.expiresAt !== 0 &&
+            (old.runId !== input.runId || old.targetDigest !== settings.target.digest)
+          )
             throw new Error("Another run owns this deployment");
-          return { runId: input.runId, expiresAt: input.expiresAt };
+          return {
+            runId: input.runId,
+            expiresAt: input.expiresAt,
+            targetDigest: settings.target.digest,
+          };
         },
       );
       const run: RunRecord = {
@@ -142,10 +149,18 @@ export async function handleLoadTestControl(
     if (operation === "cleanup") {
       if (run && (!run.revoked || run.targetDigest !== settings.target.digest))
         return json({ error: "Revoke admission before cleanup" }, 409);
-      const removed = await store.purgeRun(runId);
-      const lock = await store.get<{ runId: string }>("lock", "target");
-      if (lock?.runId === runId) await store.remove("lock", "target");
-      return json({ cleaned: true, removed });
+      const lock = await store.get<{ runId: string; targetDigest: string }>(
+        "lock",
+        "target",
+      );
+      if (lock && (lock.runId !== runId || lock.targetDigest !== settings.target.digest))
+        return json({ error: "Another run or deployment owns these resources" }, 409);
+      const progress = await store.purgeRun(runId);
+      if (progress.remaining === 0) {
+        await store.remove("run", runId);
+        if (lock?.runId === runId) await store.remove("lock", "target");
+      }
+      return json({ cleaned: progress.remaining === 0, ...progress });
     }
     if (!run || run.targetDigest !== settings.target.digest)
       return json({ error: "Run not found" }, 404);

@@ -11,6 +11,7 @@ export async function seedFixtures(target, plan, clients, journal) {
   };
   const registered = [];
   if (clients.shipping) {
+    await clients.assertActive?.();
     const prior = journal.records().find((x) => x.kind === "shipping");
     const data = prior?.data ?? { id: randomUUID(), runId: plan.runId };
     await journal.intent("shipping", "accessories", data);
@@ -19,6 +20,7 @@ export async function seedFixtures(target, plan, clients, journal) {
     else await journal.markDeleted("shipping", "accessories");
   }
   async function ensure(kind, key, make, client) {
+    await clients.assertActive?.();
     const prior = journal.records().find((x) => x.kind === kind && x.key === key);
     const data = prior?.data ?? make();
     await journal.intent(kind, key, data);
@@ -112,6 +114,7 @@ export async function seedFixtures(target, plan, clients, journal) {
     slot: 0,
   });
   for (let offset = 0; offset < registered.length; offset += 100) {
+    await clients.assertActive?.();
     const data = { id: String(offset), fixtures: registered.slice(offset, offset + 100) };
     await journal.intent("registry", String(offset), data);
     await clients.register(data.fixtures);

@@ -1,4 +1,24 @@
 import test from "node:test";
+test("post-hold collector shutdown does not erase valid earlier coverage", async () => {
+  let calls = 0;
+  const handle = await startTelemetry(
+    { runId: "run" },
+    {
+      application: {
+        intervalMs: 1000,
+        read: async () => {
+          if (calls++) throw Error("worker already exited");
+          return { requests: 10 };
+        },
+      },
+    },
+  );
+  await new Promise((done) => setTimeout(done, 1100));
+  const result = await handle.stop();
+  assert.equal(result.availability.application.status, "available");
+  assert.equal(result.availability.application.lastStatus, "unavailable");
+  assert.ok(result.samples.some((x) => x.value.error));
+});
 import assert from "node:assert/strict";
 import {
   startTelemetry,

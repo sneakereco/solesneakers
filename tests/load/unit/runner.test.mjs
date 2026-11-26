@@ -10,7 +10,13 @@ import {
 import { createRunPlan } from "../shared/profiles.mjs";
 import { parseTarget } from "../shared/contracts.mjs";
 import { targetFixture } from "./fixtures.mjs";
-test('official Windows and Linux executable banners parse the same locked version',()=>{for(const banner of ['k6.exe v2.4.0 (commit/test, windows/amd64)','k6 v2.4.0 (commit/test, linux/amd64)'])assert.equal(parseK6Version(banner),'2.4.0');});
+test("official Windows and Linux executable banners parse the same locked version", () => {
+  for (const banner of [
+    "k6.exe v2.4.0 (commit/test, windows/amd64)",
+    "k6 v2.4.0 (commit/test, linux/amd64)",
+  ])
+    assert.equal(parseK6Version(banner), "2.4.0");
+});
 test("locked toolchain rejects version checksum and browser drift", () => {
   for (const change of [
     { node: "24.1.0" },

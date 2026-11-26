@@ -1,4 +1,47 @@
 import { expect } from "@playwright/test";
+import { browserCookies } from "./cookies.mjs";
+export async function probeBrowserProtocol(context, options, product) {
+  for (const [operation, path, method, body] of [
+    ["catalog", "/api/store/products?page=1&limit=20", "GET"],
+    [
+      "cart_validate",
+      "/api/cart/validate",
+      "POST",
+      { items: [{ productId: product.id, variantId: product.variantId, quantity: 1 }] },
+    ],
+  ]) {
+    const at = Date.now();
+    let outcome = "technical";
+    try {
+      const response = await context.request.fetch(options.baseUrl + path, {
+        method,
+        data: body,
+        headers: {
+          Origin: options.baseUrl,
+          ...(options.credential
+            ? {
+                "x-load-test-credential": options.credential,
+                "x-load-test-slot": String(options.identity.slot),
+              }
+            : {}),
+        },
+        maxRedirects: 0,
+        timeout: 15000,
+      });
+      const value = await response.json();
+      if (
+        response.ok() &&
+        (operation === "catalog"
+          ? Array.isArray(value.products) && Number.isFinite(value.total)
+          : Array.isArray(value.items) && Array.isArray(value.removed))
+      )
+        outcome = "success";
+    } catch {
+      /* The terminal technical result is retained below. */
+    }
+    options.emit({ operation, outcome, at, durationMs: Date.now() - at });
+  }
+}
 export async function applyConsentChoice(page, choice) {
   const button = page.getByRole("button", {
     name:
@@ -127,16 +170,7 @@ async function loginMerge(page, context, options, product) {
   const guest = await readCart(page, null);
   if (!guest.some((x) => x.variantId === product.variantId))
     throw Error("Guest cart fixture was not added");
-  await context.addCookies(
-    options.identity.cookies.map((cookie) => ({
-      name: cookie.name,
-      value: cookie.value,
-      url: options.baseUrl,
-      httpOnly: true,
-      secure: true,
-      sameSite: "Lax",
-    })),
-  );
+  await context.addCookies(browserCookies(options.identity.cookies, options.baseUrl));
   await page.evaluate(() => window.dispatchEvent(new Event("sessionUpdate")));
   await expect
     .poll(async () =>
@@ -303,38 +337,7 @@ export async function runRenderedJourney(page, context, options) {
       });
     }
   }
-  if (options.mode !== "perimeter")
-    for (const [operation, path, method, body] of [
-      ["catalog", "/api/store/products?page=1&limit=20", "GET"],
-      [
-        "cart_validate",
-        "/api/cart/validate",
-        "POST",
-        { items: [{ productId: product.id, variantId: product.variantId, quantity: 1 }] },
-      ],
-    ]) {
-      const at = Date.now();
-      let outcome = "technical";
-      try {
-        const response = await context.request.fetch(options.baseUrl + path, {
-          method,
-          data: body,
-          maxRedirects: 0,
-          timeout: 15000,
-        });
-        const value = await response.json();
-        if (
-          response.ok() &&
-          (operation === "catalog"
-            ? Array.isArray(value.products)
-            : Array.isArray(value.items))
-        )
-          outcome = "success";
-      } catch {
-        /* Recorded as an unexpected technical outcome. */
-      }
-      options.emit({ operation, outcome, at, durationMs: Date.now() - at });
-    }
+  if (options.mode !== "perimeter") await probeBrowserProtocol(context, options, product);
   await goto(page, options.baseUrl, "/store");
   await goto(page, options.baseUrl, `/store?q=${encodeURIComponent(product.name)}`);
   await goto(page, options.baseUrl, `/store/${product.id}`);

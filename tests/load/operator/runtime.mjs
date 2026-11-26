@@ -8,12 +8,17 @@ import { Client } from "pg";
 import { parseTarget, assertAttestation } from "../shared/contracts.mjs";
 import { createRunPlan } from "../shared/profiles.mjs";
 import { validateDispatchWindow } from "../shared/campaign.mjs";
-import { preflightRun, createControlClient } from "./preflight.mjs";
-import { executeRun, executeAcceptance } from "./orchestrate.mjs";
+import { preflightRun, createControlClient, boundedFetch } from "./preflight.mjs";
+import { executeRun, executeAcceptance, executeSelectedProfile } from "./orchestrate.mjs";
 import { openJournal, privateJson, secureDirectory } from "./journal.mjs";
 import { seedFixtures } from "./seed.mjs";
 import { createFixtureClients } from "./fixture-clients.mjs";
-import { createSessionAuth, prepareSessionPool, leaseShopper } from "./sessions.mjs";
+import {
+  createSessionAuth,
+  prepareSessionPool,
+  leaseShopper,
+  accountSlotsForPlan,
+} from "./sessions.mjs";
 import { launchWorkers, stopJournalWorkers } from "./workers.mjs";
 import {
   startTelemetry,
@@ -22,10 +27,16 @@ import {
   collectQueueSnapshot,
   readK6LiveCounters,
 } from "./telemetry.mjs";
-import { collectDurableOutcomes } from "./assertions.mjs";
+import {
+  collectDurableOutcomes,
+  collectInventoryOutcomes,
+  inventoryViolations,
+} from "./assertions.mjs";
 import { drainRun, cleanupRun, createCleanupClients } from "./cleanup.mjs";
 import { evaluateRun, readWorkerResult, writeRunReport } from "./report.mjs";
 import { runBrowserCohort } from "../browser/probe.mjs";
+import { enrollTarget } from "./enroll.mjs";
+import { createErrorGuard } from "./guards.mjs";
 const exec = promisify(execFile);
 export async function loadOperatorEnvironment() {
   let env = { ...process.env };
@@ -61,10 +72,23 @@ async function operatorSetup(env) {
   let raw;
   try {
     raw = JSON.parse(await readFile(path, "utf8"));
-  } catch {
-    throw Error(
-      "Staging target is not enrolled. After deployment, generate .load-test/staging.json from the approved staging manifest and immutable deployment URL.",
+  } catch (error) {
+    if (error.code !== "ENOENT") throw Error("Staging target config is invalid");
+    if (!env.LOAD_TEST_RESOURCE_MANIFEST || !env.LOAD_TEST_BASE_URL)
+      throw Error(
+        "Deploy staging, authorize its enrollment environment, and supply LOAD_TEST_BASE_URL with the immutable deployment URL.",
+      );
+    const commit =
+      env.LOAD_TEST_EXPECTED_COMMIT ??
+      (await exec("git", ["rev-parse", "HEAD"], { windowsHide: true })).stdout.trim();
+    raw = await enrollTarget(
+      JSON.parse(env.LOAD_TEST_RESOURCE_MANIFEST),
+      env.LOAD_TEST_BASE_URL,
+      commit,
+      (target) => createControlClient(target, env.LOAD_TEST_SIGNING_KEY)("attest", {}),
     );
+    await secureDirectory(resolve(".load-test"));
+    await privateJson(path, raw);
   }
   return parseTarget(raw);
 }
@@ -89,6 +113,7 @@ export async function runCommand(input) {
     target = await operatorSetup(env),
     control = createControlClient(target, env.LOAD_TEST_SIGNING_KEY);
   let runner;
+  const commandDeadline = Date.now() + target.budget.maxDurationSeconds * 1000;
   const db = new Client({
     connectionString: env.SUPABASE_DB_URL,
     connectionTimeoutMillis: 10000,
@@ -103,7 +128,10 @@ export async function runCommand(input) {
     admin = createClient(
       target.resources.supabase.url,
       env.SUPABASE_SECRET_KEY ?? "missing",
-      { auth: { persistSession: false, autoRefreshToken: false } },
+      {
+        auth: { persistSession: false, autoRefreshToken: false },
+        global: { fetch: boundedFetch },
+      },
     );
   const resources = async () => {
     verifyDatabaseBinding(target, env.SUPABASE_DB_URL);
@@ -129,11 +157,29 @@ export async function runCommand(input) {
   const preflight = (profile) =>
     preflightRun(target, profile, { env, control, resources, tooling });
   const run = async (profile, options = {}) => {
+    if (profile === "faults" && !options.fault)
+      options = { ...options, fault: "response-loss" };
+    if (["perimeter", "sandbox"].includes(profile)) {
+      const { probeBoundedContracts } = await import("./provider-contracts.mjs");
+      return probeBoundedContracts(profile, target, env);
+    }
     const plan = createRunPlan(target, profile, options),
       artifactDir = resolve(".load-test/runs", plan.runId);
     await secureDirectory(artifactDir);
     const journal = await openJournal(plan, artifactDir);
     await privateJson(join(artifactDir, "run-plan.json"), plan);
+    process.stderr.write(`Load run ${plan.runId}; private artifacts: ${artifactDir}\n`);
+    const assertActive = async () => {
+      if (Date.now() >= commandDeadline)
+        throw Error("The command duration budget was exhausted");
+      try {
+        await readFile(join(artifactDir, "stop.request"));
+      } catch (error) {
+        if (error.code === "ENOENT") return;
+        throw error;
+      }
+      throw Error("Operator stop requested");
+    };
     const clients = { db, control };
     let cleanupClients,
       telemetryHandle,
@@ -147,12 +193,15 @@ export async function runCommand(input) {
       stopReason;
     const phase = {
       preflight: () => preflight(profile),
-      recheck: async () =>
-        assertAttestation(
+      recheck: async () => {
+        if (Date.now() >= commandDeadline)
+          throw Error("The command duration budget was exhausted");
+        return assertAttestation(
           target,
           await control("attest", {}),
           profile === "claim-rush" ? ["shopping", "specialty-claims"] : ["shopping"],
-        ),
+        );
+      },
       register: async () =>
         control("register", {
           runId: plan.runId,
@@ -166,7 +215,10 @@ export async function runCommand(input) {
         const fixtures = await seedFixtures(
           target,
           plan,
-          createFixtureClients({ admin, db, control, runId: plan.runId }),
+          {
+            ...createFixtureClients({ admin, db, control, runId: plan.runId }),
+            assertActive,
+          },
           journal,
         );
         cleanupClients = createCleanupClients({
@@ -180,22 +232,13 @@ export async function runCommand(input) {
       },
       sessions: async (context) => {
         const pool = await prepareSessionPool(target, plan, context.fixtures, {
+          assertActive,
           auth: createSessionAuth(target, env.NEXT_PUBLIC_SUPABASE_ANON_KEY),
         });
         context.fixtures.sessions = [];
-        const browserAccounts = new Set(
-          Array.from(
-            { length: Math.max(1, Math.round(plan.browserSlots * 0.3)) },
-            (_, i) => plan.httpSlots + i,
-          ),
-        );
-        let ordinaryAccounts = Math.round(plan.totalSlots * 0.3) - browserAccounts.size;
+        const accountSlots = accountSlotsForPlan(plan);
         for (let slot = 0; slot < plan.totalSlots; slot++) {
-          const account =
-            slot >= plan.httpSlots
-              ? browserAccounts.has(slot)
-              : ordinaryAccounts > 0 && slot % 10 < 3;
-          if (account && slot < plan.httpSlots) ordinaryAccounts--;
+          const account = accountSlots.has(slot);
           const lease = await leaseShopper(pool, slot, 0, { account });
           const identity = { ...lease };
           delete identity.release;
@@ -204,6 +247,23 @@ export async function runCommand(input) {
         return pool;
       },
       measure: async (context) => {
+        if (
+          Date.now() +
+            (plan.warmupSeconds +
+              plan.measurementSeconds +
+              plan.gracefulStopSeconds +
+              120) *
+              1000 >
+          commandDeadline
+        )
+          throw Error(
+            "Insufficient approved time remains for the full profile and drain; the measured hold will not be shortened",
+          );
+        if (
+          context.registration.expiresAt <
+          Date.now() + (plan.durationSeconds + 120) * 1000
+        )
+          context.registration = await phase.register();
         const discovery = await runBrowserCohort(
           {
             ...plan,
@@ -254,6 +314,7 @@ export async function runCommand(input) {
           stopReason = reason;
           browserAbort.abort();
           await Promise.allSettled(workers.map((x) => x.stop()));
+          await coordinator?.close();
           await control("revoke", { runId: plan.runId }).catch(() => {});
         };
         const signals = () => {
@@ -262,9 +323,8 @@ export async function runCommand(input) {
         process.once("SIGINT", signals);
         process.once("SIGTERM", signals);
         let eventBusy = false,
-          previous = [],
-          highErrorSince = null,
           lastIdentity = 0;
+        const errorGuard = createErrorGuard();
         const live = new Map();
         try {
           workers = await launchWorkers(plan, context.fixtures, {
@@ -372,26 +432,39 @@ export async function runCommand(input) {
                 attempts: current.reduce((n, x) => n + x.attempts, 0),
                 errors: current.reduce((n, x) => n + x.errors, 0),
               };
-              const delta = previous.length
-                ? {
-                    attempts: total.attempts - previous[0].attempts,
-                    errors: total.errors - previous[0].errors,
-                  }
-                : null;
-              previous = [total];
-              if (delta?.attempts > 0 && delta.errors / delta.attempts > 0.05)
-                highErrorSince ??= Date.now();
-              else highErrorSince = null;
-              if (highErrorSince && Date.now() - highErrorSince >= 60000)
+              if (
+                coordinator.phaseStart &&
+                Date.now() > coordinator.phaseStart + 15000 &&
+                workers.some(
+                  (worker) =>
+                    !live.has(worker.workerId) ||
+                    Date.now() - live.get(worker.workerId).at > 15000,
+                )
+              )
+                await safeAbort("Live emergency counters became unavailable");
+              if (errorGuard.observe({ at: Date.now(), ...total }))
                 await safeAbort(
                   "Unexpected technical errors exceeded five percent for sixty seconds",
                 );
               if (Date.now() - lastIdentity > 30000) {
                 lastIdentity = Date.now();
                 await phase.recheck();
+                const variants = await collectInventoryOutcomes(
+                  db,
+                  context.fixtures.products,
+                );
+                if (
+                  variants.length !== context.fixtures.products.length ||
+                  inventoryViolations(variants).length
+                ) {
+                  await privateJson(join(artifactDir, "live-invariant-violation.json"), {
+                    at: Date.now(),
+                    variants,
+                  });
+                  await safeAbort("Live inventory conservation violation");
+                }
               }
               await control("events", { runId: plan.runId });
-              await coordinator.heartbeat();
             } catch {
               await safeAbort(
                 "Control identity, worker lease or recovery channel became unavailable",
@@ -417,6 +490,9 @@ export async function runCommand(input) {
               return coordinator.phaseStart ?? phaseStart;
             },
           });
+          void browserPromise.catch(() =>
+            safeAbort("Browser worker could not start or complete"),
+          );
           await coordinator.waitForRelease();
           plan.measurementStart = coordinator.phaseStart + plan.warmupSeconds * 1000;
           plan.measurementEnd = plan.measurementStart + plan.measurementSeconds * 1000;
@@ -427,7 +503,10 @@ export async function runCommand(input) {
             },
             Math.max(
               1,
-              plan.measurementEnd + plan.gracefulStopSeconds * 1000 - Date.now(),
+              Math.min(
+                commandDeadline,
+                plan.measurementEnd + plan.gracefulStopSeconds * 1000,
+              ) - Date.now(),
             ),
           );
           let completions, browser;
@@ -608,6 +687,26 @@ export async function runCommand(input) {
         tooling: async () => ({ status: "pass" }),
       });
       if (!check.allowed) return { summary: check, exitCode: 2 };
+      if (plan.profile === "sandbox-contract") {
+        const { probeBoundedContracts } = await import("./provider-contracts.mjs");
+        const result = await probeBoundedContracts("sandbox", target, {
+          ...env,
+          LOAD_TEST_SANDBOX_RUN_ID: input.runId,
+        });
+        return {
+          summary: {
+            status: result.sdkStatus,
+            report: result.files.markdownPath,
+            cleanup: result.cleanup,
+          },
+          exitCode:
+            result.cleanup?.status === "incomplete"
+              ? 3
+              : result.sdkStatus === "pass"
+                ? 0
+                : 2,
+        };
+      }
       const recoveryJournal = await openJournal(plan, dir);
       if (
         recoveryJournal
@@ -623,6 +722,26 @@ export async function runCommand(input) {
           summary: { status: "cleaned", runId: input.runId, artifactDir: dir },
           exitCode: 0,
         };
+      const owned = recoveryJournal
+        .records()
+        .filter((x) => ["catalog", "account", "shipping", "registry"].includes(x.kind));
+      if (owned.length && owned.every((x) => x.status === "deleted")) {
+        const value = await cleanupRun(
+          target,
+          recoveryJournal,
+          createCleanupClients({
+            db,
+            admin,
+            control,
+            runId: input.runId,
+            journal: recoveryJournal,
+          }),
+        );
+        return {
+          summary: { status: value.status, artifactDir: dir },
+          exitCode: value.status === "cleaned" ? 0 : 3,
+        };
+      }
       await control("revoke", { runId: input.runId });
       await writeFile(join(dir, "stop.request"), "stop", { mode: 0o600 });
       if (input.action === "stop")
@@ -662,7 +781,7 @@ export async function runCommand(input) {
               return run(profile, options);
             },
           })
-        : await run(input.profile);
+        : await executeSelectedProfile(input.profile, run);
     return {
       summary: {
         status: result.status,
