@@ -1,5 +1,13 @@
 "use client";
-import { useCallback, useEffect, useId, useRef, useState, type FormEvent } from "react";
+import {
+  useCallback,
+  useEffect,
+  useId,
+  useRef,
+  useState,
+  type FormEvent,
+  type ReactNode,
+} from "react";
 import { ModalPortal } from "@/components/ui/ModalPortal";
 import type {
   ClaimDecision,
@@ -34,10 +42,14 @@ export function ClaimDialog({
   product,
   open,
   onClose,
+  initialHeading,
+  recoverySelector,
 }: {
   product: SpecialtyPublicProduct;
   open: boolean;
   onClose(): void;
+  initialHeading?: string;
+  recoverySelector?: ReactNode;
 }) {
   const headingId = useId(),
     noteId = useId();
@@ -108,7 +120,7 @@ export function ClaimDialog({
     attempt.current = saved;
     const frame = requestAnimationFrame(() => {
       (
-        dialog.current?.querySelector<HTMLInputElement>("input") ??
+        dialog.current?.querySelector<HTMLElement>("input, select") ??
         dialog.current?.querySelector<HTMLButtonElement>("button")
       )?.focus();
       // Recover once the portal is visible, and cancel this work if it closes before paint.
@@ -263,7 +275,7 @@ export function ClaimDialog({
                   already_claimed: "Giveaway limit reached",
                   closed: "Claims are closed",
                 }[decision.status]
-              : "Claim " + product.name}
+              : (initialHeading ?? "Claim " + product.name)}
           </h2>
           <button
             type="button"
@@ -274,6 +286,7 @@ export function ClaimDialog({
             ✕
           </button>
         </div>
+        {recoverySelector}
         {phase === "form" && (
           <p id={noteId} className="mt-2 text-sm text-zinc-600">
             Opening this form does not reserve the prize. The first complete, valid

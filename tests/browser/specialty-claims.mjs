@@ -387,12 +387,9 @@ try {
     ).toBeVisible();
     await guest.page.goto(origin + "/store");
     await expect(guest.page.getByTestId("specialty-product-card")).toHaveCount(0);
-    await guest.page
-      .getByText("Check your giveaway claim results", { exact: true })
-      .click();
     const beforeRecovery = paths.length;
     await guest.page
-      .getByRole("button", { name: "Check claim result", exact: true })
+      .getByRole("button", { name: "Check giveaway status", exact: true })
       .click();
     await expect(guest.page.getByRole("heading", { name: "Congrats!" })).toBeVisible();
     assert.ok(paths.slice(beforeRecovery).includes("/api/specialty/claims/result"));
@@ -434,10 +431,7 @@ try {
     // A fresh navigation also proves recovery after reopening a disappeared prize.
     await guest.page.goto(origin + "/store");
     await guest.page
-      .getByText("Check your giveaway claim results", { exact: true })
-      .click();
-    await guest.page
-      .getByRole("button", { name: "Check claim result", exact: true })
+      .getByRole("button", { name: "Check giveaway status", exact: true })
       .click();
     await expect(guest.page.getByRole("heading", { name: "Congrats!" })).toBeVisible();
     assert.deepEqual(await readBrowserRunState(app.runId), {
