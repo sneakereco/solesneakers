@@ -7,7 +7,8 @@ import { ChevronDown } from "lucide-react";
 
 import { useCart } from "@/components/cart/CartProvider";
 import { Toast } from "@/components/ui/Toast";
-import { captureProductViewed } from "@/lib/measurement/client";
+import { useViewGrant } from "@/Modules/Analytics/Source/Features/VisitorMeasurement/view-grant";
+import { captureProductViewed } from "@/Modules/Analytics/Source/Features/VisitorMeasurement/triggers";
 import type { ProductWithDetails } from "@/types/domain/product";
 
 interface ProductDetailProps {
@@ -32,6 +33,7 @@ const getConditionLabel = (condition: string) => {
 
 export function ProductDetail({ product }: ProductDetailProps) {
   const { addItem, items } = useCart();
+  const grant = useViewGrant();
   const viewedProductId = useRef<string | null>(null);
   const initialVariant =
     product.variants.find((variant) => variant.stock > 0) ?? product.variants[0];
@@ -65,12 +67,12 @@ export function ProductDetail({ product }: ProductDetailProps) {
   const conditionLabel = getConditionLabel(product.condition);
 
   useEffect(() => {
-    if (viewedProductId.current === product.id) {
+    if (!grant || viewedProductId.current === grant + product.id) {
       return;
     }
-    viewedProductId.current = product.id;
+    viewedProductId.current = grant + product.id;
     captureProductViewed(product.id);
-  }, [product.id]);
+  }, [grant, product.id]);
 
   useEffect(() => {
     const current = product.variants.find((variant) => variant.id === selectedVariantId);

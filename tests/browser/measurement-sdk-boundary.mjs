@@ -16,19 +16,25 @@ const bundle = await build({
     loader: "tsx",
     contents: `
       import React from "react";
+      import {MeasurementProvider} from "./src/Modules/Analytics/Source/Features/VisitorMeasurement/MeasurementProvider";
+      import {ClientShell} from "./src/components/shell/ClientShell";
       import { createRoot } from "react-dom/client";
       import posthog from "posthog-js";
-      import { isApprovedMeasurementHostname } from "./src/lib/measurement/host-gate";
+      import { configuredMeasurement,isApprovedMeasurementHostname } from "./src/Modules/Analytics/Source/Features/VisitorMeasurement/host-gate";
       import { CartProvider, useCart } from "./src/components/cart/CartProvider";
       import { CheckoutClient } from "./src/components/checkout/CheckoutClient";
-      import {
-        captureCheckoutStarted,
-        initializeMeasurement,
-      } from "./src/lib/measurement/client";
+      import {captureCheckoutStarted} from "./src/Modules/Analytics/Source/Features/VisitorMeasurement/triggers";
+      import {getCheckoutTrackingContext,revokeMeasurement,initializeMeasurement,identifyConsentingCustomer,setMeasurementAccount,capture} from "./src/Modules/Analytics/Source/Features/VisitorMeasurement/client";
 
       const test = window.measurementSdkBoundaryTest = {
         boundaryEvent: null,
         complete: false,
+      };
+      test.rawEntryPersisted=false;
+      const setItem=Storage.prototype.setItem;
+      Storage.prototype.setItem=function(key,value){
+        if(key.startsWith("ph_") && /sensitive|utm_source=|private-keyword/.test(String(value)))test.rawEntryPersisted=true;
+        return setItem.call(this,key,value);
       };
       const pause = () => new Promise(resolve => setTimeout(resolve, 60));
       const productId = "123e4567-e89b-42d3-a456-426614174000";
@@ -77,7 +83,27 @@ const bundle = await build({
             throw error;
           }
         };
-        initializeMeasurement();
+        const cfg=configuredMeasurement();
+        const accepted={choice:"accepted",receiptId:"123e4567-e89b-42d3-a456-426614174000"};
+        window.actions={context:getCheckoutTrackingContext,withdraw:revokeMeasurement,account:setMeasurementAccount,identify:identifyConsentingCustomer,capture:captureCheckoutStarted,accept:()=>initializeMeasurement(cfg,accepted)};
+        if(window.fixtureMode==="provider"){
+          const root=createRoot(document.getElementById("root"));
+          const init=posthog.init.bind(posthog);
+          posthog.init=(token,options,name)=>init(token,{...options,opt_out_useragent_filter:true,disable_compression:true},name);
+          window.renderProvider=()=>root.render(<MeasurementProvider><ClientShell><div>Fixture storefront</div></ClientShell></MeasurementProvider>);
+          window.renderProvider();test.complete=true;return;
+        }
+        if(window.fixtureMode==="reload"){
+          setMeasurementAccount(window.fixtureAccount??null,false);
+          initializeMeasurement(cfg,accepted);
+          posthog.set_config({opt_out_useragent_filter:true,disable_compression:true});
+          if(window.fixtureAccount)await identifyConsentingCustomer();
+          test.complete=true; return;
+        }
+        initializeMeasurement(cfg,{choice:"unknown"});
+        captureCheckoutStarted();
+        if(posthog.__loaded || localStorage.length || sessionStorage.length) throw new Error("measurement initialized before consent");
+        initializeMeasurement(cfg,{choice:"accepted",receiptId:"123e4567-e89b-42d3-a456-426614174000"});
         test.posthogConfig = {
           token: posthog.config.token,
           apiHost: posthog.config.api_host,
@@ -188,13 +214,18 @@ const bundle = await build({
       setup(builder) {
         const mocks = new Map([
           [
+            "@/components/shell/StorefrontHeader",
+            "export const StorefrontHeader=()=>null;",
+          ],
+          ["@/components/shell/Footer", "export const Footer=()=>null;"],
+          [
             "next/navigation",
             "export const useRouter = () => ({ push() {} }); export const usePathname = () => window.location.pathname;",
           ],
           ["@/components/ui/Toast", "export const Toast = () => null;"],
           [
             "@/contexts/SessionContext",
-            "export const useSession = () => ({ user: null });",
+            "export const useSession = () => window.fixtureSession ?? ({user:null,role:null,isLoading:false});",
           ],
           [
             "@/components/checkout/CheckoutContactSection",
@@ -251,10 +282,17 @@ const bundle = await build({
 const analyticsInputs = Object.keys(bundle.metafile.inputs).filter((path) =>
   path.includes("Modules/Analytics/Source/Features/"),
 );
-assert.ok(analyticsInputs.some((path) => path.endsWith("/Configuration/public-config.ts")));
-assert.ok(!analyticsInputs.some((path) => path.endsWith("/Configuration/server-config.ts")));
+assert.ok(
+  analyticsInputs.some((path) => path.endsWith("/Configuration/public-config.ts")),
+);
+assert.ok(
+  !analyticsInputs.some((path) => path.endsWith("/Configuration/server-config.ts")),
+);
 for (const file of bundle.outputFiles) {
-  assert.ok(file.text.includes(projectKey), "positive control: the project token is bundled");
+  assert.ok(
+    file.text.includes(projectKey),
+    "positive control: the project token is bundled",
+  );
   for (const privateValue of [
     privateQueryKey,
     identitySecret,
@@ -262,7 +300,10 @@ for (const file of bundle.outputFiles) {
     "POSTHOG_QUERY_API_KEY",
     "ANALYTICS_IDENTITY_SECRET",
   ]) {
-    assert.ok(!file.text.includes(privateValue), "private analytics config must stay server-side");
+    assert.ok(
+      !file.text.includes(privateValue),
+      "private analytics config must stay server-side",
+    );
   }
 }
 
@@ -347,8 +388,13 @@ try {
       }),
     }),
   );
+  const buyerKey = "sole-buyer:v1:" + "b".repeat(64);
+  await page.route("**/api/analytics/identity", (route) =>
+    route.fulfill({ json: { buyerKey } }),
+  );
   await page.goto(
     "https://soles-stg.vercel.app/checkout?utm_source=google&token=sensitive",
+    { referer: "https://www.google.com/search?q=private-keyword" },
   );
   await page.addScriptTag({ content: bundle.outputFiles[0].text });
   await page.waitForFunction(() => window.measurementSdkBoundaryTest?.complete === true);
@@ -393,26 +439,36 @@ try {
     `checkout_started must reach the PostHog POST boundary: ${JSON.stringify(transportRequests)}`,
   );
 
+  assert.equal(
+    result.rawEntryPersisted,
+    false,
+    "SDK never writes the raw entry URL or search to storage",
+  );
   const properties = result.boundaryEvent.properties;
   assert.deepEqual(Object.keys(properties).sort(), [
     "$geoip_disable",
+    "$process_person_profile",
     "$session_id",
+    "device",
+    "discovery_source",
     "distinct_id",
     "environment",
     "landing_pathname",
     "pathname",
+    "referrer_host",
     "schema_version",
+    "session_source",
     "storefront",
     "token",
-    "utm_source",
   ]);
   assert.equal(properties.storefront, "sole");
   assert.equal(properties.$geoip_disable, true);
   assert.equal(properties.environment, "staging");
-  assert.equal(properties.schema_version, 1);
+  assert.equal(properties.schema_version, 2);
   assert.equal(properties.pathname, "/checkout");
   assert.equal(properties.landing_pathname, "/checkout");
-  assert.equal(properties.utm_source, "google");
+  assert.equal(properties.discovery_source, "google");
+  assert.equal(properties.session_source, "google");
   assert.equal(properties.token, projectKey);
   assert.match(properties.distinct_id, /^[0-9a-f-]{36}$/i);
   assert.match(properties.$session_id, /^[0-9a-f-]{36}$/i);
@@ -424,6 +480,180 @@ try {
   assert.deepEqual(checkoutRequest.payload.batch[0].properties, properties);
   assert.equal(checkoutRequest.payload.batch[0].properties.$geoip_disable, true);
 
+  const anon = await page.evaluate(() => window.actions.context());
+  assert.match(anon.visitorId, /^[a-f0-9-]{36}$/);
+  await page.reload();
+  await page.evaluate(() => {
+    window.fixtureMode = "reload";
+  });
+  await page.addScriptTag({ content: bundle.outputFiles[0].text });
+  await page.waitForFunction(() => window.measurementSdkBoundaryTest?.complete);
+  assert.deepEqual(await page.evaluate(() => window.actions.context()), anon);
+  await page.evaluate(async () => {
+    history.replaceState(null, "", "/auth/login?token=sensitive");
+    window.actions.account(null, true);
+    if (window.actions.context()) throw new Error("auth route allowed behavior");
+    history.replaceState(null, "", "/checkout?token=sensitive");
+    window.actions.account("fixture-customer", false);
+    await window.actions.identify();
+    window.actions.capture();
+  });
+  await page.waitForFunction(() =>
+    window.actions.context()?.visitorId.startsWith("sole-buyer:"),
+  );
+  await page.waitForTimeout(200);
+  const sent = transportRequests.flatMap((request) => request.payload?.batch ?? []);
+  const identify = sent.find((event) => event.event === "$identify");
+  assert.ok(identify, "native identify control reached real POST");
+  assert.deepEqual(identify.properties, {
+    token: projectKey,
+    distinct_id: buyerKey,
+    $session_id: anon.sessionId,
+    $anon_distinct_id: anon.visitorId,
+    $geoip_disable: true,
+    $process_person_profile: true,
+  });
+  assert.equal(identify.$set, undefined);
+  assert.equal(identify.$set_once, undefined);
+  assert.ok(
+    sent.some(
+      (event) =>
+        event.event === "checkout_started" && event.properties.distinct_id === buyerKey,
+    ),
+  );
+  const optional = await page.evaluate(() =>
+    JSON.stringify({ ...localStorage, ...sessionStorage }),
+  );
+  assert.ok(
+    !optional.includes("sensitive") && !optional.includes("utm_source="),
+    "native storage must exclude raw entry URL",
+  );
+  await page.evaluate(() => window.actions.account(null, false));
+  const guest = await page.evaluate(() => window.actions.context());
+  assert.notEqual(guest.visitorId, anon.visitorId);
+  assert.notEqual(guest.sessionId, anon.sessionId);
+  await page.evaluate(() => {
+    window.actions.withdraw();
+    window.actions.capture();
+  });
+  assert.equal(await page.evaluate(() => window.actions.context()), null);
+  assert.deepEqual(
+    await page.evaluate(() =>
+      [...Object.keys(localStorage), ...Object.keys(sessionStorage)].filter(
+        (k) =>
+          k.startsWith("ph_") || k.startsWith("sole_analytics") || k.includes("ph_opt"),
+      ),
+    ),
+    [],
+  );
+  const sentCount = transportRequests.length;
+  await page.evaluate(() => window.actions.capture());
+  await page.waitForTimeout(120);
+  assert.equal(transportRequests.length, sentCount);
+  const context = await browser.newContext();
+  const flow = await context.newPage();
+  const flowWire = [];
+  let choice = { choice: "unknown" };
+  let offline = true;
+  let preferencePosts = 0;
+  await flow.context().route("**/*", async (route) => {
+    const req = route.request(),
+      url = new URL(req.url());
+    if (url.hostname === "us.i.posthog.com") {
+      const bytes = req.postDataBuffer();
+      if (bytes)
+        flowWire.push(
+          JSON.parse((bytes[0] === 0x1f ? gunzipSync(bytes) : bytes).toString()),
+        );
+      return route.fulfill({ json: {} });
+    }
+    if (url.pathname === "/api/analytics/preferences") {
+      if (req.method() === "POST") {
+        preferencePosts++;
+        const next = req.postDataJSON().choice;
+        if (next === "declined" && offline)
+          return route.fulfill({ status: 503, json: {} });
+        choice =
+          next === "accepted"
+            ? { choice: next, receiptId: anon.receiptId }
+            : { choice: next };
+      }
+      return route.fulfill({ json: choice });
+    }
+    return route.fulfill({ contentType: "text/html", body: '<div id="root"></div>' });
+  });
+  async function mountFlow(role = null) {
+    await flow.evaluate((role) => {
+      window.fixtureMode = "provider";
+      window.fixtureSession = {
+        role,
+        user: role ? { id: "fixture" } : null,
+        isLoading: false,
+      };
+    }, role);
+    await flow.addScriptTag({ content: bundle.outputFiles[0].text });
+  }
+  await flow.goto("https://soles-stg.vercel.app/store?utm_campaign=test-campaign");
+  await mountFlow("admin");
+  await flow.waitForTimeout(120);
+  assert.equal(await flow.getByText("Shopping analytics").count(), 0);
+  await flow.evaluate(() => {
+    window.fixtureSession = { role: null, user: null, isLoading: false };
+    window.renderProvider();
+  });
+  await flow.getByRole("button", { name: "Allow analytics" }).waitFor();
+  assert.equal(flowWire.length, 0);
+  assert.deepEqual(
+    await flow.evaluate(() => [
+      Object.keys(localStorage),
+      Object.keys(sessionStorage),
+      document.cookie,
+    ]),
+    [[], [], ""],
+  );
+  await flow.evaluate(() => window.actions.capture());
+  await flow.getByRole("button", { name: "Allow analytics" }).click();
+  await flow.getByRole("button", { name: "Privacy choices" }).waitFor();
+  await flow.waitForTimeout(200);
+  assert.deepEqual(
+    flowWire
+      .flatMap((req) => req.batch)
+      .map((ev) => ev.event)
+      .sort(),
+    ["public_page_viewed", "storefront_viewed"],
+  );
+  const peer = await flow.context().newPage();
+  await peer.goto("https://soles-stg.vercel.app/store");
+  await peer.evaluate(() => {
+    window.fixtureMode = "provider";
+  });
+  await peer.addScriptTag({ content: bundle.outputFiles[0].text });
+  await peer.waitForFunction(() => !!window.actions?.context());
+  await flow.getByRole("button", { name: "Privacy choices" }).click();
+  await flow.getByRole("button", { name: "Decline", exact: true }).click();
+  await flow.getByRole("button", { name: "Retry saving" }).waitFor();
+  assert.equal(await flow.evaluate(() => window.actions.context()), null);
+  await peer.getByRole("button", { name: "Retry saving" }).waitFor();
+  assert.equal(await peer.evaluate(() => window.actions.context()), null);
+  const priorCount = flowWire.length;
+  await peer.evaluate(() => window.actions.capture());
+  await flow.reload();
+  await mountFlow();
+  await flow.getByRole("button", { name: "Retry saving" }).waitFor();
+  assert.equal(flowWire.length, priorCount);
+  offline = false;
+  await flow.getByRole("button", { name: "Retry saving" }).click();
+  await flow.getByRole("button", { name: "Privacy choices" }).waitFor();
+  assert.equal(choice.choice, "declined");
+  assert.ok(preferencePosts >= 4);
+  for (const tested of [page, peer, flow])
+    assert.equal(
+      await tested.evaluate(() => window.measurementSdkBoundaryTest.rawEntryPersisted),
+      false,
+      "no raw SDK write after reload, identity, or session transition",
+    );
+  await peer.close();
+  await flow.close();
   console.log(
     "PASS installed PostHog boundary: sanitized event dispatched; SDK failure preserved cart and checkout",
   );

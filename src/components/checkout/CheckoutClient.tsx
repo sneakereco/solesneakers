@@ -43,8 +43,10 @@ import type {
 } from "@/lib/checkout/checkout-page-data";
 import { ShippingAddressValidationError } from "@/lib/checkout/shipping-address-validation";
 import { clearIdempotencyKeyFromStorage } from "@/lib/checkout/idempotency";
-import { captureCheckoutStarted } from "@/lib/measurement/client";
-import { hasUsableCheckout } from "@/lib/measurement/triggers";
+import {
+  captureCheckoutStarted,
+  hasUsableCheckout,
+} from "@/Modules/Analytics/Source/Features/VisitorMeasurement/triggers";
 
 type Fulfillment = "ship" | "pickup";
 

@@ -16,8 +16,8 @@ const bundle = await build({
       import { ProductDetail } from "./src/components/store/ProductDetail";
       import { CheckoutClient } from "./src/components/checkout/CheckoutClient";
       import CheckoutPage from "./src/app/checkout/page";
-      import { isApprovedMeasurementHostname } from "./src/lib/measurement/host-gate";
-      import { sanitizeMeasurementEvent } from "./src/lib/measurement/contract";
+      import { isApprovedMeasurementHostname } from "./src/Modules/Analytics/Source/Features/VisitorMeasurement/host-gate";
+      import { sanitizeMeasurementEvent } from "./src/Modules/Analytics/Source/Features/VisitorMeasurement/contract";
 
       const test = window.measurementTriggerTest = { events: [] };
       const assert = {
@@ -41,7 +41,7 @@ const bundle = await build({
         isApprovedMeasurementHostname("soles-pro-preview.vercel.app", "production"),
       ], [true, false, true, false, false, false, false, false, false, false], "exact host/environment matrix");
       const privacyProbe = sanitizeMeasurementEvent("storefront_viewed", {
-        storefront: "sole", environment: "production", schema_version: 1,
+        storefront: "sole", environment: "production", schema_version: 2,
         pathname: "/store", $geoip_disable: false, $current_url: "https://unsafe.example/",
       });
       if (!privacyProbe || privacyProbe.properties.$geoip_disable !== true) {
@@ -246,14 +246,8 @@ const bundle = await build({
       setup(builder) {
         const mocks = new Map([
           [
-            "@/lib/measurement/client",
-            `
-          const emit = name => window.measurementTriggerTest.events.push(name);
-          export const captureStorefrontViewed = () => emit("storefront_viewed");
-          export const captureProductViewed = () => emit("product_viewed");
-          export const captureProductAddedToCart = () => emit("product_added_to_cart");
-          export const captureCheckoutStarted = () => emit("checkout_started");
-        `,
+            "@/Modules/Analytics/Source/Features/VisitorMeasurement/view-grant",
+            "export const useViewGrant = () => 'consented';",
           ],
           [
             "next/navigation",
@@ -326,6 +320,15 @@ const bundle = await build({
             "export const clearIdempotencyKeyFromStorage = () => {};",
           ],
         ]);
+        builder.onResolve({ filter: /^\.\/client$/ }, (args) =>
+          args.importer.endsWith("triggers.ts")
+            ? { path: "capture-test", namespace: "measurement-test" }
+            : null,
+        );
+        mocks.set(
+          "capture-test",
+          "export const capture = event => window.measurementTriggerTest.events.push(event.event);",
+        );
         builder.onResolve({ filter: /.*/ }, (args) =>
           mocks.has(args.path)
             ? { path: args.path, namespace: "measurement-test" }

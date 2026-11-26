@@ -6,8 +6,11 @@ import { usePathname } from "next/navigation";
 import { Footer } from "@/components/shell/Footer";
 import { StorefrontHeader } from "@/components/shell/StorefrontHeader";
 import type { ProfileRole } from "@/config/constants/roles";
-import { captureStorefrontViewed } from "@/lib/measurement/client";
-import { enteredStorefront } from "@/lib/measurement/triggers";
+import {
+  captureStorefrontViewed,
+  enteredStorefront,
+} from "@/Modules/Analytics/Source/Features/VisitorMeasurement/triggers";
+import { useViewGrant } from "@/Modules/Analytics/Source/Features/VisitorMeasurement/view-grant";
 
 export function ClientShell({
   children,
@@ -21,15 +24,20 @@ export function ClientShell({
   userEmail?: string | null;
   role?: ProfileRole | null;
 }) {
+  const grant = useViewGrant();
   const pathname = usePathname();
   const previousPathname = useRef<string | null>(null);
 
   useEffect(() => {
+    if (!grant) {
+      previousPathname.current = null;
+      return;
+    }
     if (enteredStorefront(previousPathname.current, pathname)) {
       captureStorefrontViewed();
     }
     previousPathname.current = pathname;
-  }, [pathname]);
+  }, [grant, pathname]);
 
   useEffect(() => {
     document.body.dataset.route = "store";

@@ -1,17 +1,14 @@
-import {
-  extractSafeAttribution,
-  sanitizeMeasurementEvent,
-} from "@/lib/measurement/contract";
+import { sanitizeMeasurementEvent } from "@/Modules/Analytics/Source/Features/VisitorMeasurement/contract";
 
 const productId = "123e4567-e89b-42d3-a456-426614174000";
 const variantId = "123e4567-e89b-42d3-a456-426614174001";
 const common = {
   storefront: "sole",
   environment: "staging",
-  schema_version: 1,
+  schema_version: 2,
 };
 
-describe("Phase A event contract", () => {
+describe("Behavior event contract", () => {
   it("rejects storefront_viewed on / and accepts only /store", () => {
     expect(
       sanitizeMeasurementEvent("storefront_viewed", { ...common, pathname: "/" }),
@@ -21,7 +18,7 @@ describe("Phase A event contract", () => {
     ).not.toBeNull();
   });
 
-  it("accepts only the four approved event schemas", () => {
+  it("accepts only approved event schemas", () => {
     expect(
       sanitizeMeasurementEvent("storefront_viewed", { ...common, pathname: "/store" }),
     ).toMatchObject({ event: "storefront_viewed" });
@@ -106,40 +103,5 @@ describe("Phase A event contract", () => {
         pathname: "/checkout?token=sensitive",
       }),
     ).toBeNull();
-  });
-});
-
-describe("safe source extraction", () => {
-  it("keeps only allowed, sanitized source fields", () => {
-    expect(
-      extractSafeAttribution(
-        "https://shop.example.com/store?utm_source=Google&utm_medium=cpc&utm_campaign=Fall_2026&token=secret&utm_extra=ignored",
-        "https://search.example.org/results?email=person@example.org",
-      ),
-    ).toEqual({
-      landing_pathname: "/store",
-      referrer_host: "search.example.org",
-      utm_source: "google",
-      utm_medium: "cpc",
-      utm_campaign: "fall_2026",
-    });
-  });
-
-  it("rejects token-like, duplicate, and URL-valued parameters", () => {
-    expect(
-      extractSafeAttribution(
-        "https://shop.example.com/store?utm_source=ok&utm_source=duplicate&utm_campaign=person%40example.com&utm_term=https%3A%2F%2Fevil.example%2F&guestToken=sensitive",
-        "not a URL",
-      ),
-    ).toEqual({ landing_pathname: "/store" });
-  });
-
-  it("never retains an arbitrary path or query string", () => {
-    expect(
-      extractSafeAttribution(
-        "https://shop.example.com/order-status/secret?token=sensitive",
-        "https://ref.example.com/path?token=sensitive",
-      ),
-    ).toEqual({ referrer_host: "ref.example.com" });
   });
 });

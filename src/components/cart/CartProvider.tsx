@@ -14,7 +14,7 @@ import {
 import { CartService } from "@/services/cart-service";
 import type { CartItem } from "@/types/domain/cart";
 import { useSession } from "@/contexts/SessionContext";
-import { captureProductAddedToCart } from "@/lib/measurement/client";
+import { captureProductAddedToCart } from "@/Modules/Analytics/Source/Features/VisitorMeasurement/triggers";
 
 interface CartContextType {
   items: CartItem[];
