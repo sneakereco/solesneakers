@@ -108,6 +108,8 @@ The eight award-engine scenarios below ran against clean source `ef6adc3fa14936b
 
 The latest protected hot-one run on the same source had 1,000 unresolved attempts at 30 seconds, zero winners and stock still one. All nine protected scenarios, including shared-IP pressure, failed qualification. Those outcomes are safe retryable uncertainty, not a claim that the giveaway remains available under that traffic. The standalone local Redis probe accepted 1,000 logical checks without timeout; that probe is not website evidence.
 
+After the review fixes, both paths were rechecked on clean source `3f2360679079a586df143b509f0d4a5504a69a5f`. Protected hot-one again had 1,000 unresolved attempts, zero winners and stock one (terminal p95 30.13 seconds). The isolated lost-response burst recovered the committed winner and resolved all 1,000 attempts correctly (one winner, 999 sold out, stock zero), but p95 10.30 / p99 10.42 seconds still failed the nominal latency gate. The evidence retains both original and post-review reports.
+
 [Sanitized machine-readable reports](evidence/2026-11-25-specialty-load.json) preserve exact source SHAs, initial/terminal latency, dispatch/concurrency, retries, statuses, reconciliation and provider differences. [Implementation decisions and deferred review findings](evidence/2026-11-25-specialty-decisions.md) preserve the native execution record.
 
 ### Verification and remaining work
@@ -117,5 +119,7 @@ After the four Important review fixes, the full unit suite passed (137 suites, 6
 The production webpack build passed with synthetic fixture environment and complete TypeScript/static generation. The default local Turbopack build is blocked by the shared `node_modules` junction outside its filesystem root; it is not reported as passing. Real Auth, Shippo, hosted BotID/WAF, CDN and deployed runtime behavior remain unverified.
 
 Standalone typecheck, changed-file formatting and whitespace checks passed. Whole-repository ESLint completed with zero errors and nine existing warnings; no lint rule was weakened.
+
+[Verification checkpoint](evidence/2026-11-25-specialty-verification.md) records commands, source identity and remaining qualification gates.
 
 Before release, identify a permitted staging project and synthetic campaign, supply its supported bot-test setup through existing secret management, qualify the protected deployment and provider behavior, and meet the latency/resolution gates. Local database correctness does not waive those gates. No merge, push, deployment or real campaign enablement was performed during implementation.
