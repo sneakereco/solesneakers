@@ -14,7 +14,7 @@ const line = (id, quantity = 1) => ({
   priceCents: 1100,
   maxStock: 7,
 });
-const repriced = (id) => ({ ...line(id), priceCents: 900 });
+const repriced = (id) => ({ ...line(id), priceCents: 900, previousPriceCents: 1100 });
 const guest = "rdk_cart_session";
 const account = (id) => "rdk_cart_user_" + id;
 
@@ -217,8 +217,8 @@ test("new revision validates while prior request is pending and stale finally pr
   await reply(page, 0, [line("a")]);
   await refresh(page);
   await count(page, 2);
-  await reply(page, 1, [line("a", 2)]);
-  await visible(page, [line("a", 2)]);
+  await reply(page, 1, [{ ...line("a", 2), maxStock: 2 }]);
+  await visible(page, [{ ...line("a", 3), maxStock: 2, availability: "unavailable" }]);
 });
 for (const mode of ["invalid-json", "malformed-line", "unavailable", "network"])
   test(mode + " validation preserves the stored basket", async (t) => {
@@ -323,20 +323,22 @@ test("an older response arriving last leaves the newer accepted result in place"
   await page.evaluate(() => window.testCart.updateQuantity("a", "a-v", 3));
   await refresh(page);
   await count(page, 2);
-  await reply(page, 1, [line("a", 2)]);
+  await reply(page, 1, [{ ...line("a", 2), maxStock: 2 }]);
   await reply(page, 0, [line("a", 1)]);
-  await visible(page, [line("a", 2)]);
-  assert.deepEqual(await stored(page, account("a")), [line("a", 2)]);
+  const retained = [{ ...line("a", 3), maxStock: 2, availability: "unavailable" }];
+  await visible(page, retained);
+  assert.deepEqual(await stored(page, account("a")), retained);
 });
 
-test("an authoritative empty reply clears the unchanged basket", async (t) => {
+test("an authoritative legacy removal retains the unavailable row", async (t) => {
   const { page } = await open(t);
   await count(page, 1);
   await reply(page, 0, [], "ok", [
     { productId: "a", variantId: "a-v", reason: "out_of_stock" },
   ]);
-  await visible(page, []);
-  assert.deepEqual(await stored(page, account("a")), []);
+  const retained = [{ ...line("a"), maxStock: 0, availability: "unavailable" }];
+  await visible(page, retained);
+  assert.deepEqual(await stored(page, account("a")), retained);
 });
 // Stop the writing renderer after its final read. The other tab can attempt a real
 // Cart operation while the browser still holds the first tab's exclusive lock.

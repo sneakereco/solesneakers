@@ -285,6 +285,15 @@ export class PurchaseProofs {
     this.area.setItem(this.key, raw);
     return true;
   }
+  retireBasketStarts() {
+    if (!this.records.some((r) => r.stage === "pending" && !r.orderId)) return true;
+    return this.write(
+      this.records.map((record): Proof => {
+        if (record.stage !== "pending" || record.orderId) return record;
+        return { ...commonFields(record), stage: "retired" };
+      }),
+    );
+  }
   replace(old: Proof, replacement: Proof) {
     return this.write(this.records.map((r) => (r === old ? replacement : r)));
   }

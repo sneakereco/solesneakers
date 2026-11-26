@@ -6,8 +6,11 @@ import {
   decodeSavedBasket,
   SavedBasketLimitError,
 } from "./decode-saved-basket";
+import { needsBasketReview } from "../../Contracts/Basket";
 import type {
   BasketMutationResult,
+  BasketReviewActions,
+  StockConflict,
   BasketRepairReason,
   BasketQuantityUpdate,
   CartItem,
@@ -17,6 +20,7 @@ import type {
   ConsumptionResult,
   PurchaseLine,
 } from "../../Contracts/Basket";
+import type { ValidationOrder } from "../ValidateBasket/validation-contract";
 import { requestValidation } from "../ValidateBasket/request-validation";
 
 import {
@@ -41,6 +45,7 @@ type StoredVersion = {
 };
 type Snapshot = ReturnType<typeof decodeSavedBasket> & StoredVersion;
 export type BasketView = {
+  review: BasketReviewActions;
   items: CartItem[];
   writable: boolean;
   purchases: CartPurchaseActions;
@@ -56,6 +61,23 @@ export const unavailablePurchases: CartPurchaseActions = {
   consumeConfirmedPurchase: (_order, _items, signal) =>
     Promise.resolve(unavailablePurchase(signal)),
 };
+const unavailableEdit = () => Promise.resolve({ status: "unavailable" } as const);
+export const unavailableReview: BasketReviewActions = {
+  recheckAvailability: () => Promise.resolve(false),
+  resetSavedBasket: unavailableEdit,
+  applyStockConflicts: unavailableEdit,
+  acceptPrice: unavailableEdit,
+  scopeValidationToOrder: () => {},
+};
+class OversizedBasket extends SavedBasketLimitError {
+  constructor(
+    error: SavedBasketLimitError,
+    readonly version: StoredVersion,
+    readonly legacy?: string,
+  ) {
+    super(error.reason);
+  }
+}
 const sameSnapshot = (a: StoredVersion, b: StoredVersion) =>
   a.raw === b.raw && a.revision === b.revision;
 // Legacy migration can touch the shared rdk_cart key as well as an account key.
@@ -79,6 +101,8 @@ export class BasketStorage {
   private readonly proofKey: string;
 
   private blocked = false;
+  private repair?: OversizedBasket;
+  private scope?: ValidationOrder;
   constructor(
     private readonly userId: string | null,
     private readonly observed: () => boolean,
@@ -95,8 +119,10 @@ export class BasketStorage {
     operation: () => T,
     connection = this.connection,
     caller?: AbortSignal,
+    options: { allowBlocked?: boolean; requireLock?: boolean } = {},
   ): Promise<T | undefined> {
     if (
+      (!options.allowBlocked && this.blocked) ||
       !connection ||
       connection !== this.connection ||
       connection.signal.aborted ||
@@ -108,7 +134,7 @@ export class BasketStorage {
     const queue = this.userId && caller ? new AbortController() : undefined;
     const cancel = () => queue?.abort();
     try {
-      if (!this.userId) return operation();
+      if (!this.userId && !options.requireLock) return operation();
       if (queue) {
         connection.signal.addEventListener("abort", cancel);
         caller!.addEventListener("abort", cancel);
@@ -118,6 +144,7 @@ export class BasketStorage {
         { signal: queue?.signal ?? connection.signal },
         () => {
           if (
+            (options.allowBlocked || !this.blocked) &&
             this.connection === connection &&
             !connection.signal.aborted &&
             !caller?.aborted &&
@@ -135,10 +162,18 @@ export class BasketStorage {
         return;
       if (this.connection === connection && !connection.signal.aborted) {
         this.blocked = true;
-        connection.abort();
+        const repair = error instanceof OversizedBasket ? error : undefined;
+        this.repair = repair;
+        if (!repair) connection.abort();
         this.pending = undefined;
         this.published = undefined;
         this.listener?.({
+          review: repair
+            ? {
+                ...unavailableReview,
+                resetSavedBasket: () => this.reset(repair, connection),
+              }
+            : unavailableReview,
           items: [],
           writable: false,
           purchases: unavailablePurchases,
@@ -161,7 +196,13 @@ export class BasketStorage {
   }
   private read(): Snapshot {
     const version = this.storedVersion();
-    return { ...version, ...decodeSavedBasket(version.raw) };
+    try {
+      return { ...version, ...decodeSavedBasket(version.raw) };
+    } catch (error) {
+      if (error instanceof SavedBasketLimitError)
+        throw new OversizedBasket(error, version);
+      throw error;
+    }
   }
   private persist(raw: string, eligible = this.observed, expected?: StoredVersion) {
     // Fence the old snapshot first. A failed data write can invalidate validation,
@@ -185,11 +226,15 @@ export class BasketStorage {
     const legacy = this.area.getItem("rdk_cart");
     if (!legacy) return;
     if (!this.observed()) return;
-    const hasAccountCart = this.area.getItem(this.key) !== null;
+    const version = this.storedVersion();
+    const hasAccountCart = version.raw !== null;
     try {
       decodeSavedBasket(legacy);
     } catch (error) {
-      if (hasAccountCart && error instanceof SavedBasketLimitError) return;
+      if (error instanceof SavedBasketLimitError) {
+        if (hasAccountCart) return;
+        throw new OversizedBasket(error, version, legacy);
+      }
       throw error;
     }
     if (!hasAccountCart && !this.persist(legacy)) return;
@@ -208,11 +253,50 @@ export class BasketStorage {
     }
     this.pending = undefined;
     this.published = undefined;
-    void this.atomic(() => {
-      this.sync(this.read());
-    });
+    this.repair = undefined;
+    // Invalidate a queued repair immediately. Reopening a blocked cart still
+    // requires a fresh verified observation through Retry cart access.
+    if (this.blocked) return;
+    void this.atomic(() => this.sync(this.read()));
   };
+  private async reset(
+    repair: OversizedBasket,
+    generation: AbortController,
+  ): Promise<BasketMutationResult> {
+    const eligible = () =>
+      this.repair === repair &&
+      this.connection === generation &&
+      !generation.signal.aborted &&
+      this.observed() &&
+      (repair.legacy === undefined || this.area.getItem("rdk_cart") === repair.legacy);
+    const saved = await this.atomic(
+      () => {
+        const beforeReset = () =>
+          eligible() && sameSnapshot(repair.version, this.storedVersion());
+        if (!beforeReset()) return false;
+        // Keep bound orders available for exact settlement and receipt replay. A reset
+        // retires starts before emptying the basket so a partial write cannot revive one.
+        if (this.area.getItem(this.proofKey) !== null) {
+          const origin = contextOrigin();
+          if (!origin) return false;
+          const ledger = this.proofs(origin, beforeReset);
+          if (ledger && !ledger.retireBasketStarts()) return false;
+        }
+        const committed = this.persist("[]", eligible, repair.version);
+        if (!committed || !eligible() || !sameSnapshot(committed, this.storedVersion()))
+          return false;
+        this.sync(this.read());
+        return true;
+      },
+      generation,
+      undefined,
+      { allowBlocked: true, requireLock: true },
+    );
+    return { status: saved ? "saved" : "stale" };
+  }
   private sync(snapshot: Snapshot) {
+    this.blocked = false;
+    this.repair = undefined;
     if (this.pending && !sameSnapshot(this.pending, snapshot)) this.pending = undefined;
     this.published = snapshot;
     const generation = this.connection;
@@ -222,6 +306,33 @@ export class BasketStorage {
       !signal?.aborted &&
       this.observed();
     this.listener?.({
+      review: {
+        ...unavailableReview,
+        recheckAvailability: () => this.validate(true),
+        scopeValidationToOrder: (order) => {
+          if (eligible()()) {
+            this.scope = { ...order };
+            this.pending = undefined;
+          }
+        },
+        applyStockConflicts: (conflicts, recoveryRequired) =>
+          this.reviewEdit(snapshot, (rows) =>
+            this.markConflicts(rows, conflicts, recoveryRequired),
+          ),
+        acceptPrice: (line) =>
+          this.reviewEdit(snapshot, (rows) =>
+            rows.map((row) => {
+              if (
+                pairKey(row.item) !== pairKey(line) ||
+                row.item.priceCents !== line.priceCents
+              )
+                return row;
+              const item = { ...row.item };
+              delete item.previousPriceCents;
+              return { ...row, item };
+            }),
+          ),
+      },
       items: snapshot.items,
       hasUnreadableItems: !snapshot.complete,
       repairReason: null,
@@ -248,6 +359,58 @@ export class BasketStorage {
       },
     });
   }
+  private reviewEdit(
+    snapshot: Snapshot,
+    edit: (rows: SavedLine[]) => SavedLine[] | undefined,
+  ) {
+    return this.mutate(() => {
+      if (
+        this.published !== snapshot ||
+        !snapshot.complete ||
+        !sameSnapshot(snapshot, this.storedVersion())
+      )
+        return false;
+      const rows = edit(snapshot.rows);
+      return (
+        !!rows &&
+        this.save(
+          rows,
+          false,
+          () => this.observed() && this.published === snapshot,
+          snapshot,
+        )
+      );
+    });
+  }
+  private markConflicts(
+    rows: SavedLine[],
+    conflicts: readonly StockConflict[],
+    recoveryRequired = false,
+  ) {
+    const byPair = new Map(conflicts.map((c) => [pairKey(c), c]));
+    if (!byPair.size || byPair.size !== conflicts.length) return;
+    const next = rows.map((row) => {
+      const key = pairKey(row.item),
+        c = byPair.get(key);
+      if (
+        !c ||
+        c.requestedQuantity !== row.item.quantity ||
+        c.availableQuantity >= row.item.quantity
+      )
+        return row;
+      byPair.delete(key);
+      return {
+        ...row,
+        item: {
+          ...row.item,
+          availability: c.reason,
+          maxStock: c.availableQuantity,
+          ...(recoveryRequired ? { orderScoped: true as const } : {}),
+        },
+      };
+    });
+    if (!byPair.size) return next;
+  }
   connect(listener: (view: BasketView) => void) {
     this.listener = listener;
     const connection = new AbortController();
@@ -263,13 +426,15 @@ export class BasketStorage {
     return () => {
       window.removeEventListener("storage", this.onStorage);
       connection.abort();
+      this.scope = undefined;
+      this.repair = undefined;
       this.connection = undefined;
       this.listener = undefined;
       this.published = undefined;
       this.pending = undefined;
     };
   }
-  async validate() {
+  async validate(force = false): Promise<boolean> {
     const snapshot = await this.atomic(() => {
       const current = this.read();
       // A background refresh cannot rewrite a partially recoverable basket.
@@ -279,25 +444,42 @@ export class BasketStorage {
         (current.rows.some((r) => !r.units) &&
           this.area.getItem(this.proofKey) !== null) ||
         !current.items.length ||
-        (this.pending && sameSnapshot(this.pending, current))
+        (!force && this.pending && sameSnapshot(this.pending, current))
       )
         return;
       this.pending = current;
       return current;
     });
-    if (!snapshot || this.pending !== snapshot) return;
+    if (!snapshot || this.pending !== snapshot) return false;
     try {
-      const accepted = await requestValidation(snapshot.items);
-      if (this.pending !== snapshot) return;
-      await this.atomic(() => {
-        if (this.pending !== snapshot) return;
-        const current = this.read();
-        if (!sameSnapshot(snapshot, current)) this.sync(current);
-        else if (accepted) {
-          const originals = new Map(current.rows.map((row) => [pairKey(row.item), row]));
-          this.save(accepted.map((item) => resize(originals.get(pairKey(item))!, item)));
-        }
-      });
+      const accepted = await requestValidation(snapshot.items, this.scope);
+      if (this.pending !== snapshot) return false;
+      return (
+        (await this.atomic(() => {
+          if (this.pending !== snapshot) return;
+          const current = this.read();
+          if (!sameSnapshot(snapshot, current)) this.sync(current);
+          else if (accepted) {
+            const originals = new Map(
+              current.rows.map((row) => [pairKey(row.item), row]),
+            );
+            const rows = accepted.map((item) => ({
+              ...originals.get(pairKey(item))!,
+              item,
+            }));
+            if (accepted.every((item, index) => item === snapshot.items[index]))
+              return true;
+            return (
+              this.save(
+                rows,
+                false,
+                () => this.pending === snapshot && this.observed(),
+                snapshot,
+              ) === true
+            );
+          }
+        })) === true
+      );
     } finally {
       if (this.pending === snapshot) this.pending = undefined;
     }
@@ -380,6 +562,7 @@ export class BasketStorage {
           this.mutation(current, [...current.rows, { item: clean.items[0] }])
         );
       }
+      if (row.item.availability || row.item.orderScoped) return false;
       const maxStock = item.maxStock ?? row.item.maxStock;
       const quantity = Math.min(row.item.quantity + 1, maxStock ?? Infinity);
       if (
@@ -418,7 +601,11 @@ export class BasketStorage {
       if (!row) return false;
       const next =
         typeof quantity === "number" ? quantity : row.item.quantity + quantity.adjustBy;
-      const clamped = Math.min(next, row.item.maxStock ?? Infinity);
+      if (row.item.orderScoped) return false;
+      const clamped = row.item.availability
+        ? next
+        : Math.min(next, row.item.maxStock ?? Infinity);
+      if (row.item.availability && next > row.item.quantity) return false;
       if (!Number.isSafeInteger(clamped) || clamped === row.item.quantity) return false;
       if (clamped <= 0)
         return this.mutation(
@@ -461,6 +648,8 @@ export class BasketStorage {
         expected,
       )
     )
+      return { status: "mismatch" };
+    if (mode === "new" && current.items.some(needsBasketReview))
       return { status: "mismatch" };
     if (!eligible()) return { status: "stale" };
     const origin = contextOrigin();

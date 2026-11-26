@@ -11,12 +11,18 @@ import {
   type ReactNode,
 } from "react";
 import { captureProductAddedToCart } from "@/lib/measurement/client";
+import { needsBasketReview } from "../../Contracts/Basket";
 import type {
   BasketQuantityUpdate,
   CartContextType,
   CartItem,
 } from "../../Contracts/Basket";
-import { BasketStorage, unavailablePurchases, type BasketView } from "./cart-storage";
+import {
+  BasketStorage,
+  unavailablePurchases,
+  unavailableReview,
+  type BasketView,
+} from "./cart-storage";
 import { useBasketIdentity } from "./use-basket-identity";
 
 const cartContext = createContext<CartContextType | null>(null);
@@ -47,9 +53,11 @@ export function CartProvider({
     function onVisible() {
       if (document.visibilityState === "visible") validate();
     }
+    window.addEventListener("focus", validate);
     window.addEventListener("openCart", validate);
     document.addEventListener("visibilitychange", onVisible);
     return () => {
+      window.removeEventListener("focus", validate);
       window.removeEventListener("openCart", validate);
       document.removeEventListener("visibilitychange", onVisible);
     };
@@ -91,6 +99,7 @@ export function CartProvider({
     <cartContext.Provider
       value={{
         ...(view?.basket === basket ? view.purchases : unavailablePurchases),
+        ...(view?.basket === basket ? view.review : unavailableReview),
         items,
         repairReason: view?.basket === basket ? (view?.repairReason ?? null) : null,
         hasUnreadableItems: Boolean(view?.basket === basket && view?.hasUnreadableItems),
@@ -100,7 +109,10 @@ export function CartProvider({
         setCartItems,
         clearCart,
         itemCount: items.reduce((sum, i) => sum + i.quantity, 0),
-        total: items.reduce((sum, i) => sum + i.quantity * i.priceCents, 0),
+        total: items.reduce(
+          (sum, i) => sum + (needsBasketReview(i) ? 0 : i.quantity * i.priceCents),
+          0,
+        ),
         isReady: Boolean(basket && view?.basket === basket && view.writable),
         access: storageBlocked
           ? "unavailable"

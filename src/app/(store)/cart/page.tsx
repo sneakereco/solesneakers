@@ -1,5 +1,9 @@
 "use client";
-import { BasketAccessNotice, BasketRepairNotice } from "@/Modules/Cart/Source/Client";
+import {
+  BasketAccessNotice,
+  BasketRepairNotice,
+  BasketLineReview,
+} from "@/Modules/Cart/Source/Client";
 
 import Image from "next/image";
 import Link from "next/link";
@@ -36,7 +40,6 @@ export default function CartPage() {
         <h1 className="mt-5 text-3xl font-normal uppercase tracking-[0.02em]">
           Your cart is empty
         </h1>
-        {hasUnreadableItems && <BasketRepairNotice />}
         <p className="mt-3 text-sm text-zinc-600">Add an item to begin your order.</p>
         <Link
           href="/store"
@@ -56,6 +59,7 @@ export default function CartPage() {
 
       <div className="mx-auto mt-14 grid max-w-[90rem] grid-cols-1 items-start gap-10 lg:grid-cols-[minmax(0,1fr)_24rem] lg:gap-14">
         <section aria-label="Cart items" className="border-t border-zinc-300">
+          {hasUnreadableItems && <BasketRepairNotice />}
           {items.map((item) => {
             const canIncrease =
               typeof item.maxStock === "number" ? item.quantity < item.maxStock : true;
@@ -91,7 +95,9 @@ export default function CartPage() {
                       )}
                     </Link>
                     <p className="shrink-0 text-sm font-medium sm:text-base">
-                      {formatPrice(item.priceCents * item.quantity)}
+                      {item.availability
+                        ? "Unavailable"
+                        : formatPrice(item.priceCents * item.quantity)}
                     </p>
                   </div>
 
@@ -99,6 +105,7 @@ export default function CartPage() {
                     Size: {item.sizeLabel === "N/A" ? "One size" : item.sizeLabel}
                   </p>
 
+                  <BasketLineReview item={item} />
                   <div className="mt-auto flex items-end justify-between gap-4 pt-5">
                     <div className="inline-grid grid-cols-3 border border-zinc-300">
                       <button

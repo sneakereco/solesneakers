@@ -80,6 +80,7 @@ export type CheckoutPaymentAddress = {
 };
 
 export type PreparedCheckout = {
+  assertCurrentBasket?: () => void;
   orderId: string;
   guestAccessToken?: string;
   deviceSessionId: string;
@@ -928,8 +929,12 @@ export function SquarePaymentMethods({
     };
   }, [isGuest]);
 
-  async function pay(authorization: { permit: string; sourceId: string }) {
+  async function pay(
+    checkout: PreparedCheckout,
+    authorization: { permit: string; sourceId: string },
+  ) {
     await requireOwner?.();
+    checkout.assertCurrentBasket?.();
     setLoadingProvider(null);
     setPaymentDialogOpen(true);
     const response = await fetch("/api/checkout/pay", {
@@ -947,6 +952,7 @@ export function SquarePaymentMethods({
   }
 
   function permitRequest(checkout: PreparedCheckout, method: PaymentMethod) {
+    checkout.assertCurrentBasket?.();
     return {
       orderId: checkout.orderId,
       guestAccessToken: checkout.guestAccessToken,
@@ -1173,6 +1179,7 @@ export function SquarePaymentMethods({
       }
       await requireOwner?.();
       await pay(
+        checkout,
         await authorizeTokenizedSource({
           permitRequest: permitRequest(checkout, method),
           sourceId,
@@ -1328,6 +1335,7 @@ export function SquarePaymentMethods({
       const checkout = await prepare(method, checkoutContext);
       await requireOwner?.();
       await pay(
+        checkout,
         await authorizeTokenizedSource({
           permitRequest: permitRequest(checkout, method),
           sourceId,
@@ -1386,6 +1394,7 @@ export function SquarePaymentMethods({
       });
       await requireOwner?.();
       await pay(
+        checkout,
         await authorizeAndTokenize({
           permitRequest: permitRequest(checkout, method),
           paymentMethod: {

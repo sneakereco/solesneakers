@@ -61,7 +61,7 @@ const bundle = await build({
             args.path === "next/navigation"
               ? 'const router = { replace: url => history.replaceState({}, "", url) }; export const useRouter = () => router;'
               : args.path.endsWith("CartProvider")
-                ? "const items = [{productId:'11111111-1111-4111-8111-111111111111',variantId:'22222222-2222-4222-8222-222222222222',titleDisplay:'Test shoes',quantity:1,priceCents:10000}]; export const useCart = () => ({items,itemCount:1,isReady:true,clearCart(){}});"
+                ? "const items = [{productId:'11111111-1111-4111-8111-111111111111',variantId:'22222222-2222-4222-8222-222222222222',titleDisplay:'Test shoes',quantity:1,priceCents:10000}]; export const useCart = () => ({items,itemCount:1,isReady:true,clearCart(){},scopeValidationToOrder(order){window.test.validationOrder=order;}});"
                 : args.path.endsWith("SessionContext")
                   ? "const session={user:{id:'fixture-buyer'},status:'ready',isCurrent:()=>true}; export const useSession=()=>session;"
                   : args.path.endsWith("client-env")
@@ -254,6 +254,10 @@ try {
   assert.equal(await page.evaluate(() => window.test.tokenized), 0);
   await page.getByRole("button", { name: "Confirm $111.00 and continue" }).click();
   await page.waitForFunction(() => window.test.tokenized === 1);
+  assert.equal(
+    await page.evaluate(() => window.test.validationOrder?.orderId),
+    "test-order",
+  );
   assert.equal(prepares.at(-1).shippingAddress.postalCode, "20500-0005");
   assert.equal(prepares.at(-1).billingAddress.postalCode, "20500-0005");
   assert.ok(quotes.some((q) => q.shippingAddress?.postalCode === "20500-0005"));

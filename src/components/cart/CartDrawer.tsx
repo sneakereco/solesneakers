@@ -1,5 +1,9 @@
 "use client";
-import { BasketAccessNotice, BasketRepairNotice } from "@/Modules/Cart/Source/Client";
+import {
+  BasketAccessNotice,
+  BasketRepairNotice,
+  BasketLineReview,
+} from "@/Modules/Cart/Source/Client";
 
 import { useEffect } from "react";
 import Image from "next/image";
@@ -153,7 +157,9 @@ export function CartDrawer({ isOpen, onClose }: CartDrawerProps) {
                           )}
                         </Link>
                         <p className="shrink-0 text-sm font-medium">
-                          {formatPrice(item.priceCents * item.quantity)}
+                          {item.availability
+                            ? "Unavailable"
+                            : formatPrice(item.priceCents * item.quantity)}
                         </p>
                       </div>
 
@@ -161,6 +167,7 @@ export function CartDrawer({ isOpen, onClose }: CartDrawerProps) {
                         Size: {item.sizeLabel === "N/A" ? "One size" : item.sizeLabel}
                       </p>
 
+                      <BasketLineReview item={item} />
                       <div className="mt-4 flex items-center justify-between gap-4">
                         <div className="inline-grid grid-cols-3 border border-zinc-300">
                           <button

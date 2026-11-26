@@ -1,11 +1,13 @@
 "use client";
 import { BasketAccessNotice } from "@/Modules/Cart/Source/Client";
 
-import { useEffect, useMemo, useRef, useState } from "react";
+import { useEffect, useLayoutEffect, useMemo, useRef, useState } from "react";
 import { useRouter } from "next/navigation";
 import { useSession } from "@/contexts/SessionContext";
 import { useCheckoutOwnerAccess } from "@/Modules/Checkout/Source/Features/Preparation/use-checkout-owner-access";
 
+import { inventoryConflict } from "@/Modules/Checkout/Source/Features/Preparation/reservation-contract";
+import { provenConflictMessage, needsBasketReview } from "@/Modules/Cart/Source/Client";
 import { useCart } from "@/components/cart/CartProvider";
 import { CheckoutContactSection } from "@/components/checkout/CheckoutContactSection";
 import { CheckoutDeliverySection } from "@/components/checkout/CheckoutDeliverySection";
@@ -28,6 +30,7 @@ import {
   getOrCreateCheckoutDeviceSessionId,
   getOrCreateCheckoutIdempotencyKey,
   storeGuestOrderAccess,
+  isCurrentCheckoutAttempt,
 } from "@/lib/checkout/client-session";
 import type {
   CheckoutBillingAddress,
@@ -139,7 +142,13 @@ function OwnerCheckout({
   initialData: CheckoutPageData;
   verified: boolean;
 }) {
-  const { items, isReady: cartReady, clearCart } = useCart();
+  const {
+    items,
+    isReady: cartReady,
+    clearCart,
+    applyStockConflicts,
+    scopeValidationToOrder,
+  } = useCart();
   const isReady = verified && cartReady;
   const { isCurrent } = useSession();
   const [hasOpened, setHasOpened] = useState(false);
@@ -170,6 +179,22 @@ function OwnerCheckout({
     captureCheckoutStarted();
   }, [isReady, items.length, isRedirecting]);
 
+  const [needsRecovery, setNeedsRecovery] = useState(false);
+  const stockBlocked = items.some(needsBasketReview);
+  const basketKey = JSON.stringify(
+    items.map((i) => [
+      i.productId,
+      i.variantId,
+      i.quantity,
+      i.priceCents,
+      i.availability,
+      i.previousPriceCents,
+    ]),
+  );
+  const currentBasket = useRef(basketKey);
+  useLayoutEffect(() => {
+    if (isReady) currentBasket.current = basketKey;
+  }, [basketKey, isReady]);
   const checkoutItems = useMemo(
     () =>
       items.map((item) => ({
@@ -188,10 +213,13 @@ function OwnerCheckout({
     fulfillment,
     shippingAddress,
     quoteRevision,
+    basketKey,
+    stockBlocked,
+    needsRecovery,
   });
 
   useEffect(() => {
-    if (!isReady || checkoutItems.length === 0) {
+    if (!isReady || checkoutItems.length === 0 || stockBlocked || needsRecovery) {
       return;
     }
     const requestId = ++requestSequence.current;
@@ -236,7 +264,16 @@ function OwnerCheckout({
       controller.abort();
     };
     // quoteKey is the canonical trigger and prevents stale address responses.
-  }, [isReady, isCurrent, quoteKey]);
+  }, [
+    isReady,
+    isCurrent,
+    quoteKey,
+    checkoutItems,
+    fulfillment,
+    shippingAddress,
+    stockBlocked,
+    needsRecovery,
+  ]);
 
   // A matching basket can return before the quote from its new observation does.
   const quotePending =
@@ -244,11 +281,15 @@ function OwnerCheckout({
     resolvedQuote?.key !== quoteKey ||
     resolvedQuote.observation !== isCurrent ||
     quoteState.status === "loading";
-  const requireOwner = useCheckoutOwnerAccess(initialData.ownerId, quotePending);
-  const quoteReady = !quotePending && quoteState.status === "ready";
+  const requireOwner = useCheckoutOwnerAccess(
+    initialData.ownerId,
+    quotePending && !stockBlocked && !needsRecovery,
+  );
+  const quoteReady =
+    !stockBlocked && !needsRecovery && !quotePending && quoteState.status === "ready";
   const exactQuote =
     quoteReady && quoteState.quote.completeness === "exact" ? quoteState.quote : null;
-  const currentQuote = quoteState.quote ?? null;
+  const currentQuote = stockBlocked || needsRecovery ? null : (quoteState.quote ?? null);
 
   function updateAddress(field: keyof CheckoutAddressForm, value: string) {
     setAddress((current) => ({ ...current, [field]: value }));
@@ -294,6 +335,13 @@ function OwnerCheckout({
     context?: CheckoutPreparationContext,
   ): Promise<PreparedCheckout> {
     await requireOwner();
+    const assertCurrentBasket = () => {
+      if (basketKey !== currentBasket.current)
+        throw new Error("Your cart changed. Review your items before paying.");
+    };
+    assertCurrentBasket();
+    if (stockBlocked || needsRecovery)
+      throw new Error("Review your cart and check your order status before paying.");
     const buyerEmail = (initialData.isGuest ? (context?.buyerEmail ?? email) : email)
       .trim()
       .toLowerCase();
@@ -328,6 +376,7 @@ function OwnerCheckout({
       quoteFingerprint: selectedQuote.quoteFingerprint,
     });
     const deviceSessionId = getOrCreateCheckoutDeviceSessionId();
+    const attemptKey = getOrCreateCheckoutIdempotencyKey(cartFingerprint);
     const response = await fetch("/api/checkout/prepare", {
       method: "POST",
       headers: { "Content-Type": "application/json" },
@@ -343,14 +392,58 @@ function OwnerCheckout({
           quoteFingerprint: selectedQuote.quoteFingerprint,
           shippingConfirmation: context?.shippingConfirmation,
           shippingAddressOverride: context?.shippingAddressOverride,
-          idempotencyKey: getOrCreateCheckoutIdempotencyKey(cartFingerprint),
+          idempotencyKey: attemptKey,
           deviceSessionId,
         }),
       ),
     });
     const data = await response.json().catch(() => null);
     await requireOwner();
+    assertCurrentBasket();
     if (!response.ok) {
+      if (
+        data?.code === "INVENTORY_CONFLICT" ||
+        data?.code === "CHECKOUT_RECOVERY_REQUIRED"
+      ) {
+        const pending =
+          "Check your order status in your account or through your secure order link before trying another payment.";
+        const conflicts = inventoryConflict.array().nonempty().safeParse(data.conflicts);
+        if (
+          data.code === "INVENTORY_CONFLICT" &&
+          response.status === 409 &&
+          conflicts.success &&
+          isCurrentCheckoutAttempt(attemptKey, cartFingerprint)
+        ) {
+          const knownUnsubmitted = data.paymentState === "not_submitted";
+          const saved = await applyStockConflicts(conflicts.data, !knownUnsubmitted);
+          await requireOwner();
+          if (
+            saved.status === "saved" &&
+            isCurrentCheckoutAttempt(attemptKey, cartFingerprint)
+          ) {
+            if (!knownUnsubmitted) {
+              setNeedsRecovery(true);
+              throw new Error(pending);
+            }
+            const message = conflicts.data
+              .map((c) =>
+                provenConflictMessage(
+                  items.find(
+                    (i) => i.productId === c.productId && i.variantId === c.variantId,
+                  )!,
+                  c.reason,
+                  c.availableQuantity,
+                ),
+              )
+              .join(" ");
+            clearIdempotencyKeyFromStorage();
+            throw new Error(message);
+          }
+          throw new Error("Your cart changed. Review your items before paying.");
+        }
+        setNeedsRecovery(true);
+        throw new Error(pending);
+      }
       if (
         selectedShippingAddress &&
         [
@@ -393,7 +486,12 @@ function OwnerCheckout({
     if (typeof data.guestAccessToken === "string" && data.guestAccessToken) {
       storeGuestOrderAccess(data.orderId, data.guestAccessToken);
     }
+    scopeValidationToOrder({
+      orderId: data.orderId,
+      guestAccessToken: data.guestAccessToken,
+    });
     return {
+      assertCurrentBasket,
       orderId: data.orderId,
       guestAccessToken: data.guestAccessToken,
       deviceSessionId,
@@ -431,6 +529,18 @@ function OwnerCheckout({
           <section className="order-2 px-5 py-10 sm:px-8 lg:order-1 lg:ml-auto lg:w-full lg:max-w-[36.25rem] lg:px-10 lg:py-16">
             <h1 className="sr-only">Checkout</h1>
             <div className="flex flex-col">
+              {(stockBlocked || needsRecovery) && (
+                <div role="status">
+                  <p>
+                    {needsRecovery
+                      ? "Check your order status before trying another payment."
+                      : "Review the items in your cart before paying."}
+                  </p>
+                  <a className="underline" href="/cart">
+                    Review cart
+                  </a>
+                </div>
+              )}
               <SquarePaymentMethods
                 accessSuspended={!isReady}
                 requireOwner={requireOwner}

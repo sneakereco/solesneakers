@@ -1,5 +1,5 @@
 import assert from "node:assert/strict";
-import { access } from "node:fs/promises";
+import { readFile, access } from "node:fs/promises";
 import { fileURLToPath } from "node:url";
 import { chromium } from "@playwright/test";
 import { build } from "esbuild";
@@ -14,6 +14,7 @@ const viewPaths = {
   profile: "/account",
   navbar: "/navbar",
   cart: "/cart",
+  fullCart: "/cart",
   checkout: "/checkout",
   receipt: "/checkout/success",
 };
@@ -42,7 +43,7 @@ const framework = {
   "next/link": "export default props => <a {...props} />;",
   "next/image": `
     export default ({ src, fill, priority, unoptimized, loader, ...props }) =>
-      <img {...props} data-image-src={src} src="data:image/gif;base64,R0lGODlhAQABAAD/ACwAAAAAAQABAAACADs=" />;
+      <img {...props} data-image-src={src} src={window.checkoutFixture.view==="fullCart" && src==="/images/logo.png"?src:"data:image/gif;base64,R0lGODlhAQABAAD/ACwAAAAAAQABAAACADs="} />;
   `,
   "@/lib/measurement/client": `
     export const captureProductAddedToCart = (...args) => {window.fixtureAdded=(window.fixtureAdded??0)+1; (window.fixtureAddedArgs??=[]).push(args)};
@@ -63,6 +64,7 @@ function browserBundle() {
         import { createRoot } from "react-dom/client";
         import { usePathname } from "next/navigation";
         import { CartProvider, useCart } from "./src/components/cart/CartProvider";
+        import CartPage from "./src/app/(store)/cart/page";
         import { CartDrawer } from "./src/components/cart/CartDrawer";
         import { SessionProvider, useSession } from "./src/contexts/SessionContext";
         import { CheckoutClient } from "./src/components/checkout/CheckoutClient";
@@ -122,6 +124,7 @@ function browserBundle() {
           if(view==="profile")return <AccountProfile userEmail={initialUser?.email??""}/>;
           if(view==="navbar" || location.pathname==="/navbar")return <Navbar/>;
           if(view==="product")return <ProductDetail product={{id:"shoe",name:"Missing photo",condition:"new",brand:{label:"Sole"},images:[],variants:[{id:"shoe-v",size:{id:"size",label:"10"},stock:7,sale_price_cents:1100}]}}/>;
+          if(view==="fullCart")return <CartPage/>;
           return view === "cart"
             ? <CartDrawer isOpen={open} onClose={() => setOpen(false)} />
             : <CheckoutLayout><CheckoutView /></CheckoutLayout>;
@@ -290,6 +293,13 @@ export async function mountCheckoutBrowser({
               '<script defer src="' +
               bundlePath +
               '"></script></html>',
+          });
+        } else if (view === "fullCart" && url.pathname === "/images/logo.png") {
+          await intercepted.fulfill({
+            contentType: "image/png",
+            body: await readFile(
+              new URL("../../../public/images/logo.png", import.meta.url),
+            ),
           });
         } else if (url.pathname === bundlePath && request.resourceType() === "script") {
           await intercepted.fulfill({ contentType: "text/javascript", body: script });

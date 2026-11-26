@@ -1,4 +1,5 @@
 import { z } from "zod";
+import { basketImage, shortage } from "../ValidateBasket/validation-contract";
 import { decodeUnits, uniqueLines, type SavedLine } from "./purchase-capture";
 
 import type { BasketRepairReason, CartItem } from "../../Contracts/Basket";
@@ -29,6 +30,9 @@ const storedLine = z.object({
   priceCents: z.number().int().nonnegative(),
   quantity: z.number().int().positive(),
   imageUrl: z.string().nullish(),
+  orderScoped: z.literal(true).optional(),
+  availability: shortage.optional(),
+  previousPriceCents: z.number().int().nonnegative().optional(),
   maxStock: z.number().int().nonnegative().optional(),
 });
 
@@ -58,10 +62,7 @@ export function decodeSavedBasket(raw: string | null): {
         : undefined,
       item: {
         ...line,
-        imageUrl:
-          !line.imageUrl || line.imageUrl === "/placeholder.png"
-            ? "/images/logo.png"
-            : line.imageUrl,
+        imageUrl: basketImage(line.imageUrl),
       },
     });
   }

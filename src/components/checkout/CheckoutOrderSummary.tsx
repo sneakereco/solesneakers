@@ -1,3 +1,4 @@
+import { BasketLineReview, needsBasketReview } from "@/Modules/Cart/Source/Client";
 import Image from "next/image";
 
 import type { CheckoutQuoteResponse } from "@/lib/checkout/checkout-request";
@@ -25,10 +26,14 @@ export function CheckoutOrderSummary({
   className?: string;
 }) {
   const cartSubtotal = items.reduce(
-    (sum, item) => sum + item.priceCents * item.quantity,
+    (sum, item) => sum + (needsBasketReview(item) ? 0 : item.priceCents * item.quantity),
     0,
   );
-  const quote = quoteState.quote;
+  const quote = items.some(
+    (i) => i.availability || i.orderScoped || i.previousPriceCents !== undefined,
+  )
+    ? undefined
+    : quoteState.quote;
   const subtotal = quote?.totals.subtotalCents ?? cartSubtotal;
   const shipping = quote?.totals.shippingCents;
   const exact = quote?.completeness === "exact" ? quote : null;
@@ -63,9 +68,14 @@ export function CheckoutOrderSummary({
                 <p className="mt-1 text-xs text-zinc-500">
                   Size {item.sizeLabel} · Qty {item.quantity}
                 </p>
+                {(item.availability ||
+                  item.previousPriceCents !== undefined ||
+                  item.orderScoped) && <BasketLineReview item={item} />}
               </div>
               <p className="text-sm font-medium">
-                {formatPrice(item.priceCents * item.quantity)}
+                {item.availability
+                  ? "Unavailable"
+                  : formatPrice(item.priceCents * item.quantity)}
               </p>
             </div>
           ))}

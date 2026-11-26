@@ -31,6 +31,21 @@ export function getOrCreateCheckoutIdempotencyKey(
   return key;
 }
 
+export function isCurrentCheckoutAttempt(
+  key: string,
+  fingerprint: string,
+  storage = getSessionStorage(),
+) {
+  try {
+    return (
+      !!storage &&
+      storage.getItem(IDEMPOTENCY_KEY) === key &&
+      storage.getItem(CART_FINGERPRINT_KEY) === fingerprint
+    );
+  } catch {
+    return false;
+  }
+}
 export function getOrCreateCheckoutDeviceSessionId(
   storage: Storage | null = getSessionStorage(),
   createId: () => string = generateIdempotencyKey,

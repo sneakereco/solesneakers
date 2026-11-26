@@ -387,7 +387,7 @@ test("guest prepare callback resolved after identity change cannot bind either b
     3,
   );
 });
-test("accepted reprice, clamp and explicit removal preserve only the remaining original units", async (t) => {
+test("catalog shortage retains original units while explicit remove and re-add protects replacement", async (t) => {
   const second = { ...item(1), productId: randomUUID(), variantId: randomUUID() };
   const { page } = await fixture(t, "a", [item(3), second]);
   const basket = [
@@ -420,7 +420,20 @@ test("accepted reprice, clamp and explicit removal preserve only the remaining o
       ),
     { priced, second },
   );
-  await observed(page, [priced]);
+  const retained = {
+    ...priced,
+    quantity: 3,
+    availability: "unavailable",
+    previousPriceCents: 1000,
+  };
+  await observed(page, [
+    retained,
+    { ...second, maxStock: 0, availability: "unavailable" },
+  ]);
+  await page.evaluate(
+    (row) => window.testCart.removeItem(row.productId, row.variantId),
+    second,
+  );
   await page.evaluate((row) => window.testCart.addItem(row), second);
   assert.deepEqual(await page.evaluate(() => window.fixtureAddedArgs), [
     [second.productId, second.variantId],
@@ -429,7 +442,7 @@ test("accepted reprice, clamp and explicit removal preserve only the remaining o
     status: "matched",
     attemptKey,
   });
-  await observed(page, [{ ...priced, quantity: 1 }, second]);
+  await observed(page, [{ ...retained, quantity: 2 }, second]);
 });
 test("remove/re-add and clear/re-add with identical values protect new line incarnations", async (t) => {
   const { page } = await fixture(t);
@@ -660,6 +673,23 @@ for (const [damage, edit] of [
         (priced) => requests[0].resolve(Response.json({ items: [priced], removed: [] })),
         priced,
       );
+      await observed(page, [
+        { ...priced, quantity: 4, availability: "unavailable", previousPriceCents: 1000 },
+      ]);
+      await page.evaluate(
+        (row) => window.testCart.updateQuantity(row.productId, row.variantId, 2),
+        priced,
+      );
+      await page.evaluate(() => {
+        void window.testCart.recheckAvailability();
+      });
+      await page.waitForFunction(() => requests.length === 2);
+      await page.evaluate(
+        (row) => requests[1].resolve(Response.json({ items: [row], removed: [] })),
+        priced,
+      );
+      await observed(page, [{ ...priced, previousPriceCents: 1000 }]);
+      await page.evaluate(() => window.testCart.acceptPrice(window.testCart.items[0]));
       await observed(page, [priced]);
       const fresh = await prepared(page, 2);
       assert.deepEqual(await consume(page, fresh.orderId, lines(1)), {
