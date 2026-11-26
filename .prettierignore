@@ -7,4 +7,5 @@ coverage/
 .worktrees/
 .codegraph/
 .superpowers/
+.load-test/
 next-env.d.ts
