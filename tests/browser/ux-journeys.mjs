@@ -22,7 +22,11 @@ const ux = [
   "checkout",
 ].map((name) => "tests/browser/ux-" + name + ".mjs");
 const suites = [...existing, ...ux];
-if (process.argv.includes("--local")) suites.push("tests/browser/ux-local-journeys.mjs");
+if (process.argv.includes("--local"))
+  suites.push(
+    "tests/browser/ux-local-journeys.mjs",
+    "tests/browser/ux-local-recovery-owner.mjs",
+  );
 let failed = 0;
 for (const suite of suites) {
   const result = spawnSync(process.execPath, [suite], {
