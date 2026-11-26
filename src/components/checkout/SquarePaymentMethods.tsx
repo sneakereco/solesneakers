@@ -551,6 +551,7 @@ export function SquarePaymentMethods({
     Partial<Record<"applePay" | "afterpay", SquarePaymentRequest>>
   >({});
   const paymentInFlight = useRef(false);
+  const paymentInteraction = useRef(0);
   const latest = useRef({
     resolvedBillingAddress,
     quote,
@@ -760,6 +761,7 @@ export function SquarePaymentMethods({
     }
     let active = true;
     let tokenDelivered = false;
+    let interaction = paymentInteraction.current;
     const current = latest.current;
     if (current.quote?.completeness !== "exact") {
       return;
@@ -788,6 +790,7 @@ export function SquarePaymentMethods({
                 (!latest.current.isGuest || Boolean(turnstileTokenRef.current)) &&
                 validateCheckoutFields(regularForm.current);
               if (ready) {
+                interaction = ++paymentInteraction.current;
                 tokenDelivered = false;
                 setError(null);
                 setLoadingProvider("Cash App Pay");
@@ -800,8 +803,10 @@ export function SquarePaymentMethods({
         },
         async (method) => {
           const continueCashApp = async (result: SquareTokenResult) => {
+            const originalInteraction = interaction;
             try {
               await requireOwner?.({ waitForQuote: true });
+              if (paymentInteraction.current !== originalInteraction) return;
               assertPaymentQuoteCurrent(
                 cashAppQuoteKey,
                 latest.current.exactQuote?.quoteFingerprint,
@@ -809,6 +814,7 @@ export function SquarePaymentMethods({
               );
               if (active) void submitCashAppRef.current("cashAppPay", result);
             } catch (methodError) {
+              if (paymentInteraction.current !== originalInteraction) return;
               setLoadingProvider(null);
               setError(
                 methodError instanceof Error
@@ -818,23 +824,40 @@ export function SquarePaymentMethods({
             }
           };
           method.addEventListener("ontokenization", (event) => {
-            if (!active || tokenDelivered) {
+            if (
+              !active ||
+              tokenDelivered ||
+              paymentInFlight.current ||
+              paymentInteraction.current !== interaction
+            ) {
               return;
             }
+            tokenDelivered = true;
             setProviderActive(false);
             const detail = (
               event as { detail?: { tokenResult?: SquareTokenResult; error?: unknown } }
             ).detail;
-            if (detail?.error) {
-              setLoadingProvider(null);
-              reportUnavailable("cashAppPay", "tokenize", detail.error);
-              setError(
-                "Cash App Pay could not authorize this payment. Please try again.",
-              );
-            } else if (detail?.tokenResult) {
-              tokenDelivered = true;
-              void continueCashApp(detail.tokenResult);
+            const result = detail?.tokenResult;
+            if (
+              !detail?.error &&
+              result?.status === "OK" &&
+              typeof result.token === "string" &&
+              result.token.trim()
+            ) {
+              void continueCashApp(result);
+              return;
             }
+            if (detail?.error) reportUnavailable("cashAppPay", "tokenize", detail.error);
+            const cancelled =
+              !detail?.error &&
+              (result?.status === "Cancel" || result?.status === "CANCEL");
+            setLoadingProvider(null);
+            setPaymentDialogOpen(false);
+            setError(
+              cancelled
+                ? null
+                : "Cash App Pay could not authorize this payment. Please try again.",
+            );
           });
           await method.attach("#square-cash-app-pay-container", {
             shape: "semiround",
@@ -949,6 +972,7 @@ export function SquarePaymentMethods({
     if (paymentInFlight.current) {
       return;
     }
+    paymentInteraction.current++;
     paymentInFlight.current = true;
     performance.clearMarks("checkout-payment-start");
     performance.clearMarks("checkout-confirmed");
@@ -990,6 +1014,7 @@ export function SquarePaymentMethods({
   }
 
   function dismissPaymentDialog() {
+    paymentInteraction.current++;
     const walletChoice = walletContinuation.current;
     walletContinuation.current = null;
     walletChoice?.(null);

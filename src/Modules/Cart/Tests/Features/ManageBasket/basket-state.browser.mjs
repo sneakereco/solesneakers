@@ -1142,12 +1142,13 @@ async function checkoutOwnershipFixture(t, { reviewAddress = false } = {}) {
                 if (ready) counters.authorized++;
                 return ready;
               };
-              window.completeCash = () => {
+              window.deliverCash = (tokenResult) => callback({ detail: { tokenResult } });
+              window.completeCash = (
+                tokenResult = { status: "OK", token: "synthetic-cash" },
+              ) => {
                 if (!alive) return false;
                 counters.callbacks++;
-                callback({
-                  detail: { tokenResult: { status: "OK", token: "synthetic-cash" } },
-                });
+                window.deliverCash(tokenResult);
                 return true;
               };
             },
@@ -1669,4 +1670,131 @@ for (const outcome of ["same quote", "changed quote", "new owner"]) {
       releasePay();
     }
   });
+}
+
+for (const tokenResult of [
+  { status: "Cancel" },
+  {
+    status: "Error",
+    errors: [{ type: "FAILED", message: "Synthetic tokenization failed" }],
+  },
+  {
+    status: "Invalid",
+    errors: [{ type: "INVALID", message: "Synthetic validation failed" }],
+  },
+  { status: "Abort" },
+  { status: "Unknown" },
+]) {
+  test(
+    "terminal Cash App " +
+      tokenResult.status +
+      " releases checkout before the refreshed quote",
+    async (t) => {
+      const f = await checkoutOwnershipFixture(t),
+        { page } = f;
+      await page.waitForFunction(() => typeof window.beginCash === "function");
+      await page.getByRole("radio", { name: "Cash App Pay", exact: true }).click();
+      assert.equal(await page.evaluate(() => window.beginCash()), true);
+      const releaseSession = f.deferSession(),
+        releaseQuote = f.deferQuote(true);
+      try {
+        await page.evaluate(() => document.dispatchEvent(new Event("visibilitychange")));
+        await expect
+          .poll(() => page.evaluate(() => window.testCart.access))
+          .toBe("checking");
+        assert.equal(
+          await page.evaluate((result) => window.completeCash(result), tokenResult),
+          true,
+        );
+        releaseSession();
+        await expect.poll(() => f.requests.quotes.length).toBe(2);
+        await page.waitForFunction(() => window.testCart.isReady);
+        await expect(page.getByRole("dialog")).toHaveCount(0);
+        await page.getByRole("radio", { name: "Cash App Pay", exact: true }).focus();
+        await expect(
+          page.getByRole("radio", { name: "Cash App Pay", exact: true }),
+        ).toBeFocused();
+        const error = page
+          .getByRole("alert")
+          .filter({ hasText: "Cash App Pay could not authorize this payment." });
+        if (tokenResult.status !== "Cancel") await expect(error).toBeVisible();
+        else await expect(error).toHaveCount(0);
+        releaseQuote();
+        await expect
+          .poll(() => page.evaluate(() => window.cashCounters.destroyed))
+          .toBe(1);
+        await expect(
+          page.getByText(
+            "Your checkout changed. Review the updated total and try again.",
+            { exact: true },
+          ),
+        ).toBeHidden();
+        await expect(page.getByRole("dialog")).toHaveCount(0);
+        assert.equal(f.requests.prepares.length, 0);
+        assert.equal(f.requests.permits, 0);
+        assert.equal(f.requests.pays, 0);
+      } finally {
+        releaseSession();
+        releaseQuote();
+      }
+    },
+  );
+}
+
+for (const replaceOwner of [false, true]) {
+  test(
+    "late terminal Cash App callback preserves " +
+      (replaceOwner ? "replacement owner's" : "another method's") +
+      " dialog",
+    async (t) => {
+      const f = await checkoutOwnershipFixture(t),
+        { page } = f;
+      await page.waitForFunction(() => typeof window.beginCash === "function");
+      await page.getByRole("radio", { name: "Cash App Pay", exact: true }).click();
+      assert.equal(await page.evaluate(() => window.beginCash()), true);
+      await page.evaluate(() => {
+        window.deliverOldCash = window.deliverCash;
+      });
+      if (replaceOwner) {
+        f.changeOwner("b");
+        await page.evaluate(() => window.dispatchEvent(new Event("sessionUpdate")));
+        await visible(page, [line("b")]);
+        await page.evaluate(
+          (data) =>
+            window.dispatchEvent(
+              new CustomEvent("fixtureCheckoutBootstrap", { detail: data }),
+            ),
+          accountCheckoutData("b"),
+        );
+        await expect(
+          page.getByRole("textbox", { name: "Email", exact: true }),
+        ).toHaveValue("b@fixture.invalid");
+      }
+      const release = f.deferPay();
+      try {
+        await page.getByRole("radio", { name: "Credit card", exact: true }).click();
+        await page.getByLabel("Name on card", { exact: true }).fill("Fixture Buyer");
+        await page.getByRole("button", { name: /Pay .* now/i }).click();
+        await expect.poll(() => f.requests.pays).toBe(1);
+        const progress = page.getByRole("dialog", {
+          name: "Processing your payment",
+          exact: true,
+        });
+        await expect(progress).toBeVisible();
+        await page.evaluate(() => window.deliverOldCash({ status: "Cancel" }));
+        await page.evaluate(
+          () =>
+            new Promise((resolve) =>
+              requestAnimationFrame(() => requestAnimationFrame(resolve)),
+            ),
+        );
+        await expect(progress).toBeVisible();
+        assert.equal(f.requests.prepares.length, 1);
+        assert.equal(f.requests.permits, 1);
+        assert.equal(f.requests.pays, 1);
+      } finally {
+        release();
+      }
+    },
+  );
 }
