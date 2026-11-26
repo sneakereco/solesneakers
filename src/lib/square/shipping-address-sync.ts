@@ -20,10 +20,11 @@ export type SquareShippingSyncDependencies = {
 
 export function createSquareShippingSyncDependencies(
   supabase: TypedSupabaseClient,
+  square = createSquareClient(),
 ): SquareShippingSyncDependencies {
   const orders = new OrdersRepository(supabase);
   const addresses = new AddressesRepository(supabase);
-  const squareOrders = new SquareOrderShippingReader(createSquareClient().orders);
+  const squareOrders = new SquareOrderShippingReader(square.orders);
 
   return {
     getOrderById: (orderId) => orders.getById(orderId),

@@ -4,7 +4,7 @@ import { getSquareConfig } from "@/lib/square/config";
 import { SquareCheckoutOrdersGateway } from "@/lib/square/checkout-orders";
 import { SquarePaymentsGateway } from "@/lib/square/payments";
 
-export function createSquareClient(): SquareClient {
+export function createSquareClient(options?: { maxRetries: 0 }): SquareClient {
   const config = getSquareConfig();
 
   return new SquareClient({
@@ -13,7 +13,7 @@ export function createSquareClient(): SquareClient {
       config.environment === "production"
         ? SquareEnvironment.Production
         : SquareEnvironment.Sandbox,
-    maxRetries: 2,
+    maxRetries: options?.maxRetries ?? 2,
     timeoutInSeconds: 10,
   });
 }

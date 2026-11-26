@@ -78,6 +78,50 @@ export type Database = {
         }
         Relationships: []
       }
+      checkout_financial_facts: {
+        Row: {
+          amount_cents: number
+          currency: string
+          kind: string
+          order_id: string
+          payment_id: string
+          provider_id: string
+          provider_time: string
+          provider_version: string
+          status: string
+        }
+        Insert: {
+          amount_cents: number
+          currency: string
+          kind: string
+          order_id: string
+          payment_id: string
+          provider_id: string
+          provider_time: string
+          provider_version: string
+          status: string
+        }
+        Update: {
+          amount_cents?: number
+          currency?: string
+          kind?: string
+          order_id?: string
+          payment_id?: string
+          provider_id?: string
+          provider_time?: string
+          provider_version?: string
+          status?: string
+        }
+        Relationships: [
+          {
+            foreignKeyName: "checkout_financial_facts_order_id_fkey"
+            columns: ["order_id"]
+            isOneToOne: false
+            referencedRelation: "orders"
+            referencedColumns: ["id"]
+          },
+        ]
+      }
       checkout_notification_outbox: {
         Row: {
           attempts: number
@@ -794,6 +838,7 @@ export type Database = {
           actual_shipping_cost_cents: number | null
           cart_hash: string | null
           checkout_attempt_guarded: boolean
+          checkout_financial_review: string | null
           checkout_guest_context_hash: string | null
           checkout_protection_evidence: Json
           created_at: string | null
@@ -836,6 +881,7 @@ export type Database = {
           actual_shipping_cost_cents?: number | null
           cart_hash?: string | null
           checkout_attempt_guarded?: boolean
+          checkout_financial_review?: string | null
           checkout_guest_context_hash?: string | null
           checkout_protection_evidence?: Json
           created_at?: string | null
@@ -878,6 +924,7 @@ export type Database = {
           actual_shipping_cost_cents?: number | null
           cart_hash?: string | null
           checkout_attempt_guarded?: boolean
+          checkout_financial_review?: string | null
           checkout_guest_context_hash?: string | null
           checkout_protection_evidence?: Json
           created_at?: string | null
@@ -1425,6 +1472,7 @@ export type Database = {
           currency: string
           due_at: string | null
           order_id: string
+          provider_updated_at: string | null
           reason: string
           square_created_at: string | null
           square_dispute_id: string
@@ -1438,6 +1486,7 @@ export type Database = {
           currency: string
           due_at?: string | null
           order_id: string
+          provider_updated_at?: string | null
           reason: string
           square_created_at?: string | null
           square_dispute_id: string
@@ -1451,6 +1500,7 @@ export type Database = {
           currency?: string
           due_at?: string | null
           order_id?: string
+          provider_updated_at?: string | null
           reason?: string
           square_created_at?: string | null
           square_dispute_id?: string
@@ -1983,6 +2033,14 @@ export type Database = {
         Args: { p_dependency: string; p_lease_seconds: number; p_limit: number }
         Returns: string
       }
+      apply_checkout_dispute_receipt: {
+        Args: { p_dispute: Json; p_event_id: string; p_order_id: string }
+        Returns: undefined
+      }
+      apply_checkout_financial_fact: {
+        Args: { p_fact: Json; p_provider_time: string; p_review?: string }
+        Returns: Json
+      }
       attach_square_checkout_order: {
         Args: {
           p_order_id: string
@@ -2275,6 +2333,7 @@ export type Database = {
           actual_shipping_cost_cents: number | null
           cart_hash: string | null
           checkout_attempt_guarded: boolean
+          checkout_financial_review: string | null
           checkout_guest_context_hash: string | null
           checkout_protection_evidence: Json
           created_at: string | null

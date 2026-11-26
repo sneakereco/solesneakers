@@ -1,3 +1,7 @@
+jest.mock("@/lib/square/financial-inquiry-dependencies", () => ({
+  createSquareFinancialInquiry: jest.fn(),
+}));
+import { createSquareFinancialInquiry } from "@/lib/square/financial-inquiry-dependencies";
 import { SquarePaymentEventProcessor } from "@/lib/square/payment-event";
 
 const completedPaymentEvent = {
@@ -90,14 +94,11 @@ describe("SquarePaymentEventProcessor", () => {
     expect(rpc).toHaveBeenCalledWith(
       "record_square_payment_details",
       expect.objectContaining({
-        p_details: expect.objectContaining({
-          card_expiry_month: null,
-          card_expiry_year: null,
-        }),
+        p_details: { source_type: null, payment_method: null },
       }),
     );
   });
-  it("persists safe card details even when the payment event was already processed", async () => {
+  it("keeps card details out of repeated payment metadata writes", async () => {
     const rpc = jest.fn().mockResolvedValue({
       data: { duplicate: true, fulfillment_authorized: false },
       error: null,
@@ -113,7 +114,7 @@ describe("SquarePaymentEventProcessor", () => {
       expect.objectContaining({
         p_square_order_id: "square-order-1",
         p_square_payment_id: "payment-1",
-        p_details: expect.objectContaining({ card_last4: "4242" }),
+        p_details: { source_type: null, payment_method: null },
       }),
     );
   });
@@ -246,6 +247,42 @@ describe("SquarePaymentEventProcessor", () => {
     expect(rpc).not.toHaveBeenCalled();
   });
 
+  it("uses only lookup refs from a browser-triggered completed snapshot", async () => {
+    const result = {
+      duplicate: false,
+      fulfillmentAuthorized: true,
+      orderId: "local",
+      paymentStatus: "COMPLETED",
+      squareOrderId: "square-order-1",
+    };
+    const reconcileVerifiedPayment = jest.fn().mockResolvedValue(result);
+    jest
+      .mocked(createSquareFinancialInquiry)
+      .mockReturnValue({ reconcileVerifiedPayment } as never);
+    const rpc = jest.fn();
+    const processor = new SquarePaymentEventProcessor(
+      { rpc } as never,
+      "location-1",
+      verifyPaymentOrder,
+    );
+    await expect(
+      processor.processPaymentSnapshot({
+        eventId: "lookup",
+        eventType: "payment.reconciled",
+        merchantId: "reconciliation",
+        locationId: "location-1",
+        createdAt: "2026-11-25T10:00:00Z",
+        paymentId: "pay",
+        squareOrderId: "square-order-1",
+        paymentStatus: "COMPLETED",
+        amountCents: 10,
+        currency: "USD",
+        riskLevel: null,
+      }),
+    ).resolves.toEqual(result);
+    expect(reconcileVerifiedPayment).toHaveBeenCalledWith("pay", "square-order-1");
+    expect(rpc).not.toHaveBeenCalled();
+  });
   it("persists refund updates idempotently against the Square payment", async () => {
     const rpc = jest.fn().mockResolvedValue({
       data: { duplicate: false, fulfillment_authorized: false, order_id: "order-1" },

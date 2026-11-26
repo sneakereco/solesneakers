@@ -52,7 +52,12 @@ export async function recordSquarePaymentDetails(
     p_payment_status: input.status,
     p_amount_cents: input.amountCents,
     p_currency: input.currency,
-    p_details: input.details,
+    // Keep historical transaction fields readable. New provider observations
+    // write only the method and source class required by checkout.
+    p_details: {
+      source_type: input.details.source_type ?? null,
+      payment_method: input.details.payment_method ?? null,
+    },
   });
   if (error) throw error;
 }
