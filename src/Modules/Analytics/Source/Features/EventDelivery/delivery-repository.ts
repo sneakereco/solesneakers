@@ -76,18 +76,26 @@ export function createDeliveryRepository(db: AdminSupabaseClient, datasetId: str
     async claimPublications(
       limit: number,
       leaseSeconds: number,
-      onQuarantine?: (counts: { failed: number; deferred: number }) => void,
+      onTransitions?: (counts: { failed: number; deferred: number }) => void,
     ): Promise<LeasedPublication[]> {
-      const { data, error } = await db.rpc("analytics_claim_publications", {
+      const { data, error } = await db.rpc("analytics_claim_batch", {
         p_dataset_id: scope,
         p_limit: z.number().int().min(1).max(200).parse(limit),
         p_lease_seconds: z.number().int().min(1).max(300).parse(leaseSeconds),
       });
       if (error) throw new Error("Analytics publication claim failed");
+      const batch = z
+        .strictObject({
+          exhausted: z.number().int().min(0).max(limit),
+          jobs: z.array(z.unknown()).max(limit),
+        })
+        .parse(data);
+      if (batch.exhausted + batch.jobs.length > limit)
+        throw new Error("Invalid analytics batch size");
       const jobs: LeasedPublication[] = [];
       const invalid: PromiseLike<unknown>[] = [];
       let unaddressable = 0;
-      for (const raw of z.array(z.unknown()).parse(data)) {
+      for (const raw of batch.jobs) {
         const result = leased.safeParse(raw);
         if (result.success && result.data.fact.datasetId === scope) {
           const row = result.data;
@@ -125,8 +133,11 @@ export function createDeliveryRepository(db: AdminSupabaseClient, datasetId: str
       const failed = quarantine.filter(
         (row) => row.status === "fulfilled" && row.value === true,
       ).length;
-      if (quarantine.length || unaddressable)
-        onQuarantine?.({ failed, deferred: unaddressable + quarantine.length - failed });
+      if (batch.exhausted || quarantine.length || unaddressable)
+        onTransitions?.({
+          failed: batch.exhausted + failed,
+          deferred: unaddressable + quarantine.length - failed,
+        });
       return jobs;
     },
     async completePublication(id: string, leaseToken: string): Promise<boolean> {

@@ -214,7 +214,7 @@ it("reconciles replay after the provider received a batch whose acknowledgement 
         f.currency,
         f.orderId,
         f.buyerKey,
-        f.payload,
+        JSON.stringify(f.payload),
       ];
     }
     let packet: { columns: string[]; results: unknown[][] };
@@ -242,7 +242,7 @@ it("reconciles replay after the provider received a batch whose acknowledgement 
             p.currency,
             p.order_id,
             p.buyer_key,
-            p.payload,
+            JSON.stringify(p.payload),
             e.uuid,
             e.distinct_id,
             e.timestamp,
@@ -267,7 +267,7 @@ it("reconciles replay after the provider received a batch whose acknowledgement 
       Response.json({
         name,
         execution_id: randomUUID(),
-        endpoint_version: 1,
+        endpoint_version: name === "sole_analytics_reconciliation" ? 1 : 2,
         ...packet,
         hasMore: false,
       }),
@@ -304,3 +304,53 @@ it("reconciles replay after the provider received a batch whose acknowledgement 
       "/endpoints/sole_analytics_reconciliation/run/",
   );
 });
+it.each([429, 401, 503])(
+  "stops optional sends across all remaining leases on shared %s failure",
+  async (status) => {
+    const jobs = Array.from({ length: 5 }, () => {
+      const next = job();
+      const uniqueOrderId = randomUUID();
+      return {
+        ...next,
+        fact: { ...next.fact, orderId: uniqueOrderId, factId: "order:" + uniqueOrderId },
+      };
+    });
+    jobs[4].attempt = 8;
+    const deps = setup(jobs);
+    deps.getActivePurchaseContext.mockResolvedValue({
+      publicationId: randomUUID(),
+      tracking: {
+        receiptId: randomUUID(),
+        visitorId: randomUUID(),
+        sessionId: randomUUID(),
+        device: "desktop",
+        discovery: null,
+        purchaseSession: null,
+      },
+    });
+    deps.fetch
+      .mockResolvedValueOnce(Response.json({ status: 1 }))
+      .mockResolvedValueOnce(
+        new Response(null, { status, headers: { "Retry-After": "90" } }),
+      );
+    expect(await deliverAnalyticsBatch(deps, opts)).toEqual({
+      claimed: 5,
+      delivered: 0,
+      failed: 1,
+      deferred: 4,
+    });
+    expect(deps.fetch).toHaveBeenCalledTimes(2);
+    expect(deps.getActivePurchaseContext).toHaveBeenCalledTimes(2);
+    const failure =
+      status === 401
+        ? { status: "configuration-failure", reason: "unauthorized" }
+        : {
+            status: "retryable",
+            reason: status === 429 ? "rate-limited" : "provider-unavailable",
+            retryAfterMs: 90000,
+          };
+    for (const j of jobs)
+      expect(deps.failPublication).toHaveBeenCalledWith(j.id, j.leaseToken, failure);
+    expect(deps.claimPublications).toHaveBeenCalledTimes(1);
+  },
+);

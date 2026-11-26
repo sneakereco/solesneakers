@@ -10,19 +10,22 @@ it("decodes leased facts and refuses malformed queue rows", async () => {
   const rpc = jest
     .fn()
     .mockResolvedValueOnce({
-      data: [
-        {
-          publication_id: id,
-          lease_token: id,
-          lease_expires_at: base.effectiveAt,
-          attempt: 1,
-          environment: "staging",
-          fact,
-        },
-      ],
+      data: {
+        exhausted: 0,
+        jobs: [
+          {
+            publication_id: id,
+            lease_token: id,
+            lease_expires_at: base.effectiveAt,
+            attempt: 1,
+            environment: "staging",
+            fact,
+          },
+        ],
+      },
       error: null,
     })
-    .mockResolvedValueOnce({ data: [{}], error: null });
+    .mockResolvedValueOnce({ data: { exhausted: 0, jobs: [{}] }, error: null });
   const repo = createDeliveryRepository(
     { rpc } as unknown as AdminSupabaseClient,
     base.datasetId,
@@ -74,8 +77,8 @@ it("returns healthy leases from a mixed batch and quarantines incompatible facts
     fact: entry.candidate,
   }));
   const rpc = jest.fn().mockImplementation((method: string) => {
-    if (method === "analytics_claim_publications")
-      return Promise.resolve({ data: packet, error: null });
+    if (method === "analytics_claim_batch")
+      return Promise.resolve({ data: { exhausted: 0, jobs: packet }, error: null });
     return Promise.resolve({ data: true, error: null });
   });
   const jobs = await createDeliveryRepository(
@@ -103,7 +106,7 @@ it("reports quarantined and fenced invalid rows to the drain for exact claim acc
   const raw = { publication_id: id, lease_token: id, fact: {} };
   const rpc = jest
     .fn()
-    .mockResolvedValueOnce({ data: [raw, raw], error: null })
+    .mockResolvedValueOnce({ data: { exhausted: 2, jobs: [raw, raw] }, error: null })
     .mockResolvedValueOnce({ data: true, error: null })
     .mockResolvedValueOnce({ data: false, error: null });
   const notify = jest.fn();
@@ -112,5 +115,5 @@ it("reports quarantined and fenced invalid rows to the drain for exact claim acc
     base.datasetId,
   );
   expect(await repo.claimPublications(50, 30, notify)).toEqual([]);
-  expect(notify).toHaveBeenCalledWith({ failed: 1, deferred: 1 });
+  expect(notify).toHaveBeenCalledWith({ failed: 3, deferred: 1 });
 });

@@ -1,4 +1,5 @@
 import "server-only";
+import { analyticsInstantMicros as instant } from "./instant";
 import { isDeepStrictEqual } from "node:util";
 import { z } from "zod";
 import {
@@ -84,7 +85,7 @@ export const reconciliationRawEndpoint = definition(
 );
 export const reconciliationWarehouseEndpoint = definition(
   "sole_analytics_reconciliation_warehouse",
-  `dataset_id,environment,fact_id,revision,kind,${timestamp("effective_at")} AS effective_at,${timestamp("recorded_at")} AS recorded_at,currency,order_id,buyer_key,payload
+  `dataset_id,environment,fact_id,revision,kind,${timestamp("effective_at")} AS effective_at,${timestamp("recorded_at")} AS recorded_at,currency,order_id,buyer_key,if(toTypeName(analytics_financial_export.payload) IN ('String','Nullable(String)','LowCardinality(String)','LowCardinality(Nullable(String))'),${bounded("toString(analytics_financial_export.payload)", 8192)},'') AS payload
  FROM analytics_financial_export WHERE dataset_id={variables.dataset_id} AND ${range("analytics_financial_export.effective_at")}`,
 );
 
@@ -111,13 +112,6 @@ type Evidence = {
 type Differences = { missing: number; extra: number; conflicting: number };
 type Surface = "raw" | "warehouse";
 
-// Date.parse retains milliseconds. Preserve the remaining supported microseconds in comparisons.
-function instant(value: string): bigint {
-  const ms = Date.parse(value);
-  if (!Number.isFinite(ms)) return incomplete();
-  const fraction = /\.(\d+)/.exec(value)?.[1] ?? "";
-  return BigInt(ms) * 1000n + BigInt(fraction.padEnd(6, "0").slice(3, 6));
-}
 export function reconciliationWindow(start: unknown, end: unknown) {
   const startInclusive = factFields.effectiveAt.parse(start),
     endExclusive = factFields.effectiveAt.parse(end);
@@ -237,8 +231,8 @@ function decode(values: unknown[], surface: Surface): Evidence {
     version,
   ] = values;
   if (environment !== "staging" && environment !== "production") return incomplete();
-  const payload =
-    typeof wirePayload === "string" ? readPayload(wirePayload) : wirePayload;
+  if (typeof wirePayload !== "string") return incomplete();
+  const payload = readPayload(wirePayload);
   const fact = analyticsFactSchema.parse({
     datasetId,
     factId,

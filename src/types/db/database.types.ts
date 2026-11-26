@@ -1988,6 +1988,10 @@ export type Database = {
         Returns: Json
       }
       analytics_append_fact: { Args: { p_fact: Json }; Returns: string }
+      analytics_claim_batch: {
+        Args: { p_dataset_id: string; p_lease_seconds: number; p_limit: number }
+        Returns: Json
+      }
       analytics_claim_publications: {
         Args: { p_dataset_id: string; p_lease_seconds: number; p_limit: number }
         Returns: {

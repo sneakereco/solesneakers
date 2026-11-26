@@ -132,3 +132,51 @@ end;
 $$;
 revoke all on function public.analytics_reconciliation_snapshot(text,timestamptz,timestamptz,integer) from public,anon,authenticated;
 grant execute on function public.analytics_reconciliation_snapshot(text,timestamptz,timestamptz,integer) to service_role;
+
+-- Account for all queue transitions performed by this invocation within the same transaction.
+create function analytics_source.claim_batch(p_dataset_id text,p_limit integer,p_lease_seconds integer,p_shared_limit boolean)
+returns jsonb language plpgsql security invoker set search_path='' as $$
+declare terminal_count integer; leases jsonb;
+begin
+    if p_limit is null or p_limit not between 1 and 200 or p_lease_seconds is null or p_lease_seconds not between 1 and 300 then
+      raise exception 'Invalid analytics claim bounds' using errcode='22023';
+    end if;
+    with expired as (
+      select q.id from public.analytics_publication_outbox q where q.dataset_id=p_dataset_id and q.status='leased' and q.lease_expires_at<=statement_timestamp() and q.attempts=8
+      order by q.lease_expires_at,q.id limit p_limit for update skip locked
+    )
+    update public.analytics_publication_outbox q set status='failed',failure_category='lease-exhausted',lease_token=null,lease_expires_at=null
+      from expired where q.id=expired.id;
+    get diagnostics terminal_count = row_count;
+    with candidates as (
+      select q.id from public.analytics_publication_outbox q
+      where q.dataset_id=p_dataset_id and ((q.status='pending' and q.next_attempt_at<=statement_timestamp()) or
+            (q.status='leased' and q.lease_expires_at<=statement_timestamp() and q.attempts<8))
+      order by coalesce(q.lease_expires_at,q.next_attempt_at),q.id limit (case when p_shared_limit then p_limit-terminal_count else p_limit end) for update skip locked
+    ), claimed as (
+      update public.analytics_publication_outbox q set status='leased', attempts=q.attempts+1,
+         lease_token=gen_random_uuid(),lease_expires_at=clock_timestamp()+make_interval(secs=>p_lease_seconds)
+      from candidates c where q.id=c.id returning q.*
+    )
+    select coalesce(jsonb_agg(jsonb_build_object('publication_id',c.id,'lease_token',c.lease_token,'lease_expires_at',c.lease_expires_at,'attempt',c.attempts,'environment',d.environment,'fact',v.fact)),'[]'::jsonb) into leases from claimed c
+      join public.analytics_fact_versions v using(dataset_id,fact_id,revision)
+      join public.analytics_datasets d using(dataset_id);
+    return jsonb_build_object('exhausted',terminal_count,'jobs',leases);
+end;
+$$;
+revoke all on function analytics_source.claim_batch(text,integer,integer,boolean) from public,anon,authenticated,service_role;
+
+create function public.analytics_claim_batch(p_dataset_id text,p_limit integer,p_lease_seconds integer)
+returns jsonb language sql volatile security definer set search_path='' as $$
+ select analytics_source.claim_batch(p_dataset_id,p_limit,p_lease_seconds,true)
+$$;
+revoke all on function public.analytics_claim_batch(text,integer,integer) from public,anon,authenticated;
+grant execute on function public.analytics_claim_batch(text,integer,integer) to service_role;
+
+-- Preserve the original set-returning API for existing callers.
+create or replace function public.analytics_claim_publications(p_dataset_id text,p_limit integer,p_lease_seconds integer)
+returns table(publication_id uuid,lease_token uuid,lease_expires_at timestamptz,attempt integer,environment text,fact jsonb)
+language sql volatile security definer set search_path='' as $$
+ select * from jsonb_to_recordset(analytics_source.claim_batch(p_dataset_id,p_limit,p_lease_seconds,false)->'jobs')
+ as j(publication_id uuid,lease_token uuid,lease_expires_at timestamptz,attempt integer,environment text,fact jsonb)
+$$;

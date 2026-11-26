@@ -169,7 +169,7 @@ export async function deliverAnalyticsBatch(
       );
       const trackedIds = new Set(tracked.map((j) => j.id));
       await Promise.all(jobs.filter((j) => !trackedIds.has(j.id)).map((j) => settle(j)));
-      for (const job of tracked) {
+      for (const [index, job] of tracked.entries()) {
         if (!active()) break;
         const fact = job.fact as OrderFact;
         try {
@@ -181,6 +181,17 @@ export async function deliverAnalyticsBatch(
             await publishTrackedPurchase(fact, context.tracking, captureDeps());
           await settle(job);
         } catch (error) {
+          if (
+            error instanceof PublicationFailure &&
+            error.failure.status !== "permanent-failure"
+          ) {
+            // The same provider and credentials serve every remaining optional publication.
+            // Persist its backoff against all still-leased jobs; replay rechecks consent.
+            await Promise.all(
+              tracked.slice(index).map((pending) => settle(pending, error.failure)),
+            );
+            break;
+          }
           await settle(
             job,
             error instanceof PublicationFailure

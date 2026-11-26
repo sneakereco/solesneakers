@@ -26,3 +26,25 @@ it("preserves launch finance after raw expiry and identifies behavior coverage h
   ).toEqual([{ start: cutoff, end: gap }]);
   expect(behaviorHistoryCoverage(interval, cutoff, [], [])).toEqual([interval]);
 });
+it("preserves one-microsecond gaps and offset-equivalent archive cutoffs", () => {
+  const start = "2026-11-25T18:00:00.000000Z",
+    one = "2026-11-25T18:00:00.000001Z",
+    two = "2026-11-25T18:00:00.000002Z",
+    end = "2026-11-25T18:00:00.000004Z";
+  const native = [{ start: two, end }],
+    archive = [{ start, end }];
+  expect(
+    behaviorHistoryCoverage(
+      { start, end },
+      "2026-11-25T13:00:00.000001-05:00",
+      archive,
+      native,
+    ),
+  ).toEqual([{ start: one, end: two }]);
+  expect(behaviorHistoryCoverage({ start: one, end: two }, null, [], [])).toEqual([
+    { start: one, end: two },
+  ]);
+  expect(
+    behaviorHistoryCoverage({ start, end }, one, archive, [{ start: one, end }]),
+  ).toEqual([]);
+});

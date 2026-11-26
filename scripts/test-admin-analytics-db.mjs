@@ -360,7 +360,42 @@ try {
     [third],
   );
   await expire(third);
-  assert.deepEqual(await claim(), []);
+  const claimBatch = (client, limit) =>
+    client
+      .query("select public.analytics_claim_batch($1,$2,30) as result", [ds, limit])
+      .then((r) => r.rows[0].result);
+  await db.query("begin");
+  assert.deepEqual(await claimBatch(db, 1), { exhausted: 1, jobs: [] });
+  assert.deepEqual(await claimBatch(worker, 1), { exhausted: 0, jobs: [] });
+  await db.query("rollback");
+  const fourth = await append({ ...fact, revision: 4 });
+  const fifth = await append({ ...fact, revision: 5 });
+  await db.query("begin");
+  const legacy = await claim();
+  assert.equal(
+    legacy.length,
+    1,
+    "legacy claim still returns one fresh lease when also sweeping an exhausted lease",
+  );
+  await db.query("rollback");
+  const mixed = await claimBatch(db, 2);
+  assert.equal(mixed.exhausted, 1);
+  assert.equal(mixed.jobs.length, 1);
+  assert.ok([fourth, fifth].includes(mixed.jobs[0].publication_id));
+  assert.equal(
+    await complete(mixed.jobs[0].publication_id, mixed.jobs[0].lease_token),
+    true,
+  );
+  const rest = await claimBatch(worker, 2);
+  assert.equal(rest.exhausted, 0);
+  assert.equal(rest.jobs.length, 1);
+  assert.equal(
+    await complete(rest.jobs[0].publication_id, rest.jobs[0].lease_token),
+    true,
+  );
+  console.log(
+    "PASS exhaustion-only and mixed claims atomically count each failed lease once within the shared limit",
+  );
   assert.equal(
     (
       await db.query(
@@ -399,6 +434,7 @@ try {
       ["select analytics_source.dataset(now())", []],
       ["select public.analytics_revoke_receipt($1,$2)", [ds, orderId]],
       ["select * from public.analytics_claim_publications($1,1,1)", [ds]],
+      ["select public.analytics_claim_batch($1,1,1)", [ds]],
       ["select public.analytics_complete_publication($1,$2,$2)", [ds, orderId]],
       [
         "select public.analytics_fail_publication($1,$2,$2,'network',false,1)",

@@ -1,3 +1,6 @@
+import { executePostHogQuery } from "../../../Source/Features/Reporting/posthog-query";
+import { readServerAnalyticsConfig } from "../../../Source/Features/Configuration/server-config";
+import { validEnv, now } from "../Configuration/config-fixture";
 import { reconciliationWindow } from "../../../Source/Features/EventDelivery/reconciliation-evidence";
 import {
   factPayloadSchemas,
@@ -54,7 +57,7 @@ function row(f = fact): unknown[] {
     f.currency,
     f.orderId,
     f.buyerKey,
-    f.payload,
+    JSON.stringify(f.payload),
   ];
 }
 function raw(f = fact, id = publication): unknown[] {
@@ -277,3 +280,64 @@ it("advises a narrower interval when the source window count exceeds the cap", a
     action: "narrow-interval",
   });
 });
+it.each(["raw", "warehouse"])(
+  "validates the %s payload after serialized Endpoint JSON decoding",
+  async (surface) => {
+    const config = readServerAnalyticsConfig(validEnv)!;
+    async function examine(wireCell: string) {
+      const source = () =>
+        Promise.resolve({
+          revisions: 1,
+          facts: 1,
+          pending: 0,
+          leased: 0,
+          failed: 0,
+          oldestOutstandingAt: null,
+          publications: [{ publicationId: publication, fact }],
+        });
+      return reconcileAnalyticsFacts(range, {
+        datasetId: fact.datasetId,
+        source,
+        query: (q) =>
+          executePostHogQuery(q, {
+            config,
+            now,
+            fetch: () => {
+              const summary = q.endpoint === "sole_analytics_reconciliation",
+                isRaw = q.endpoint === "sole_analytics_reconciliation_raw";
+              const values = isRaw ? raw() : row();
+              if ((isRaw ? "raw" : "warehouse") === surface)
+                values[10] = "TEST_PAYLOAD_CELL";
+              const envelope = JSON.stringify({
+                name: q.endpoint,
+                endpoint_version: q.version,
+                execution_id: publication,
+                columns: summary
+                  ? ["visible_revisions", "warehouse_facts"]
+                  : [...names, ...(isRaw ? rawNames : []), "snapshot_rows"],
+                results: summary ? [[1, 1]] : [[...values, 1]],
+                hasMore: false,
+              });
+              return Promise.resolve(
+                new Response(
+                  envelope.replace('"TEST_PAYLOAD_CELL"', () => wireCell),
+                  { headers: { "content-type": "application/json" } },
+                ),
+              );
+            },
+          }),
+      });
+    }
+    const exact = JSON.stringify(fact.payload);
+    const fractional = exact.replace(
+      '"totalCollectedCents":2100',
+      '"totalCollectedCents":2100.00000000000000001',
+    );
+    expect(await examine(fractional)).toMatchObject({ status: "incomplete" });
+    expect(await examine(exact)).toMatchObject({ status: "incomplete" });
+    expect(await examine(JSON.stringify(fractional))).toMatchObject({
+      status: "incomplete",
+    });
+    expect(await examine(JSON.stringify(exact))).toMatchObject({ status: "matched" });
+  },
+);

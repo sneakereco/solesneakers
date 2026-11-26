@@ -1,4 +1,8 @@
 import "server-only";
+import {
+  analyticsInstantMicros as time,
+  formatAnalyticsMicros as format,
+} from "./instant";
 import { z } from "zod";
 import type { AdminSupabaseClient } from "@/lib/supabase/service-role";
 import { datasetIdSchema } from "../CommerceFacts/contract";
@@ -32,25 +36,26 @@ export function behaviorHistoryCoverage(
   archive: readonly HistoryInterval[],
   native: readonly HistoryInterval[],
 ): HistoryInterval[] {
-  const time = (s: string) => {
-    const n = Date.parse(s);
-    if (!Number.isFinite(n)) throw new Error("Invalid history boundary");
-    return n;
-  };
   const lo = time(request.start),
     hi = time(request.end);
-  if (lo >= hi) throw new Error("Invalid history interval");
-  const boundary = cutoff === null ? -Infinity : time(cutoff);
+  if (lo >= hi) throw new RangeError("Invalid history interval");
+  const boundary = cutoff === null ? null : time(cutoff);
+  const min = (a: bigint, b: bigint) => (a < b ? a : b);
+  const max = (a: bigint, b: bigint) => (a > b ? a : b);
   const segments = [
-    ...archive.map((i) => [time(i.start), Math.min(time(i.end), boundary)]),
-    ...native.map((i) => [Math.max(time(i.start), boundary), time(i.end)]),
-  ].sort((a, b) => a[0] - b[0]);
+    ...(boundary === null
+      ? []
+      : archive.map((i) => [time(i.start), min(time(i.end), boundary)])),
+    ...native.map((i) => [
+      boundary === null ? time(i.start) : max(time(i.start), boundary),
+      time(i.end),
+    ]),
+  ].sort((a, b) => (a[0] < b[0] ? -1 : a[0] > b[0] ? 1 : 0));
   let cursor = lo;
   const gaps: HistoryInterval[] = [];
-  const format = (n: number) => new Date(n).toISOString();
   for (const [a, b] of segments) {
-    const start = Math.max(a, lo),
-      end = Math.min(b, hi);
+    const start = max(a, lo),
+      end = min(b, hi);
     if (end <= cursor || start >= end) continue;
     if (start > cursor) gaps.push({ start: format(cursor), end: format(start) });
     cursor = end;
