@@ -3,12 +3,12 @@ import { isAuthSessionMissingError, type AuthError } from "@supabase/supabase-js
 // Only an authoritative absence or rejection can establish a guest session.
 export function requireAuthLookupAvailable(error: AuthError | null): void {
   if (!error || isAuthSessionMissingError(error)) return;
-  if (error.status === 401 || error.status === 403) return;
   if (
-    error.status === 400 &&
+    [400, 401, 403, 404].includes(error.status ?? 0) &&
     [
       "bad_jwt",
       "user_not_found",
+      "user_banned",
       "session_not_found",
       "session_expired",
       "refresh_token_not_found",

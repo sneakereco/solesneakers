@@ -91,8 +91,26 @@ it("marks the real session endpoint unavailable on retryable auth or profile fai
   });
 });
 it.each([
+  new AuthApiError("Invalid API key", 401, undefined),
+  new AuthApiError("Forbidden", 403, undefined),
+  new AuthApiError("Unexpected failure", 403, "unexpected_failure"),
+])(
+  "reports indeterminate gateway rejection as unavailable through both routes: %s",
+  async (error) => {
+    mockGetUser.mockResolvedValue({ data: { user: null }, error });
+    const [identityResponse, sessionResponse] = await Promise.all([
+      identity(request),
+      session(request),
+    ]);
+    expect([identityResponse.status, sessionResponse.status]).toEqual([503, 503]);
+    expect(mockProfile).not.toHaveBeenCalled();
+  },
+);
+it.each([
   new AuthSessionMissingError(),
   new AuthApiError("invalid token", 401, "bad_jwt"),
+  new AuthApiError("account banned", 403, "user_banned"),
+  new AuthApiError("account removed", 404, "user_not_found"),
 ])("retains definitive guest/denied semantics for %s", async (error) => {
   mockGetUser.mockResolvedValue({ data: { user: null }, error });
   expect((await identity(request)).status).toBe(403);
