@@ -165,6 +165,23 @@ describe("POST /api/admin/shipping/labels", () => {
     expect(mockPurchaseLabel).not.toHaveBeenCalled();
   });
 
+  it("returns the existing-label refusal with tracking before looking up a rate or purchasing", async () => {
+    mockGetOrder.mockResolvedValue({
+      id: orderId,
+      status: "paid",
+      fulfillment: "ship",
+      fulfillment_status: "ready_to_ship",
+      tracking_number: "tracking-fixture",
+    });
+    const response = await POST(request());
+    expect(response.status).toBe(409);
+    expect(await response.json()).toMatchObject({
+      code: "shipping_label_already_purchased",
+      trackingNumber: "tracking-fixture",
+    });
+    expect(mockGetRate).not.toHaveBeenCalled();
+    expect(mockPurchaseLabel).not.toHaveBeenCalled();
+  });
   it("does not purchase a rate from a disabled carrier", async () => {
     mockGetRate.mockResolvedValue({
       id: "rate-1",

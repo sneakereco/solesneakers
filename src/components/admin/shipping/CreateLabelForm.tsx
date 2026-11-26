@@ -1,5 +1,6 @@
 // src/components/admin/shipping/CreateLabelForm.tsx
 "use client";
+import { LabelRecovery } from "./LabelRecovery";
 import { useAsyncAction } from "@/components/ui/useAsyncAction";
 import {
   adminCommand,
@@ -67,6 +68,8 @@ type Props = {
   onClose: () => void;
   onSuccess: () => void;
   onUnconfirmed?: (orderId: string) => void;
+  onExistingLabel?: () => void;
+  onResolved?: () => void;
 };
 
 const resolveShippingAddress = (value: unknown): ShippingAddress | null => {
@@ -179,6 +182,8 @@ export function CreateLabelForm({
   onClose,
   onSuccess,
   onUnconfirmed,
+  onExistingLabel,
+  onResolved,
 }: Props) {
   const id = useId();
   const ratesAction = useAsyncAction();
@@ -393,6 +398,7 @@ export function CreateLabelForm({
         error?: string;
         success?: boolean;
         message?: string;
+        code?: string;
       }>("/api/admin/shipping/labels", {
         method: "POST",
         headers: { "Content-Type": "application/json" },
@@ -403,6 +409,21 @@ export function CreateLabelForm({
         setSuccess("Label purchased.");
         rememberProviderCheck("label:" + orderId, null);
         onSuccess();
+        return;
+      }
+      if (res.status === 409 && data?.code === "shipping_order_not_fulfillment_ready") {
+        rememberProviderCheck("label:" + orderId, null);
+        setRates([]);
+        setSelectedRateId(null);
+        setShipmentId(null);
+        setError(data.error ?? "The order is not ready for shipping.");
+        return;
+      }
+      if (res.status === 409 && data?.code === "shipping_label_already_purchased") {
+        rememberProviderCheck("label:" + orderId, "existing");
+        setUnknown(true);
+        setError(data.error ?? "This order already has a shipping label.");
+        onExistingLabel?.();
         return;
       }
       if (res.status >= 400 && res.status < 500 && res.status !== 409) {
@@ -754,11 +775,21 @@ export function CreateLabelForm({
                 {isGettingRates ? "Getting rates..." : "Get shipping rates"}
               </button>
 
-              {needsCheck && !error && (
-                <p role="alert">
-                  Label purchase is unconfirmed. Check the order and carrier transaction
-                  history.
-                </p>
+              {needsCheck && (
+                <LabelRecovery
+                  key={orderId}
+                  orderId={orderId}
+                  existing={pendingProviderCheck("label:" + orderId) === "existing"}
+                  onResolve={() => {
+                    rememberProviderCheck("label:" + orderId, null);
+                    setUnknown(false);
+                    setError("");
+                    setRates([]);
+                    setSelectedRateId(null);
+                    setShipmentId(null);
+                    onResolved?.();
+                  }}
+                />
               )}
               {error && (
                 <div

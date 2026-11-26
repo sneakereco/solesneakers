@@ -251,7 +251,10 @@ export function ProductForm({
   const [brandStatus, setBrandStatus] = useState<"loading" | "error" | "idle">(
     initialBrands ? "idle" : "loading",
   );
-  const [modelStatus, setModelStatus] = useState<"loading" | "error" | "idle">("idle");
+  const [modelRead, setModelRead] = useState<{
+    brandId: string;
+    status: "loading" | "error" | "idle";
+  }>();
   const isLoading = work.pending && workKind === "save";
   const uploading = work.pending && workKind === "upload";
 
@@ -259,7 +262,10 @@ export function ProductForm({
   const [titleRaw, setTitleRaw] = useState(initialTitle);
 
   const [parsedTitle, setParseResult] = useState<TitleParseResult | null>(null);
-  const [parseStatus, setParseStatus] = useState<"idle" | "loading" | "error">("idle");
+  const [parseRead, setParseRead] = useState<{
+    key: string;
+    status: "loading" | "error" | "idle";
+  }>();
 
   const [brandOverrideId, setBrandOverrideId] = useState<string | null>(
     initialData?.brand_id ?? null,
@@ -276,6 +282,11 @@ export function ProductForm({
 
   const [category, setCategory] = useState<Category>(initialData?.category || "sneakers");
   const parseKey = JSON.stringify([titleRaw, category, brandOverrideId, modelOverrideId]);
+  const parseStatus = !titleRaw.trim()
+    ? "idle"
+    : parseRead?.key === parseKey
+      ? parseRead.status
+      : "loading";
   const [parsedKey, setParsedKey] = useState("");
   const parseResult = parsedKey === parseKey ? parsedTitle : null;
   // UPDATED: Use server data if provided
@@ -415,7 +426,12 @@ export function ProductForm({
 
   const effectiveBrandId = brandOverrideId ?? parseResult?.brand?.id ?? null;
   const effectiveModelId = modelOverrideId ?? parseResult?.model?.id ?? null;
-  const modelOptions = effectiveBrandId ? loadedModels : [];
+  const modelStatus = !effectiveBrandId
+    ? "idle"
+    : modelRead?.brandId === effectiveBrandId
+      ? modelRead.status
+      : "loading";
+  const modelOptions = effectiveBrandId && modelStatus === "idle" ? loadedModels : [];
 
   useEffect(() => {
     if (!effectiveBrandId) {
@@ -424,21 +440,21 @@ export function ProductForm({
     const controller = new AbortController();
     const loadModels = async () => {
       try {
-        setModelStatus("loading");
+        setModelRead({ brandId: effectiveBrandId, status: "loading" });
         const data = await fetchJsonWithDeadline<{ models: ModelCatalogEntry[] }>(
           `/api/admin/tags/models?brandId=${effectiveBrandId}`,
           "Models unavailable",
           controller.signal,
         );
         if (!controller.signal.aborted) {
-          setModelStatus("idle");
+          setModelRead({ brandId: effectiveBrandId, status: "idle" });
           const options = (data.models || []).map((model: ModelCatalogEntry) => ({
             id: model.id,
             label: model.canonical_label,
           }));
-          const selectedInitial = initialModels?.find(
-            (model) => model.id === effectiveModelId,
-          );
+          const selectedInitial =
+            initialData?.brand_id === effectiveBrandId &&
+            initialModels?.find((model) => model.id === effectiveModelId);
           const nextOptions: CatalogOption[] =
             selectedInitial &&
             !options.some((option: CatalogOption) => option.id === selectedInitial.id)
@@ -453,7 +469,7 @@ export function ProductForm({
         }
       } catch (error) {
         if (controller.signal.aborted) return;
-        setModelStatus("error");
+        setModelRead({ brandId: effectiveBrandId, status: "error" });
         logError(error, { layer: "frontend", event: "inventory_load_model_catalog" });
       }
     };
@@ -463,6 +479,7 @@ export function ProductForm({
   }, [
     effectiveBrandId,
     effectiveModelId,
+    initialData?.brand_id,
     initialModels,
     modelOverrideId,
     catalogAttempt,
@@ -475,7 +492,7 @@ export function ProductForm({
 
     const controller = new AbortController();
     const parseTitle = async () => {
-      setParseStatus("loading");
+      setParseRead({ key: parseKey, status: "loading" });
       try {
         const { response, data } = await adminCommand<
           TitleParseResult & { error?: string }
@@ -499,7 +516,7 @@ export function ProductForm({
         }
         setParsedKey(parseKey);
         setParseResult(data);
-        setParseStatus("idle");
+        setParseRead({ key: parseKey, status: "idle" });
       } catch (error: unknown) {
         const isAbort =
           error instanceof DOMException
@@ -508,11 +525,11 @@ export function ProductForm({
               error !== null &&
               "name" in error &&
               (error as { name?: string }).name === "AbortError";
-        if (isAbort) {
+        if (controller.signal.aborted || isAbort) {
           return;
         }
         logError(error, { layer: "frontend", event: "inventory_parse_title" });
-        setParseStatus("error");
+        setParseRead({ key: parseKey, status: "error" });
       }
     };
     const timeout = setTimeout(() => {
@@ -782,7 +799,7 @@ export function ProductForm({
   };
 
   const handleUploadFiles = async (files: FileList | null) => {
-    if (!files || files.length === 0) {
+    if (onCheckSave || !files || files.length === 0) {
       return;
     }
 
@@ -917,7 +934,7 @@ export function ProductForm({
   const handleDrop = (event: React.DragEvent<HTMLDivElement>) => {
     event.preventDefault();
     setIsDragging(false);
-    if (!saved)
+    if (!saved && !onCheckSave)
       void work.run(() => {
         setWorkKind("upload");
         return handleUploadFiles(event.dataTransfer.files);
@@ -1007,7 +1024,7 @@ export function ProductForm({
 
   const handleSubmit = async (e: React.FormEvent) => {
     e.preventDefault();
-    if (uploading || saved) return;
+    if (uploading || saved || onCheckSave) return;
     setFieldError(null);
 
     function invalid(key: string, message: string): never {
@@ -1174,7 +1191,7 @@ export function ProductForm({
                 setTitleRaw(e.target.value);
                 if (!e.target.value.trim()) {
                   setParseResult(null);
-                  setParseStatus("idle");
+                  setParseRead(undefined);
                 }
               }}
               required
@@ -1374,7 +1391,7 @@ export function ProductForm({
                 placeholder={
                   effectiveBrandId ? "Search models..." : "Select a brand first"
                 }
-                disabled={!effectiveBrandId}
+                disabled={!effectiveBrandId || modelStatus !== "idle"}
                 className="w-full rounded border border-zinc-300 bg-white px-3 py-2 text-sm text-zinc-900 focus:border-black focus:outline-none focus:ring-2 focus:ring-black/10 disabled:bg-zinc-100 disabled:text-zinc-400 md:px-4 md:text-base"
               />
               <datalist id={`${id}-model-options`}>
@@ -1414,7 +1431,7 @@ export function ProductForm({
 
       {/* Variants - Better mobile layout */}
       <div
-        inert={isLoading || saved}
+        inert={isLoading || saved || !!onCheckSave}
         className="rounded border border-zinc-800/70 bg-zinc-900 p-4 md:p-6"
       >
         <div className="mb-3 flex items-center justify-between md:mb-4">
@@ -1633,7 +1650,7 @@ export function ProductForm({
 
       {/* Images - Mobile optimized */}
       <div
-        inert={isLoading || saved}
+        inert={isLoading || saved || !!onCheckSave}
         className="rounded border border-zinc-800/70 bg-zinc-900 p-4 md:p-6"
       >
         <div className="mb-3 flex items-center justify-between md:mb-4">
@@ -1678,6 +1695,7 @@ export function ProductForm({
         <input
           ref={fileInputRef}
           type="file"
+          disabled={!!onCheckSave || work.pending || saved}
           accept="image/jpeg,image/png,image/webp"
           multiple
           onChange={(e) => {
@@ -1696,7 +1714,7 @@ export function ProductForm({
               );
             }
             const files = e.target.files;
-            if (!saved)
+            if (!saved && !onCheckSave)
               void work.run(() => {
                 setWorkKind("upload");
                 return handleUploadFiles(files);
@@ -1827,7 +1845,7 @@ export function ProductForm({
       </div>
 
       <div
-        inert={isLoading || saved}
+        inert={isLoading || saved || !!onCheckSave}
         className="rounded border border-zinc-800/70 bg-zinc-900 p-4 md:p-6"
       >
         <h2 className="mb-2 text-lg font-semibold text-white md:text-xl">

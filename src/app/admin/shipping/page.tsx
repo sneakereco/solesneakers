@@ -9,7 +9,7 @@ import { fetchJsonWithDeadline } from "@/lib/http/request-deadline";
 
 import Image from "next/image";
 
-import { Fragment, useMemo, useState } from "react";
+import { Fragment, useEffect, useMemo, useRef, useState } from "react";
 import { ChevronDown, ExternalLink, AlertCircle } from "lucide-react";
 
 import { AdminPage, AdminPageHeader } from "@/components/admin/AdminPage";
@@ -282,8 +282,9 @@ export default function ShippingPage() {
   const setup = useAdminRead(loadSetup, "shipping configuration");
   const fulfill = useAsyncAction();
   const originAction = useAsyncAction();
+  const activeTabButton = useRef<HTMLButtonElement>(null);
+  const restoreFulfillmentFocus = useRef(false);
   const [commandMessage, setCommandMessage] = useState("");
-  const [blockedLabel, setBlockedLabel] = useState<Record<string, boolean>>({});
 
   const [activeTab, setActiveTab] = useState<TabKey>("label");
   const [expandedItems, setExpandedItems] = useState<Record<string, boolean>>({});
@@ -321,6 +322,18 @@ export default function ShippingPage() {
     setPageByTab((prev) => ({ ...prev, [activeTab]: totalPages }));
   }
 
+  useEffect(() => {
+    if (confirmMarkShipped || fulfill.pending || !restoreFulfillmentFocus.current) return;
+    restoreFulfillmentFocus.current = false;
+    if (document.activeElement === document.body) {
+      const target =
+        modalInvoker?.isConnected && !modalInvoker.matches(":disabled")
+          ? modalInvoker
+          : activeTabButton.current;
+      target?.focus({ preventScroll: true });
+    }
+  }, [confirmMarkShipped, fulfill.pending, modalInvoker]);
+
   const toggleItems = (orderId: string) => {
     setExpandedItems((prev) => ({ ...prev, [orderId]: !prev[orderId] }));
   };
@@ -344,6 +357,7 @@ export default function ShippingPage() {
   };
 
   const handleMarkShipped = async (order: ShippingOrder) => {
+    restoreFulfillmentFocus.current = true;
     setMarkingShippedId(order.id);
     try {
       const { response, data } = await adminCommand<{
@@ -558,9 +572,7 @@ export default function ShippingPage() {
         <button
           type="button"
           aria-haspopup="dialog"
-          disabled={
-            !setup.data || list.pending || !!list.error || !!blockedLabel[order.id]
-          }
+          disabled={!setup.data || list.pending || !!list.error}
           onClick={(event) => {
             event.stopPropagation();
             setModalInvoker(event.currentTarget);
@@ -1000,6 +1012,7 @@ export default function ShippingPage() {
           <button
             type="button"
             key={tab.key}
+            ref={activeTab === tab.key ? activeTabButton : undefined}
             onClick={() => setActiveTab(tab.key)}
             aria-pressed={activeTab === tab.key}
             className={`flex items-center gap-1 whitespace-nowrap py-2.5 text-[10px] font-medium transition-colors sm:gap-2 sm:text-sm ${
@@ -1114,8 +1127,17 @@ export default function ShippingPage() {
             : null
         }
         onClose={() => setLabelOrder(null)}
-        onUnconfirmed={(orderId) => {
-          setBlockedLabel((prev) => ({ ...prev, [orderId]: true }));
+        onResolved={() =>
+          setCommandMessage("Label check resolved. Request new rates before purchasing.")
+        }
+        onExistingLabel={() => {
+          setCommandMessage(
+            "Existing label or fulfillment recorded. Check the order before taking further action.",
+          );
+          list.retry();
+          totals.retry();
+        }}
+        onUnconfirmed={() => {
           setCommandMessage(
             "Label purchase is unconfirmed. Check the order and Shippo transaction history before buying another label.",
           );
@@ -1130,6 +1152,7 @@ export default function ShippingPage() {
         isOpen={!!confirmMarkShipped}
         title="Mark as shipped manually?"
         description="Important: This should only be used if the carrier hasn't scanned the package yet. Normally, Shippo automatically updates tracking status and sends customer emails when the carrier scans the package. Using this button will manually update the status without waiting for carrier confirmation."
+        pending={fulfill.pending}
         confirmLabel={fulfill.pending ? "Marking shipped…" : "Mark shipped anyway"}
         onConfirm={() => {
           if (confirmMarkShipped) {

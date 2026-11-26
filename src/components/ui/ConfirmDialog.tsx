@@ -1,6 +1,6 @@
 "use client";
 
-import { useId, useRef } from "react";
+import { useId, useLayoutEffect, useRef } from "react";
 import { X } from "lucide-react";
 
 import { ActionButton } from "./ActionButton";
@@ -12,6 +12,7 @@ interface ConfirmDialogProps {
   title: string;
   description?: string;
   confirmLabel?: string;
+  pending?: boolean;
   cancelLabel?: string;
   onConfirm: () => void;
   onCancel: () => void;
@@ -23,6 +24,7 @@ export function ConfirmDialog({
   title,
   description,
   confirmLabel = "Confirm",
+  pending = false,
   cancelLabel = "Cancel",
   onConfirm,
   onCancel,
@@ -31,11 +33,18 @@ export function ConfirmDialog({
   const descriptionId = useId();
   const cancelRef = useRef<HTMLButtonElement>(null);
 
+  const headingRef = useRef<HTMLHeadingElement>(null);
+  useLayoutEffect(() => {
+    if (pending && isOpen) headingRef.current?.focus({ preventScroll: true });
+  }, [pending, isOpen]);
+
   return (
     <ModalPortal
       open={isOpen}
       invoker={invoker}
-      onClose={onCancel}
+      onClose={() => {
+        if (!pending) onCancel();
+      }}
       role="alertdialog"
       labelledBy={titleId}
       describedBy={description ? descriptionId : undefined}
@@ -46,11 +55,17 @@ export function ConfirmDialog({
     >
       <div className="relative w-full border border-zinc-800 bg-zinc-900 shadow-lg">
         <div className="flex items-center justify-between border-b border-zinc-800 px-5 py-4">
-          <h2 id={titleId} className="text-lg font-semibold text-white">
+          <h2
+            ref={headingRef}
+            tabIndex={-1}
+            id={titleId}
+            className="text-lg font-semibold text-white"
+          >
             {title}
           </h2>
           <button
             type="button"
+            disabled={pending}
             onClick={onCancel}
             className="flex h-11 w-11 cursor-pointer items-center justify-center text-gray-400 transition hover:text-white"
             aria-label="Close dialog"
@@ -67,6 +82,7 @@ export function ConfirmDialog({
           <ActionButton
             ref={cancelRef}
             type="button"
+            disabled={pending}
             onClick={onCancel}
             className="cursor-pointer border border-zinc-700 px-4 py-2 text-sm font-semibold text-gray-200 transition hover:border-zinc-500"
           >
@@ -74,6 +90,7 @@ export function ConfirmDialog({
           </ActionButton>
           <ActionButton
             type="button"
+            pending={pending}
             onClick={onConfirm}
             className="cursor-pointer bg-red-600 px-4 py-2 text-sm font-semibold text-white transition hover:bg-red-700"
           >

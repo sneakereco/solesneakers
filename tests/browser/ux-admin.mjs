@@ -19,7 +19,7 @@ import Shipping from "@/app/admin/shipping/page";
 import Tags from "@/app/admin/tags/page";
 import {StoreAccessSettingsPanel} from "@/components/admin/settings/StoreAccessSettingsPanel";
 import {FeaturedItemsManager} from "@/app/admin/featured-items/client";
-const views={settings:Settings,detail:Detail,product:()=> <CreateProductClient initialBrands={[{id:"brand",label:"Fixture"}]} initialSizes={initialSizes}/>,inventory:()=> <InventoryClient initialProducts={[product]} initialTotal={1} initialSkuTotal={0} initialInventoryUnitTotal={0} initialFilters={{}}/>,label:()=> <CreateLabelForm open order={order} originLine="Fixture origin" onClose={()=>{}} onSuccess={()=>{}}/>, dashboard: Dashboard, pickups: Pickups, transactions: Transactions, shipping: Shipping, tags: Tags, access: StoreAccessSettingsPanel, featured: FeaturedItemsManager };
+const views={settings:Settings,detail:Detail,product:()=> <CreateProductClient initialBrands={[{id:"brand",label:"Fixture"},{id:"other",label:"Other"}]} initialSizes={initialSizes}/>,inventory:()=> <InventoryClient initialProducts={[product]} initialTotal={1} initialSkuTotal={0} initialInventoryUnitTotal={0} initialFilters={{}}/>,label:()=> <CreateLabelForm open order={order} originLine="Fixture origin" onClose={()=>{}} onSuccess={()=>{}}/>, dashboard: Dashboard, pickups: Pickups, transactions: Transactions, shipping: Shipping, tags: Tags, access: StoreAccessSettingsPanel, featured: FeaturedItemsManager };
 const View=views[location.pathname.slice(1)];
 createRoot(document.getElementById("root")).render(<View/>);`,
   {
@@ -36,7 +36,7 @@ createRoot(document.getElementById("root")).render(<View/>);`,
             resolveDir: process.cwd(),
             contents:
               path === "next/navigation"
-                ? "export const useParams=()=>({orderId:'fixture-order'});export const useRouter=()=>({push(){},refresh(){}});"
+                ? "export const useParams=()=>({orderId:'fixture-order'});export const useRouter=()=>({push(href){window.fixtureNavigation=href},refresh(){}});"
                 : path === "next/link"
                   ? "export const useLinkStatus=()=>({pending:false});export default function Link({onNavigate,...props}){return <a {...props}/>;}"
                   : "export default function Image({fill,priority,unoptimized,...props}){return <img {...props}/>;}",
@@ -609,12 +609,29 @@ try {
         return r.abort();
       }
       reads++;
+      const q = u.searchParams.get("q"),
+        page = Number(u.searchParams.get("page")),
+        limit = Number(u.searchParams.get("limit"));
+      const rows =
+        reads === 1
+          ? []
+          : [
+              ...Array.from({ length: 100 }, (_, i) => ({
+                id: "similar" + i,
+                name: draft.name,
+                variants: [{ sku: "different" + i }],
+              })),
+              { id: "new-product", name: draft.name, variants: draft.variants },
+            ];
+      const named = rows.filter((product) =>
+        product.name.toLowerCase().includes((q ?? "").toLowerCase()),
+      );
       return r.fulfill({
         json: {
-          products:
-            reads === 1
-              ? []
-              : [{ id: "new-product", name: draft.name, variants: draft.variants }],
+          products: named.slice((page - 1) * limit, page * limit),
+          page,
+          limit,
+          total: named.length,
         },
       });
     });
@@ -624,10 +641,15 @@ try {
     await page.getByLabel(/Sale Price/).fill("15");
     await page.getByRole("button", { name: "Create Product" }).click();
     const check = page.getByRole("button", { name: "Check inventory", exact: true });
+    await expect(page.locator("[data-admin-form] > [inert]")).toHaveCount(4);
+    await expect(page.locator("input[type=file]")).toBeDisabled();
     await check.click();
     await expect(page.getByText(/still unconfirmed/)).toBeVisible();
     await check.click();
-    await expect.poll(() => reads).toBe(2);
+    await expect.poll(() => reads).toBe(3);
+    await expect
+      .poll(() => page.evaluate(() => window.fixtureNavigation))
+      .toBe("/admin/inventory/new-product/edit");
     if (writes !== 1) throw Error("Duplicate create");
   });
   await check("switching transaction tabs discards late rows", async (page) => {
@@ -768,6 +790,267 @@ try {
     }
     await expect(page.getByText("Product removed from featured items")).toBeVisible();
     if (writes !== 2) throw Error("Duplicate reorder/remove");
+  });
+  await check("review audit availability and unresolved resend", async (page) => {
+    let reads = 0,
+      writes = 0;
+    const log = (id, status, day) => ({
+      id,
+      email_type: "order_confirmation",
+      sent_at: "2026-11-" + day,
+      delivery_status: status,
+    });
+    await page.route("**/api/admin/**", async (r) => {
+      if (r.request().method() === "POST") {
+        writes++;
+        return r.abort();
+      }
+      reads++;
+      return r.fulfill({
+        json: {
+          order: {
+            id: "fixture-order",
+            status: "paid",
+            fulfillment: "pickup",
+            items: [],
+            total: 10,
+          },
+          emailLogsAvailable: reads !== 3,
+          emailLogs:
+            reads === 3
+              ? []
+              : reads === 1
+                ? [log("old", "sent", "01")]
+                : [
+                    log("old", "sent", "01"),
+                    log("different", reads === 2 ? "pending" : "sent", "02"),
+                  ],
+        },
+      });
+    });
+    await openUxHarness(page, bundle, "https://ux.test/detail");
+    const resend = page.getByRole("button", { name: "Resend", exact: true });
+    await resend.click();
+    await expect.poll(() => reads).toBe(2);
+    await expect(resend).toBeDisabled();
+    await expect(page.getByRole("button", { name: /resolve email check/i })).toHaveCount(
+      0,
+    );
+    await page.getByRole("button", { name: "Check email log" }).first().click();
+    await expect(page.getByText(/email history unavailable/i)).toBeVisible();
+    await expect(page.getByText("Not sent")).toHaveCount(0);
+    await page.getByRole("button", { name: "Check email log" }).first().click();
+    await expect(resend).toBeDisabled();
+    await page.getByRole("checkbox", { name: /verified.*email provider/i }).check();
+    await page.getByRole("button", { name: "Resolve email check" }).click();
+    await expect(resend).toBeEnabled();
+    if (writes !== 1) throw Error("Resolution sent email");
+  });
+  for (const code of [
+    "shipping_order_not_fulfillment_ready",
+    "shipping_label_already_purchased",
+    "interrupted",
+  ]) {
+    await check("review label " + code, async (page) => {
+      let writes = 0,
+        checks = 0;
+      await page.route("**/api/admin/**", async (r) => {
+        const url = new URL(r.request().url());
+        if (url.pathname.endsWith("/rates"))
+          return r.fulfill({
+            json: {
+              shipment: {
+                id: "s",
+                rates: [{ id: "r", carrier: "UPS", service: "Ground", rate: "5" }],
+              },
+            },
+          });
+        if (r.request().method() === "GET") {
+          checks++;
+          return r.fulfill({
+            json: {
+              order: {
+                id: "fixture-order",
+                tracking_number:
+                  code === "shipping_label_already_purchased" ? "tracking-fixture" : null,
+                fulfillment_status: "unfulfilled",
+              },
+            },
+          });
+        }
+        writes++;
+        return code === "interrupted"
+          ? r.abort()
+          : r.fulfill({
+              status: 409,
+              json: {
+                code,
+                error:
+                  code === "shipping_order_not_fulfillment_ready"
+                    ? "This order is not paid and ready for shipping."
+                    : "A label already exists.",
+              },
+            });
+      });
+      await openUxHarness(page, bundle, "https://ux.test/label");
+      await page.getByRole("button", { name: /get shipping rates/i }).click();
+      const buy = page.getByRole("button", { name: "Purchase shipping label" });
+      await buy.click();
+      if (code === "shipping_order_not_fulfillment_ready") {
+        await expect(page.getByRole("alert")).toContainText("not paid");
+        await expect(page.getByText(/purchase is unconfirmed/i)).toHaveCount(0);
+      } else {
+        await page.getByRole("button", { name: "Check order label" }).click();
+        await expect.poll(() => checks).toBe(1);
+        await expect(buy).toBeDisabled();
+        if (code === "interrupted") {
+          await page.getByRole("checkbox", { name: /verified in Shippo/i }).check();
+          await page.getByRole("button", { name: "Resolve label check" }).click();
+          await expect(
+            page.getByRole("button", { name: /get shipping rates/i }),
+          ).toBeEnabled();
+        } else await expect(page.getByText(/tracking-fixture/)).toBeVisible();
+      }
+      if (writes !== 1) throw Error("Resolution purchased an additional label");
+    });
+  }
+  await check("review held fulfillment", async (page) => {
+    const gate = deferred();
+    let writes = 0;
+    await page.route("**/api/admin/**", async (r) => {
+      const u = new URL(r.request().url());
+      if (r.request().method() === "POST") {
+        writes++;
+        await gate.promise;
+        return r.fulfill({ json: { order: { id: "fixture-order" } } });
+      }
+      if (!u.pathname.endsWith("/orders"))
+        return r.fulfill({ json: { origin: null, defaults: [] } });
+      if (writes) return r.fulfill({ json: { orders: [], count: 0 } });
+      return r.fulfill({
+        json: {
+          orders: [
+            {
+              id: "fixture-order",
+              status: "paid",
+              fulfillment_status: "ready_to_ship",
+              items: [],
+              created_at: "2026-11-01",
+            },
+          ],
+          count: 1,
+        },
+      });
+    });
+    await page.setViewportSize({ width: 1280, height: 800 });
+    await openUxHarness(page, bundle, "https://ux.test/shipping");
+    await page.getByRole("button", { name: /Need to Ship/ }).click();
+    const mark = page.getByRole("button", { name: "Mark shipped", exact: true }).first();
+    await mark.click();
+    const dialog = page.getByRole("alertdialog");
+    await dialog.getByRole("button", { name: "Cancel" }).click();
+    await expect(mark).toBeFocused();
+    await mark.click();
+    await dialog.getByRole("button", { name: "Mark shipped anyway" }).evaluate((el) => {
+      el.click();
+      el.click();
+    });
+    try {
+      for (const btn of await dialog.getByRole("button").all())
+        await expect(btn).toBeDisabled();
+      const heading = dialog.getByRole("heading");
+      await expect(heading).toBeFocused();
+      for (const key of ["Tab", "Shift+Tab"]) {
+        await page.keyboard.press(key);
+        await expect(heading).toBeFocused();
+      }
+      await page.keyboard.press("Escape");
+      await expect(dialog).toBeVisible();
+    } finally {
+      gate.release();
+    }
+    await expect(dialog).toHaveCount(0);
+    await expect(mark).toHaveCount(0);
+    await expect(page.getByRole("button", { name: /Need to Ship/ })).toBeFocused();
+    if (writes !== 1) throw Error("Duplicate fulfillment");
+  });
+  await check("review unreadable delete", async (page) => {
+    let deletes = 0,
+      reads = 0;
+    page.on("dialog", (d) => d.accept());
+    await page.route("**/api/admin/products**", async (r) => {
+      if (r.request().method() === "DELETE") {
+        deletes++;
+        return r.fulfill({ status: 200, body: "{" });
+      }
+      reads++;
+      const search = new URL(r.request().url()).searchParams;
+      if (search.get("stockStatus") !== "archived" || search.get("q") !== "Fixture shoe")
+        return r.fulfill({ json: { total: 0, products: [] } });
+      return r.fulfill({
+        json: {
+          total: 1,
+          products: [{ id: "fixture", name: "Fixture shoe", archived_at: "2026-11-01" }],
+        },
+      });
+    });
+    await openUxHarness(page, bundle, "https://ux.test/inventory");
+    await page.getByRole("button", { name: "Delete product" }).click();
+    await expect(page.getByRole("status").filter({ hasText: /archived/i })).toBeVisible();
+    await expect(page.getByText("Fixture shoe deleted.")).toHaveCount(0);
+    if (reads !== 1 || deletes !== 1)
+      throw Error("Delete reconciliation did not use GET");
+  });
+  await check("review model options follow current brand", async (page) => {
+    const gate = deferred();
+    await page.route("**/api/admin/**", async (r) => {
+      const u = new URL(r.request().url());
+      if (u.pathname.endsWith("parse-title"))
+        return r.fulfill({ json: { brand: { id: "brand", label: "Fixture" } } });
+      if (u.searchParams.get("brandId") === "other") {
+        await gate.promise;
+        return r.fulfill({ status: 503, json: {} });
+      }
+      return r.fulfill({
+        json: { models: [{ id: "model1", canonical_label: "Old model" }] },
+      });
+    });
+    await openUxHarness(page, bundle, "https://ux.test/product");
+    const brand = page.getByLabel("Override Brand");
+    await brand.fill("Fixture");
+    await expect(page.locator('datalist option[value="Old model"]')).toHaveCount(1);
+    await brand.fill("Other");
+    try {
+      await expect(page.locator('datalist option[value="Old model"]')).toHaveCount(0);
+    } finally {
+      gate.release();
+    }
+    await expect(
+      page.getByText("Tag options unavailable.", { exact: false }),
+    ).toBeVisible();
+  });
+
+  await check("review clearing held or failed title parsing", async (page) => {
+    const gate = deferred();
+    let parses = 0;
+    await page.route("**/api/admin/**", async (r) => {
+      if (!r.request().url().endsWith("parse-title"))
+        return r.fulfill({ json: { models: [] } });
+      parses++;
+      if (parses === 1) await gate.promise;
+      await r.fulfill({ status: 503, json: {} }).catch(() => {});
+    });
+    await openUxHarness(page, bundle, "https://ux.test/product");
+    const title = page.getByLabel(/Full Title/);
+    await title.fill("Held");
+    await expect.poll(() => parses).toBe(1);
+    await title.fill("");
+    await expect(page.getByText("Parsing...")).toHaveCount(0);
+    gate.release();
+    await title.fill("Failed");
+    await expect(page.getByRole("button", { name: "Retry parsing" })).toBeVisible();
+    await title.fill("");
+    await expect(page.getByRole("button", { name: "Retry parsing" })).toHaveCount(0);
   });
 } finally {
   await browser.close();

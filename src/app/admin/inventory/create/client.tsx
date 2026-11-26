@@ -3,7 +3,7 @@
 import { adminCommand } from "@/components/admin/admin-command";
 
 import { useState } from "react";
-import { fetchJsonWithDeadline } from "@/lib/http/request-deadline";
+import { findInventoryProduct } from "../find-inventory-product";
 import { useRouter } from "next/navigation";
 
 import { ProductForm } from "@/components/inventory/ProductForm";
@@ -25,28 +25,15 @@ export function CreateProductClient({
   const [unconfirmed, setUnconfirmed] = useState<ProductCreateInput | null>(null);
   const checkProduct = async () => {
     if (!unconfirmed) return;
-    const sku = unconfirmed.variants[0]?.sku;
-    if (!sku)
-      throw new Error("Check inventory for the new product before creating it again.");
-    const query = new URLSearchParams({
-      q: sku,
-      stockStatus: "all",
-      includeOutOfStock: "1",
-      searchMode: "inventory",
-    });
-    const { products } = await fetchJsonWithDeadline<{
-      products: { id: string; name: string; variants: { sku: string }[] }[];
-    }>(
-      `/api/admin/products?${query}`,
-      "Inventory unavailable. Check again.",
-      new AbortController().signal,
-    );
-    const match = products.find(
+    const skus = unconfirmed.variants.map((variant) => variant.sku);
+    if (!skus.length || skus.some((sku) => !sku))
+      throw new Error("Review the submitted product in inventory.");
+    const match = await findInventoryProduct(
+      unconfirmed.name,
       (product) =>
         product.name === unconfirmed.name &&
-        unconfirmed.variants.every((v) =>
-          product.variants.some((saved) => saved.sku === v.sku),
-        ),
+        product.variants.length === skus.length &&
+        skus.every((sku) => product.variants.some((variant) => variant.sku === sku)),
     );
     if (!match)
       throw new Error(

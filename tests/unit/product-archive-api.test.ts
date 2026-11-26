@@ -20,6 +20,8 @@ const restoreProductsByIdsMock = jest.fn();
 const restoreProductsByFiltersMock = jest.fn();
 const deleteProductsByIdsMock = jest.fn();
 const deleteProductsByFiltersMock = jest.fn();
+const listProductsMock = jest.fn(),
+  deleteProductMock = jest.fn();
 const archiveProductMock = jest.fn();
 const restoreProductMock = jest.fn();
 
@@ -32,6 +34,8 @@ jest.mock("@/services/product-service", () => ({
     deleteProductsByIds: deleteProductsByIdsMock,
     deleteProductsByFilters: deleteProductsByFiltersMock,
     archiveProduct: archiveProductMock,
+    listProducts: listProductsMock,
+    deleteProduct: deleteProductMock,
     restoreProduct: restoreProductMock,
     getProductById: jest.fn(),
     updateProduct: jest.fn(),
@@ -44,8 +48,14 @@ import { requireAdminApi } from "@/lib/auth/session";
 import { createSupabaseServerClient } from "@/lib/supabase/server";
 import { ensureTenantId } from "@/lib/auth/tenant";
 
-import { PATCH as bulkPatch } from "../../src/app/api/admin/products/route";
-import { PATCH as itemPatch } from "../../src/app/api/admin/products/[id]/route";
+import {
+  GET as listProducts,
+  PATCH as bulkPatch,
+} from "../../src/app/api/admin/products/route";
+import {
+  DELETE as deleteItem,
+  PATCH as itemPatch,
+} from "../../src/app/api/admin/products/[id]/route";
 
 const mockRequireAdminApi = jest.mocked(requireAdminApi);
 const mockCreateSupabaseServerClient = jest.mocked(createSupabaseServerClient);
@@ -63,6 +73,45 @@ describe("product archive admin api", () => {
     mockEnsureTenantId.mockResolvedValue("tenant-1");
   });
 
+  it("passes the paginated recovery name search to the authenticated tenant inventory", async () => {
+    const data = { products: [], total: 103, page: 2, limit: 100 };
+    listProductsMock.mockResolvedValue(data);
+    const response = await listProducts(
+      new NextRequest(
+        "https://shop.test/api/admin/products?q=Fixture+product&stockStatus=all&includeOutOfStock=1&searchMode=inventory&limit=100&page=2",
+      ),
+    );
+    expect(mockRequireAdminApi).toHaveBeenCalled();
+    expect(mockEnsureTenantId).toHaveBeenCalled();
+    expect(listProductsMock).toHaveBeenCalledWith(
+      expect.objectContaining({
+        q: "Fixture product",
+        page: 2,
+        limit: 100,
+        stockStatus: "all",
+        includeOutOfStock: true,
+        searchMode: "inventory",
+        tenantId: "tenant-1",
+      }),
+    );
+    expect(await response.json()).toEqual(data);
+  });
+  it.each([false, true])(
+    "returns an explicit archive outcome (%s) for a successful delete",
+    async (archived) => {
+      deleteProductMock.mockResolvedValue({ archived });
+      const id = "11111111-1111-1111-8111-111111111111";
+      const response = await deleteItem(
+        new NextRequest("https://shop.test/api/admin/products/" + id, {
+          method: "DELETE",
+        }),
+        { params: Promise.resolve({ id }) },
+      );
+      expect(response.status).toBe(200);
+      expect(await response.json()).toMatchObject({ success: true, archived });
+      expect(deleteProductMock).toHaveBeenCalledWith(id);
+    },
+  );
   it("bulk archives selected product ids", async () => {
     archiveProductsByIdsMock.mockResolvedValue({ archivedCount: 2 });
 

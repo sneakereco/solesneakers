@@ -148,6 +148,7 @@ type TransactionPayload = {
   order: Order;
   paymentTransaction: PaymentTransaction | null;
   emailLogs: EmailLog[];
+  emailLogsAvailable?: boolean;
   customer?: {
     displayId: string;
     kind: "account" | "guest";
@@ -358,6 +359,8 @@ function TransactionDetail({ orderId }: { orderId: string }) {
   const read = useAdminRead(load, "transaction");
   const order = read.data?.order;
   const paymentTx = read.data?.paymentTransaction;
+  const auditAvailable =
+    read.data?.emailLogsAvailable !== false && Array.isArray(read.data?.emailLogs);
   const emailLogs = read.data?.emailLogs ?? [];
   const customerSummary = read.data?.customer;
   const command = useAsyncAction();
@@ -374,12 +377,19 @@ function TransactionDetail({ orderId }: { orderId: string }) {
   const [itemModalOpen, setItemModalOpen] = useState(false);
 
   const handleResendEmail = async (emailType: string, logId: string) => {
-    if (!order || resendingEmail) {
+    if (
+      !order ||
+      resendingEmail ||
+      !auditAvailable ||
+      emailLogs.some(
+        (log) => log.email_type === emailType && log.delivery_status === "pending",
+      )
+    ) {
       return;
     }
 
     const key = "email:" + order.id + ":" + emailType;
-    if (pendingProviderCheck(key) === logId) return;
+    if (pendingProviderCheck(key)) return;
     rememberProviderCheck(key, logId);
     setResendingEmail(emailType);
     try {
@@ -787,6 +797,15 @@ function TransactionDetail({ orderId }: { orderId: string }) {
 
           {isOrderPlaced && (
             <SectionCard title="Email Checklist">
+              {!auditAvailable && (
+                <p role="alert">
+                  Email history unavailable.{" "}
+                  <button type="button" disabled={read.pending} onClick={read.retry}>
+                    Check email log
+                  </button>
+                </p>
+              )}
+
               <p className="-mt-2 mb-4 text-xs text-zinc-600">
                 {isPickup ? "Pickup order" : "Shipping order"} - Expected emails
               </p>
@@ -820,21 +839,22 @@ function TransactionDetail({ orderId }: { orderId: string }) {
                       </span>
                     )
                   ) : (
-                    <span className="text-xs text-zinc-600">Not sent</span>
+                    <span className="text-xs text-zinc-600">
+                      {auditAvailable ? "Not sent" : "Unknown"}
+                    </span>
                   );
 
                   const isResending = resendingEmail === emailType;
+                  const key = "email:" + order.id + ":" + emailType;
                   const needsCheck =
-                    !!latestLog &&
-                    !isResending &&
-                    (uncertain[emailType] === latestLog.id ||
-                      pendingProviderCheck("email:" + order.id + ":" + emailType) ===
-                        latestLog.id);
-
+                    !isResending && !!(uncertain[emailType] || pendingProviderCheck(key));
+                  const pendingAudit = matchingLogs.some(
+                    (log) => log.delivery_status === "pending",
+                  );
                   return (
                     <div
                       key={emailType}
-                      className="flex items-center justify-between gap-4 border-b border-zinc-800/50 py-3 last:border-0"
+                      className="flex flex-wrap items-center justify-between gap-4 border-b border-zinc-800/50 py-3 last:border-0"
                     >
                       <div>
                         <p className="text-sm text-white">{meta.label}</p>
@@ -850,8 +870,8 @@ function TransactionDetail({ orderId }: { orderId: string }) {
                         )}
                         <div className="mt-0.5">{statusEl}</div>
                       </div>
-                      <div className="flex shrink-0 items-center gap-3">
-                        {needsCheck && (
+                      <div className="flex min-w-0 flex-wrap items-center gap-x-3 gap-y-1">
+                        {(needsCheck || pendingAudit) && auditAvailable && (
                           <button
                             type="button"
                             disabled={read.pending}
@@ -860,6 +880,30 @@ function TransactionDetail({ orderId }: { orderId: string }) {
                             Check email log
                           </button>
                         )}
+                        {needsCheck && (
+                          <span className="text-xs">Resend outcome unconfirmed.</span>
+                        )}
+                        {needsCheck &&
+                          !pendingAudit &&
+                          auditAvailable &&
+                          !read.pending &&
+                          !read.error && (
+                            <ResolveEmailCheck
+                              key={latestLog?.id + ":" + latestLog?.delivery_status}
+                              onResolve={() => {
+                                rememberProviderCheck(key, null);
+                                setUncertain((prev) => {
+                                  const next = { ...prev };
+                                  delete next[emailType];
+                                  return next;
+                                });
+                                setToast({
+                                  message: "Email check resolved.",
+                                  tone: "info",
+                                });
+                              }}
+                            />
+                          )}
                         {latestLog?.html_snapshot && (
                           <button
                             type="button"
@@ -885,6 +929,8 @@ function TransactionDetail({ orderId }: { orderId: string }) {
                               read.pending ||
                               !!read.error ||
                               command.pending ||
+                              !auditAvailable ||
+                              pendingAudit ||
                               needsCheck
                             }
                             aria-busy={isResending}
@@ -1024,5 +1070,29 @@ function TransactionDetail({ orderId }: { orderId: string }) {
         />
       )}
     </AdminPage>
+  );
+}
+
+function ResolveEmailCheck({ onResolve }: { onResolve: () => void }) {
+  const [checked, setChecked] = useState(false);
+  return (
+    <div className="space-y-2 text-xs">
+      <label className="flex min-h-11 items-center gap-2">
+        <input
+          type="checkbox"
+          checked={checked}
+          onChange={(e) => setChecked(e.target.checked)}
+        />
+        I verified this resend with the email provider.
+      </label>
+      <button
+        type="button"
+        className="min-h-11 px-2 underline"
+        disabled={!checked}
+        onClick={onResolve}
+      >
+        Resolve email check
+      </button>
+    </div>
   );
 }

@@ -1,4 +1,5 @@
 "use client";
+import { findInventoryProduct } from "./find-inventory-product";
 import { adminCommand } from "@/components/admin/admin-command";
 
 import { useAsyncAction } from "@/components/ui/useAsyncAction";
@@ -86,6 +87,29 @@ export function InventoryClient({
     startTransition(() => router.push(`/admin/inventory?${params.toString()}`));
   };
 
+  const [unconfirmedDelete, setUnconfirmedDelete] = useState<ProductWithDetails | null>(
+    null,
+  );
+  const checkDeletedProduct = async (product: ProductWithDetails) => {
+    setMessage("Checking inventory…");
+    try {
+      const sameProduct = (entry: { id: string }) => entry.id === product.id;
+      const row =
+        (await findInventoryProduct(product.name, sameProduct, "archived")) ??
+        (await findInventoryProduct(product.name, sameProduct));
+      setMessage(
+        row?.archived_at
+          ? `${product.name} is archived in inventory.`
+          : row
+            ? `${product.name} is still in inventory.`
+            : "The product was not found in refreshed inventory.",
+      );
+      setUnconfirmedDelete(null);
+      startTransition(() => router.refresh());
+    } catch {
+      setMessage("The delete result is unconfirmed. Check inventory again.");
+    }
+  };
   const runAction = async (
     product: ProductWithDetails,
     action: "archive" | "restore" | "delete",
@@ -103,17 +127,33 @@ export function InventoryClient({
       const { response, data } = await adminCommand<{
         error?: string;
         archived?: boolean;
+        success?: boolean;
       }>(endpoint, {
         method: action === "delete" ? "DELETE" : "PATCH",
       });
+      if (
+        action === "delete" &&
+        (response.status >= 500 ||
+          (response.ok && (data?.success !== true || typeof data.archived !== "boolean")))
+      ) {
+        setUnconfirmedDelete(product);
+        await checkDeletedProduct(product);
+        return;
+      }
       if (!response.ok) {
-        throw new Error(data?.error ?? `Failed to ${action} product`);
+        setMessage(data?.error ?? `Failed to ${action} product`);
+        return;
       }
       setMessage(
         `${product.name} ${action === "delete" ? (data?.archived ? "archived" : "deleted") : `${action}d`}.`,
       );
       startTransition(() => router.refresh());
     } catch (error) {
+      if (action === "delete") {
+        setUnconfirmedDelete(product);
+        await checkDeletedProduct(product);
+        return;
+      }
       setMessage(error instanceof Error ? error.message : "Inventory action failed.");
     } finally {
       setBusyId(null);
@@ -231,6 +271,16 @@ export function InventoryClient({
       </form>
 
       {navigating && <p role="status">Updating inventory…</p>}
+      {unconfirmedDelete && (
+        <ActionButton
+          type="button"
+          pending={mutation.pending}
+          pendingLabel="Checking…"
+          onClick={() => void mutation.run(() => checkDeletedProduct(unconfirmedDelete))}
+        >
+          Check inventory
+        </ActionButton>
+      )}
       {message && (
         <div
           role="status"
@@ -312,7 +362,9 @@ export function InventoryClient({
                         {product.archived_at ? (
                           <button
                             type="button"
-                            disabled={mutation.pending || navigating}
+                            disabled={
+                              mutation.pending || navigating || !!unconfirmedDelete
+                            }
                             aria-busy={busy}
                             onClick={() =>
                               void mutation.run(() => runAction(product, "restore"))
@@ -325,7 +377,9 @@ export function InventoryClient({
                         ) : (
                           <button
                             type="button"
-                            disabled={mutation.pending || navigating}
+                            disabled={
+                              mutation.pending || navigating || !!unconfirmedDelete
+                            }
                             aria-busy={busy}
                             onClick={() =>
                               void mutation.run(() => runAction(product, "archive"))
@@ -338,7 +392,7 @@ export function InventoryClient({
                         )}
                         <button
                           type="button"
-                          disabled={mutation.pending || navigating}
+                          disabled={mutation.pending || navigating || !!unconfirmedDelete}
                           aria-busy={busy}
                           onClick={() =>
                             void mutation.run(() => runAction(product, "delete"))
