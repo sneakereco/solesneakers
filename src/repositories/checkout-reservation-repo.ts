@@ -11,7 +11,10 @@ import type {
 } from "@/lib/checkout/checkout-request";
 
 type ReserveCheckoutRpcArgs = Omit<
-  Database["public"]["Functions"]["reserve_square_checkout_inventory"]["Args"],
+  Extract<
+    Database["public"]["Functions"]["reserve_square_checkout_inventory"]["Args"],
+    { p_tenant_id: string }
+  >,
   "p_guest_email" | "p_user_id"
 > & {
   p_guest_email: string | null;

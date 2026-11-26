@@ -2,7 +2,7 @@
 
 Date: 2026-11-25
 
-Status: Reviewed draft for user approval. The direct database approach is selected; implementation is not yet approved. An independent builder check on 2026-11-25 found no important unanswered questions before planning.
+Status: Approved by the user on 2026-11-25; implementation planning requested. An independent builder check on 2026-11-25 found no important unanswered questions before planning. Implementation execution has not yet been requested.
 
 ## Intent
 
@@ -48,9 +48,9 @@ Existing code grounding:
 
 Non-goals include Instagram account ownership verification, proof of one human, prevention of link sharing or automated catalog inspection, raffle/random winner selection, cart restrictions for prizes that never enter the cart, automated messaging, returns/refunds, re-awarding prizes, a reusable marketing campaign builder, and claiming that a load test proves all production traffic patterns.
 
-## Proposed product and operational defaults
+## Approved product and operational defaults
 
-The following are engineering/product proposals for approval, rather than previously stated user decisions:
+The following originated as engineering/product proposals and were accepted with approval of this design on 2026-11-25:
 
 - Use one Black Friday 2026 campaign, with an admin-controlled enabled switch. Begin disabled; do not invent an automatic opening time. Existing per-product go-live scheduling still applies.
 - US addresses only for this launch, consistent with the earlier Black Friday work program.
@@ -70,7 +70,7 @@ An ordinary product cannot be converted to or from Specialty after creation in t
 
 ## Discovery and public product behavior
 
-Proposed discovery placement:
+Approved discovery placement:
 
 - Mix at most one eligible specialty card into a random position on an unfiltered Shop All results page.
 - Also allow one random specialty card in an existing homepage FeaturedItems product section, at most one per homepage visit. Do not add a giveaway-only page or banner.
@@ -182,7 +182,7 @@ Stress scenarios release 1,000 independent submissions behind a start barrier, i
 
 Separate evidence layers: (1) real database contention; (2) HTTP claim path with signed prevalidated synthetic fixtures; (3) hosted application behavior and real browser/protection/address-provider integration. Clearly label synthetic address tokens or provider-supported staging bot test modes. A thousand blocked bot/rate-limit requests is not proof of claim-processing capacity. Exercise on-demand validation and provider throttling separately so prevalidated-token results do not hide that dependency.
 
-Proposed performance acceptance target for the prepared valid-submission burst: all 1,000 reach a truthful terminal result or recover to it within 30 seconds, p95 claim response at most 3 seconds, p99 at most 10 seconds, zero oversells/duplicate wins/lost committed wins, and no unhandled server errors. These timings are an engineering proposal, not measured capacity or a previous user commitment. Also test overload beyond capacity: bounded retryable results rather than false losses or corruption. If the target is not achieved on the tested deployment, report the failure and investigate before claiming launch readiness.
+Approved performance acceptance target for the prepared valid-submission burst: all 1,000 reach a truthful terminal result or recover to it within 30 seconds, p95 claim response at most 3 seconds, p99 at most 10 seconds, zero oversells/duplicate wins/lost committed wins, and no unhandled server errors. These timings originated as engineering proposals and were included in the approved design; they are targets, not measured capacity. Also test overload beyond capacity: bounded retryable results rather than false losses or corruption. If the target is not achieved on the tested deployment, report the failure and investigate before claiming launch readiness.
 
 Run relevant unit/integration/browser checks plus typecheck, lint, formatting, and a production build for changed paths. Recheck ordinary purchases and admin product management. Apply additive migrations and configure secrets on isolated staging through existing release gates, then record the exact tested deployment and differences from production. Preserve historical giveaway work-program documents as history; this design supersedes their cart/checkout/email/fulfillment requirements for this specialty feature only.
 

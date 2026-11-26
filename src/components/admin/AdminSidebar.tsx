@@ -6,6 +6,7 @@ import { usePathname } from "next/navigation";
 import {
   ChevronDown,
   ExternalLink,
+  Gift,
   LayoutDashboard,
   Menu,
   Package,
@@ -41,11 +42,17 @@ const navItems: Array<NavLink | NavGroup> = [
     key: "commerce",
     label: "Commerce",
     icon: Receipt,
-    activePrefixes: ["/admin/transactions", "/admin/shipping", "/admin/pickups"],
+    activePrefixes: [
+      "/admin/transactions",
+      "/admin/shipping",
+      "/admin/pickups",
+      "/admin/specialty-claims",
+    ],
     children: [
       { href: "/admin/transactions", label: "Transactions", icon: Receipt },
       { href: "/admin/shipping", label: "Shipping", icon: Truck },
       { href: "/admin/pickups", label: "Pickups", icon: Package },
+      { href: "/admin/specialty-claims", label: "Specialty Product Claims", icon: Gift },
     ],
   },
   { type: "link", href: "/admin/tags", label: "Product tags", icon: Tags },
@@ -85,9 +92,12 @@ export function AdminSidebar({
     setOpenGroups((current) => ({
       commerce:
         current.commerce ||
-        ["/admin/transactions", "/admin/shipping", "/admin/pickups"].some((prefix) =>
-          pathname.startsWith(prefix),
-        ),
+        [
+          "/admin/transactions",
+          "/admin/shipping",
+          "/admin/pickups",
+          "/admin/specialty-claims",
+        ].some((prefix) => pathname.startsWith(prefix)),
       settings: current.settings || pathname.startsWith("/admin/settings"),
     }));
     setIsOpen(false);

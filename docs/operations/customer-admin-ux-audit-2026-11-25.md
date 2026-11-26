@@ -164,6 +164,16 @@ Computed colors for “Operations” and the role caption were `rgb(82,82,91)` a
 - A contact HTTP failure retained the typed message and produced an alert. No contact message was delivered.
 - All 13 existing browser runners completed successfully on the audited source. Their assertions cover selected component, visual/state and synthetic-provider scenarios, not every journey above.
 
+## User-requested addition: immediate action feedback and skeleton coverage
+
+After reviewing this assessment, the user emphasized that mobile taps often lack acknowledgement and requested skeleton loaders across all loading states. This is an explicit addition to the repair scope, rather than a claim that the initial twelve findings covered every such interaction.
+
+A fresh source inventory found no route `loading.*` files and no shared Button or Skeleton primitive. Isolated pulse placeholders do exist in [search results](../../src/components/search/SearchOverlay.tsx#L340), [the header](../../src/components/shell/Navbar.tsx#L185), [shipping estimates](../../src/components/cart/ShippingEstimate.tsx#L113) and the MFA QR fallback. Several existing actions already provide pending labels, including inventory saves and password login. The gap is consistent coverage, appropriate loading presentation and immediate touch/keyboard feedback.
+
+The [expanded repair design](../superpowers/specs/2026-11-25-customer-admin-ux-remediation-design.md#6-site-wide-interaction-feedback-and-skeleton-loading) now requires pressed → pending → truthful result feedback, shaped skeletons for first content loads, stable content plus scoped updating feedback during refreshes, and continuous status for checkout/payment/provider handoffs. It includes a customer/admin action-and-loading inventory and held-request/reduced-motion/mobile acceptance tests. Skeletons must not erase an in-progress form, represent an error as endless loading, reveal protected content or imply a completed payment.
+
+This addendum is source/design work only. The thirteen passing browser runners above were not rerun to validate newly implemented skeleton or feedback behavior; no such product changes have been made yet.
+
 ## Proposed repair order and continuing UX checks
 
 1. Coordinate UX-01/02 with existing #33/#36 and the [separate checkout/cart assessment](2026-11-25-black-friday-checkout-cart-assessment.md). Preserve authoritative payment state, order-bound cart consumption and the agreed identity policy. Do not start a competing financial-state implementation.

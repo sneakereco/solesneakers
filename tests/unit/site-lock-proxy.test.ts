@@ -201,4 +201,27 @@ describe("checkSiteLock", () => {
     await expect(checkSiteLock(request, "req-3")).resolves.toBeNull();
     expect(mockLogError).toHaveBeenCalled();
   });
+  it("delegates only exact specialty POST site checks to their fail-closed handler", async () => {
+    mockIsSiteLocked.mockReturnValue(true);
+    mockGetSettings.mockResolvedValue({ siteUnlockAt: "2099-01-01T00:00:00.000Z" });
+    for (const path of ["/api/specialty/claims", "/api/specialty/eligibility"]) {
+      expect(
+        await checkSiteLock(
+          new NextRequest("http://localhost" + path, { method: "POST" }),
+          "claim",
+        ),
+      ).toBeNull();
+    }
+    expect(mockGetFirstTenantId).not.toHaveBeenCalled();
+    expect(
+      (
+        await checkSiteLock(
+          new NextRequest("http://localhost/api/specialty/claims/other", {
+            method: "POST",
+          }),
+          "other",
+        )
+      )?.status,
+    ).toBe(423);
+  });
 });
