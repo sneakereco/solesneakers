@@ -1,0 +1,31 @@
+# Implementation decisions
+
+These are the coordinator rulings in chronological order, preserved from this implementation plan before its temporary review workspace is removed. Each entry states its cost if wrong. Later refinements supersede earlier implementation options.
+
+| #   | Ruling                                                                                                     | Cost if wrong                                                                                           |
+| --- | ---------------------------------------------------------------------------------------------------------- | ------------------------------------------------------------------------------------------------------- |
+| 1   | Continue through planning and implementation under the existing approval.                                  | Routine implementation choices may need reviewable rework.                                              |
+| 2   | Use eight task deliverables with independent reviews.                                                      | Additional review time and context.                                                                     |
+| 3   | Keep guest session storage separate from account local storage.                                            | A mistaken ownership adapter could redirect a delayed cart write.                                       |
+| 4   | Limit checkout work to approved UX, receipt authority and basket safety; preserve provider state machines. | An incorrect boundary could leave a financial correctness gap.                                          |
+| 5   | Allow versioned internal cart persistence while retaining readable legacy arrays.                          | A compatibility mistake could lose or retain the wrong basket units.                                    |
+| 6   | Use native dialogs for application overlays; keep provider challenges independent.                         | Focus containment or return could regress.                                                              |
+| 7   | Use the installed TypeScript command path.                                                                 | An incorrect path would invalidate the typecheck.                                                       |
+| 8   | Use per-line unit lineage for decrease/increase safety and expose validation recovery.                     | Incorrect lineage could remove later additions; old writers remain outside cooperative locks.           |
+| 9   | Include search loading and stale-result ownership in storefront work.                                      | A misplaced owner could leave search feedback silent or stale.                                          |
+| 10  | Pass the actual overlay invoker through feature launchers.                                                 | Incorrect wiring could return focus to the wrong control.                                               |
+| 11  | Include shared auth, staff navigation and checkout adapters in their feature tasks.                        | Missing adapters could leave inconsistent behavior between flows.                                       |
+| 12  | Refresh authoritative session state after successful soft authentication navigation.                       | A stale root snapshot could display the previous identity.                                              |
+| 13  | Represent provider/session unavailability separately from confirmed guest state.                           | A mistaken classifier could hide an outage or expose the wrong view.                                    |
+| 14  | Bind recovery to its verified owner and distinguish address commit from follow-up failure.                 | Incorrect binding/retry could affect another account or overwrite a newer address.                      |
+| 15  | Add narrow authorized read/error contracts and pending-dialog support for admin recovery.                  | An incorrect unknown-outcome interpretation could permit duplicate provider work.                       |
+| 16  | Add an explicit positive-label result and exact tenant-scoped product ID/SKU reads.                        | A mistaken result or lookup could suggest repurchasing a label or misidentify a saved product.          |
+| 17  | Persist and read back a conservative label guard before purchase admission.                                | Storage failure can block the action; an unsafe guard could permit duplicate purchase.                  |
+| 18  | Make cart writes and confirmed consumption asynchronous under cooperative locks.                           | Adapter mistakes could break edits; older writers remain outside those locks.                           |
+| 19  | Add a synchronous current-identity check before commands and after lock waits.                             | An incorrect check could admit a stale-owner operation or block a valid one.                            |
+| 20  | Include failed/hung Square script initialization and late-resource cleanup in checkout recovery.           | Incorrect cleanup could disrupt an active method or leave retry stuck.                                  |
+| 21  | Scope checkout attempt cleanup so old cancellation cannot clear a newer draft/key.                         | A wrong attempt match could erase newer work.                                                           |
+| 22  | Report real receipt basket-write failure separately from quiet safe no-ops.                                | A mistaken classification could hide a failed cleanup or show a misleading warning.                     |
+| 23  | Permit basket-only recovery from trusted paid evidence before the cart view hydrates.                      | Incorrect admission could touch the wrong basket; payment status remains independent.                   |
+| 24  | Key order reads to their lookup scope and provide a strict verified checkout owner DTO.                    | A wrong scope could display stale private data or block an independently valid secure link.             |
+| 25  | Run the missing local recovery-owner check independently with two new disposable accounts.                 | An ownership or cleanup mistake could leave local fixture data; no existing or remote account was used. |

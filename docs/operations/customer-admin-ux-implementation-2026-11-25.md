@@ -69,3 +69,7 @@ The catalog screenshots show the native image error state after an external fixt
 - Exercise staging with its real host, CSP, cookies, rate limits, recovery delivery and provider configuration. Verify guest and signed-in shipping/pickup, cancellation, delayed resolution and receipt access against actual provider outcomes.
 - Exercise iOS Safari and Android devices with the virtual keyboard, touch gestures, camera, clipboard permission, reduced motion, zoom and long modal content. Check VoiceOver, TalkBack and desktop screen-reader announcements, reading order and landmark navigation.
 - Exercise wallet eligibility, browser payment sheets, issuer challenges and SDK recovery on supported devices. Charging, refunding, label purchases, fulfillment, outbound messages and live analytics were outside local acceptance.
+
+## Review status
+
+All eight task reviews passed for blocking findings. The last scoped review at `680b82a0` confirmed the three server-read deadline and framework-retry repairs, with no new blocking breakage. The whole-branch review and final verification remain pending. The [implementation decisions](customer-admin-ux-implementation-decisions-2026-11-25.md) preserve all 25 coordinator rulings in chronological order, including their costs if wrong.
