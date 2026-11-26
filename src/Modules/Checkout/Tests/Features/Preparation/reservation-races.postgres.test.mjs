@@ -106,7 +106,10 @@ test("atomic checkout allocation across independent sessions", async (t) => {
               [left, scarce],
               [scarce, right],
             ],
-            requests = baskets.map(req);
+            requests = baskets.map((basket, index) => ({
+              ...req(basket),
+              ownerBinding: "guest:" + (index ? "a" : "b").repeat(64),
+            }));
           const results = await Promise.allSettled(
             requests.map((r, i) => reserve(i ? b : a, r)),
           );
@@ -245,6 +248,101 @@ test("atomic checkout allocation across independent sessions", async (t) => {
             }),
             { code: "PC410" },
           );
+        },
+      );
+      await t.test(
+        "release queues behind the catalog parent before touching the variant",
+        async () => {
+          const x = await item(2),
+            held = await reserve(a, req([x]));
+          const heldPid = (await b.query("select pg_backend_pid() pid")).rows[0].pid;
+          await a.query("begin");
+          let release;
+          try {
+            await a.query("select id from products where id=$1 for update", [
+              x.productId,
+            ]);
+            release = b.query(
+              "select release_square_checkout_reservation($1,'fixture_expiry') released",
+              [held.orderId],
+            );
+            const deadline = Date.now() + 5000;
+            while (
+              !(
+                await admin.query("select cardinality(pg_blocking_pids($1))>0 waiting", [
+                  heldPid,
+                ])
+              ).rows[0].waiting
+            ) {
+              if (Date.now() > deadline)
+                throw Error("release did not reach locked parent");
+              await new Promise((resolve) => setTimeout(resolve, 10));
+            }
+            // NOWAIT distinguishes the old inverted order without creating a deadlock.
+            await a.query(
+              "select id from product_variants where id=$1 for update nowait",
+              [x.variantId],
+            );
+            const fresh = await reserve(a, req([x]));
+            assert.equal(fresh.reused, false);
+            await a.query("commit");
+          } finally {
+            await a.query("rollback");
+            if (release) assert.equal((await release).rows[0].released, true);
+          }
+          assert.deepEqual(await stock(x), { stock: 1, holds: 2 });
+        },
+      );
+      await t.test(
+        "partial stock, same principal, expired or ambiguous holds get no other-shopper attribution",
+        async () => {
+          const x = await item(3),
+            own = req([x]),
+            held = await reserve(a, own),
+            other = "guest:" + "e".repeat(64);
+          const demand = (n, ownerBinding) => ({
+            ...req([{ ...x, quantity: n, lineTotalCents: 1000 * n }]),
+            ownerBinding,
+            subtotalCents: 1000 * n,
+            totalCents: 1000 * n + 80,
+          });
+          const reason = async (r, expected) =>
+            assert.rejects(
+              reserve(b, r),
+              (e) =>
+                e.code === "PC409" &&
+                JSON.parse(e.detail)[0].reason === expected &&
+                JSON.parse(e.detail)[0].availableQuantity === 2,
+            );
+          await reason(demand(5, other), "unavailable");
+          await reason(demand(3, own.ownerBinding), "unavailable");
+          await reason(demand(3, other), "reserved_by_other");
+          await reason(
+            { ...demand(3, other), otherGuestContexts: [own.ownerBinding.slice(6)] },
+            "unavailable",
+          );
+          const check = {
+            version: 2,
+            action: "inspect",
+            tenantId,
+            idempotencyKey: randomUUID(),
+            items: [{ productId: x.productId, variantId: x.variantId, quantity: 3 }],
+          };
+          await reason(check, "unavailable");
+          await reason({ ...check, ownerBinding: other }, "reserved_by_other");
+          await admin.query("update orders set expires_at=now() where id=$1", [
+            held.orderId,
+          ]);
+          await reason(demand(3, other), "unavailable");
+          await admin.query(
+            "update orders set expires_at=now()+interval '10 minutes' where id=$1",
+            [held.orderId],
+          );
+          await admin.query(
+            "update inventory_reservations set expires_at=now()-interval '1 minute' where order_id=$1",
+            [held.orderId],
+          );
+          await reason(demand(3, other), "unavailable");
         },
       );
       await t.test("signed-in ownership and legacy proof stay immutable", async () => {

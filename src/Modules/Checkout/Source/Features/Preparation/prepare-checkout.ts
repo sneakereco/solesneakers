@@ -1,5 +1,9 @@
 import { isIP } from "node:net";
-import { readGuestContext, verifyGuestPreparationReuse } from "./guest-context";
+import {
+  GuestContextLimit,
+  readGuestContexts,
+  verifyGuestPreparationReuse,
+} from "./guest-context";
 import {
   type InventoryConflict,
   PreparationChanged,
@@ -75,12 +79,14 @@ export type PrepareCheckoutDependencies = {
   quote(input: CheckoutPricingQuoteInput): Promise<CheckoutPricingQuote>;
   calculateSquareOrder(input: SquareCheckoutOrderPayloadInput): Promise<CheckoutTotals>;
   reserve(
-    input: ReserveCheckoutInput & { ownerBinding: string },
+    input: ReserveCheckoutInput & { ownerBinding: string; otherGuestContexts?: string[] },
   ): Promise<ReservationDecision>;
   inspectUnavailable(
     tenantId: string,
     key: string,
     items: PrepareCheckoutRequest["items"],
+    ownerBinding: string,
+    otherGuestContexts: string[],
   ): Promise<InventoryConflict[]>;
   createGuestAccessToken(orderId: string): Promise<string>;
   getSquareClientConfig(): {
@@ -212,6 +218,51 @@ export async function prepareCheckoutHandler(
       return json({ error: "A buyer email is required" }, 400);
     }
 
+    const cartHashInput = {
+      tenantId,
+      buyerEmail,
+      fulfillment: parsed.data.fulfillment,
+      paymentMethod: parsed.data.paymentMethod,
+      shippingAddress: parsed.data.shippingAddress,
+      billingAddress: parsed.data.billingAddress,
+      pickupContact: parsed.data.pickupContact,
+      items: parsed.data.items,
+    };
+    const cartHash = createCheckoutCartHash(cartHashInput);
+    const contexts = session
+      ? []
+      : readGuestContexts(request, deps.shippingConfirmationSecret());
+    if (!session && contexts.length === 0) return recoveryRequired();
+    const existing = await deps.findExisting(tenantId, parsed.data.idempotencyKey);
+    const contextHash = existing
+      ? contexts.find((hash) => verifyGuestPreparationReuse(existing, hash))
+      : contexts[0];
+    const ownerBinding = session
+      ? "account:" + session.user.id
+      : contextHash
+        ? "guest:" + contextHash
+        : null;
+    if (!ownerBinding) return recoveryRequired();
+    const otherGuestContexts = contexts.filter((hash) => hash !== contextHash);
+    if (existing) {
+      const owned = session ? existing.userId === session.user.id : Boolean(contextHash);
+      if (
+        !owned ||
+        existing.deviceSessionId !== parsed.data.deviceSessionId ||
+        !existing.guarded
+      )
+        return recoveryRequired();
+      if (!matchesCheckoutCartHash(existing.cartHash, cartHash, cartHashInput)) {
+        return json({ error: "Checkout key conflicts with another cart" }, 409);
+      }
+      if (existing.status !== "pending" || !isFuture(existing.expiresAt, deps.now())) {
+        return json({ error: "Checkout cannot be reused" }, 409);
+      }
+      if (existing.squareOrderId && typeof existing.squareOrderVersion !== "number") {
+        return json({ error: "Checkout cannot be migrated; start again" }, 409);
+      }
+    }
+
     const normalizedEmailHash = deps.hashEmail(buyerEmail);
     const confirmationScope = parsed.data.shippingAddress
       ? {
@@ -233,6 +284,7 @@ export async function prepareCheckoutHandler(
         ),
     );
     if (
+      !existing &&
       parsed.data.fulfillment === "ship" &&
       parsed.data.shippingAddress &&
       parsed.data.paymentMethod !== "applePay" &&
@@ -265,10 +317,10 @@ export async function prepareCheckoutHandler(
                 ? "SHIPPING_ADDRESS_SUGGESTION"
                 : "SHIPPING_ADDRESS_INVALID",
             error: unavailable
-              ? "Address verification is temporarily unavailable. Please try again. You have not been charged."
+              ? "Address verification is temporarily unavailable. Please try again."
               : validation.status === "suggestion"
-                ? "Please confirm the suggested shipping address before continuing. You have not been charged."
-                : "We could not verify this shipping address as deliverable. Check the street, apartment, city, state, and ZIP code. You have not been charged.",
+                ? "Please confirm the suggested shipping address before continuing."
+                : "We could not verify this shipping address as deliverable. Check the street, apartment, city, state, and ZIP code.",
             ...(validation.status === "suggestion"
               ? {
                   suggestedAddress: validation.address,
@@ -287,48 +339,6 @@ export async function prepareCheckoutHandler(
           },
           unavailable ? 503 : 422,
         );
-      }
-    }
-
-    const cartHashInput = {
-      tenantId,
-      buyerEmail,
-      fulfillment: parsed.data.fulfillment,
-      paymentMethod: parsed.data.paymentMethod,
-      shippingAddress: parsed.data.shippingAddress,
-      billingAddress: parsed.data.billingAddress,
-      pickupContact: parsed.data.pickupContact,
-      items: parsed.data.items,
-    };
-    const cartHash = createCheckoutCartHash(cartHashInput);
-    const contextHash = session
-      ? null
-      : readGuestContext(request, deps.shippingConfirmationSecret());
-    const ownerBinding = session
-      ? "account:" + session.user.id
-      : contextHash
-        ? "guest:" + contextHash
-        : null;
-    if (!ownerBinding) return recoveryRequired();
-    const existing = await deps.findExisting(tenantId, parsed.data.idempotencyKey);
-    if (existing) {
-      const owned = session
-        ? existing.userId === session.user.id
-        : contextHash !== null && verifyGuestPreparationReuse(existing, contextHash);
-      if (
-        !owned ||
-        existing.deviceSessionId !== parsed.data.deviceSessionId ||
-        !existing.guarded
-      )
-        return recoveryRequired();
-      if (!matchesCheckoutCartHash(existing.cartHash, cartHash, cartHashInput)) {
-        return json({ error: "Checkout key conflicts with another cart" }, 409);
-      }
-      if (existing.status !== "pending" || !isFuture(existing.expiresAt, deps.now())) {
-        return json({ error: "Checkout cannot be reused" }, 409);
-      }
-      if (existing.squareOrderId && typeof existing.squareOrderVersion !== "number") {
-        return json({ error: "Checkout cannot be migrated; start again" }, 409);
       }
     }
 
@@ -370,6 +380,8 @@ export async function prepareCheckoutHandler(
           tenantId,
           parsed.data.idempotencyKey,
           parsed.data.items,
+          ownerBinding,
+          otherGuestContexts,
         );
         return json(
           { code: "INVENTORY_CONFLICT", conflicts, paymentState: "not_submitted" },
@@ -423,6 +435,7 @@ export async function prepareCheckoutHandler(
     const expiresAt = new Date(deps.now().getTime() + 15 * 60 * 1000);
     const reservation = await deps.reserve({
       ownerBinding,
+      ...(otherGuestContexts.length ? { otherGuestContexts } : {}),
       pickupContact: parsed.data.pickupContact,
       tenantId,
       userId: session?.user.id ?? null,
@@ -528,7 +541,11 @@ export async function prepareCheckoutHandler(
       reservation.reused ? 200 : 201,
     );
   } catch (error) {
-    if (error instanceof PreparationRecoveryRequired) return recoveryRequired();
+    if (
+      error instanceof GuestContextLimit ||
+      error instanceof PreparationRecoveryRequired
+    )
+      return recoveryRequired();
     if (error instanceof PreparationChanged)
       return json({ error: "Checkout changed. Review checkout again." }, 409);
     deps.reportError(error);

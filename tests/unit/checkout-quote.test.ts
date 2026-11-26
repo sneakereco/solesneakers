@@ -228,6 +228,33 @@ describe("checkoutQuoteHandler", () => {
     expect(failed.status).toBe(503);
     expect(failed.headers.has("set-cookie")).toBe(false);
   });
+  it("overlapping initial HTTP replies retain both browser proofs", async () => {
+    const [a, b] = await Promise.all([
+      checkoutQuoteHandler(request() as never, dependencies()),
+      checkoutQuoteHandler(request() as never, dependencies()),
+    ]);
+    const cookieA = a.headers.get("set-cookie")!.split(";")[0],
+      cookieB = b.headers.get("set-cookie")!.split(";")[0];
+    expect(cookieA.split("=")[0]).not.toBe(cookieB.split("=")[0]);
+    const next = request();
+    next.headers.set("cookie", cookieB + "; " + cookieA);
+    const repeated = await checkoutQuoteHandler(next as never, dependencies());
+    expect(repeated.status).toBe(200);
+    expect(repeated.headers.has("set-cookie")).toBe(false);
+  });
+  it("refuses an excessive proof collection without rotating any issued cookie", async () => {
+    const r = request();
+    r.headers.set(
+      "cookie",
+      Array.from(
+        { length: 17 },
+        (_, i) => "__Host-checkout-context-" + i + "=invalid",
+      ).join("; "),
+    );
+    const result = await checkoutQuoteHandler(r as never, dependencies());
+    expect(result.status).toBe(503);
+    expect(result.headers.has("set-cookie")).toBe(false);
+  });
   it("reports provider failures without exposing details", async () => {
     const error = new Error("provider body");
     const deps = dependencies({

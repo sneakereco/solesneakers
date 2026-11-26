@@ -14,7 +14,7 @@ import {
 export class CheckoutPreparationRepository {
   constructor(private readonly db: TypedSupabaseClient) {}
   async reserveCheckout(
-    input: ReserveCheckoutInput & { ownerBinding: string },
+    input: ReserveCheckoutInput & { ownerBinding: string; otherGuestContexts?: string[] },
   ): Promise<ReservationDecision> {
     // Only the database clock sets hold expiry.
     const { expiresAt: _requestedExpiry, ...snapshot } = input;
@@ -39,9 +39,19 @@ export class CheckoutPreparationRepository {
     tenantId: string,
     idempotencyKey: string,
     items: PrepareCheckoutRequestItem[],
+    ownerBinding: string,
+    otherGuestContexts: string[],
   ) {
     const decision = await this.decide(
-      { version: 2, action: "inspect", tenantId, idempotencyKey, items },
+      {
+        version: 2,
+        action: "inspect",
+        tenantId,
+        idempotencyKey,
+        items,
+        ownerBinding,
+        ...(otherGuestContexts.length ? { otherGuestContexts } : {}),
+      },
       items,
     );
     if (decision.kind !== "conflict") throw new Error("checkout_inspection_invalid");

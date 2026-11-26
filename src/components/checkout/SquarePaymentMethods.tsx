@@ -1366,7 +1366,7 @@ export function SquarePaymentMethods({
                   );
                   if (!addressMatches)
                     throw new Error(
-                      "Afterpay did not confirm your shipping address. Return to checkout and review it. You have not been charged.",
+                      "Afterpay did not confirm your shipping address. Return to checkout and review it.",
                     );
                 }
                 if (method === "card" && result.status === "INVALID") {

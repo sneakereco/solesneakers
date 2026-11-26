@@ -57,8 +57,14 @@ export function createPrepareCheckoutDependencies(
     quote: (input) => pricing.quote(input),
     calculateSquareOrder: (input) => getSquareOrders().calculate(input),
     reserve: (input) => preparation.reserveCheckout(input),
-    inspectUnavailable: (tenant, key, items) =>
-      preparation.inspectUnavailable(tenant, key, items),
+    inspectUnavailable: (tenant, key, items, ownerBinding, otherGuestContexts) =>
+      preparation.inspectUnavailable(
+        tenant,
+        key,
+        items,
+        ownerBinding,
+        otherGuestContexts,
+      ),
     createGuestAccessToken: async (orderId) =>
       (await accessTokens.createToken({ orderId })).token,
     getSquareClientConfig: () => {

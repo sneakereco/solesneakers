@@ -24,6 +24,28 @@ $$;
 revoke all on function public.reserve_square_checkout_inventory_with_address(uuid,uuid,text,text,text,text,text,timestamptz,integer,integer,integer,integer,text,text,jsonb,jsonb,jsonb) from public,anon,authenticated;
 grant execute on function public.reserve_square_checkout_inventory_with_address(uuid,uuid,text,text,text,text,text,timestamptz,integer,integer,integer,integer,text,text,jsonb,jsonb,jsonb) to service_role;
 
+-- All callers of the live release RPC take the same order, attempt, product,
+-- variant and hold locks as preparation before the historical restore writes.
+alter function public.release_square_checkout_reservation(uuid,text) set schema checkout_preparation_private;
+create function public.release_square_checkout_reservation(p_order_id uuid,p_reason text)
+returns boolean language plpgsql security definer set search_path='' as $fn$
+declare o public.orders;
+begin
+ select * into o from public.orders where id=p_order_id for update;
+ if not found or o.status in ('paid','shipped','refunded','partially_refunded') then return false; end if;
+ perform a.id from public.checkout_payment_attempts a where a.order_id=o.id order by a.sequence for update;
+ perform p.id from public.products p where p.id in (
+   select v.product_id from public.product_variants v join public.inventory_reservations h on h.variant_id=v.id
+   where h.order_id=o.id and h.status='active') order by p.id for update;
+ perform v.id from public.product_variants v where v.id in (
+   select h.variant_id from public.inventory_reservations h where h.order_id=o.id and h.status='active') order by v.id for update;
+ perform h.id from public.inventory_reservations h where h.order_id=o.id and h.status='active' order by h.id for update;
+ return checkout_preparation_private.release_square_checkout_reservation(o.id,p_reason);
+end;
+$fn$;
+revoke all on function public.release_square_checkout_reservation(uuid,text) from public,anon,authenticated;
+grant execute on function public.release_square_checkout_reservation(uuid,text) to service_role;
+
 -- Even a delayed attach cannot rewrite an issued financial quote. Preserve
 -- the old attachment contract for legacy orders.
 alter function public.attach_square_checkout_order(uuid,text,integer,integer,integer,integer,text) set schema checkout_preparation_private;
@@ -113,12 +135,25 @@ declare
  i jsonb;
  conflicts jsonb;
  held_until timestamptz;
+ observed_at timestamptz;
+ owner_binding text:=r->>'ownerBinding';
  changed boolean;
 begin
  if mode is null or mode not in ('reserve','inspect') or r->'version' is distinct from '2'::jsonb
-   or not checkout_preparation_private.shape(r,base_keys||(case when mode='reserve' then full_keys else '{}'::text[] end))
+   or not checkout_preparation_private.shape(r,base_keys||(case when mode='reserve' then full_keys else '{}'::text[] end),array['otherGuestContexts','ownerBinding'])
    or coalesce(r->>'tenantId','') !~ uuid_pattern or coalesce(r->>'idempotencyKey','') !~ uuid_pattern
    or jsonb_typeof(lines) is distinct from 'array' then raise exception 'invalid_checkout_request' using errcode='22023'; end if;
+ if mode='inspect' and r ? 'ownerBinding' and (owner_binding is null or not (
+   owner_binding ~ '^guest:[a-f0-9]{64}$' or (left(owner_binding,8)='account:' and substr(owner_binding,9) ~ uuid_pattern)))
+ then raise exception 'invalid_checkout_owner' using errcode='22023'; end if;
+ if r ? 'otherGuestContexts' then
+   if jsonb_typeof(r->'otherGuestContexts')<>'array' or coalesce(owner_binding,'') !~ '^guest:[a-f0-9]{64}$'
+   then raise exception 'invalid_checkout_contexts' using errcode='22023'; end if;
+   if jsonb_array_length(r->'otherGuestContexts') not between 1 and 15 or exists(
+       select 1 from jsonb_array_elements(r->'otherGuestContexts') h
+       where jsonb_typeof(h)<>'string' or h#>>'{}' !~ '^[a-f0-9]{64}$')
+   then raise exception 'invalid_checkout_contexts' using errcode='22023'; end if;
+ end if;
  tenant:=(r->>'tenantId')::uuid;
  if jsonb_array_length(lines) not between 1 and 10 or (select count(distinct lower(j->>'variantId')) from jsonb_array_elements(lines) j)<>jsonb_array_length(lines)
  then raise exception 'invalid_checkout_lines' using errcode='22023'; end if;
@@ -212,6 +247,7 @@ begin
  perform v.id from public.product_variants v where v.tenant_id=tenant and v.id in (select (j->>'variantId')::uuid from jsonb_array_elements(lines) j) order by v.id for update;
  perform h.id from public.inventory_reservations h where h.tenant_id=tenant and h.status='active' and h.variant_id in
    (select (j->>'variantId')::uuid from jsonb_array_elements(lines) j) order by h.id for update;
+ observed_at:=clock_timestamp();
  with requested as (
    select (j->>'productId')::uuid pid,(j->>'variantId')::uuid vid,(j->>'quantity')::integer qty,(j->>'unitPriceCents')::integer price,(j->>'unitCostCents')::integer cost,j->>'category' category
    from jsonb_array_elements(lines) j
@@ -219,13 +255,26 @@ begin
    select requested.*,v.sale_price_cents,v.unit_cost_cents,p.category current_category,v.stock,
      (p.id is not null and p.is_active and p.go_live_at<=clock_timestamp() and v.id is not null
        and (not p.is_out_of_stock or v.stock=0)) as eligible,
-     exists(select 1 from public.inventory_reservations h where h.variant_id=vid and h.tenant_id=tenant and h.status='active') as held
+     held.active_quantity,held.other_quantity
    from requested left join public.products p on p.id=pid and p.tenant_id=tenant
    left join public.product_variants v on v.id=vid and v.product_id=pid and v.tenant_id=tenant
+   cross join lateral (
+     select coalesce(sum(h.quantity),0) active_quantity, coalesce(sum(h.quantity) filter(where
+       h.expires_at>observed_at and ho.expires_at>observed_at and ho.status='pending'
+       and ho.checkout_attempt_guarded and ho.tenant_id=tenant and (
+         (left(owner_binding,8)='account:' and ho.user_id is not null and 'account:'||ho.user_id<>owner_binding)
+         or (left(owner_binding,6)='guest:' and ho.checkout_guest_context_hash is not null
+           and 'guest:'||ho.checkout_guest_context_hash<>owner_binding
+           and not (coalesce(r->'otherGuestContexts','[]') ? ho.checkout_guest_context_hash))
+       )),0) other_quantity
+     from public.inventory_reservations h join public.orders ho on ho.id=h.order_id
+     where h.variant_id=vid and h.tenant_id=tenant and h.status='active'
+   ) held
  )
  select jsonb_agg(jsonb_build_object('productId',pid,'variantId',vid,'requestedQuantity',qty,
    'availableQuantity',case when eligible then stock else 0 end,'reason',case when eligible is not true then 'unavailable'
-   when held then 'reserved_by_other' else 'sold_out' end) order by pid,vid) filter(where eligible is not true or stock<qty),
+   when stock+other_quantity>=qty then 'reserved_by_other'
+   when stock=0 and active_quantity=0 then 'sold_out' else 'unavailable' end) order by pid,vid) filter(where eligible is not true or stock<qty),
    bool_or(sale_price_cents is distinct from price or unit_cost_cents is distinct from cost or category is distinct from current_category) into conflicts,changed from availability;
  if conflicts is not null then raise exception 'checkout_inventory_conflict' using errcode='PC409',detail=conflicts::text; end if;
  if mode='inspect' or changed then raise exception 'checkout_preparation_changed' using errcode='PC410'; end if;

@@ -33,7 +33,7 @@ const bundle = await build({
       card: async () => ({ attach: async () => {}, tokenize: async (details) => { window.test.tokenized++; window.test.cardDetails = details; return { status: 'OK', token: 'card-test' }; } }),
       paymentRequest: (input) => ({ input, listeners: {}, addEventListener(name, callback) { this.listeners[name] = callback; }, update(value) { Object.assign(this.input, value); return true; } }),
       applePay: async (request) => ({ tokenize: async () => { window.test.walletTokenizations = (window.test.walletTokenizations || 0) + 1; window.test.walletQuote = await request.listeners.shippingcontactchanged({countryCode:'US',state:original.state,postalCode:original.postalCode}); return ({ status: 'OK', token: 'test', details: { billing: { givenName: 'Test', familyName: 'Buyer', email: 'buyer@example.com', addressLines: ['2 Billing St'], city: 'Washington', state: 'DC', postalCode: '20001', countryCode: 'US' }, shipping: { contact: { givenName: 'Test', familyName: 'Buyer', phone: window.test.omitShippingPhone ? undefined : '2025550100', addressLines: [original.line1], city: original.city, state: original.state, postalCode: original.postalCode, countryCode: 'US' } } } }); } }),
-      afterpayClearpay: async (request) => ({ attach: async () => {}, tokenize: async () => { window.test.afterpayRequest = request.input; return { status: 'OK', token: 'afterpay-test', details: { shipping: { contact: request.input.shippingContact } } }; } }),
+      afterpayClearpay: async (request) => ({ attach: async () => {}, tokenize: async () => { window.test.afterpayRequest = request.input; return { status: 'OK', token: 'afterpay-test', details: { shipping: { contact: window.test.mismatchedAfterpay ? {...request.input.shippingContact,postalCode:"90210"} : request.input.shippingContact } } }; } }),
       cashAppPay: async (request) => { let listener; return { attach: async (selector) => { const button = document.createElement('button'); button.type = 'button'; button.textContent = 'Cash test'; button.onclick = () => { window.test.cashTotal = request.input.total.amount; listener({ detail: { tokenResult: { status: 'OK', token: 'cash-' + request.input.total.amount } } }); }; document.querySelector(selector).append(button); }, addEventListener(event, callback) { listener = callback; }, destroy: async () => true }; },
     }) };
     createRoot(document.getElementById('root')).render(<CheckoutPaymentProvider><CheckoutClient initialData={{ isGuest: false, customer: { email: 'buyer@example.com', address: original }, paymentConfig: { applicationId: 'test', locationId: 'test', environment: 'sandbox' } }} /></CheckoutPaymentProvider>);
@@ -85,6 +85,7 @@ const browser = await chromium.launch();
 try {
   const page = await browser.newPage();
   page.setDefaultTimeout(8000);
+  const reviewMessages = [];
   const prepares = [];
   const quotes = [];
   let payCalls = 0;
@@ -172,8 +173,7 @@ try {
           status: 422,
           json: {
             code: "SHIPPING_ADDRESS_SUGGESTION",
-            error:
-              "Please confirm the suggested shipping address. You have not been charged.",
+            error: "Please confirm the suggested shipping address.",
             suggestedAddress: validation.address,
             shippingConfirmation: "suggested-confirmation",
             enteredShippingConfirmation: "entered-confirmation",
@@ -240,6 +240,7 @@ try {
   );
   releaseAddressValidation();
   await page.getByRole("button", { name: "Accept suggested address" }).waitFor();
+  reviewMessages.push(await page.getByRole("dialog").innerText());
   await mkdir("test-results/shipping-validation", { recursive: true });
   await page
     .getByRole("dialog")
@@ -249,6 +250,7 @@ try {
   assert.equal(await page.getByRole("button", { name: "Edit address" }).count(), 0);
   await page.getByRole("button", { name: "Accept suggested address" }).click();
   await page.getByRole("button", { name: "Confirm $111.00 and continue" }).waitFor();
+  reviewMessages.push(await page.getByRole("dialog").innerText());
   assert.equal(await page.evaluate(() => window.test.tokenized), 0);
   await page.getByRole("button", { name: "Confirm $111.00 and continue" }).click();
   await page.waitForFunction(() => window.test.tokenized === 1);
@@ -307,6 +309,21 @@ try {
   assert.equal(payCalls, 1);
   await finishPayment();
 
+  await load();
+  await page.evaluate(() => {
+    window.test.mismatchedAfterpay = true;
+  });
+  await page.getByRole("radio", { name: "Afterpay", exact: true }).click();
+  await page.getByRole("button", { name: "Continue with Afterpay", exact: true }).click();
+  await page.getByRole("button", { name: "Accept suggested address" }).click();
+  await page.getByRole("button", { name: "Confirm $111.00 and continue" }).click();
+  await page.getByText(/Afterpay did not confirm your shipping address/).waitFor();
+  reviewMessages.push(await page.getByRole("dialog").innerText());
+  assert.equal(payCalls, 0);
+  assert.deepEqual(
+    reviewMessages.map((message) => /not been charged/i.test(message)),
+    [false, false, false],
+  );
   await load();
   await page.getByRole("radio", { name: "Cash App Pay", exact: true }).click();
   await page.getByRole("button", { name: "Cash test" }).click();

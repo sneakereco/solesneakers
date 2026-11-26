@@ -352,6 +352,36 @@ describe("prepareCheckoutHandler", () => {
     expect(deps.createGuestAccessToken).not.toHaveBeenCalled();
   });
 
+  it("resumes the previously priced owned order if address verification becomes unavailable", async () => {
+    const { deps } = await existingCheckout(3);
+    deps.validateShippingAddress.mockResolvedValue({ status: "unavailable" });
+    const response = await prepareCheckoutHandler(request(), deps);
+    expect(response.status).toBe(200);
+    expect((await response.json()).reused).toBe(true);
+    expect(deps.validateShippingAddress).not.toHaveBeenCalled();
+  });
+  it("selects the stored order proof even when a different verified proof appears first", async () => {
+    const { deps, body } = await existingCheckout(3);
+    const concurrent = readOrIssueGuestContext(
+      new Request("https://shop.example.com"),
+      TEST_SECRET,
+    );
+    const response = await prepareCheckoutHandler(
+      new Request("https://shop.example.com/api/checkout/prepare", {
+        method: "POST",
+        headers: { cookie: concurrent.setCookie!.split(";")[0] + "; " + cookie },
+        body: JSON.stringify(body),
+      }) as never,
+      deps,
+    );
+    expect(response.status).toBe(200);
+    expect(deps.reserve).toHaveBeenCalledWith(
+      expect.objectContaining({
+        ownerBinding: "guest:" + guestContext.contextHash,
+        otherGuestContexts: [concurrent.contextHash],
+      }),
+    );
+  });
   it("validates Square totals when reusing v4", async () => {
     const { deps } = await existingCheckout(4, { totalCents: 11801 });
     expect((await prepareCheckoutHandler(request(), deps)).status).toBe(409);
@@ -764,15 +794,19 @@ describe("shipping deliverability gate", () => {
     deps.validateShippingAddress.mockResolvedValue({ status: "unavailable" });
     const response = await prepareCheckoutHandler(request(), deps);
     expect(response.status).toBe(503);
-    expect(await response.json()).toMatchObject({ code: "SHIPPING_ADDRESS_UNAVAILABLE" });
+    const body = await response.json();
+    expect(body).toMatchObject({ code: "SHIPPING_ADDRESS_UNAVAILABLE" });
+    expect(body.error).not.toMatch(/charged/i);
     expect(deps.reserve).not.toHaveBeenCalled();
   });
-  it("checks shipping even when an existing order could be reused", async () => {
+  it("returns recovery for a legacy order before checking shipping", async () => {
     const deps = dependencies();
-    deps.findExisting.mockResolvedValue({ squareOrderId: "existing" });
+    deps.findExisting.mockResolvedValue({ squareOrderId: "existing", guarded: false });
     deps.validateShippingAddress.mockResolvedValue({ status: "invalid" });
     const response = await prepareCheckoutHandler(request(), deps);
-    expect(response.status).toBe(422);
+    expect(response.status).toBe(409);
+    expect((await response.json()).code).toBe("CHECKOUT_RECOVERY_REQUIRED");
+    expect(deps.validateShippingAddress).not.toHaveBeenCalled();
   });
   it("stops rate-limited address checks before contacting Shippo", async () => {
     const deps = dependencies();
