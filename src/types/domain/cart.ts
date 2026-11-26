@@ -11,3 +11,5 @@ export interface CartItem {
   quantity: number;
   maxStock?: number;
 }
+
+export type CartLineIdentity = Pick<CartItem, "productId" | "variantId">;

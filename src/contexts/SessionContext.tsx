@@ -27,6 +27,7 @@ interface SessionContextValue {
   isSessionUnavailable: boolean;
   hasRefreshed: boolean;
   refreshSession: () => Promise<void>;
+  isIdentityCurrent: (expectedOwner: string | null) => boolean;
 }
 
 const SessionContext = createContext<SessionContextValue | null>(null);
@@ -75,14 +76,31 @@ export function SessionProvider({
     role: initialRole,
     unavailable: initialUnavailable,
   });
-  const [{ user, role }, setIdentity] = useState<SessionIdentity>({
+  const [identity, setIdentity] = useState<SessionIdentity>({
     user: initialUser,
     role: initialRole,
   });
+  const { user, role } = identity;
   const [isLoading, setIsLoading] = useState(false);
   const [isSessionUnavailable, setSessionUnavailable] = useState(initialUnavailable);
   const [hasRefreshed, setHasRefreshed] = useState(false);
   const active = useRef<AbortController | null>(null);
+
+  const verifiedOwner = useRef<string | null | undefined>(
+    initialUnavailable ? undefined : (initialUser?.id ?? null),
+  );
+  const isIdentityCurrent = useCallback(
+    (expectedOwner: string | null) =>
+      active.current === null && verifiedOwner.current === expectedOwner,
+    [],
+  );
+  useLayoutEffect(() => {
+    verifiedOwner.current =
+      isLoading || isSessionUnavailable ? undefined : (identity.user?.id ?? null);
+    return () => {
+      verifiedOwner.current = undefined;
+    };
+  }, [identity, isLoading, isSessionUnavailable, serverSeed]);
 
   if (
     serverSeed.readId !== serverReadId ||
@@ -117,6 +135,7 @@ export function SessionProvider({
     active.current?.abort();
     const controller = new AbortController();
     active.current = controller;
+    verifiedOwner.current = undefined;
     setIsLoading(true);
     try {
       const data = await withRequestDeadline(async (signal) => {
@@ -158,6 +177,7 @@ export function SessionProvider({
         isSessionUnavailable,
         hasRefreshed,
         refreshSession,
+        isIdentityCurrent,
       }}
     >
       {children}

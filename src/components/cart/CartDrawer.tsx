@@ -9,6 +9,7 @@ import { Minus, Plus, ShoppingBag, Trash2, X } from "lucide-react";
 import { ModalPortal, useOverlayTransition } from "@/components/ui/ModalPortal";
 
 import { useCart } from "./CartProvider";
+import { CartFeedback } from "./CartFeedback";
 import { CartSkeleton } from "./CartSkeleton";
 import { ShippingEstimate } from "./ShippingEstimate";
 
@@ -27,7 +28,17 @@ const formatPrice = (priceCents: number) =>
   }).format(priceCents / 100);
 
 export function CartDrawer({ isOpen, onClose, invoker }: CartDrawerProps) {
-  const { items, itemCount, removeItem, updateQuantity, total, isReady } = useCart();
+  const {
+    items,
+    itemCount,
+    removeItem,
+    updateQuantity,
+    total,
+    isReady,
+    hasCartView,
+    validationStatus,
+    writePending,
+  } = useCart();
   const titleId = useId();
   const { present, visible } = useOverlayTransition(isOpen, 240);
 
@@ -55,7 +66,7 @@ export function CartDrawer({ isOpen, onClose, invoker }: CartDrawerProps) {
         <header className="relative flex min-h-16 shrink-0 items-center justify-center border-b border-zinc-200 px-14">
           <h2 id={titleId} className="text-xl font-normal">
             My cart{" "}
-            {isReady && (
+            {(isReady || hasCartView) && (
               <>
                 <span aria-hidden="true">&#8226;</span> {itemCount}
               </>
@@ -71,8 +82,11 @@ export function CartDrawer({ isOpen, onClose, invoker }: CartDrawerProps) {
           </ActionButton>
         </header>
 
-        {!isReady ? (
-          <CartSkeleton drawer />
+        <CartFeedback />
+        {!isReady && !hasCartView ? (
+          validationStatus === "error" ? null : (
+            <CartSkeleton drawer />
+          )
         ) : items.length === 0 ? (
           <div className="flex flex-1 flex-col items-center justify-center px-6 pb-16 text-center">
             <ShoppingBag className="h-8 w-8" strokeWidth={1.7} />
@@ -144,13 +158,14 @@ export function CartDrawer({ isOpen, onClose, invoker }: CartDrawerProps) {
                           <ActionButton
                             type="button"
                             onClick={() =>
-                              updateQuantity(
+                              void updateQuantity(
                                 item.productId,
                                 item.variantId,
                                 item.quantity - 1,
                               )
                             }
                             className="flex h-9 w-9 cursor-pointer items-center justify-center transition-colors hover:bg-zinc-100"
+                            disabled={!isReady || writePending}
                             aria-label={`Decrease quantity for ${item.titleDisplay}`}
                           >
                             <Minus className="h-3.5 w-3.5" />
@@ -161,13 +176,13 @@ export function CartDrawer({ isOpen, onClose, invoker }: CartDrawerProps) {
                           <ActionButton
                             type="button"
                             onClick={() =>
-                              updateQuantity(
+                              void updateQuantity(
                                 item.productId,
                                 item.variantId,
                                 item.quantity + 1,
                               )
                             }
-                            disabled={!canIncrease}
+                            disabled={!isReady || writePending || !canIncrease}
                             className="flex h-9 w-9 cursor-pointer items-center justify-center transition-colors hover:bg-zinc-100 disabled:cursor-not-allowed disabled:text-zinc-300"
                             aria-label={`Increase quantity for ${item.titleDisplay}`}
                           >
@@ -177,7 +192,8 @@ export function CartDrawer({ isOpen, onClose, invoker }: CartDrawerProps) {
 
                         <ActionButton
                           type="button"
-                          onClick={() => removeItem(item.productId, item.variantId)}
+                          disabled={!isReady || writePending}
+                          onClick={() => void removeItem(item.productId, item.variantId)}
                           className="cursor-pointer p-2 text-zinc-500 transition-colors hover:text-black"
                           aria-label={`Remove ${item.titleDisplay} from cart`}
                         >
@@ -196,7 +212,8 @@ export function CartDrawer({ isOpen, onClose, invoker }: CartDrawerProps) {
                 <span>{formatPrice(total)}</span>
               </div>
               <a
-                href="/checkout"
+                href={!isReady || writePending ? undefined : "/checkout"}
+                aria-disabled={!isReady || writePending || undefined}
                 data-checkout-link
                 className="mt-5 block w-full cursor-pointer bg-zinc-900 px-6 py-4 text-center text-sm font-medium uppercase text-white transition-colors hover:bg-black"
               >

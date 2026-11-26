@@ -6,6 +6,7 @@ import { FeedbackLink } from "@/components/ui/FeedbackLink";
 import { Minus, Plus, ShoppingBag, Trash2 } from "lucide-react";
 
 import { useCart } from "@/components/cart/CartProvider";
+import { CartFeedback } from "@/components/cart/CartFeedback";
 import { CartSkeleton } from "@/components/cart/CartSkeleton";
 import { ShippingEstimate } from "@/components/cart/ShippingEstimate";
 
@@ -18,9 +19,29 @@ const formatPrice = (priceCents: number) =>
   }).format(priceCents / 100);
 
 export default function CartPage() {
-  const { items, itemCount, removeItem, updateQuantity, total, isReady } = useCart();
+  return (
+    <>
+      <CartFeedback />
+      <CartContent />
+    </>
+  );
+}
 
-  if (!isReady) return <CartSkeleton />;
+function CartContent() {
+  const {
+    items,
+    itemCount,
+    removeItem,
+    updateQuantity,
+    total,
+    isReady,
+    hasCartView,
+    validationStatus,
+    writePending,
+  } = useCart();
+
+  if (!isReady && !hasCartView)
+    return validationStatus === "error" ? null : <CartSkeleton />;
 
   if (items.length === 0) {
     return (
@@ -96,13 +117,14 @@ export default function CartPage() {
                       <ActionButton
                         type="button"
                         onClick={() =>
-                          updateQuantity(
+                          void updateQuantity(
                             item.productId,
                             item.variantId,
                             item.quantity - 1,
                           )
                         }
                         className="flex h-10 w-10 cursor-pointer items-center justify-center hover:bg-white"
+                        disabled={!isReady || writePending}
                         aria-label={`Decrease quantity for ${item.titleDisplay}`}
                       >
                         <Minus className="h-4 w-4" />
@@ -113,13 +135,13 @@ export default function CartPage() {
                       <ActionButton
                         type="button"
                         onClick={() =>
-                          updateQuantity(
+                          void updateQuantity(
                             item.productId,
                             item.variantId,
                             item.quantity + 1,
                           )
                         }
-                        disabled={!canIncrease}
+                        disabled={!isReady || writePending || !canIncrease}
                         className="flex h-10 w-10 cursor-pointer items-center justify-center hover:bg-white disabled:cursor-not-allowed disabled:text-zinc-300"
                         aria-label={`Increase quantity for ${item.titleDisplay}`}
                       >
@@ -129,7 +151,8 @@ export default function CartPage() {
 
                     <ActionButton
                       type="button"
-                      onClick={() => removeItem(item.productId, item.variantId)}
+                      disabled={!isReady || writePending}
+                      onClick={() => void removeItem(item.productId, item.variantId)}
                       className="cursor-pointer p-2 text-zinc-500 transition-colors hover:text-black"
                       aria-label={`Remove ${item.titleDisplay} from cart`}
                     >
@@ -155,7 +178,8 @@ export default function CartPage() {
             Shipping and taxes are calculated at checkout.
           </p>
           <a
-            href="/checkout"
+            href={!isReady || writePending ? undefined : "/checkout"}
+            aria-disabled={!isReady || writePending || undefined}
             data-checkout-link
             className="mt-6 block w-full bg-zinc-950 px-6 py-4 text-center text-sm font-medium uppercase text-white transition-colors hover:bg-black"
           >

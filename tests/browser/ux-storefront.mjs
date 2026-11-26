@@ -395,6 +395,66 @@ async function checkCart(page) {
   }
 }
 
+async function checkRetainedCart(page, drawer) {
+  const item = {
+    productId: "case-1",
+    variantId: "case-size",
+    sizeLabel: "9",
+    brand: "Sample",
+    name: "Held Product",
+    titleDisplay: "Held Product",
+    priceCents: 12500,
+    imageUrl: "/placeholder.png",
+    maxStock: 5,
+    quantity: 1,
+  };
+  await page.route("**/placeholder.png", (route) => route.fulfill({ status: 204 }));
+  await page.route("**/api/cart/validate", (route) =>
+    route.fulfill({ json: { items: [item] } }),
+  );
+  await page.addInitScript(
+    (item) => sessionStorage.setItem("rdk_cart_session", JSON.stringify([item])),
+    item,
+  );
+  await openUxHarness(
+    page,
+    bundle,
+    drawer ? "https://ux.test/product" : "https://ux.test/cart",
+  );
+  if (drawer) await page.getByRole("button", { name: "Open cart" }).click();
+  else await page.evaluate(() => window.hydrateCart());
+  const surface = drawer ? page.getByRole("dialog") : page;
+  const saved = surface.getByRole("heading", { name: "Held Product", exact: true });
+  await expect(saved).toBeVisible(options);
+  const held = holdResponse();
+  await page.route("**/api/auth/session", held.fulfill);
+  await page.evaluate(() => window.dispatchEvent(new Event("sessionUpdate")));
+  await held.received;
+  try {
+    await expect(saved).toBeVisible(options);
+    await expect(surface.getByRole("button", { name: /Decrease quantity/ })).toBeDisabled(
+      options,
+    );
+    await expect(surface.getByRole("link", { name: /Checkout/ })).toHaveCount(0);
+  } finally {
+    held.release({ status: 503, json: {} });
+  }
+  await expect(surface.getByRole("alert")).toBeVisible(options);
+  await expect(saved).toBeVisible(options);
+  await page.unroute("**/api/auth/session");
+  await page.route("**/api/auth/session", (route) =>
+    route.fulfill({
+      json: {
+        user: { id: "different-owner", email: "other@example.test" },
+        role: "customer",
+      },
+    }),
+  );
+  await surface.getByRole("button", { name: "Try again" }).click();
+  await expect(surface.getByText("Your cart is empty")).toBeVisible(options);
+  await expect(saved).toHaveCount(0);
+}
+
 async function checkAdd(page) {
   await page.route("**/placeholder.png", (route) => route.fulfill({ status: 204 }));
   await openUxHarness(page, bundle, "https://ux.test/product");
@@ -769,6 +829,14 @@ async function checkMenu(page) {
 }
 
 try {
+  for (const drawer of [false, true])
+    await check(
+      320,
+      drawer
+        ? "drawer retains last confirmed basket during owner lookup"
+        : "cart retains last confirmed basket during owner lookup",
+      (page) => checkRetainedCart(page, drawer),
+    );
   for (const width of [320, 768, 1440]) {
     await check(width, "homepage sections show regional skeletons and retry", checkHome);
     await check(width, "search rejects superseded responses and can retry", checkSearch);

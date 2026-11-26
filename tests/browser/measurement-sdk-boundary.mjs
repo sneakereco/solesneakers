@@ -188,7 +188,7 @@ const bundle = await build({
           ["@/components/ui/Toast", "export const Toast = () => null;"],
           [
             "@/contexts/SessionContext",
-            "export const useSession = () => ({ user: null });",
+            "const session={user:null,isIdentityCurrent:owner=>owner===null}; export const useSession=()=>session;",
           ],
           [
             "@/components/checkout/CheckoutContactSection",

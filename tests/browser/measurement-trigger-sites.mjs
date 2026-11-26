@@ -287,7 +287,7 @@ const bundle = await build({
           ["@/lib/utils/log", "export const logError = () => {};"],
           [
             "@/contexts/SessionContext",
-            "export const useSession = () => ({ user: null });",
+            "const session={user:null,isIdentityCurrent:owner=>owner===null}; export const useSession=()=>session;",
           ],
           [
             "@/components/checkout/CheckoutContactSection",

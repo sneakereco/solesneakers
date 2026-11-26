@@ -1,220 +1,186 @@
-// app/checkout/success/page.tsx
 "use client";
 
-import { useEffect, useMemo, useRef, useState, Suspense } from "react";
-import { useSearchParams, useRouter } from "next/navigation";
-import { CheckCircle, Mail } from "lucide-react";
-
+import { useEffect, useState, Suspense } from "react";
+import { useRouter, useSearchParams } from "next/navigation";
+import { CheckCircle } from "lucide-react";
 import { CheckoutPaymentDialog } from "@/components/checkout/CheckoutPaymentDialog";
-
-import { clearIdempotencyKeyFromStorage } from "@/lib/checkout/idempotency";
-import type { OrderStatusResponse } from "@/types/domain/checkout";
 import { useCart } from "@/components/cart/CartProvider";
+import { useSession } from "@/contexts/SessionContext";
 import { useHydrated } from "@/components/ui/useHydrated";
-import { clearGuestShippingAddress } from "@/lib/checkout/guest-shipping-address";
-import { readConfirmedOrder } from "@/lib/checkout/confirmed-order-cache";
+import { classifyCheckoutOrderStatus } from "@/lib/checkout/checkout-order-state";
+import { buildCheckoutStatusUrl } from "@/lib/checkout/checkout-status-url";
 import {
   readGuestOrderAccess,
   storeGuestOrderAccess,
 } from "@/lib/checkout/client-session";
+import { withRequestDeadline } from "@/lib/http/request-deadline";
+import { readJsonResponse, ResponseError } from "@/lib/http/read-json-response";
 import { INSTAGRAM_HANDLE, INSTAGRAM_URL } from "@/config/constants/contact";
+import type { OrderStatusResponse } from "@/types/domain/checkout";
 
 function SuccessContent() {
-  const searchParams = useSearchParams();
-  const router = useRouter();
-  const { clearCart } = useCart();
-  const orderId = searchParams.get("orderId");
-  const tokenParam = searchParams.get("token");
-  const fulfillmentParam = searchParams.get("fulfillment");
-  const isPickupParam = fulfillmentParam === "pickup";
-
-  const hydrated = useHydrated();
-  const cachedStatus = useMemo(
-    () => (hydrated && orderId ? readConfirmedOrder(orderId) : null),
-    [hydrated, orderId],
+  const params = useSearchParams(),
+    router = useRouter();
+  const orderId = params.get("orderId"),
+    hydrated = useHydrated();
+  const { user, isLoading, isSessionUnavailable, refreshSession } = useSession();
+  let token = params.get("token");
+  if (hydrated && orderId && !token) {
+    try {
+      token = readGuestOrderAccess(orderId);
+    } catch {
+      /* Access can still be verified by the signed-in session. */
+    }
+  }
+  useEffect(() => {
+    if (!orderId) router.push("/cart");
+  }, [orderId, router]);
+  if (!orderId) return null;
+  if (!hydrated || isLoading) return <CheckoutPaymentDialog open />;
+  if (!token && isSessionUnavailable)
+    return (
+      <Notice
+        message="We could not verify your account."
+        retry={() => void refreshSession()}
+      />
+    );
+  if (!token && !user)
+    return (
+      <Notice message="Open the secure order link from your email or sign in to view this order." />
+    );
+  return (
+    <Receipt
+      key={JSON.stringify([orderId, token, user?.id, isSessionUnavailable])}
+      orderId={orderId}
+      token={token}
+      isAuthenticated={Boolean(user)}
+    />
   );
-  const accessToken =
-    tokenParam ?? (hydrated && orderId ? readGuestOrderAccess(orderId) : null);
-  const [status, setStatus] = useState<OrderStatusResponse | null>(null);
-  const [accessResult, setAccessResult] = useState<{
-    orderId: string | null;
-    token: string | null;
-    allowed: boolean;
-  } | null>(null);
-  const sessionAccess =
-    accessResult?.orderId === orderId && accessResult.token === accessToken
-      ? accessResult.allowed
-      : null;
-  const canFetchStatus =
-    sessionAccess === false ? false : accessToken ? true : sessionAccess;
-  const [isAuthenticated, setIsAuthenticated] = useState(false);
-  const [error, setError] = useState<string | null>(null);
-  const hasClearedRef = useRef(false);
+}
 
-  useEffect(() => {
-    if (!orderId) {
-      router.push("/cart");
-      return;
-    }
-
-    clearIdempotencyKeyFromStorage();
-    clearGuestShippingAddress();
-
-    if (!hasClearedRef.current) {
-      hasClearedRef.current = true;
-      clearCart();
-    }
-  }, [orderId, router, clearCart]);
-
-  useEffect(() => {
-    if (!orderId) {
-      return;
-    }
-
-    if (accessToken) {
-      storeGuestOrderAccess(orderId, accessToken);
-    }
-  }, [orderId, accessToken]);
-
-  useEffect(() => {
-    if (!hydrated || accessToken) {
-      return;
-    }
-
-    const loadSession = async () => {
-      try {
-        const response = await fetch("/api/auth/session", { cache: "no-store" });
-        const data = await response.json().catch(() => null);
-        const hasUser = Boolean(data?.user);
-        setIsAuthenticated(hasUser);
-        setAccessResult({ orderId, token: accessToken, allowed: hasUser });
-      } catch {
-        setAccessResult({ orderId, token: accessToken, allowed: false });
-      }
-    };
-
-    void loadSession();
-  }, [accessToken, hydrated, orderId]);
-
-  useEffect(() => {
-    if (!orderId || !canFetchStatus) {
-      return;
-    }
-
-    const pollOrderStatus = async () => {
-      try {
-        const tokenQuery = accessToken ? `?token=${encodeURIComponent(accessToken)}` : "";
-        const response = await fetch(`/api/orders/${orderId}${tokenQuery}`, {
-          cache: "no-store",
-        });
-
-        const data = await response.json().catch(() => null);
-        if (!response.ok) {
-          if (data?.error === "Unauthorized") {
-            setAccessResult({ orderId, token: accessToken, allowed: false });
-            return;
-          }
-          throw new Error(data?.error || "Failed to fetch order status");
-        }
-
-        setStatus(data);
-
-        if (data?.status === "paid") {
-          clearInterval(pollInterval);
-          clearTimeout(timeoutId);
-        }
-      } catch (err: unknown) {
-        const message =
-          err instanceof Error ? err.message : "Failed to fetch order status";
-        setError(message);
-        clearInterval(pollInterval);
-        clearTimeout(timeoutId);
-      }
-    };
-
-    const pollInterval = setInterval(() => {
-      void pollOrderStatus();
-    }, 2000);
-    const timeoutId = setTimeout(() => {
-      clearInterval(pollInterval);
-    }, 60000);
-    void pollOrderStatus();
-
-    return () => {
-      clearInterval(pollInterval);
-      clearTimeout(timeoutId);
-    };
-  }, [accessToken, canFetchStatus, orderId]);
-
-  if (!orderId) {
-    return null;
-  }
-
-  if (error) {
-    return (
-      <div className="mx-auto max-w-2xl px-4 py-20 text-center">
-        <CheckoutPaymentDialog open={false} />
-        <div className="border border-zinc-300 bg-white p-6 text-zinc-950">
-          <p className="mb-2 text-lg font-semibold">Error</p>
-          <p>{error}</p>
-          <button
-            onClick={() => router.push("/cart")}
-            className="mt-4 bg-zinc-950 px-6 py-2 text-white transition hover:bg-black"
-          >
-            Return to Cart
-          </button>
-        </div>
-      </div>
-    );
-  }
-
-  if (canFetchStatus === false) {
-    return (
-      <div className="mx-auto max-w-2xl px-4 py-20 text-center">
-        <CheckoutPaymentDialog open={false} />
-        <Mail className="mx-auto mb-6 h-16 w-16 text-zinc-950" />
-        <h1 className="mb-4 text-3xl font-bold text-zinc-950">Order Confirmed!</h1>
-        <p className="mb-6 text-zinc-600">
-          Your payment was accepted. We could not load the full order details on this
-          device, but we will email your confirmation and secure order link shortly.
-        </p>
-        {isPickupParam && (
-          <div className="mb-6 border border-zinc-300 bg-white p-6 text-left">
-            <h2 className="mb-2 text-lg font-semibold text-zinc-950">Local pickup</h2>
-            <p className="mb-2 text-sm text-zinc-600">
-              Check your email for pickup instructions and scheduling.
-            </p>
-            <p className="text-sm text-zinc-600">
-              You can also DM us on Instagram{" "}
-              <a
-                href={INSTAGRAM_URL}
-                className="text-zinc-950 underline underline-offset-4"
-                target="_blank"
-                rel="noreferrer"
-              >
-                {INSTAGRAM_HANDLE}
-              </a>{" "}
-              to schedule pickup.
-            </p>
-          </div>
-        )}
-        <p className="mb-6 text-xs text-zinc-500">Order ID: {orderId}</p>
-        <button
-          onClick={() => router.push("/store")}
-          className="w-full bg-zinc-950 py-3 font-bold text-white transition hover:bg-black"
-        >
-          Continue Shopping
+function Notice({ message, retry }: { message: string; retry?: () => void }) {
+  const router = useRouter();
+  return (
+    <main className="mx-auto max-w-2xl px-4 py-20 text-center">
+      <CheckoutPaymentDialog open={false} />
+      <h1 className="mb-4 text-3xl font-bold">Unable to verify this order</h1>
+      <p role="status">{message}</p>
+      {retry && (
+        <button type="button" className="mt-4 underline" onClick={retry}>
+          Check again
         </button>
-      </div>
+      )}
+      <button
+        type="button"
+        onClick={() => router.push("/store")}
+        className="mt-6 block w-full bg-zinc-950 py-3 text-white"
+      >
+        Continue shopping
+      </button>
+    </main>
+  );
+}
+
+function Receipt({
+  orderId,
+  token,
+  isAuthenticated,
+}: {
+  orderId: string;
+  token: string | null;
+  isAuthenticated: boolean;
+}) {
+  const router = useRouter();
+  const { consumeConfirmedOrder, isReady } = useCart();
+  const [retry, setRetry] = useState(0);
+  const [visibleStatus, setStatus] = useState<OrderStatusResponse | null>(null);
+  const [message, setMessage] = useState<string | null>(null);
+  useEffect(() => {
+    const controller = new AbortController();
+    let pollTimer: ReturnType<typeof setTimeout> | undefined;
+    const deadline = setTimeout(() => {
+      controller.abort();
+      clearTimeout(pollTimer);
+      setMessage(
+        "We are still waiting for confirmation. Check again before making another payment.",
+      );
+    }, 60000);
+    async function poll() {
+      try {
+        const data = await withRequestDeadline(
+          async (signal) =>
+            readJsonResponse<OrderStatusResponse>(
+              await fetch(buildCheckoutStatusUrl(orderId, token, false), {
+                signal,
+                cache: "no-store",
+              }),
+              "Could not load the order",
+            ),
+          controller.signal,
+        );
+        if (controller.signal.aborted) return;
+        if (data.id !== orderId || typeof data.status !== "string")
+          throw Error("Invalid order");
+        const state = classifyCheckoutOrderStatus(data.status);
+        if (state === "waiting") {
+          pollTimer = setTimeout(() => void poll(), 2000);
+          return;
+        }
+        if (state === "paid") {
+          if (
+            ![data.total, data.tax, data.shipping, data.subtotal].every(
+              Number.isFinite,
+            ) ||
+            !["ship", "pickup"].includes(data.fulfillment)
+          )
+            throw Error("Invalid receipt");
+          if (token) {
+            try {
+              storeGuestOrderAccess(orderId, token);
+            } catch {
+              /* Access to this page is already verified. */
+            }
+          }
+          setStatus(data);
+        } else
+          setMessage(
+            state === "review"
+              ? "This payment is under review. Check again before submitting another payment."
+              : "The order has no confirmed payment. Check your order details or contact support.",
+          );
+      } catch (error) {
+        if (controller.signal.aborted) return;
+        setMessage(
+          error instanceof ResponseError && [401, 403].includes(error.status)
+            ? "Open the secure order link from your email or sign in to view this order."
+            : "We could not load your order details. Check again before making another payment.",
+        );
+      }
+      clearTimeout(deadline);
+    }
+    void poll();
+    return () => {
+      controller.abort();
+      clearTimeout(pollTimer);
+      clearTimeout(deadline);
+    };
+  }, [orderId, token, retry]);
+  useEffect(() => {
+    if (visibleStatus && isReady) void consumeConfirmedOrder(visibleStatus);
+  }, [visibleStatus, isReady, consumeConfirmedOrder]);
+
+  if (message)
+    return (
+      <Notice
+        message={message}
+        retry={() => {
+          setMessage(null);
+          setRetry((n) => n + 1);
+        }}
+      />
     );
-  }
-
-  const visibleStatus = status ?? cachedStatus;
-  if (!visibleStatus || visibleStatus.status !== "paid") {
-    return <CheckoutPaymentDialog open />;
-  }
-
-  const isPickup = visibleStatus.fulfillment === "pickup" || isPickupParam;
+  if (!visibleStatus) return <CheckoutPaymentDialog open />;
+  const isPickup = visibleStatus.fulfillment === "pickup";
   return (
     <div className="mx-auto max-w-2xl px-4 py-20 text-center">
       <CheckoutPaymentDialog open={false} />

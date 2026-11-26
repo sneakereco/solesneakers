@@ -9,9 +9,10 @@ const bundle = await build({
     loader: "tsx",
     contents: `
       import { createRoot } from 'react-dom/client';
+      import {SessionProvider} from './src/contexts/SessionContext';
       import CheckoutSuccessPage from './src/app/checkout/success/page';
       window.cartClears = 0;
-      createRoot(document.getElementById('root')).render(<CheckoutSuccessPage />);
+      createRoot(document.getElementById('root')).render(<SessionProvider initialUser={null} initialRole={null}><CheckoutSuccessPage /></SessionProvider>);
     `,
   },
   bundle: true,
@@ -48,8 +49,8 @@ const bundle = await build({
           );
         `
               : `
-          const clearCart = () => { window.cartClears++; };
-          export const useCart = () => ({ clearCart });
+          const clearCart = () => { window.cartClears++; }; const consumeConfirmedOrder=async()=>false;
+          export const useCart = () => ({ clearCart, consumeConfirmedOrder, isReady:true });
         `,
         }));
       },
@@ -94,7 +95,7 @@ try {
   });
   await page.goto("https://checkout.test/checkout/success?orderId=test-order");
   await page.addScriptTag({ content: bundle.outputFiles[0].text });
-  await page.getByText(/We could not load the full order details/).waitFor();
+  await page.getByRole("heading", { name: "Unable to verify this order" }).waitFor();
   assert.deepEqual(orderTokens, [], "Denied session must not fetch order details");
   await page.evaluate(() => {
     history.pushState({}, "", "/checkout/success?orderId=test-order&token=valid-token");
@@ -105,8 +106,8 @@ try {
   assert.deepEqual(orderTokens, ["valid-token"]);
   assert.equal(
     await page.evaluate(() => window.cartClears),
-    1,
-    "Recovery must reuse the mounted page",
+    0,
+    "Recovery must preserve an unbound basket",
   );
   assert.deepEqual(errors, []);
   console.log(

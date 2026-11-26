@@ -1,7 +1,7 @@
 "use client";
 
 import { ActionButton } from "@/components/ui/ActionButton";
-import { useEffect, useLayoutEffect, useRef, useState } from "react";
+import { useEffect, useRef, useState } from "react";
 import Image from "next/image";
 import { FeedbackLink } from "@/components/ui/FeedbackLink";
 import { ChevronDown } from "lucide-react";
@@ -15,9 +15,7 @@ interface ProductDetailProps {
   product: ProductWithDetails;
 }
 
-type AddFeedback =
-  | { status: "checking"; productId: string; variantId: string; quantity: number }
-  | { status: "success" | "error" };
+type AddFeedback = { status: "checking" | "success" | "error" };
 
 const formatPrice = (priceCents: number) =>
   new Intl.NumberFormat("en-US", {
@@ -97,27 +95,13 @@ export function ProductDetail({ product }: ProductDetailProps) {
     }
   }, [product.variants, selectedVariantId]);
 
-  useLayoutEffect(() => {
-    if (addFeedback?.status !== "checking") addInFlight.current = false;
-  }, [addFeedback]);
-
-  // The cart command updates the context synchronously. Settle once against that render.
-  if (addFeedback?.status === "checking") {
-    const quantity =
-      items.find(
-        (item) =>
-          item.productId === addFeedback.productId &&
-          item.variantId === addFeedback.variantId,
-      )?.quantity ?? 0;
-    setAddFeedback({ status: quantity > addFeedback.quantity ? "success" : "error" });
-  }
-
-  const handleAddToCart = () => {
+  const handleAddToCart = async () => {
     if (addInFlight.current || !isReady || !selectedVariant || !canAddMore) return;
 
     addInFlight.current = true;
+    setAddFeedback({ status: "checking" });
     try {
-      addItem({
+      const saved = await addItem({
         productId: product.id,
         variantId: selectedVariant.id,
         sizeLabel: selectedVariant.size.label,
@@ -128,14 +112,11 @@ export function ProductDetail({ product }: ProductDetailProps) {
         imageUrl: primaryImage?.url || "/placeholder.png",
         maxStock: selectedVariant.stock,
       });
-      setAddFeedback({
-        status: "checking",
-        productId: product.id,
-        variantId: selectedVariant.id,
-        quantity: inCartQuantity,
-      });
+      setAddFeedback({ status: saved ? "success" : "error" });
     } catch {
       setAddFeedback({ status: "error" });
+    } finally {
+      addInFlight.current = false;
     }
   };
 
@@ -248,7 +229,9 @@ export function ProductDetail({ product }: ProductDetailProps) {
 
           <ActionButton
             type="button"
-            onClick={handleAddToCart}
+            pending={addFeedback?.status === "checking"}
+            pendingLabel="Adding…"
+            onClick={() => void handleAddToCart()}
             disabled={!isReady || !selectedVariant || !canAddMore}
             className="mt-7 w-full cursor-pointer bg-zinc-900 px-6 py-4 text-sm font-medium uppercase text-white transition-colors hover:bg-black disabled:cursor-not-allowed disabled:bg-zinc-400"
           >
