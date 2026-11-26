@@ -14,9 +14,9 @@ function dependencies(): ProtectionDependencies {
     siteOrigin: "https://example.com",
     key: "test-protection-secret-32-characters",
     getIp: () => "203.0.113.1",
-    storeOpen: async () => true,
-    verifyBrowser: async () => ({ allowed: true, reason: "passed" }),
-    limit: async () => ({ success: true, reset: Date.now() + 1000 }),
+    storeOpen: () => Promise.resolve(true),
+    verifyBrowser: () => Promise.resolve({ allowed: true, reason: "passed" }),
+    limit: () => Promise.resolve({ success: true, reset: Date.now() + 1000 }),
   };
 }
 test("same-origin and trusted IP are required before any claim", async () => {
@@ -40,16 +40,16 @@ test("same-origin and trusted IP are required before any claim", async () => {
 });
 test("validate and submit fail closed on bot/protection outages", async () => {
   const deps = dependencies();
-  deps.verifyBrowser = async () => ({ allowed: false, reason: "bot" });
+  deps.verifyBrowser = () => Promise.resolve({ allowed: false, reason: "bot" });
   expect(
     await checkSpecialtyProtection(request(), "submit", "browser", deps),
   ).toMatchObject({ allowed: false, status: 403 });
-  deps.verifyBrowser = async () => ({ allowed: false, reason: "unavailable" });
+  deps.verifyBrowser = () => Promise.resolve({ allowed: false, reason: "unavailable" });
   expect(
     await checkSpecialtyProtection(request(), "validate", "browser", deps),
   ).toMatchObject({ allowed: false, status: 503 });
-  deps.limit = async () => {
-    throw new Error("redis details");
+  deps.limit = () => {
+    return Promise.reject(new Error("redis details"));
   };
   expect(
     await checkSpecialtyProtection(request(), "recover", "browser", deps),
@@ -57,10 +57,10 @@ test("validate and submit fail closed on bot/protection outages", async () => {
 });
 test("recovery skips deep BotID and campaign/site availability while retaining quota", async () => {
   const deps = dependencies();
-  deps.verifyBrowser = async () => {
-    throw new Error("provider unavailable");
+  deps.verifyBrowser = () => {
+    return Promise.reject(new Error("provider unavailable"));
   };
-  deps.storeOpen = async () => false;
+  deps.storeOpen = () => Promise.resolve(false);
   expect(await checkSpecialtyProtection(request(), "recover", "browser", deps)).toEqual({
     allowed: true,
   });
@@ -68,9 +68,9 @@ test("recovery skips deep BotID and campaign/site availability while retaining q
 test("quotas use hashed specialty browser/IP keys and report throttling", async () => {
   const deps = dependencies();
   const buckets: Array<{ key: string; limit: number }> = [];
-  deps.limit = async (key, limit) => {
+  deps.limit = (key, limit) => {
     buckets.push({ key, limit });
-    return { success: limit !== 10, reset: Date.now() + 4000 };
+    return Promise.resolve({ success: limit !== 10, reset: Date.now() + 4000 });
   };
   expect(
     await checkSpecialtyProtection(request(), "submit", "browser-sensitive", deps),

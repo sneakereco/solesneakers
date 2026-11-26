@@ -4,11 +4,12 @@ Specialty products use a private claim flow. They have no cart, checkout, paymen
 
 ## Runtime setup and release gates
 
-Apply the three additive migrations in order:
+Apply the four additive migrations in order:
 
 1. `20261125120000_specialty_product_foundation.sql`
 2. `20261125121000_specialty_claim_awards.sql`
 3. `20261125122000_specialty_claim_admin.sql`
+4. `20261125123000_specialty_claim_contention.sql`
 
 The seeded `black-friday-2026` campaign begins disabled. Configure these server runtime variables before enabling it:
 
@@ -53,7 +54,9 @@ Fresh validation/submission requires same-origin requests, trusted IP, store acc
 | Submit    |                      10 |              2,000 |
 | Recover   |                      60 |              5,000 |
 
-These exact POST routes replace the proxy's generic 30/minute write bucket with the dedicated policy. Other CSRF/bot controls remain in place. Initial award lock/statement timeouts are two/five seconds. Throttling and unavailable protection return retryable outcomes.
+These exact POST routes replace the proxy's generic 30/minute write bucket with the dedicated policy. Other CSRF/bot controls remain in place. Public claim actions do not depend on Supabase account refresh. Fresh award and validation handlers enforce store access themselves; concurrent metadata/settings lookups share only pending reads, with no retained result cache.
+
+Busy attempts/prizes return retryable contention promptly. Committed identity caps, exhausted stock after a win, and immutable attempt replays avoid the exclusive award lock. Winning inventory changes retain the full transaction and validation checks. Defensive lock/statement timeouts remain two/five seconds. Throttling and unavailable protection remain retryable.
 
 ## Local browser/database prerequisites
 
@@ -75,4 +78,10 @@ Browser reports contain structural counts/outcomes only. Do not enable private-f
 
 ## Qualification status
 
-Implementation qualification is in progress. The final evidence section will record exact source SHA, commands, 1,000-submission results, latency/concurrency measurements, reconciliation, and any hosted/provider checks still pending.
+Qualification is in progress. The protected local Next development path has failed the 1,000-submission gate: requests timed out before reaching award SQL. These failures are retained as failures, with inventory/winner reconciliation, rather than being counted as capacity evidence. Do not enable a real giveaway on that basis.
+
+Run the protected path with `--mode=protected` (the default). The separate `--mode=award-rpc` sends 1,000 independent requests to the real private PostgREST award/recovery RPCs using only this run's synthetic credentials. It isolates transaction contention, stock, campaign identity caps and recovery. Its reports explicitly set `siteCapacityPassed: false`; it does not measure the application's origin, browser, bot, Redis or proxy path. No application bypass route or deployed bypass flag is introduced.
+
+Nominal local HTTP actors use distinct synthetic forwarded IPs trusted only by the loopback app. The `shared-ip` scenario separately exercises the original shared IP pressure. All deployed quotas remain unchanged. Latency percentiles include recovery until a terminal result; initial HTTP latency is reported separately. The generator must deliver 1,000 in-flight submissions within one second, with terminal p95 ≤ 3 seconds, p99 ≤ 10 seconds and every attempt resolved within 30 seconds. The overload case separately checks bounded recovery and integrity.
+
+Hosted staging and production provider qualification remains pending. The CLI currently refuses remote targets: this worktree has no selected Doppler project/config or explicitly permitted hosted synthetic campaign/bot-test binding. It must not infer a staging project, seed live prizes, change a deployment's selected campaign, or weaken deployed protection. Runtime variable presence, real Shippo cold validation/provider quotas, hosted BotID/WAF behavior, CDN freshness and hosted 1,000-submission capacity require the normal release path. The final evidence section will record the exact tested source and local results.

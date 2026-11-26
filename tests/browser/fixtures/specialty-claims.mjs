@@ -172,7 +172,7 @@ export async function startBrowserTestApp(
     assert.equal((await limitProbe.limit("probe")).success, false);
     await seedOrdinaryCatalog(state);
     state.probe = await seedBrowserPrize(runId, 1);
-    if (!startNext) return state;
+    if (!startNext && !beforeStart) return state;
     const childEnv = {
       ...process.env,
       NODE_ENV: "development",
@@ -206,6 +206,7 @@ export async function startBrowserTestApp(
     delete childEnv.NEXT_PUBLIC_TURNSTILE_SITE_KEY;
     delete childEnv.NEXT_PUBLIC_CLOUDFLARE_WEB_ANALYTICS_TOKEN;
     await beforeStart?.(childEnv);
+    if (!startNext) return state;
     const output = createWriteStream(join(privateDir, "next.log"), { mode: 0o600 });
     state.output = output;
     state.child = spawn(

@@ -53,10 +53,12 @@ test("discovery projects safe public fields and rejects stale or disabled entrie
   ];
   const client = createClient("https://example.supabase.co", "test", {
     global: {
-      fetch: async () =>
-        new Response(JSON.stringify(rows), {
-          headers: { "Content-Type": "application/json" },
-        }),
+      fetch: () =>
+        Promise.resolve(
+          new Response(JSON.stringify(rows), {
+            headers: { "Content-Type": "application/json" },
+          }),
+        ),
     },
   });
   expect(await listSpecialtyDiscoveryPool(client as never)).toEqual([
@@ -73,11 +75,13 @@ test("ordinary public query seams exclude specialty while admin inventory retain
   const urls: URL[] = [];
   const client = createClient("https://example.supabase.co", "test", {
     global: {
-      fetch: async (input) => {
+      fetch: (input) => {
         urls.push(new URL(String(input)));
-        return new Response("[]", {
-          headers: { "Content-Type": "application/json", "content-range": "0-0/0" },
-        });
+        return Promise.resolve(
+          new Response("[]", {
+            headers: { "Content-Type": "application/json", "content-range": "0-0/0" },
+          }),
+        );
       },
     },
   });
@@ -107,7 +111,7 @@ test("ordinary public query seams exclude specialty while admin inventory retain
 test("curated featured products cannot bypass specialty discovery checks", async () => {
   const service = new FeaturedItemsService({} as never);
   (service as unknown as { productRepo: unknown }).productRepo = {
-    getById: async () => ({ category: "specialty", is_active: true }),
+    getById: () => Promise.resolve({ category: "specialty", is_active: true }),
   };
   await expect(
     service.addFeaturedItem({ productId: "id", userId: "admin" }),

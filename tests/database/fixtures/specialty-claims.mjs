@@ -308,11 +308,19 @@ export function claimAttempt(prize, campaign, overrides = {}) {
   return { command, recoverySecret: secret };
 }
 export async function award(client, attempt) {
-  return (
-    await client.query("select public.accept_specialty_claim($1::jsonb) result", [
-      JSON.stringify(attempt.command),
-    ])
-  ).rows[0].result;
+  const deadline = Date.now() + 10000;
+  for (;;) {
+    try {
+      return (
+        await client.query("select public.accept_specialty_claim($1::jsonb) result", [
+          JSON.stringify(attempt.command),
+        ])
+      ).rows[0].result;
+    } catch (error) {
+      if (error.code !== "55P03" || Date.now() >= deadline) throw error;
+      await new Promise((resolve) => setTimeout(resolve, 5 + Math.random() * 20));
+    }
+  }
 }
 export async function recover(client, attempt) {
   return (

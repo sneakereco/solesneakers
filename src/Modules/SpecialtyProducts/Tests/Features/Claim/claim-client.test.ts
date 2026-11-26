@@ -25,17 +25,15 @@ const input = {
 };
 const originalFetch = global.fetch;
 test("field validation errors remain actionable rather than a provider outage", async () => {
-  global.fetch = jest
-    .fn()
-    .mockResolvedValue(
-      Response.json(
-        {
-          status: "invalid",
-          fields: { instagramHandle: "Enter a valid Instagram handle." },
-        },
-        { status: 422 },
-      ),
-    );
+  global.fetch = jest.fn().mockResolvedValue(
+    Response.json(
+      {
+        status: "invalid",
+        fields: { instagramHandle: "Enter a valid Instagram handle." },
+      },
+      { status: 422 },
+    ),
+  );
   expect(
     await validateClaimEligibility({
       productId: id,
@@ -107,10 +105,13 @@ test("eligibility corrections remain distinct from validated proofs", async () =
 });
 test("lost submission response recovers the committed decision without creating another attempt", async () => {
   const bodies: unknown[] = [];
-  global.fetch = jest.fn(async (url, init) => {
+  global.fetch = jest.fn((url, init) => {
     bodies.push(JSON.parse(String(init?.body)));
-    if (url === "/api/specialty/claims") throw new Error("response lost");
-    return Response.json({ result: { status: "sold_out" }, replayed: true });
+    if (url === "/api/specialty/claims")
+      return Promise.reject(new Error("response lost"));
+    return Promise.resolve(
+      Response.json({ result: { status: "sold_out" }, replayed: true }),
+    );
   });
   expect(await settleClaimAttempt(credentials, input)).toEqual({
     result: { status: "sold_out" },

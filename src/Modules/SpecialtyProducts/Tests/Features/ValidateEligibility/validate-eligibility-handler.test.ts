@@ -31,9 +31,9 @@ const request = (input: unknown = body) =>
   });
 function dependencies(): EligibilityDependencies {
   return {
-    getContext: async () => context,
-    protect: async () => ({ allowed: true }),
-    validateAddress: async (value) => ({ status: "valid", address: value }),
+    getContext: () => Promise.resolve(context),
+    protect: () => Promise.resolve({ allowed: true }),
+    validateAddress: (value) => Promise.resolve({ status: "valid", address: value }),
     secret: () => secret,
     nowMs: () => now,
   };
@@ -91,7 +91,8 @@ describe("specialty eligibility validation", () => {
   });
   test("rejects editing the handle or address while confirming a correction", async () => {
     const deps = dependencies();
-    deps.validateAddress = async () => ({ status: "correction_required", address });
+    deps.validateAddress = () =>
+      Promise.resolve({ status: "correction_required", address });
     const suggestion = await (await validateEligibilityHandler(request(), deps)).json();
     for (const edit of [
       { instagramHandle: "another" },
@@ -107,14 +108,15 @@ describe("specialty eligibility validation", () => {
   });
   test("key rotation and provider failures fail closed without leaking input", async () => {
     const deps = dependencies();
-    deps.getContext = async () => ({
-      ...context,
-      identityKeyFingerprint: "f".repeat(64),
-    });
+    deps.getContext = () =>
+      Promise.resolve({
+        ...context,
+        identityKeyFingerprint: "f".repeat(64),
+      });
     expect((await validateEligibilityHandler(request(), deps)).status).toBe(503);
-    deps.getContext = async () => context;
-    deps.validateAddress = async () => {
-      throw new Error("123 MAIN ST private");
+    deps.getContext = () => Promise.resolve(context);
+    deps.validateAddress = () => {
+      return Promise.reject(new Error("123 MAIN ST private"));
     };
     const response = await validateEligibilityHandler(request(), deps);
     expect(response.status).toBe(503);
@@ -122,7 +124,8 @@ describe("specialty eligibility validation", () => {
   });
   test("returns retry guidance for protection throttling", async () => {
     const deps = dependencies();
-    deps.protect = async () => ({ allowed: false, status: 429, retryAfterSeconds: 4 });
+    deps.protect = () =>
+      Promise.resolve({ allowed: false, status: 429, retryAfterSeconds: 4 });
     const response = await validateEligibilityHandler(request(), deps);
     expect(response.status).toBe(429);
     expect(response.headers.get("Retry-After")).toBe("4");

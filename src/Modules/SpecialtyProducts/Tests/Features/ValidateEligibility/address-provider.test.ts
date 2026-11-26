@@ -19,17 +19,15 @@ const recommended = {
   confidence_result: { score: "high" },
 };
 const provider = (recommendation: unknown = recommended, value = "valid", status = 200) =>
-  jest
-    .fn()
-    .mockResolvedValue(
-      new Response(
-        JSON.stringify({
-          analysis: { validation_result: { value } },
-          recommended_address: recommendation,
-        }),
-        { status },
-      ),
-    );
+  jest.fn().mockResolvedValue(
+    new Response(
+      JSON.stringify({
+        analysis: { validation_result: { value } },
+        recommended_address: recommendation,
+      }),
+      { status },
+    ),
+  );
 describe("canonical specialty address provider", () => {
   test("uses validated canonical output with no name, email, phone or reservation", async () => {
     const fetcher = provider();

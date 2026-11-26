@@ -275,7 +275,10 @@ export async function runSpecialtyBurst(manifest, options = {}) {
         ...options,
       },
     );
-    if (response.status >= 400 && ["55P03", "57014"].includes(response.body?.code))
+    if (
+      response.status >= 400 &&
+      ["55P03", "57014", "PGRST003"].includes(response.body?.code)
+    )
       return { ...response, rawStatus: response.status, status: 503 };
     if (recovery && response.status === 200 && !response.body)
       return { ...response, status: 202 };
@@ -378,7 +381,14 @@ export async function runSpecialtyBurst(manifest, options = {}) {
       actorCount: manifest.actorCount,
       requestCount: manifest.requestCount,
       outcomes,
-      latency: { p95Ms: percentile(latencies, 0.95), p99Ms: percentile(latencies, 0.99) },
+      latency: {
+        p95Ms: percentile(resolution, 0.95),
+        p99Ms: percentile(resolution, 0.99),
+      },
+      initialLatency: {
+        p95Ms: percentile(latencies, 0.95),
+        p99Ms: percentile(latencies, 0.99),
+      },
       maxResolutionMs: Math.max(...resolution),
       generator: {
         node: process.version,
@@ -409,11 +419,19 @@ export async function runSpecialtyBurst(manifest, options = {}) {
               "Award engine isolation only: protected Next API, browser validation, BotID and Redis quotas are not part of this measured path; site capacity remains a separate gate",
             ]
           : []),
-        "Next development server; local shared machine and Docker",
+        engine
+          ? "Local Node/PostgREST/PostgreSQL award engine; Next server is not started for this isolation run"
+          : "Next development server; local shared machine and Docker",
         "Prepared signed eligibility; Shippo cold validation not measured",
-        "BotID supported development HUMAN verdict; no hosted WAF/bot evidence",
-        "Actual Redis scripts via local REST bridge; IP quotas enforced with trusted loopback-only synthetic forwarded addresses; shared-IP run is separate",
-        "Synthetic Auth provider; real app origin/browser-cookie/credential checks",
+        ...(engine
+          ? [
+              "Trusted synthetic service-role RPC requests; application Auth, BotID, origin, browser and Redis quotas are not exercised",
+            ]
+          : [
+              "BotID supported development HUMAN verdict; no hosted WAF/bot evidence",
+              "Actual Redis scripts via local REST bridge; IP quotas enforced with trusted loopback-only synthetic forwarded addresses; shared-IP run is separate",
+              "Synthetic Auth provider; real app origin/browser-cookie/credential checks",
+            ]),
         "Server ingress timing unavailable; socket flush dispatch measured",
       ],
     };

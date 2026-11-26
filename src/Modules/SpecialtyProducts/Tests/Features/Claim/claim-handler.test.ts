@@ -54,11 +54,12 @@ function dependencies(): ClaimDependencies {
   return {
     secret: () => secret,
     nowMs: () => now,
-    getContext: async () => context,
-    protect: async () => ({ allowed: true }),
-    validateAddress: async (value) => ({ status: "valid", address: value }),
-    findAttempt: async () => null,
-    accept: async () => ({ result: { status: "already_claimed" }, replayed: false }),
+    getContext: () => Promise.resolve(context),
+    protect: () => Promise.resolve({ allowed: true }),
+    validateAddress: (value) => Promise.resolve({ status: "valid", address: value }),
+    findAttempt: () => Promise.resolve(null),
+    accept: () =>
+      Promise.resolve({ result: { status: "already_claimed" }, replayed: false }),
     recordMetric: () => {},
   };
 }
@@ -84,19 +85,20 @@ describe("specialty claim HTTP decisions", () => {
   });
   test("replays a committed result before context, provider, or token checks", async () => {
     const deps = dependencies();
-    deps.findAttempt = async () => ({
-      inputHash: fingerprintInput(input, secret),
-      payloadHash: "d".repeat(64),
-      result: { status: "sold_out" },
-    });
-    deps.getContext = async () => {
-      throw new Error("archived");
+    deps.findAttempt = () =>
+      Promise.resolve({
+        inputHash: fingerprintInput(input, secret),
+        payloadHash: "d".repeat(64),
+        result: { status: "sold_out" },
+      });
+    deps.getContext = () => {
+      return Promise.reject(new Error("archived"));
     };
-    deps.validateAddress = async () => {
-      throw new Error("provider down");
+    deps.validateAddress = () => {
+      return Promise.reject(new Error("provider down"));
     };
-    deps.accept = async () => {
-      throw new Error("must not award twice");
+    deps.accept = () => {
+      return Promise.reject(new Error("must not award twice"));
     };
     const response = await submitClaimHandler(
       request({ ...input, validationToken: "expired" }),
@@ -110,19 +112,20 @@ describe("specialty claim HTTP decisions", () => {
   });
   test("rejects changed input bound to a committed attempt", async () => {
     const deps = dependencies();
-    deps.findAttempt = async () => ({
-      inputHash: "d".repeat(64),
-      payloadHash: "e".repeat(64),
-      result: { status: "sold_out" },
-    });
+    deps.findAttempt = () =>
+      Promise.resolve({
+        inputHash: "d".repeat(64),
+        payloadHash: "e".repeat(64),
+        result: { status: "sold_out" },
+      });
     expect((await submitClaimHandler(request(), deps)).status).toBe(409);
   });
   test.each(["tampered", "expired"])(
     "rejects %s proof without a database award",
     async (kind) => {
       const deps = dependencies();
-      deps.accept = async () => {
-        throw new Error("not eligible");
+      deps.accept = () => {
+        return Promise.reject(new Error("not eligible"));
       };
       const token =
         kind === "tampered"
@@ -138,10 +141,11 @@ describe("specialty claim HTTP decisions", () => {
   );
   test("missing proof validates inline without reserving a corrected address", async () => {
     const deps = dependencies();
-    deps.validateAddress = async () => ({
-      status: "correction_required",
-      address: { ...address, line1: "125 MAIN ST" },
-    });
+    deps.validateAddress = () =>
+      Promise.resolve({
+        status: "correction_required",
+        address: { ...address, line1: "125 MAIN ST" },
+      });
     const response = await submitClaimHandler(request(), deps);
     expect(response.status).toBe(422);
     expect((await response.json()).status).toBe("validation_required");
@@ -157,20 +161,21 @@ describe("specialty claim HTTP decisions", () => {
   test("credential-only recovery survives missing signing secret and closed campaign", async () => {
     const deps = dependencies();
     deps.secret = () => null;
-    deps.getContext = async () => {
-      throw new Error("closed");
+    deps.getContext = () => {
+      return Promise.reject(new Error("closed"));
     };
-    deps.validateAddress = async () => {
-      throw new Error("no provider");
+    deps.validateAddress = () => {
+      return Promise.reject(new Error("no provider"));
     };
-    deps.accept = async () => {
-      throw new Error("no award");
+    deps.accept = () => {
+      return Promise.reject(new Error("no award"));
     };
-    deps.findAttempt = async () => ({
-      inputHash: "d".repeat(64),
-      payloadHash: "e".repeat(64),
-      result: { status: "closed" },
-    });
+    deps.findAttempt = () =>
+      Promise.resolve({
+        inputHash: "d".repeat(64),
+        payloadHash: "e".repeat(64),
+        result: { status: "closed" },
+      });
     const response = await recoverClaimHandler(request(credentials), deps);
     expect(response.status).toBe(200);
     expect(await response.json()).toEqual({
@@ -186,8 +191,8 @@ describe("specialty claim HTTP decisions", () => {
       ["unauthorized", 403],
       ["payload_conflict", 409],
     ] as const) {
-      deps.findAttempt = async () => {
-        throw new ClaimRepositoryError(code);
+      deps.findAttempt = () => {
+        return Promise.reject(new ClaimRepositoryError(code));
       };
       const response = await recoverClaimHandler(request(credentials), deps);
       expect(response.status).toBe(status);
@@ -196,7 +201,8 @@ describe("specialty claim HTTP decisions", () => {
   });
   test("throttled requests receive retry guidance", async () => {
     const deps = dependencies();
-    deps.protect = async () => ({ allowed: false, status: 429, retryAfterSeconds: 9 });
+    deps.protect = () =>
+      Promise.resolve({ allowed: false, status: 429, retryAfterSeconds: 9 });
     const response = await submitClaimHandler(request(), deps);
     expect(response.status).toBe(429);
     expect(response.headers.get("Retry-After")).toBe("9");
@@ -217,8 +223,8 @@ describe("specialty claim HTTP decisions", () => {
     deps.recordMetric = (event) => {
       events.push(event);
     };
-    deps.accept = async () => {
-      throw new Error("private 123 MAIN ST @Sole token");
+    deps.accept = () => {
+      return Promise.reject(new Error("private 123 MAIN ST @Sole token"));
     };
     const response = await submitClaimHandler(request(), deps);
     expect(response.status).toBe(503);

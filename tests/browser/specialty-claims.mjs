@@ -441,7 +441,9 @@ try {
     await expect(async () => {
       if ((await shippingDetails.getAttribute("aria-expanded")) === "false")
         await shippingDetails.click();
-      await expect(shippingDetails).toHaveAttribute("aria-expanded", "true");
+      await expect(shippingDetails).toHaveAttribute("aria-expanded", "true", {
+        timeout: 500,
+      });
     }).toPass({ timeout: 30000 });
     stage = "ordinary cart: add";
     await ordinary.page.getByRole("button", { name: /add to (?:cart|bag)/i }).click();

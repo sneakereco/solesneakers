@@ -46,26 +46,32 @@ beforeEach(() => {
     .mockResolvedValue({ user: { id }, role: "admin" } as never);
   const client = createClient("https://example.supabase.co", "test", {
     global: {
-      fetch: async (input) => {
+      fetch: (input) => {
         const url = new URL(String(input));
         urls.push(url);
         if (url.pathname.includes("/rpc/"))
-          return rpcError
-            ? Response.json({ message: rpcError }, { status: 400 })
-            : Response.json({
-                ...row,
-                follow_up_status: "contacted",
-                revision: 2,
-                updated_by: id,
-              });
+          return Promise.resolve(
+            rpcError
+              ? Response.json({ message: rpcError }, { status: 400 })
+              : Response.json({
+                  ...row,
+                  follow_up_status: "contacted",
+                  revision: 2,
+                  updated_by: id,
+                }),
+          );
         if (url.pathname.endsWith("specialty_campaigns"))
-          return Response.json({
-            id,
-            enabled: false,
-            revision: 1,
-            identity_key_fingerprint: null,
-          });
-        return Response.json([row], { headers: { "content-range": "25-25/26" } });
+          return Promise.resolve(
+            Response.json({
+              id,
+              enabled: false,
+              revision: 1,
+              identity_key_fingerprint: null,
+            }),
+          );
+        return Promise.resolve(
+          Response.json([row], { headers: { "content-range": "25-25/26" } }),
+        );
       },
     },
   });

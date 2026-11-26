@@ -17,9 +17,9 @@ describe("variant SKU assignment", () => {
   it("rejects ordinary mutations and duplication of specialty products before writes", async () => {
     const service = new ProductService({} as never);
     (service as unknown as { repo: unknown }).repo = {
-      getById: async () => ({ category: "specialty" }),
-      update: async () => {
-        throw new Error("unexpected write");
+      getById: () => Promise.resolve({ category: "specialty" }),
+      update: () => {
+        return Promise.reject(new Error("unexpected write"));
       },
     };
     await expect(
