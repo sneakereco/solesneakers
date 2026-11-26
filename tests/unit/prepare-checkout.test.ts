@@ -6,6 +6,16 @@ import {
 } from "@/Modules/Checkout/Tests/Features/ContractCompatibility/fixtures";
 import { createCheckoutCartHash } from "@/lib/checkout/checkout-cart-hash";
 
+import { readOrIssueGuestContext } from "@/Modules/Checkout/Source/Features/Preparation/guest-context";
+import { CheckoutCatalogUnavailable } from "@/lib/checkout/checkout-cart-resolver";
+import { PreparationChanged } from "@/Modules/Checkout/Source/Features/Preparation/reservation-contract";
+import { checkoutQuoteHandler } from "@/lib/checkout/checkout-quote";
+const TEST_SECRET = "test-secret-for-shipping-confirmations";
+const guestContext = readOrIssueGuestContext(
+  new Request("https://shop.example.com"),
+  TEST_SECRET,
+);
+const cookie = guestContext.setCookie!.split(";")[0];
 const PRODUCT_ID = "11111111-1111-4111-8111-111111111111";
 const VARIANT_ID = "22222222-2222-4222-8222-222222222222";
 const IDEMPOTENCY_KEY = "33333333-3333-4333-8333-333333333333";
@@ -15,6 +25,7 @@ const QUOTE_FINGERPRINT =
 
 function request(quoteFingerprint = QUOTE_FINGERPRINT) {
   return new Request("https://shop.example.com/api/checkout/prepare", {
+    headers: { cookie },
     method: "POST",
     body: JSON.stringify({
       items: [{ productId: PRODUCT_ID, variantId: VARIANT_ID, quantity: 1 }],
@@ -92,7 +103,9 @@ function dependencies() {
       taxCents: 800,
       totalCents: 11800,
     }),
+    inspectUnavailable: jest.fn(),
     reserve: jest.fn().mockResolvedValue({
+      kind: "reserved",
       orderId: "order-1",
       reused: false,
       expiresAt: "2026-09-06T12:15:00.000Z",
@@ -114,6 +127,7 @@ function dependencies() {
       taxCalculationId: "square:square-order-1:v1",
     }),
     attachSquareOrder: jest.fn().mockResolvedValue(undefined),
+    rejectBeforeAttach: jest.fn().mockResolvedValue(true),
     cancelSquareOrder: jest.fn().mockResolvedValue(undefined),
     releaseReservation: jest.fn().mockResolvedValue(true),
     reportError: jest.fn(),
@@ -129,6 +143,10 @@ describe("prepareCheckoutHandler", () => {
     const hash =
       version === 3 ? createCheckoutCartHash(input) : futureCartHashFixture(input);
     const existing = {
+      guarded: true,
+      userId: null,
+      guestContextHash: guestContext.contextHash,
+      deviceSessionId: DEVICE_ID,
       orderId: "order-1",
       cartHash: hash,
       status: "pending",
@@ -144,6 +162,12 @@ describe("prepareCheckoutHandler", () => {
     };
     deps.resolveCart.mockClear();
     deps.findExisting.mockResolvedValue(existing);
+    deps.reserve.mockResolvedValue({
+      kind: "reserved",
+      orderId: "order-1",
+      expiresAt: existing.expiresAt,
+      reused: true,
+    });
     return { deps, body, existing };
   }
 
@@ -161,7 +185,12 @@ describe("prepareCheckoutHandler", () => {
         totals: { totalCents: 11800 },
       });
       expect(JSON.stringify(existing)).toBe(before);
-      expect(deps.reserve).not.toHaveBeenCalled();
+      expect(deps.reserve).toHaveBeenCalledWith(
+        expect.objectContaining({
+          cartHash: existing.cartHash,
+          ownerBinding: "guest:" + guestContext.contextHash,
+        }),
+      );
       expect(deps.createSquareOrder).not.toHaveBeenCalled();
       expect(deps.attachSquareOrder).not.toHaveBeenCalled();
     },
@@ -203,6 +232,7 @@ describe("prepareCheckoutHandler", () => {
       const hash = existing.cartHash;
       const response = await prepareCheckoutHandler(
         new Request("https://shop.example.com/api/checkout/prepare", {
+          headers: { cookie },
           method: "POST",
           body: JSON.stringify({ ...body, ...change }),
         }) as never,
@@ -223,6 +253,104 @@ describe("prepareCheckoutHandler", () => {
       expect(deps.createSquareOrder).not.toHaveBeenCalled();
     },
   );
+
+  it("resumes a lost prepare response with the quote-issued cookie and denies changed or missing proof", async () => {
+    const previous = process.env.CHECKOUT_IDENTITY_HMAC_SECRET;
+    process.env.CHECKOUT_IDENTITY_HMAC_SECRET = TEST_SECRET;
+    try {
+      const { deps, body, existing } = await existingCheckout(3);
+      const quoteRequest = new Request("https://shop.example.com/api/checkout/quote", {
+        method: "POST",
+        body: JSON.stringify({
+          items: body.items,
+          shippingAddress: body.shippingAddress,
+          fulfillment: body.fulfillment,
+        }),
+      });
+      const quoted = await checkoutQuoteHandler(quoteRequest as never, deps);
+      expect(quoted.status).toBe(200);
+      const original = quoted.headers.get("set-cookie")!.split(";")[0];
+      const prepareReq = (c: string) =>
+        new Request("https://shop.example.com/api/checkout/prepare", {
+          method: "POST",
+          headers: { cookie: c },
+          body: JSON.stringify(body),
+        }) as never;
+      deps.findExisting.mockResolvedValueOnce(null);
+      deps.reserve.mockResolvedValueOnce({
+        kind: "reserved",
+        orderId: "order-1",
+        reused: false,
+        expiresAt: existing.expiresAt,
+      });
+      const lost = await prepareCheckoutHandler(prepareReq(original), deps);
+      expect(lost.status).toBe(201);
+      const ownerBinding = deps.reserve.mock.calls[0][0].ownerBinding;
+      deps.findExisting.mockResolvedValue({
+        ...existing,
+        guestContextHash: ownerBinding.slice(6),
+      });
+      const resumed = await prepareCheckoutHandler(prepareReq(original), deps);
+      expect(resumed.status).toBe(200);
+      expect(await resumed.json()).toMatchObject({
+        orderId: "order-1",
+        guestAccessToken: "guest-token",
+        reused: true,
+      });
+      for (const context of [cookie, "", original + "x"]) {
+        const denied = await prepareCheckoutHandler(prepareReq(context), deps);
+        expect(denied.status).toBe(409);
+        expect(Object.keys(await denied.json()).sort()).toEqual(["code", "error"]);
+      }
+      deps.findExisting.mockResolvedValue({
+        ...existing,
+        guarded: false,
+        guestContextHash: null,
+      });
+      const recovery = await prepareCheckoutHandler(prepareReq(original), deps);
+      expect(recovery.status).toBe(409);
+      expect(await recovery.json()).toEqual({
+        code: "CHECKOUT_RECOVERY_REQUIRED",
+        error:
+          "Check your order using your account or secure order link before trying again.",
+      });
+      expect(deps.reserve).toHaveBeenCalledTimes(2);
+      expect(deps.createSquareOrder).toHaveBeenCalledTimes(1);
+      expect(deps.createGuestAccessToken).toHaveBeenCalledTimes(2);
+    } finally {
+      if (previous === undefined) delete process.env.CHECKOUT_IDENTITY_HMAC_SECRET;
+      else process.env.CHECKOUT_IDENTITY_HMAC_SECRET = previous;
+    }
+  });
+  it("resumes only the matching verified account and device without minting a guest credential", async () => {
+    const { deps, existing, body } = await existingCheckout(3);
+    deps.findExisting.mockResolvedValue({
+      ...existing,
+      userId: PRODUCT_ID,
+      guestContextHash: null,
+    });
+    const account = (id: string) => ({ user: { id, email: "buyer@example.com" } });
+    const req = (deviceSessionId: string) =>
+      new Request("https://shop.example.com/api/checkout/prepare", {
+        method: "POST",
+        body: JSON.stringify({ ...body, deviceSessionId }),
+      }) as never;
+    deps.getSession.mockResolvedValue(account(PRODUCT_ID));
+    const resumed = await prepareCheckoutHandler(req(DEVICE_ID), deps);
+    expect(resumed.status).toBe(200);
+    expect(await resumed.json()).not.toHaveProperty("guestAccessToken");
+    expect(deps.reserve).toHaveBeenCalledWith(
+      expect.objectContaining({
+        userId: PRODUCT_ID,
+        ownerBinding: "account:" + PRODUCT_ID,
+      }),
+    );
+    expect((await prepareCheckoutHandler(req(VARIANT_ID), deps)).status).toBe(409);
+    deps.getSession.mockResolvedValue(account(VARIANT_ID));
+    expect((await prepareCheckoutHandler(req(DEVICE_ID), deps)).status).toBe(409);
+    expect(deps.reserve).toHaveBeenCalledTimes(1);
+    expect(deps.createGuestAccessToken).not.toHaveBeenCalled();
+  });
 
   it("validates Square totals when reusing v4", async () => {
     const { deps } = await existingCheckout(4, { totalCents: 11801 });
@@ -246,6 +374,7 @@ describe("prepareCheckoutHandler", () => {
     deps.validateShippingAddress.mockResolvedValue({ status: "invalid" });
     const response = await prepareCheckoutHandler(
       new Request("https://shop.example.com/api/checkout/prepare", {
+        headers: { cookie },
         method: "POST",
         body: JSON.stringify({
           ...body,
@@ -293,6 +422,8 @@ describe("prepareCheckoutHandler", () => {
     expect(deps.reserve).toHaveBeenCalledWith(
       expect.objectContaining({
         paymentMethod: "card",
+        taxCents: 800,
+        totalCents: 11800,
         billingAddress: expect.objectContaining({
           givenName: "Buyer",
           familyName: "Example",
@@ -303,6 +434,138 @@ describe("prepareCheckoutHandler", () => {
     );
   });
 
+  it("returns the locked item conflict and no payment dispatch when the stock-one reservation loses", async () => {
+    const deps = dependencies();
+    const conflicts = [
+      {
+        productId: PRODUCT_ID,
+        variantId: VARIANT_ID,
+        requestedQuantity: 1,
+        availableQuantity: 0,
+        reason: "reserved_by_other",
+      },
+    ];
+    deps.reserve.mockResolvedValue({ kind: "conflict", conflicts });
+    const response = await prepareCheckoutHandler(request(), deps);
+    expect(response.status).toBe(409);
+    expect(await response.json()).toEqual({
+      code: "INVENTORY_CONFLICT",
+      paymentState: "not_submitted",
+      conflicts,
+    });
+    expect(deps.createSquareOrder).not.toHaveBeenCalled();
+  });
+  it("decides a missing catalog line inside the allocation transaction and preserves technical failures", async () => {
+    const deps = dependencies();
+    deps.resolveCart.mockRejectedValue(new CheckoutCatalogUnavailable());
+    const conflicts = [
+      {
+        productId: PRODUCT_ID,
+        variantId: VARIANT_ID,
+        requestedQuantity: 1,
+        availableQuantity: 0,
+        reason: "sold_out",
+      },
+    ];
+    deps.inspectUnavailable
+      .mockResolvedValueOnce(conflicts)
+      .mockRejectedValueOnce(new PreparationChanged())
+      .mockRejectedValueOnce(Error("database unavailable"));
+    let response = await prepareCheckoutHandler(request(), deps);
+    expect(response.status).toBe(409);
+    expect(await response.json()).toEqual({
+      code: "INVENTORY_CONFLICT",
+      conflicts,
+      paymentState: "not_submitted",
+    });
+    response = await prepareCheckoutHandler(request(), deps);
+    expect(response.status).toBe(409);
+    expect(Object.keys(await response.json())).toEqual(["error"]);
+    response = await prepareCheckoutHandler(request(), deps);
+    expect(response.status).toBe(503);
+    expect(Object.keys(await response.json())).toEqual(["error"]);
+    expect(deps.reserve).not.toHaveBeenCalled();
+    expect(deps.createSquareOrder).not.toHaveBeenCalled();
+  });
+  it("preserves the reservation for an ambiguous Square attach", async () => {
+    const deps = dependencies();
+    deps.attachSquareOrder.mockRejectedValue(Error("reply lost"));
+    const response = await prepareCheckoutHandler(request(), deps);
+    expect(response.status).toBe(503);
+    expect(deps.cancelSquareOrder).not.toHaveBeenCalled();
+    expect(deps.releaseReservation).not.toHaveBeenCalled();
+    expect(deps.createGuestAccessToken).not.toHaveBeenCalled();
+  });
+  it("keeps a concurrently attached order when another CreateOrder response disagrees", async () => {
+    const deps = dependencies();
+    deps.rejectBeforeAttach.mockResolvedValue(false);
+    deps.createSquareOrder.mockResolvedValue({
+      id: "square-order-1",
+      version: 1,
+      subtotalCents: 10000,
+      shippingCents: 1000,
+      taxCents: 810,
+      totalCents: 11810,
+      taxCalculationId: "square:fixture:v1",
+    });
+    const response = await prepareCheckoutHandler(request(), deps);
+    expect(await response.json()).toMatchObject({ code: "CHECKOUT_RECOVERY_REQUIRED" });
+    expect(deps.cancelSquareOrder).not.toHaveBeenCalled();
+    expect(deps.releaseReservation).not.toHaveBeenCalled();
+  });
+  it("keeps identical Square creation payloads for reversed equivalent baskets", async () => {
+    const deps = dependencies(),
+      base = (await deps.resolveCart()).items[0];
+    const other = { ...base, variantId: "11111111-2222-4222-8222-222222222222" };
+    const items = [base, other],
+      totals = {
+        subtotalCents: 20000,
+        shippingCents: 1000,
+        taxCents: 800,
+        totalCents: 21800,
+      };
+    const body = await (request() as Request).json();
+    const quoteFingerprint = createCheckoutQuoteFingerprint({
+      items: items.map(({ variantId, quantity, unitPriceCents }) => ({
+        variantId,
+        quantity,
+        unitPriceCents,
+      })),
+      fulfillment: "ship",
+      shippingAddress: body.shippingAddress,
+      totals,
+    });
+    deps.calculateSquareOrder.mockResolvedValue(totals);
+    deps.createSquareOrder.mockResolvedValue({
+      ...totals,
+      id: "fixture",
+      version: 1,
+      taxCalculationId: "square:fixture:v1",
+    });
+    for (const ordered of [items, [...items].reverse()]) {
+      deps.resolveCart.mockResolvedValue({ items: ordered, subtotalCents: 20000 });
+      const response = await prepareCheckoutHandler(
+        new Request("https://shop.example.com/api/checkout/prepare", {
+          method: "POST",
+          headers: { cookie },
+          body: JSON.stringify({
+            ...body,
+            quoteFingerprint,
+            items: ordered.map(({ productId, variantId, quantity }) => ({
+              productId,
+              variantId,
+              quantity,
+            })),
+          }),
+        }) as never,
+        deps,
+      );
+      expect(response.status).toBe(201);
+    }
+    expect(deps.createSquareOrder.mock.calls[0][0]).toEqual(
+      deps.createSquareOrder.mock.calls[1][0],
+    );
+  });
   it("does not reserve or contact Square when the daily limit is exhausted", async () => {
     const deps = dependencies();
     deps.checkAttempt.mockResolvedValue({ allowed: false, retryAfterSeconds: 60 });
@@ -366,6 +629,7 @@ describe("shipping deliverability gate", () => {
     expect(typeof review.shippingConfirmation).toBe("string");
     const response = await prepareCheckoutHandler(
       new Request("https://shop.example.com/api/checkout/prepare", {
+        headers: { cookie },
         method: "POST",
         body: JSON.stringify({
           ...body,
@@ -405,6 +669,7 @@ describe("shipping deliverability gate", () => {
 
     const response = await prepareCheckoutHandler(
       new Request("https://shop.example.com/api/checkout/prepare", {
+        headers: { cookie },
         method: "POST",
         body: JSON.stringify({
           ...body,
@@ -438,6 +703,7 @@ describe("shipping deliverability gate", () => {
       const body = await (request() as Request).json();
       const response = await prepareCheckoutHandler(
         new Request("https://shop.example.com/api/checkout/prepare", {
+          headers: { cookie },
           method: "POST",
           body: JSON.stringify({ ...body, paymentMethod }),
         }) as never,
@@ -463,6 +729,7 @@ describe("shipping deliverability gate", () => {
       const body = await (request() as Request).json();
       const response = await prepareCheckoutHandler(
         new Request("https://shop.example.com/api/checkout/prepare", {
+          headers: { cookie },
           method: "POST",
           body: JSON.stringify({ ...body, paymentMethod }),
         }) as never,
@@ -549,6 +816,7 @@ describe("shipping deliverability gate", () => {
     });
     const response = await prepareCheckoutHandler(
       new Request("https://shop.example.com/api/checkout/prepare", {
+        headers: { cookie },
         method: "POST",
         body: JSON.stringify({
           ...body,

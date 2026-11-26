@@ -1,3 +1,4 @@
+import { CheckoutPreparationRepository } from "@/Modules/Checkout/Source/Features/Preparation/reservation-repository";
 import { validateShippingAddress } from "@/lib/shipping/validate-shipping-address";
 import { assertCheckoutOpen } from "@/lib/checkout/checkout-access";
 import { env } from "@/config/env";
@@ -29,6 +30,7 @@ export function createPrepareCheckoutDependencies(
   const tenants = new TenantRepository(supabase);
   const products = new ProductRepository(supabase);
   const reservations = new CheckoutReservationRepository(supabase);
+  const preparation = new CheckoutPreparationRepository(supabase);
   const shipping = new ShippingDefaultsRepository(supabase);
   const accessTokens = new OrderAccessTokenService(supabase);
   const limiter = createCheckoutAttemptLimiter();
@@ -50,10 +52,13 @@ export function createPrepareCheckoutDependencies(
       reservations.findByIdempotencyKey(tenantId, idempotencyKey),
     checkAddressValidationAttempt: (identity) => limiter.checkAddressValidation(identity),
     checkAttempt: (identity) => limiter.check(identity),
-    resolveCart: (tenantId, items) => resolveCheckoutCart(products, tenantId, items),
+    resolveCart: (tenantId, items) =>
+      resolveCheckoutCart(products, tenantId, items, "reservation"),
     quote: (input) => pricing.quote(input),
     calculateSquareOrder: (input) => getSquareOrders().calculate(input),
-    reserve: (input) => reservations.reserve(input),
+    reserve: (input) => preparation.reserveCheckout(input),
+    inspectUnavailable: (tenant, key, items) =>
+      preparation.inspectUnavailable(tenant, key, items),
     createGuestAccessToken: async (orderId) =>
       (await accessTokens.createToken({ orderId })).token,
     getSquareClientConfig: () => {
@@ -69,6 +74,8 @@ export function createPrepareCheckoutDependencies(
     },
     createSquareOrder: (input) => getSquareOrders().create(input),
     attachSquareOrder: (orderId, order) => reservations.attachSquareOrder(orderId, order),
+    rejectBeforeAttach: (orderId, ownerBinding) =>
+      preparation.rejectBeforeAttach(orderId, ownerBinding),
     cancelSquareOrder: (orderId, version, idempotencyKey) =>
       getSquareOrders().cancel(orderId, version, idempotencyKey),
     releaseReservation: (orderId, reason) => reservations.release(orderId, reason),

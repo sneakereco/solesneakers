@@ -76,6 +76,10 @@ export type CheckoutReservationResult = {
 };
 
 export type ExistingCheckout = {
+  userId: string | null;
+  guestContextHash: string | null;
+  deviceSessionId: string | null;
+  guarded: boolean;
   orderId: string;
   cartHash: string;
   status: string;
@@ -124,6 +128,10 @@ const reservationResultSchema = z.object({
 });
 
 const existingCheckoutSchema = z.object({
+  user_id: z.string().nullable(),
+  checkout_guest_context_hash: z.string().nullable(),
+  checkout_attempt_guarded: z.boolean(),
+  checkout_protection_evidence: z.unknown(),
   id: z.string().min(1),
   cart_hash: z.string().min(1),
   status: z.string().min(1),
@@ -252,7 +260,7 @@ export class CheckoutReservationRepository {
     const { data, error } = await this.supabase
       .from("orders")
       .select(
-        "id, cart_hash, status, expires_at, subtotal, shipping, tax_amount, total, fulfillment, guest_email, square_order_id, square_order_version, order_items(product_id, variant_id, quantity, unit_price, unit_cost, line_total, variant_sku, product_name, brand, model, category, condition, size_label)",
+        "id, user_id, checkout_guest_context_hash, checkout_attempt_guarded, checkout_protection_evidence, cart_hash, status, expires_at, subtotal, shipping, tax_amount, total, fulfillment, guest_email, square_order_id, square_order_version, order_items(product_id, variant_id, quantity, unit_price, unit_cost, line_total, variant_sku, product_name, brand, model, category, condition, size_label)",
       )
       .eq("tenant_id", tenantId)
       .eq("idempotency_key", idempotencyKey)
@@ -271,6 +279,14 @@ export class CheckoutReservationRepository {
     }
 
     return {
+      userId: parsed.data.user_id,
+      guestContextHash: parsed.data.checkout_guest_context_hash,
+      guarded: parsed.data.checkout_attempt_guarded,
+      deviceSessionId:
+        z
+          .object({ device_session_id: z.string() })
+          .safeParse(parsed.data.checkout_protection_evidence).data?.device_session_id ??
+        null,
       orderId: parsed.data.id,
       cartHash: parsed.data.cart_hash,
       status: parsed.data.status,

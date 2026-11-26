@@ -2213,6 +2213,10 @@ export type Database = {
         }
         Returns: undefined
       }
+      reject_checkout_quote_before_attach: {
+        Args: { p_order_id: string; p_owner_binding: string }
+        Returns: boolean
+      }
       release_checkout_dependency_lease: {
         Args: { p_token: string }
         Returns: undefined
@@ -2220,6 +2224,10 @@ export type Database = {
       release_square_checkout_reservation: {
         Args: { p_order_id: string; p_reason: string }
         Returns: boolean
+      }
+      reserve_checkout_inventory_v2: {
+        Args: { p_request: Json }
+        Returns: Json
       }
       reserve_square_checkout_inventory:
         | {
