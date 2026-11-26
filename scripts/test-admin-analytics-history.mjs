@@ -199,6 +199,24 @@ export async function testReportingHistory(db) {
       visitor = randomUUID();
     const statement =
       "insert into analytics_archive.analytics_behavior_archive(dataset_id,event_uuid,event_name,occurred_at,visitor_id,session_id,pathname) values($1,$2,'storefront_viewed',$3,$4,$5,'/store')";
+    const searchId = randomUUID();
+    await db.query(
+      "insert into analytics_archive.analytics_behavior_archive(dataset_id,event_uuid,event_name,occurred_at,visitor_id,session_id,pathname,result_count,concept_kind,concept_id) values($1,$2,'catalog_search_results',$3,$4,$5,'/store',3,'brand',$6)",
+      [ds, searchId, t, visitor, session, id],
+    );
+    assert.deepEqual(
+      (
+        await db.query(
+          "select result_count,concept_kind,concept_id from analytics_reporting.analytics_behavior_export where event_uuid=$1",
+          [searchId],
+        )
+      ).rows,
+      [{ result_count: 3, concept_kind: "brand", concept_id: id }],
+    );
+    await db.query(
+      "delete from analytics_archive.analytics_behavior_archive where event_uuid=$1",
+      [searchId],
+    );
     await db.query(statement, [ds, event, t, visitor, session]);
     await db.query(statement, [ds, event, t, visitor, session]);
     await db.query(statement, [ds, randomUUID(), "2017-12-31", visitor, session]);

@@ -31,6 +31,9 @@ const columns = [
   "session_channel",
   "session_campaign",
   "session_placement",
+  "result_count",
+  "concept_kind",
+  "concept_id",
 ] as const;
 function nativeProjection(scope: DatasetScope, timePredicate: string): string {
   datasetScopeSchema.parse(scope);
@@ -47,14 +50,24 @@ function nativeProjection(scope: DatasetScope, timePredicate: string): string {
     "([a-z0-9]{24,}|token|secret|password|auth|session|key|([0-9][ _-]?){7})";
   const slug = (field: string) =>
     `if(match(properties.${field}, '^[a-z0-9][a-z0-9_-]{0,63}$') AND NOT match(properties.${field}, '${unsafe}'), properties.${field}, NULL) AS ${field}`;
+  const productEvents =
+    "'product_viewed','product_added_to_cart','out_of_stock_viewed','variant_selected','unavailable_size_requested'";
+  const variantEvents =
+    "'product_added_to_cart','variant_selected','unavailable_size_requested'";
+  const validConcept =
+    "event='catalog_search_results' AND properties.concept_kind IN ('brand','model','product') AND match(properties.concept_id,'" +
+    uuid +
+    "')";
   const dimensions = ["discovery", "session"].flatMap((prefix) =>
     ["source", "channel", "campaign", "placement"].map((s) => slug(prefix + "_" + s)),
   );
   return `SELECT '${scope.datasetId}' AS dataset_id, uuid AS event_uuid, event AS event_name,
  timestamp AS occurred_at, distinct_id AS visitor_id, properties.$session_id AS session_id, properties.pathname AS pathname,
  if(properties.device IN ('desktop','mobile','tablet','unknown'),properties.device,NULL) AS device,
- if(event IN ('product_viewed','product_added_to_cart'),properties.product_id,NULL) AS product_id,
- if(event='product_added_to_cart',properties.variant_id,NULL) AS variant_id,
+ if(event IN (${productEvents}),properties.product_id,NULL) AS product_id,
+ if(event IN (${variantEvents}),properties.variant_id,NULL) AS variant_id,
+ if(event='catalog_search_results',toInt(properties.result_count),NULL) AS result_count,
+ if(${validConcept},properties.concept_kind,NULL) AS concept_kind, if(${validConcept},properties.concept_id,NULL) AS concept_id,
  if(match(properties.landing_pathname,'${path}'),properties.landing_pathname,NULL) AS landing_pathname,
  if(length(properties.referrer_host)<=253 AND match(properties.referrer_host,'${referrer}') AND NOT match(properties.referrer_host,'${unsafe}'),properties.referrer_host,NULL) AS referrer_host,
  ${dimensions.join(",\n ")}
@@ -65,8 +78,9 @@ function nativeProjection(scope: DatasetScope, timePredicate: string): string {
  AND match(distinct_id,'${visitor}') AND match(properties.$session_id,'${uuid}') AND match(properties.pathname,'${path}')
  AND (event='public_page_viewed' OR (event='storefront_viewed' AND properties.pathname='/store')
  OR (event='checkout_started' AND properties.pathname='/checkout')
- OR (event IN ('product_viewed','product_added_to_cart') AND match(properties.product_id,'${uuid}')
- AND properties.pathname=concat('/store/',properties.product_id) AND (event='product_viewed' OR (match(properties.variant_id,'${uuid}') AND properties.quantity=1))))`;
+ OR (event='catalog_search_results' AND match(toString(properties.result_count),'^(0|[1-9][0-9]{0,9})$') AND toInt(properties.result_count)<=2147483647)
+ OR (event IN (${productEvents}) AND match(properties.product_id,'${uuid}') AND properties.pathname=concat('/store/',properties.product_id)
+ AND (event NOT IN (${variantEvents}) OR match(properties.variant_id,'${uuid}')) AND (event!='product_added_to_cart' OR properties.quantity=1)))`;
 }
 export function compileBehaviorArchive(scope: DatasetScope): string {
   return nativeProjection(
@@ -89,11 +103,23 @@ export function compileBehaviorHistorySql(scope: DatasetScope): string {
     `timestamp >= ${start} AND timestamp < ${end}` +
       (bound ? ` AND timestamp >= ${bound}` : ""),
   );
+  // Native event UUIDs and Postgres UUID columns can arrive with different connector
+  // types. Normalize optional and required identifiers before the history union.
+  const idColumns = new Set<string>([
+    "event_uuid",
+    "session_id",
+    "product_id",
+    "variant_id",
+    "concept_id",
+  ]);
+  const reportColumns = columns
+    .map((k) => (idColumns.has(k) ? "toString(" + k + ") AS " + k : k))
+    .join(",");
   const archive = bound
-    ? ` UNION ALL SELECT ${columns.join(",")} FROM analytics_behavior_export
+    ? ` UNION ALL SELECT ${reportColumns} FROM analytics_behavior_export
  WHERE dataset_id='${scope.datasetId}' AND occurred_at >= ${start} AND occurred_at < ${end} AND occurred_at < ${bound}`
     : "";
-  return `SELECT ${columns.join(",")} FROM (SELECT *,row_number() OVER (PARTITION BY dataset_id,event_uuid ORDER BY occurred_at) AS observation_rank FROM (${recent}${archive})) WHERE observation_rank=1`;
+  return `SELECT ${columns.join(",")} FROM (SELECT *,row_number() OVER (PARTITION BY dataset_id,event_uuid ORDER BY occurred_at) AS observation_rank FROM (SELECT ${reportColumns} FROM (${recent})${archive})) WHERE observation_rank=1`;
 }
 export function behaviorReportAvailability(
   scope: DatasetScope,

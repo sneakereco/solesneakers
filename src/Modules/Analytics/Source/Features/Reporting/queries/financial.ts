@@ -42,11 +42,11 @@ const signed = `CASE WHEN ${str("adjustment")}='credit' THEN -${amount("amountCe
 const sum = (condition: string, value = "1") =>
   `coalesce(sum(CASE WHEN ${condition} THEN ${value} ELSE 0 END),0)`;
 const dayLabel = (d: string) => `formatDateTime(${d},'%Y-%m-%d','America/New_York')`;
-const localBucket = `CASE WHEN {variables.bucket}='week' THEN ${dayLabel("toStartOfWeek(report_at,1,'America/New_York')")} WHEN {variables.bucket}='month' THEN ${dayLabel("toStartOfMonth(toTimeZone(report_at,'America/New_York'))")} ELSE ${dayLabel("report_at")} END`;
+export const localBucket = `CASE WHEN {variables.bucket}='week' THEN ${dayLabel("toStartOfWeek(report_at,1,'America/New_York')")} WHEN {variables.bucket}='month' THEN ${dayLabel("toStartOfMonth(toTimeZone(report_at,'America/New_York'))")} ELSE ${dayLabel("report_at")} END`;
 const saleValue = amount("merchandiseCents", "order_basis");
-const decomposed = `(${saleValue}=${amount("grossMerchandiseCents", "order_basis")}-${amount("discountCents", "order_basis")} AND ${amount("totalCollectedCents", "order_basis")}=${saleValue}+${amount("shippingCents", "order_basis")}+${amount("taxCents", "order_basis")})`;
+export const decomposed = `(${saleValue}=${amount("grossMerchandiseCents", "order_basis")}-${amount("discountCents", "order_basis")} AND ${amount("totalCollectedCents", "order_basis")}=${saleValue}+${amount("shippingCents", "order_basis")}+${amount("taxCents", "order_basis")})`;
 const originalLinesReconcile = `e.line_count>0 AND e.unknown_line_amounts=0 AND e.line_revenue=${saleValue}`;
-const evidenceSql = `, order_evidence AS (
+export const evidenceSql = `, order_evidence AS (
  SELECT order_id AS evidence_order, ${sum(line)} AS line_count,
  ${sum(line, amount("merchandiseCents"))} AS line_revenue,
  ${sum(line + " AND " + amount("merchandiseCents") + " IS NULL")} AS unknown_line_amounts,
@@ -73,7 +73,7 @@ const evidenceSql = `, order_evidence AS (
  LEFT JOIN completed_refunds cr ON s.kind='refund_line' AND s.order_id=cr.refund_order AND ${str("refundId", "s.payload")}=cr.completed_refund
  WHERE (s.kind!='refund' OR ${str("status", "s.payload")}='completed') AND (s.kind!='refund_line' OR nullIf(cr.completed_refund,'') IS NOT NULL)
 )`;
-const unknownReturn = `${refund} AND (${amount("unallocatedCents")}>0 OR (${amount("merchandiseCents")}>0 AND (coalesce(detail_count,0)=0 OR assigned_merchandise!=${amount("merchandiseCents")})))`;
+export const unknownReturn = `${refund} AND (${amount("unallocatedCents")}>0 OR (${amount("merchandiseCents")}>0 AND (coalesce(detail_count,0)=0 OR assigned_merchandise!=${amount("merchandiseCents")})))`;
 const cost = amount("unitCostCents");
 const quantity = amount("quantity"),
   restock = amount("restockedQuantity"),
@@ -300,13 +300,42 @@ function buckets(
   });
   const byDate = new Map(entries.map((x) => [x.period, x.v]));
   if (byDate.size !== entries.length) throw new RangeError("Duplicate sales bucket.");
+  const result = calendarBuckets(
+    request,
+    comparison,
+    (date, startInclusive, endExclusive) => {
+      const v = byDate.get(date);
+      byDate.delete(date);
+      const beforeActivation = Date.parse(endExclusive) <= Date.parse(activatedAt);
+      return {
+        startInclusive,
+        endExclusive,
+        confirmedOrders: beforeActivation ? null : (v?.orders ?? 0),
+        netMerchandise: beforeActivation
+          ? moneyValue(null)
+          : v
+            ? net(v, "merchandise", "refund_merch")
+            : moneyValue(0),
+        sessions: null,
+        visitors: null,
+      };
+    },
+  );
+  if (byDate.size) throw new RangeError("Unexpected provider bucket.");
+  return result;
+}
+export function calendarBuckets<T>(
+  request: ReportRequest,
+  comparison: boolean,
+  map: (period: string, start: string, end: string) => T,
+): T[] {
   const r = request.range;
   let cursor = new TZDate(
     comparison ? r.comparisonStartInclusive : r.startInclusive,
     REPORT_TIMEZONE,
   );
   const end = Date.parse(comparison ? r.comparisonEndExclusive : r.endExclusive);
-  const result: TimeBucket[] = [];
+  const result: T[] = [];
   while (cursor.getTime() < end) {
     const anchor = new TZDate(cursor.getTime(), REPORT_TIMEZONE);
     if (request.bucket === "month") anchor.setDate(1);
@@ -317,30 +346,17 @@ function buckets(
       String(anchor.getMonth() + 1).padStart(2, "0"),
       String(anchor.getDate()).padStart(2, "0"),
     ].join("-");
-    const v = byDate.get(date);
-    byDate.delete(date);
     const next = new TZDate(anchor.getTime(), REPORT_TIMEZONE);
     if (request.bucket === "month") next.setMonth(next.getMonth() + 1);
     else next.setDate(next.getDate() + (request.bucket === "week" ? 7 : 1));
     const stop = Math.min(end, next.getTime());
     if (stop <= cursor.getTime() || result.length >= 2000)
       throw new RangeError("Invalid bucket boundaries.");
-    const beforeActivation = stop <= Date.parse(activatedAt);
-    result.push({
-      startInclusive: new Date(cursor.getTime()).toISOString(),
-      endExclusive: new Date(stop).toISOString(),
-      confirmedOrders: beforeActivation ? null : (v?.orders ?? 0),
-      netMerchandise: beforeActivation
-        ? moneyValue(null)
-        : v
-          ? net(v, "merchandise", "refund_merch")
-          : moneyValue(0),
-      sessions: null,
-      visitors: null,
-    });
+    result.push(
+      map(date, new Date(cursor.getTime()).toISOString(), new Date(stop).toISOString()),
+    );
     cursor = new TZDate(stop, REPORT_TIMEZONE);
   }
-  if (byDate.size) throw new RangeError("Unexpected provider bucket.");
   return result;
 }
 function salesPeriod(raw: unknown): SalesPeriod {

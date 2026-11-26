@@ -16,7 +16,18 @@ export type AcquisitionContext = Pick<
 };
 export type BehaviorEvent =
   | { event: "public_page_viewed" | "storefront_viewed" | "checkout_started" }
-  | { event: "product_viewed"; product_id: string }
+  | { event: "product_viewed" | "out_of_stock_viewed"; product_id: string }
+  | {
+      event: "variant_selected" | "unavailable_size_requested";
+      product_id: string;
+      variant_id: string;
+    }
+  | {
+      event: "catalog_search_results";
+      result_count: number;
+      concept_kind?: "brand" | "model" | "product";
+      concept_id?: string;
+    }
   | {
       event: "product_added_to_cart";
       product_id: string;
@@ -96,11 +107,40 @@ export function sanitizeMeasurementEvent(event: unknown, input: Record<string, u
     case "checkout_started":
       if (pathname !== "/checkout") return null;
       break;
+    case "catalog_search_results":
+      if (
+        typeof input.result_count !== "number" ||
+        !Number.isSafeInteger(input.result_count) ||
+        input.result_count < 0 ||
+        input.result_count > 2147483647
+      )
+        return null;
+      props.result_count = input.result_count;
+      if (
+        isUuid(input.concept_id) &&
+        ["product", "brand", "model"].includes(String(input.concept_kind))
+      ) {
+        props.concept_kind = input.concept_kind;
+        props.concept_id = input.concept_id;
+      }
+      break;
+    case "variant_selected":
+    case "unavailable_size_requested":
+      if (
+        !isUuid(input.variant_id) ||
+        !isUuid(input.product_id) ||
+        pathname !== "/store/" + input.product_id
+      )
+        return null;
+      props.product_id = input.product_id;
+      props.variant_id = input.variant_id;
+      break;
     case "product_added_to_cart":
       if (!isUuid(input.variant_id) || input.quantity !== 1) return null;
       props.variant_id = input.variant_id;
       props.quantity = 1;
     // The same rendered product check applies to both product events.
+    case "out_of_stock_viewed":
     case "product_viewed":
       if (!isUuid(input.product_id) || pathname !== "/store/" + input.product_id)
         return null;

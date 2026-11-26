@@ -127,6 +127,25 @@ function enforceBucketLimit(
   );
 }
 
+/** Browser URL projection. The selected acquisition view never changes the shared report/cache key. */
+export function parseReportLocation(input: URLSearchParams, now: Date) {
+  const params = new URLSearchParams(input);
+  const values = params.getAll("attribution");
+  if (
+    values.length > 1 ||
+    (values.length &&
+      (params.get("report") !== "acquisition" ||
+        !["discovery", "purchase-session"].includes(values[0])))
+  )
+    throw new RangeError("Invalid acquisition view.");
+  params.delete("attribution");
+  return {
+    request: parseReportRequest(params, now),
+    attribution:
+      values[0] === "discovery" ? ("discovery" as const) : ("purchase-session" as const),
+    apiParams: params,
+  };
+}
 export function parseReportRequest(input: URLSearchParams, now: Date): ReportRequest {
   const fields = new Map<string, string>();
   for (const [key, value] of input) {

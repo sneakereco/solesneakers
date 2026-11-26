@@ -14,6 +14,8 @@ import { useRouter } from "next/navigation";
 import { Search, X } from "lucide-react";
 
 import { logError } from "@/lib/utils/log";
+import { captureCatalogSearchResults } from "@/Modules/Analytics/Source/Features/VisitorMeasurement/triggers";
+import { useViewGrant } from "@/Modules/Analytics/Source/Features/VisitorMeasurement/view-grant";
 
 interface SearchOverlayProps {
   isOpen: boolean;
@@ -118,6 +120,11 @@ function buildSuggestions(results: SearchResult[], query: string) {
 
 export function SearchOverlay({ isOpen, onClose }: SearchOverlayProps) {
   const router = useRouter();
+  const grant = useViewGrant();
+  const currentGrant = useRef(grant);
+  useEffect(() => {
+    currentGrant.current = grant;
+  }, [grant]);
   const inputRef = useRef<HTMLInputElement>(null);
   const closeTimerRef = useRef<number | null>(null);
   const [query, setQuery] = useState("");
@@ -192,6 +199,7 @@ export function SearchOverlay({ isOpen, onClose }: SearchOverlayProps) {
       return;
     }
 
+    const originalGrant = currentGrant.current;
     const controller = new AbortController();
     const runSearch = async () => {
       setIsLoading(true);
@@ -208,6 +216,15 @@ export function SearchOverlay({ isOpen, onClose }: SearchOverlayProps) {
         }
 
         const data = (await response.json()) as SearchResponse;
+        if (controller.signal.aborted) return;
+        if (
+          originalGrant &&
+          currentGrant.current === originalGrant &&
+          typeof data.total === "number" &&
+          Array.isArray(data.products)
+        ) {
+          captureCatalogSearchResults(data.total, normalizedQuery, data.products);
+        }
         startTransition(() => {
           setResults(data.products ?? []);
           setTotal(Number(data.total ?? data.products?.length ?? 0));

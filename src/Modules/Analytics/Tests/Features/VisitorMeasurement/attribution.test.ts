@@ -2,6 +2,35 @@ import {
   acquisitionForSession,
   clearAcquisition,
 } from "@/Modules/Analytics/Source/Features/VisitorMeasurement/attribution";
+it.each([
+  [
+    "?utm_source=YouTube&utm_medium=video&utm_campaign=launch&utm_content=profile",
+    { source: "youtube", channel: "video", campaign: "launch", placement: "profile" },
+  ],
+  ["?utm_source=newsletter&utm_medium=email", { source: "newsletter", channel: "email" }],
+  ["?utm_term=private-keyword", { source: "direct-unknown" }],
+])("keeps safe tagged dimensions for %s", (search, expected) => {
+  const storage = { getItem: () => null, setItem: () => {}, removeItem: () => {} };
+  Object.defineProperty(globalThis, "window", {
+    value: {
+      location: new URL("https://soles-stg.vercel.app/store" + search),
+      localStorage: storage,
+      sessionStorage: storage,
+    },
+    configurable: true,
+  });
+  Object.defineProperty(globalThis, "document", {
+    value: { referrer: "" },
+    configurable: true,
+  });
+  try {
+    expect(acquisitionForSession(first)?.purchaseSession).toEqual(expected);
+  } finally {
+    clearAcquisition();
+    Reflect.deleteProperty(globalThis, "window");
+    Reflect.deleteProperty(globalThis, "document");
+  }
+});
 const first = "123e4567-e89b-42d3-a456-426614174000",
   second = "123e4567-e89b-42d3-a456-426614174001";
 it("keeps first discovery when a new native session has no usable referrer or tags", () => {

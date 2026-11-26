@@ -98,7 +98,7 @@ export type PublicDatasetScope = {
 };
 
 export type ReportScope = {
-  dataset: PublicDatasetScope;
+  dataset: PublicDatasetScope | null;
   dateBasis: DateBasis;
   filters: ReportFilters;
   attribution: {
@@ -123,15 +123,17 @@ export type CoverageIssue = {
 };
 
 export type ReportEnvelope<T> = {
-  data: T;
   range: ResolvedRange;
   scope: ReportScope;
   asOf: string;
   ingestionAsOf: string | null;
+  behaviorThrough: string | null;
   datasetStartedAt: string | null;
   coverage: CoverageIssue[];
-  state: "ready" | "empty" | "unconfigured" | "unavailable" | "stale";
-};
+} & (
+  | { state: "ready" | "empty" | "stale"; data: T }
+  | { state: "unavailable" | "unconfigured"; data: null }
+);
 
 export type PaginatedRows<Row> = {
   rows: Row[];
@@ -184,6 +186,10 @@ type ProductMetrics = {
 type TaxonomyReference = { id: string | null; label: string };
 
 export type ProductRow = ProductMetrics & {
+  successfulAdditions: number | null;
+  variantSelections: number | null;
+  unavailableSizeRequests: number | null;
+  stockoutViews: number | null;
   productId: string;
   variantId: string | null;
   name: string;
@@ -228,16 +234,18 @@ export type SalesComponents = {
   totalCollected: MoneyValue;
 };
 
+export type OverviewSummary = {
+  netMerchandise: MoneyValue;
+  confirmedOrders: number | null;
+  averageOrderValue: MoneyValue;
+  conversion: Rate;
+  visitors: number | null;
+  sessions: number | null;
+  buyers: number | null;
+};
 export type OverviewData = {
-  summary: {
-    netMerchandise: MoneyValue;
-    confirmedOrders: number | null;
-    averageOrderValue: MoneyValue;
-    conversion: Rate;
-    visitors: number | null;
-    sessions: number | null;
-    buyers: number | null;
-  };
+  summary: OverviewSummary;
+  comparison: OverviewSummary | null;
   series: TimeBucket[];
   comparisonSeries: TimeBucket[] | null;
   funnel: FunnelStep[];
@@ -275,19 +283,28 @@ export type SalesData = SalesPeriod & {
   comparison: SalesPeriod | null;
 };
 
-export type CustomersData = {
+export type CustomerPeriod = {
+  attribution: SalesPeriod["attribution"] | null;
   visitors: number | null;
   sessions: number | null;
-  activeFiveMinuteVisitors: number | null;
   buyers: number | null;
   newBuyers: number | null;
   returningBuyers: number | null;
   observedLifetimeSpend: MoneyValue;
-  cohorts: CustomerCohort[];
-  devices: PaginatedRows<{ device: Device; visitors: number; sessions: number }>;
+  selectedPeriodSpend: MoneyValue;
+  missingBuyerOrders: number | null;
+  cohorts: CustomerCohort[] | null;
+  devices: PaginatedRows<{ device: Device; visitors: number; sessions: number }> | null;
+};
+
+export type CustomersData = CustomerPeriod & {
+  activeFiveMinuteVisitors: number | null;
+  activeWindow: { start: string; end: string } | null;
+  comparison: CustomerPeriod | null;
 };
 
 export type AttributionBreakdown = {
+  attribution: SalesPeriod["attribution"];
   series: TimeBucket[];
   sources: PaginatedRows<SourceRow>;
   channels: PaginatedRows<SourceRow>;
@@ -295,31 +312,46 @@ export type AttributionBreakdown = {
   placements: PaginatedRows<SourceRow>;
 };
 
-export type AcquisitionData = {
+export type AcquisitionPeriod = {
   discovery: AttributionBreakdown;
   purchaseSession: AttributionBreakdown;
 };
 
+export type AcquisitionData = AcquisitionPeriod & {
+  comparison: AcquisitionPeriod | null;
+};
+
 export type ProductBreakdownRow = ProductMetrics & TaxonomyReference;
 
-export type ProductsData = {
+export type ProductPeriod = {
+  attribution: SalesPeriod["attribution"];
   products: PaginatedRows<ProductRow>;
+  variants: PaginatedRows<ProductRow>;
   brands: PaginatedRows<ProductBreakdownRow>;
   categories: PaginatedRows<ProductBreakdownRow>;
   sizes: PaginatedRows<ProductBreakdownRow>;
+  unmetDemand: {
+    stockoutSignals: number | null;
+    unavailableSizeSelections: number | null;
+    searchesWithNoResults: number | null;
+    searches: number | null;
+    variantSelections: number | null;
+  };
+};
+
+export type ProductsData = ProductPeriod & {
   inventory: {
+    scope: "recorded-variants";
+    recordedVariants: number;
+    missingStockVariants: number;
+    catalogVariants: null;
     asOf: string | null;
     availableUnits: number | null;
     inStockVariants: number | null;
     outOfStockVariants: number | null;
   };
-  unmetDemand: {
-    stockoutSignals: number | null;
-    unavailableSizeSelections: number | null;
-    searchesWithNoResults: number | null;
-  };
+  comparison: ProductPeriod | null;
 };
-
 export type PaymentsPeriod = {
   attribution: SalesPeriod["attribution"];
   methods: PaginatedRows<PaymentRow>;

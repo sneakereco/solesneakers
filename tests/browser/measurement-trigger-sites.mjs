@@ -13,13 +13,14 @@ const bundle = await build({
       import { createRoot } from "react-dom/client";
       import { ClientShell } from "./src/components/shell/ClientShell";
       import { CartProvider, useCart } from "./src/components/cart/CartProvider";
+      import { SearchOverlay } from "./src/components/search/SearchOverlay";
       import { ProductDetail } from "./src/components/store/ProductDetail";
       import { CheckoutClient } from "./src/components/checkout/CheckoutClient";
       import CheckoutPage from "./src/app/checkout/page";
       import { isApprovedMeasurementHostname } from "./src/Modules/Analytics/Source/Features/VisitorMeasurement/host-gate";
       import { sanitizeMeasurementEvent } from "./src/Modules/Analytics/Source/Features/VisitorMeasurement/contract";
 
-      const test = window.measurementTriggerTest = { events: [] };
+      const test = window.measurementTriggerTest = { events: [], payloads: [] };
       const assert = {
         deepEqual(actual, expected, message) {
           if (JSON.stringify(actual) !== JSON.stringify(expected)) {
@@ -123,6 +124,40 @@ const bundle = await build({
         ["product_viewed", "product_viewed"],
         "true product remount must emit a new view",
       );
+      await resetRoot();
+      test.events=[];
+      const soldOut={...product.variants[0],stock:0,id:"123e4567-e89b-42d3-a456-426614174002",size:{id:"size-2",label:"11"}};
+      await render(<CartProvider><ProductDetail product={{...product,variants:[product.variants[0],soldOut]}} /></CartProvider>);
+      const sizes=rootElement.querySelectorAll("fieldset button");
+      sizes[1].click();
+      sizes[1].focus();
+      test.keyboardReady=true;
+      while(!test.keyboardDone)await pause();
+      assert.deepEqual([sizes[1].getAttribute("aria-disabled"),sizes[0].getAttribute("aria-pressed"),sizes[1].getAttribute("aria-pressed")],["true","true","false"],"unavailable size cannot change selection");
+      sizes[0].click();
+      assert.deepEqual(test.events,["product_viewed","unavailable_size_requested","unavailable_size_requested","variant_selected"],"size intent differs from successful available selection");
+      await resetRoot();
+      test.events=[];
+      await render(<CartProvider><ProductDetail product={{...product,variants:[soldOut]}} /></CartProvider>);
+      assert.deepEqual(test.events,["product_viewed","out_of_stock_viewed"],"all known variants unavailable at view");
+      await resetRoot();test.events=[];test.payloads=[];
+      const realFetch=window.fetch;let finishStale;
+      window.fetch=async (url,...args)=>{
+        if(typeof url!=="string" || !url.startsWith("/api/store/products"))return realFetch(url,...args);
+        if(url.includes("stale"))return new Promise(resolve=>{finishStale=()=>resolve(Response.json({products:[product],total:99}));});
+        if(url.includes("failed"))return new Response(null,{status:503});
+        return Response.json(url.includes("Sole")?{products:[{...product,brand:{id:product.id,label:"Sole"}}],total:1}:{products:[],total:0});
+      };
+      await render(<SearchOverlay isOpen={true} onClose={()=>{}}/>);
+      const search=async text=>{
+        const field=rootElement.querySelector('[role="searchbox"]');
+        Object.getOwnPropertyDescriptor(HTMLInputElement.prototype,"value").set.call(field,text);
+        field.dispatchEvent(new Event("input",{bubbles:true}));await new Promise(r=>setTimeout(r,360));
+      };
+      await search("stale");await search("Sole");finishStale();await pause();
+      await search("failed");await search("private@example.com");
+      assert.deepEqual(test.payloads,[{event:"catalog_search_results",result_count:1,concept_kind:"brand",concept_id:product.id},{event:"catalog_search_results",result_count:0}],"only current successful safe search evidence");
+      window.fetch=realFetch;
 
       await resetRoot();
       test.events = [];
@@ -327,7 +362,7 @@ const bundle = await build({
         );
         mocks.set(
           "capture-test",
-          "export const capture = event => window.measurementTriggerTest.events.push(event.event);",
+          "export const capture = event => {window.measurementTriggerTest.events.push(event.event);window.measurementTriggerTest.payloads.push(event);};",
         );
         builder.onResolve({ filter: /.*/ }, (args) =>
           mocks.has(args.path)
@@ -393,12 +428,19 @@ try {
   );
   await page.goto("http://measurement.test/");
   await page.addScriptTag({ content: bundle.outputFiles[0].text });
+  await page.waitForFunction(() => window.measurementTriggerTest?.keyboardReady === true);
+  await page.keyboard.press("Enter");
+  await page.evaluate(() => {
+    window.measurementTriggerTest.keyboardDone = true;
+  });
   await page.waitForFunction(() => window.measurementTriggerTest?.complete === true);
   assert.deepEqual(errors, []);
   assert.equal(outgoingProbe.event, "storefront_viewed");
   assert.equal(outgoingProbe.properties.$geoip_disable, true);
   assert.equal("$current_url" in outgoingProbe.properties, false);
-  console.log("PASS browser trigger sites: storefront, product, cart, checkout");
+  console.log(
+    "PASS browser trigger sites: storefront, safe search, size selection with mouse and keyboard, stockout, cart, checkout",
+  );
 } finally {
   await browser.close();
 }

@@ -47,7 +47,8 @@ export const inRange = (col: string) =>
 
 // Warehouse connector copies can overlap. Resolve the latest record and the latest
 // link (including tombstones) before reading payload fields or filtering business time.
-export const commerceSourceSql = `WITH ranked_facts AS (
+export function commerceSourceFor(attributionColumn: "discovery" | "purchase_session") {
+  return `WITH ranked_facts AS (
  SELECT *,row_number() OVER (PARTITION BY dataset_id,fact_id ORDER BY revision DESC,updated_at DESC) AS fact_rank
  FROM ${warehouseSources.finance.table}
  WHERE dataset_id={variables.dataset_id} AND environment={variables.environment}
@@ -63,7 +64,7 @@ export const commerceSourceSql = `WITH ranked_facts AS (
  SELECT DISTINCT order_id AS matching_order FROM facts WHERE kind='line' AND ${productFilters.map((k) => filter(k.toLowerCase(), textField(k))).join(" AND ")}
 ), order_dimensions AS (
  SELECT o.*, l.active AS attributed,
- CASE WHEN ${filter("device", "l.device")} AND ${["source", "channel", "campaign"].map((k) => filter(k, textField(k, "l.purchase_session"))).join(" AND ")}
+ CASE WHEN ${filter("device", "l.device")} AND ${["source", "channel", "campaign"].map((k) => filter(k, textField(k, "l." + attributionColumn))).join(" AND ")}
  AND (${["device", "source", "channel", "campaign"].map((k) => variable(k) + "=''").join(" AND ")} OR l.active=1)
  THEN 1 ELSE 0 END AS matches_segment
  FROM orders o LEFT JOIN ranked_links l ON o.oid=toString(l.order_id) AND l.link_rank=1 AND l.active=1
@@ -86,6 +87,8 @@ export const commerceSourceSql = `WITH ranked_facts AS (
 ), selected AS (
  SELECT * FROM eligible WHERE segment_match=1 OR (kind='payment_attempt' AND nullIf(confirmed_id,'') IS NULL)
 )`;
+}
+export const commerceSourceSql = commerceSourceFor("purchase_session");
 
 export function endpoint(
   name: CompiledQuery["endpoint"],
@@ -105,7 +108,7 @@ export function compileEndpoint(
   def: SavedReportEndpoint,
   request: ReportRequest,
   scope: DatasetScope,
-  options: { comparison?: boolean; grouping?: string; limit: number },
+  options: { comparison?: boolean; grouping?: string; limit: number; now?: Date },
 ): CompiledQuery {
   if (
     !datasetScopeSchema.safeParse(scope).success ||
@@ -115,6 +118,15 @@ export function compileEndpoint(
     throw new RangeError("Trusted warehouse reporting is unavailable.");
   const values: Record<string, string> = {
     dataset_id: scope.datasetId,
+    inventory_enabled: "yes",
+    behavior_enabled: "yes",
+    behavior_end: options.comparison
+      ? request.range.comparisonEndExclusive
+      : request.range.endExclusive,
+    as_of: (options.now ?? new Date()).toISOString(),
+    page_start: String((request.page - 1) * request.pageSize),
+    page_end: String(request.page * request.pageSize),
+    sort: request.sort,
     environment: scope.environment,
     activated_at: scope.activatedAt,
     start_inclusive: options.comparison
