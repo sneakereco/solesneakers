@@ -1,7 +1,14 @@
 // app/admin/settings/shipping/page.tsx
 "use client";
+import { adminCommand } from "@/components/admin/admin-command";
 
-import { useEffect, useMemo, useState } from "react";
+import { useAdminRead } from "@/components/admin/useAdminRead";
+import { AdminReadStatus } from "@/components/admin/AdminSkeletons";
+import { fetchJsonWithDeadline } from "@/lib/http/request-deadline";
+import { useAsyncAction } from "@/components/ui/useAsyncAction";
+import { useId } from "react";
+
+import { useMemo, useState } from "react";
 
 import { AdminPage, AdminPageHeader } from "@/components/admin/AdminPage";
 import { CarrierSelector } from "@/components/admin/shipping/CarrierSelector";
@@ -10,7 +17,7 @@ import {
   toggleCarrierSelection,
   type CarrierKey,
 } from "@/lib/shipping/carriers";
-import { logError } from "@/lib/utils/log";
+
 import { ModalPortal } from "@/components/ui/ModalPortal";
 
 const SHIPPING_CATEGORIES = [
@@ -88,13 +95,65 @@ const centsToMoneyString = (cents: number) => {
   return (safe / 100).toFixed(2);
 };
 
+async function loadShippingSettings(signal: AbortSignal) {
+  const [defaultsData, origin, carriers] = await Promise.all([
+    fetchJsonWithDeadline<{ defaults: (ShippingDefaultValues & { category: string })[] }>(
+      "/api/admin/shipping/defaults",
+      "Defaults unavailable",
+      signal,
+    ),
+    fetchJsonWithDeadline<{ origin: ShippingOriginAddress | null }>(
+      "/api/admin/shipping/origin",
+      "Origin unavailable",
+      signal,
+    ),
+    fetchJsonWithDeadline<{ carriers: string[] }>(
+      "/api/admin/shipping/carriers",
+      "Carriers unavailable",
+      signal,
+    ),
+  ]);
+  const map: Record<string, ShippingDefaultValues> = {};
+  for (const entry of defaultsData.defaults || []) {
+    map[entry.category] = {
+      shipping_cost_cents: entry.shipping_cost_cents ?? 0,
+      default_weight_oz: entry.default_weight_oz ?? defaultPackage.default_weight_oz,
+      default_length_in: entry.default_length_in ?? defaultPackage.default_length_in,
+      default_width_in: entry.default_width_in ?? defaultPackage.default_width_in,
+      default_height_in: entry.default_height_in ?? defaultPackage.default_height_in,
+    };
+  }
+
+  return {
+    map,
+    origin: origin.origin ?? initialOrigin,
+    carriers: parseStoredCarrierSelection(carriers.carriers),
+  };
+}
 export default function ShippingSettingsPage() {
+  const read = useAdminRead(loadShippingSettings, "shipping settings");
+  return read.data ? (
+    <ShippingSettings settings={read.data} />
+  ) : (
+    <AdminReadStatus read={read} shape="form" label="Loading shipping settings" />
+  );
+}
+function ShippingSettings({
+  settings,
+}: {
+  settings: Awaited<ReturnType<typeof loadShippingSettings>>;
+}) {
+  const id = useId();
+  const defaultsAction = useAsyncAction();
+  const originAction = useAsyncAction();
+  const carriersAction = useAsyncAction();
   const [shippingDefaults, setShippingDefaults] = useState<
     Record<string, ShippingDefaultValues>
-  >({});
-  const [originAddress, setOriginAddress] =
-    useState<ShippingOriginAddress>(initialOrigin);
-  const [enabledCarriers, setEnabledCarriers] = useState<CarrierKey[]>([]);
+  >(settings.map);
+  const [originAddress, setOriginAddress] = useState<ShippingOriginAddress>(
+    settings.origin,
+  );
+  const [enabledCarriers, setEnabledCarriers] = useState<CarrierKey[]>(settings.carriers);
   const [isSavingDefaults, setIsSavingDefaults] = useState(false);
   const [isSavingOrigin, setIsSavingOrigin] = useState(false);
   const [isSavingCarriers, setIsSavingCarriers] = useState(false);
@@ -177,46 +236,6 @@ export default function ShippingSettingsPage() {
 
     return errors;
   };
-
-  useEffect(() => {
-    const loadData = async () => {
-      try {
-        const [defaultsResponse, originResponse, carriersResponse] = await Promise.all([
-          fetch("/api/admin/shipping/defaults", { cache: "no-store" }),
-          fetch("/api/admin/shipping/origin", { cache: "no-store" }),
-          fetch("/api/admin/shipping/carriers", { cache: "no-store" }),
-        ]);
-
-        const defaultsData = await defaultsResponse.json();
-        const map: Record<string, ShippingDefaultValues> = {};
-        for (const entry of defaultsData.defaults || []) {
-          map[entry.category] = {
-            shipping_cost_cents: entry.shipping_cost_cents ?? 0,
-            default_weight_oz:
-              entry.default_weight_oz ?? defaultPackage.default_weight_oz,
-            default_length_in:
-              entry.default_length_in ?? defaultPackage.default_length_in,
-            default_width_in: entry.default_width_in ?? defaultPackage.default_width_in,
-            default_height_in:
-              entry.default_height_in ?? defaultPackage.default_height_in,
-          };
-        }
-        setShippingDefaults(map);
-
-        const originData = await originResponse.json();
-        if (originData.origin) {
-          setOriginAddress(originData.origin);
-        }
-
-        const carriersData = await carriersResponse.json();
-        setEnabledCarriers(parseStoredCarrierSelection(carriersData.carriers));
-      } catch (error) {
-        logError(error, { layer: "frontend", event: "admin_load_settings_shipping" });
-      }
-    };
-
-    void loadData();
-  }, []);
 
   const openDefaultsModal = (categoryKey: string, invoker: HTMLButtonElement) => {
     setModalInvoker(invoker);
@@ -352,19 +371,21 @@ export default function ShippingSettingsPage() {
           defaultPackage.default_height_in,
       }));
 
-      const response = await fetch("/api/admin/shipping/defaults", {
-        method: "POST",
-        headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({ defaults }),
-      });
+      const { response, data } = await adminCommand<{ error?: string }>(
+        "/api/admin/shipping/defaults",
+        {
+          method: "POST",
+          headers: { "Content-Type": "application/json" },
+          body: JSON.stringify({ defaults }),
+        },
+      );
 
       if (response.ok) {
         setShippingDefaults(nextDefaults);
         closeDefaultsModal();
         setMessage("Shipping defaults updated.");
       } else {
-        const errorData = await response.json();
-        setMessage(`Failed to update defaults: ${errorData.error}`);
+        setMessage(`Failed to update defaults: ${data?.error}`);
       }
     } catch {
       setMessage("An unexpected error occurred.");
@@ -388,24 +409,27 @@ export default function ShippingSettingsPage() {
     }
 
     try {
-      const response = await fetch("/api/admin/shipping/origin", {
+      const { response, data } = await adminCommand<{
+        origin?: ShippingOriginAddress;
+        error?: string;
+        issues?: Record<string, { _errors?: string[] }>;
+      }>("/api/admin/shipping/origin", {
         method: "POST",
         headers: { "Content-Type": "application/json" },
         body: JSON.stringify(originDraft),
       });
-      const errorData = await response.json().catch(() => ({}));
       if (response.ok) {
-        setOriginAddress(errorData.origin ?? originDraft);
+        setOriginAddress(data?.origin ?? originDraft);
         setIsOriginModalOpen(false);
         setOriginMessage("Shipping origin address saved.");
       } else {
-        const fieldErrors = extractOriginErrors(errorData?.issues);
+        const fieldErrors = extractOriginErrors(data?.issues);
         if (Object.keys(fieldErrors).length > 0) {
           setOriginErrors(fieldErrors);
           setOriginError("Please fix the highlighted fields.");
           return;
         }
-        setOriginError(errorData?.error || "Failed to save address.");
+        setOriginError(data?.error || "Failed to save address.");
       }
     } catch {
       setOriginError("An unexpected error occurred.");
@@ -418,20 +442,22 @@ export default function ShippingSettingsPage() {
     setIsSavingCarriers(true);
     setCarriersMessage("");
     try {
-      const response = await fetch("/api/admin/shipping/carriers", {
+      const { response, data } = await adminCommand<{
+        error?: string;
+        carriers?: string[];
+      }>("/api/admin/shipping/carriers", {
         method: "POST",
         headers: { "Content-Type": "application/json" },
         body: JSON.stringify({ carriers: enabledCarriers }),
       });
 
-      const data = await response.json().catch(() => ({}));
-
       if (response.ok) {
-        setEnabledCarriers(parseStoredCarrierSelection(data.carriers));
+        setEnabledCarriers(
+          parseStoredCarrierSelection(data?.carriers ?? enabledCarriers),
+        );
         setCarriersMessage("Enabled carriers updated.");
-        setTimeout(() => setCarriersMessage(""), 3000);
       } else {
-        setCarriersMessage(`Failed to save carriers: ${data.error}`);
+        setCarriersMessage(`Failed to save carriers: ${data?.error}`);
       }
     } catch {
       setCarriersMessage("An unexpected error occurred.");
@@ -468,6 +494,7 @@ export default function ShippingSettingsPage() {
 
   return (
     <AdminPage width="content">
+      {originMessage && !isOriginModalOpen && <p role="status">{originMessage}</p>}
       <AdminPageHeader
         eyebrow="Settings"
         title="Shipping settings"
@@ -508,12 +535,16 @@ export default function ShippingSettingsPage() {
               Select which carriers to offer for label creation.
             </p>
           </div>
-          <CarrierSelector enabled={enabledCarriers} onToggle={toggleCarrier} />
+          <CarrierSelector
+            disabled={isSavingCarriers}
+            enabled={enabledCarriers}
+            onToggle={toggleCarrier}
+          />
           <div className="pt-2">
             <button
               type="button"
               onClick={() => {
-                void saveCarriers();
+                void carriersAction.run(saveCarriers);
               }}
               disabled={isSavingCarriers}
               className="w-full rounded bg-red-600 px-4 py-2 text-[12px] text-white hover:bg-red-700 disabled:bg-gray-600 sm:text-sm"
@@ -522,7 +553,7 @@ export default function ShippingSettingsPage() {
             </button>
             {carriersMessage && (
               <div className="mt-2 text-[12px] text-gray-400 sm:text-sm">
-                {carriersMessage}
+                <span role="status">{carriersMessage}</span>
               </div>
             )}
           </div>
@@ -538,8 +569,10 @@ export default function ShippingSettingsPage() {
                 Configure default cost, weight, and dimensions per category.
               </p>
             </div>
-            {message && (
-              <span className="text-[12px] text-gray-400 sm:text-sm">{message}</span>
+            {!isDefaultsModalOpen && message && (
+              <span role="status" className="text-[12px] text-gray-400 sm:text-sm">
+                {message}
+              </span>
             )}
           </div>
 
@@ -586,7 +619,9 @@ export default function ShippingSettingsPage() {
         <ModalPortal
           open={isDefaultsModalOpen}
           invoker={modalInvoker}
-          onClose={closeDefaultsModal}
+          onClose={() => {
+            if (!isSavingDefaults) closeDefaultsModal();
+          }}
           label="Edit package defaults"
         >
           <div className="max-h-[calc(100dvh-2rem)] w-full max-w-2xl space-y-5 overflow-y-auto rounded-lg border border-zinc-800/70 bg-zinc-900 p-6">
@@ -599,6 +634,7 @@ export default function ShippingSettingsPage() {
               </div>
               <button
                 type="button"
+                disabled={isSavingDefaults}
                 onClick={closeDefaultsModal}
                 className="min-h-11 px-2 text-gray-400 hover:text-white"
               >
@@ -613,10 +649,15 @@ export default function ShippingSettingsPage() {
                 </div>
                 <div className="grid grid-cols-1 gap-3 sm:grid-cols-3">
                   <div>
-                    <label className="mb-1 block text-xs text-gray-400">
+                    <label
+                      htmlFor={`${id}-lengthInput`}
+                      className="mb-1 block text-xs text-gray-400"
+                    >
                       Length (in)
                     </label>
                     <input
+                      disabled={isSavingDefaults || isSavingOrigin}
+                      id={`${id}-lengthInput`}
                       type="text"
                       inputMode="numeric"
                       value={lengthInput}
@@ -625,8 +666,15 @@ export default function ShippingSettingsPage() {
                     />
                   </div>
                   <div>
-                    <label className="mb-1 block text-xs text-gray-400">Width (in)</label>
+                    <label
+                      htmlFor={`${id}-widthInput`}
+                      className="mb-1 block text-xs text-gray-400"
+                    >
+                      Width (in)
+                    </label>
                     <input
+                      disabled={isSavingDefaults || isSavingOrigin}
+                      id={`${id}-widthInput`}
                       type="text"
                       inputMode="numeric"
                       value={widthInput}
@@ -635,10 +683,15 @@ export default function ShippingSettingsPage() {
                     />
                   </div>
                   <div>
-                    <label className="mb-1 block text-xs text-gray-400">
+                    <label
+                      htmlFor={`${id}-heightInput`}
+                      className="mb-1 block text-xs text-gray-400"
+                    >
                       Height (in)
                     </label>
                     <input
+                      disabled={isSavingDefaults || isSavingOrigin}
+                      id={`${id}-heightInput`}
                       type="text"
                       inputMode="numeric"
                       value={heightInput}
@@ -651,8 +704,15 @@ export default function ShippingSettingsPage() {
 
               <div className="grid grid-cols-1 gap-3 sm:grid-cols-2">
                 <div>
-                  <label className="mb-1 block text-xs text-gray-400">Weight (oz)</label>
+                  <label
+                    htmlFor={`${id}-weightInput`}
+                    className="mb-1 block text-xs text-gray-400"
+                  >
+                    Weight (oz)
+                  </label>
                   <input
+                    disabled={isSavingDefaults || isSavingOrigin}
+                    id={`${id}-weightInput`}
                     type="text"
                     inputMode="numeric"
                     value={weightInput}
@@ -661,10 +721,15 @@ export default function ShippingSettingsPage() {
                   />
                 </div>
                 <div>
-                  <label className="mb-1 block text-xs text-gray-400">
+                  <label
+                    htmlFor={`${id}-shippingCostInput`}
+                    className="mb-1 block text-xs text-gray-400"
+                  >
                     Shipping cost ($)
                   </label>
                   <input
+                    disabled={isSavingDefaults || isSavingOrigin}
+                    id={`${id}-shippingCostInput`}
                     type="text"
                     inputMode="decimal"
                     placeholder="0.00"
@@ -681,9 +746,15 @@ export default function ShippingSettingsPage() {
               </div>
             </div>
 
+            {message && (
+              <p role="alert" className="px-4">
+                {message}
+              </p>
+            )}
             <div className="flex items-center justify-end gap-3 pt-2">
               <button
                 type="button"
+                disabled={isSavingDefaults}
                 onClick={closeDefaultsModal}
                 className="rounded bg-zinc-800 px-4 py-2 text-white hover:bg-zinc-700"
               >
@@ -692,7 +763,7 @@ export default function ShippingSettingsPage() {
               <button
                 type="button"
                 onClick={() => {
-                  void saveDefaults();
+                  void defaultsAction.run(saveDefaults);
                 }}
                 disabled={isSavingDefaults}
                 className="rounded bg-red-600 px-4 py-2 text-white hover:bg-red-700 disabled:bg-gray-600"
@@ -708,7 +779,9 @@ export default function ShippingSettingsPage() {
         <ModalPortal
           open={isOriginModalOpen}
           invoker={modalInvoker}
-          onClose={() => setIsOriginModalOpen(false)}
+          onClose={() => {
+            if (!isSavingOrigin) setIsOriginModalOpen(false);
+          }}
           label="Edit origin"
         >
           <div className="w-full max-w-3xl rounded-sm border border-zinc-800/70 bg-zinc-950 p-3 sm:p-6">
@@ -723,6 +796,7 @@ export default function ShippingSettingsPage() {
               </div>
               <button
                 type="button"
+                disabled={isSavingOrigin}
                 onClick={() => setIsOriginModalOpen(false)}
                 className="min-h-11 px-2 text-[11px] text-zinc-400 hover:text-white sm:text-sm"
               >
@@ -735,8 +809,14 @@ export default function ShippingSettingsPage() {
                 Provide a contact name or company name. Phone number is optional.
               </div>
               <div>
-                <label className="mb-0.5 block text-gray-400">Contact name</label>
+                <label htmlFor={`${id}-name`} className="mb-0.5 block text-gray-400">
+                  Contact name
+                </label>
                 <input
+                  disabled={isSavingDefaults || isSavingOrigin}
+                  id={`${id}-name`}
+                  aria-invalid={Boolean(originErrors.name)}
+                  aria-describedby={originErrors.name ? `${id}-name-error` : undefined}
                   type="text"
                   value={originDraft.name}
                   onChange={(e) => handleOriginDraftChange("name", e.target.value)}
@@ -745,12 +825,22 @@ export default function ShippingSettingsPage() {
                   }`}
                 />
                 {originErrors.name && (
-                  <div className="mt-1 text-[10px] text-red-400">{originErrors.name}</div>
+                  <div id={`${id}-name-error`} className="mt-1 text-[10px] text-red-400">
+                    {originErrors.name}
+                  </div>
                 )}
               </div>
               <div>
-                <label className="mb-0.5 block text-gray-400">Company</label>
+                <label htmlFor={`${id}-company`} className="mb-0.5 block text-gray-400">
+                  Company
+                </label>
                 <input
+                  disabled={isSavingDefaults || isSavingOrigin}
+                  id={`${id}-company`}
+                  aria-invalid={Boolean(originErrors.company)}
+                  aria-describedby={
+                    originErrors.company ? `${id}-company-error` : undefined
+                  }
                   type="text"
                   value={originDraft.company ?? ""}
                   onChange={(e) => handleOriginDraftChange("company", e.target.value)}
@@ -759,16 +849,23 @@ export default function ShippingSettingsPage() {
                   }`}
                 />
                 {originErrors.company && (
-                  <div className="mt-1 text-[10px] text-red-400">
+                  <div
+                    id={`${id}-company-error`}
+                    className="mt-1 text-[10px] text-red-400"
+                  >
                     {originErrors.company}
                   </div>
                 )}
               </div>
               <div>
-                <label className="mb-0.5 block text-gray-400">
+                <label htmlFor={`${id}-phone`} className="mb-0.5 block text-gray-400">
                   Phone number (optional)
                 </label>
                 <input
+                  disabled={isSavingDefaults || isSavingOrigin}
+                  id={`${id}-phone`}
+                  aria-invalid={Boolean(originErrors.phone)}
+                  aria-describedby={originErrors.phone ? `${id}-phone-error` : undefined}
                   type="text"
                   value={originDraft.phone ?? ""}
                   onChange={(e) => handleOriginDraftChange("phone", e.target.value)}
@@ -777,14 +874,20 @@ export default function ShippingSettingsPage() {
                   }`}
                 />
                 {originErrors.phone && (
-                  <div className="mt-1 text-[10px] text-red-400">
+                  <div id={`${id}-phone-error`} className="mt-1 text-[10px] text-red-400">
                     {originErrors.phone}
                   </div>
                 )}
               </div>
               <div>
-                <label className="mb-0.5 block text-gray-400">Street address</label>
+                <label htmlFor={`${id}-line1`} className="mb-0.5 block text-gray-400">
+                  Street address
+                </label>
                 <input
+                  disabled={isSavingDefaults || isSavingOrigin}
+                  id={`${id}-line1`}
+                  aria-invalid={Boolean(originErrors.line1)}
+                  aria-describedby={originErrors.line1 ? `${id}-line1-error` : undefined}
                   type="text"
                   value={originDraft.line1}
                   onChange={(e) => handleOriginDraftChange("line1", e.target.value)}
@@ -793,16 +896,20 @@ export default function ShippingSettingsPage() {
                   }`}
                 />
                 {originErrors.line1 && (
-                  <div className="mt-1 text-[10px] text-red-400">
+                  <div id={`${id}-line1-error`} className="mt-1 text-[10px] text-red-400">
                     {originErrors.line1}
                   </div>
                 )}
               </div>
               <div>
-                <label className="mb-0.5 block text-gray-400">
+                <label htmlFor={`${id}-line2`} className="mb-0.5 block text-gray-400">
                   Apartment, suite, etc.
                 </label>
                 <input
+                  disabled={isSavingDefaults || isSavingOrigin}
+                  id={`${id}-line2`}
+                  aria-invalid={Boolean(originErrors.line2)}
+                  aria-describedby={originErrors.line2 ? `${id}-line2-error` : undefined}
                   type="text"
                   value={originDraft.line2 ?? ""}
                   onChange={(e) => handleOriginDraftChange("line2", e.target.value)}
@@ -811,14 +918,20 @@ export default function ShippingSettingsPage() {
                   }`}
                 />
                 {originErrors.line2 && (
-                  <div className="mt-1 text-[10px] text-red-400">
+                  <div id={`${id}-line2-error`} className="mt-1 text-[10px] text-red-400">
                     {originErrors.line2}
                   </div>
                 )}
               </div>
               <div>
-                <label className="mb-0.5 block text-gray-400">City</label>
+                <label htmlFor={`${id}-city`} className="mb-0.5 block text-gray-400">
+                  City
+                </label>
                 <input
+                  disabled={isSavingDefaults || isSavingOrigin}
+                  id={`${id}-city`}
+                  aria-invalid={Boolean(originErrors.city)}
+                  aria-describedby={originErrors.city ? `${id}-city-error` : undefined}
                   type="text"
                   value={originDraft.city}
                   onChange={(e) => handleOriginDraftChange("city", e.target.value)}
@@ -827,12 +940,20 @@ export default function ShippingSettingsPage() {
                   }`}
                 />
                 {originErrors.city && (
-                  <div className="mt-1 text-[10px] text-red-400">{originErrors.city}</div>
+                  <div id={`${id}-city-error`} className="mt-1 text-[10px] text-red-400">
+                    {originErrors.city}
+                  </div>
                 )}
               </div>
               <div>
-                <label className="mb-0.5 block text-gray-400">State</label>
+                <label htmlFor={`${id}-state`} className="mb-0.5 block text-gray-400">
+                  State
+                </label>
                 <input
+                  disabled={isSavingDefaults || isSavingOrigin}
+                  id={`${id}-state`}
+                  aria-invalid={Boolean(originErrors.state)}
+                  aria-describedby={originErrors.state ? `${id}-state-error` : undefined}
                   type="text"
                   value={originDraft.state}
                   onChange={(e) => handleOriginDraftChange("state", e.target.value)}
@@ -841,14 +962,25 @@ export default function ShippingSettingsPage() {
                   }`}
                 />
                 {originErrors.state && (
-                  <div className="mt-1 text-[10px] text-red-400">
+                  <div id={`${id}-state-error`} className="mt-1 text-[10px] text-red-400">
                     {originErrors.state}
                   </div>
                 )}
               </div>
               <div>
-                <label className="mb-0.5 block text-gray-400">ZIP / Postal code</label>
+                <label
+                  htmlFor={`${id}-postal_code`}
+                  className="mb-0.5 block text-gray-400"
+                >
+                  ZIP / Postal code
+                </label>
                 <input
+                  disabled={isSavingDefaults || isSavingOrigin}
+                  id={`${id}-postal_code`}
+                  aria-invalid={Boolean(originErrors.postal_code)}
+                  aria-describedby={
+                    originErrors.postal_code ? `${id}-postal_code-error` : undefined
+                  }
                   type="text"
                   value={originDraft.postal_code}
                   onChange={(e) => handleOriginDraftChange("postal_code", e.target.value)}
@@ -857,14 +989,25 @@ export default function ShippingSettingsPage() {
                   }`}
                 />
                 {originErrors.postal_code && (
-                  <div className="mt-1 text-[10px] text-red-400">
+                  <div
+                    id={`${id}-postal_code-error`}
+                    className="mt-1 text-[10px] text-red-400"
+                  >
                     {originErrors.postal_code}
                   </div>
                 )}
               </div>
               <div>
-                <label className="mb-0.5 block text-gray-400">Country</label>
+                <label htmlFor={`${id}-country`} className="mb-0.5 block text-gray-400">
+                  Country
+                </label>
                 <input
+                  disabled={isSavingDefaults || isSavingOrigin}
+                  id={`${id}-country`}
+                  aria-invalid={Boolean(originErrors.country)}
+                  aria-describedby={
+                    originErrors.country ? `${id}-country-error` : undefined
+                  }
                   type="text"
                   value={originDraft.country}
                   onChange={(e) => handleOriginDraftChange("country", e.target.value)}
@@ -873,7 +1016,10 @@ export default function ShippingSettingsPage() {
                   }`}
                 />
                 {originErrors.country && (
-                  <div className="mt-1 text-[10px] text-red-400">
+                  <div
+                    id={`${id}-country-error`}
+                    className="mt-1 text-[10px] text-red-400"
+                  >
                     {originErrors.country}
                   </div>
                 )}
@@ -893,6 +1039,7 @@ export default function ShippingSettingsPage() {
             <div className="mt-3 flex items-center justify-end gap-2 sm:mt-6 sm:gap-3">
               <button
                 type="button"
+                disabled={isSavingOrigin}
                 onClick={() => setIsOriginModalOpen(false)}
                 className="border border-zinc-800/70 px-3 py-1.5 text-[11px] text-gray-300 sm:px-4 sm:py-2 sm:text-sm"
               >
@@ -901,7 +1048,7 @@ export default function ShippingSettingsPage() {
               <button
                 type="button"
                 onClick={() => {
-                  void saveOrigin();
+                  void originAction.run(saveOrigin);
                 }}
                 disabled={isSavingOrigin}
                 className="bg-red-600 px-3 py-1.5 text-[11px] text-white hover:bg-red-500 disabled:bg-zinc-700 sm:px-4 sm:py-2 sm:text-sm"

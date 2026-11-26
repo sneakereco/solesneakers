@@ -1,13 +1,16 @@
 // app/admin/transactions/page.tsx
 "use client";
+import { useAdminOrderQueue } from "@/components/admin/useAdminOrderQueue";
 
-import { useEffect, useMemo, useState } from "react";
+import { AdminReadStatus } from "@/components/admin/AdminSkeletons";
+
+import { useMemo, useState, useTransition } from "react";
 import { useRouter } from "next/navigation";
 
 import { AdminPage, AdminPageHeader } from "@/components/admin/AdminPage";
 import { AdminSearchField } from "@/components/admin/AdminSearchField";
 import { getOrderNetProfitDollars, shouldShowOrderProfit } from "@/lib/orders/metrics";
-import { logError } from "@/lib/utils/log";
+
 import { paymentMethodLabel } from "@/lib/orders/payment-method";
 
 type TabKey = "all" | "succeeded" | "failed" | "refunded" | "incomplete" | "blocked";
@@ -184,76 +187,26 @@ const buildParams = (
   return params;
 };
 
+const orderParams = (
+  tab: (typeof TRANSACTION_TABS)[number],
+  page: number,
+  limit: number,
+) => {
+  return buildParams(page, tab, { limit: String(limit) });
+};
 export default function TransactionsPage() {
   const router = useRouter();
-  const [orders, setOrders] = useState<TransactionOrder[]>([]);
+  const [navigating, startNavigation] = useTransition();
   const [activeTab, setActiveTab] = useState<TabKey>("all");
   const [searchQuery, setSearchQuery] = useState("");
-  const [isLoading, setIsLoading] = useState(true);
   const [page, setPage] = useState(1);
-  const [totalCount, setTotalCount] = useState(0);
-  const [counts, setCounts] = useState<Record<TabKey, number>>({
-    all: 0,
-    succeeded: 0,
-    failed: 0,
-    refunded: 0,
-    incomplete: 0,
-    blocked: 0,
-  });
-  const [refreshToken] = useState(0);
 
-  const totalPages = Math.max(1, Math.ceil(totalCount / PAGE_SIZE));
-
-  useEffect(() => {
-    const tab = TRANSACTION_TABS.find((t) => t.key === activeTab) ?? TRANSACTION_TABS[0];
-    const loadOrders = async () => {
-      setIsLoading(true);
-      try {
-        const params = buildParams(page, tab);
-        const response = await fetch(`/api/admin/orders?${params.toString()}`);
-        const data = await response.json();
-        setOrders(data.orders ?? []);
-        setTotalCount(Number(data.count ?? 0));
-      } catch (error) {
-        logError(error, { layer: "frontend", event: "admin_load_transactions" });
-      } finally {
-        setIsLoading(false);
-      }
-    };
-    void loadOrders();
-  }, [activeTab, refreshToken, page]);
-
-  useEffect(() => {
-    const loadCounts = async () => {
-      try {
-        const results = await Promise.all(
-          TRANSACTION_TABS.map(async (tab) => {
-            const params = buildParams(1, tab, { limit: "1", page: "1" });
-            const response = await fetch(`/api/admin/orders?${params.toString()}`);
-            const data = await response.json();
-            return { key: tab.key, count: Number(data.count ?? 0) };
-          }),
-        );
-        const nextCounts = {
-          all: 0,
-          succeeded: 0,
-          failed: 0,
-          refunded: 0,
-          incomplete: 0,
-          blocked: 0,
-        };
-        results.forEach(({ key, count }) => {
-          nextCounts[key as TabKey] = count;
-        });
-        setCounts(nextCounts);
-      } catch (error) {
-        logError(error, { layer: "frontend", event: "admin_load_transaction_counts" });
-      }
-    };
-    void loadCounts();
-  }, [refreshToken]);
-
-  if (page > totalPages) {
+  const { list, totals, orders, counts, totalPages } = useAdminOrderQueue<
+    TransactionOrder,
+    (typeof TRANSACTION_TABS)[number]
+  >(TRANSACTION_TABS, orderParams, activeTab, page, PAGE_SIZE);
+  const isLoading = list.pending;
+  if (list.data && page > totalPages) {
     setPage(totalPages);
   }
 
@@ -352,6 +305,7 @@ export default function TransactionsPage() {
       />
 
       {/* Tabs */}
+      <AdminReadStatus read={totals} label="Loading queue counts" />
       <div data-admin-tabs className="flex flex-wrap gap-6 border-b border-zinc-800/70">
         {TRANSACTION_TABS.map((tab) => (
           <button
@@ -370,12 +324,17 @@ export default function TransactionsPage() {
           >
             {tab.label}
             <span className="rounded-sm border border-zinc-800/70 bg-zinc-900 px-2 py-0.5 text-[11px] text-gray-300">
-              {counts[tab.key] > 99 ? "99+" : counts[tab.key]}
+              {counts?.[tab.key] === undefined
+                ? "—"
+                : counts[tab.key]! > 99
+                  ? "99+"
+                  : counts[tab.key]}
             </span>
           </button>
         ))}
       </div>
 
+      {navigating && <p role="status">Opening transaction…</p>}
       {/* Search */}
       <AdminSearchField
         value={searchQuery}
@@ -390,9 +349,8 @@ export default function TransactionsPage() {
         data-admin-table-shell
         className="overflow-hidden rounded border border-zinc-800/70 bg-zinc-900"
       >
-        {isLoading ? (
-          <div className="py-12 text-center text-gray-400">Loading...</div>
-        ) : filteredOrders.length === 0 ? (
+        <AdminReadStatus read={list} shape="table" label="Loading orders" />
+        {!list.data ? null : filteredOrders.length === 0 ? (
           <div className="py-12 text-center text-gray-500">No transactions found.</div>
         ) : (
           <table className="w-full text-[12px] sm:text-sm">
@@ -440,11 +398,11 @@ export default function TransactionsPage() {
                     role="link"
                     tabIndex={0}
                     aria-label={`View transaction ${order.id}`}
-                    onClick={() => router.push(orderHref)}
+                    onClick={() => startNavigation(() => router.push(orderHref))}
                     onKeyDown={(event) => {
                       if (event.key === "Enter" || event.key === " ") {
                         event.preventDefault();
-                        router.push(orderHref);
+                        startNavigation(() => router.push(orderHref));
                       }
                     }}
                     className="cursor-pointer border-b border-zinc-800/70 transition-colors hover:bg-zinc-800 focus-visible:bg-zinc-800 focus-visible:outline-none"

@@ -1,11 +1,21 @@
 "use client";
+import { useAdminRead } from "@/components/admin/useAdminRead";
+import { AdminReadStatus } from "@/components/admin/AdminSkeletons";
+import { fetchJsonWithDeadline } from "@/lib/http/request-deadline";
+import { useAsyncAction } from "@/components/ui/useAsyncAction";
+import { ActionButton } from "@/components/ui/ActionButton";
+import { ModalPortal } from "@/components/ui/ModalPortal";
+import {
+  adminCommand,
+  pendingProviderCheck,
+  rememberProviderCheck,
+} from "@/components/admin/admin-command";
 
 import Image from "next/image";
 
-import { useCallback, useEffect, useState } from "react";
+import { useCallback, useState } from "react";
 import { useParams, useRouter } from "next/navigation";
 import {
-  ArrowLeft,
   CheckCircle,
   Clock,
   ExternalLink,
@@ -157,24 +167,6 @@ const REFUND_EMAIL_TYPE = "refund_notification" as const;
 
 const fmt = new Intl.NumberFormat("en-US", { style: "currency", currency: "USD" });
 const fmtMoney = (value: number | null | undefined) => fmt.format(Number(value ?? 0));
-
-async function fetchTransactionData(
-  orderId: string,
-  signal?: AbortSignal,
-): Promise<TransactionPayload> {
-  const response = await fetch(`/api/admin/transactions/${orderId}`, { signal });
-  const data = await response.json().catch(() => ({}));
-
-  if (!response.ok) {
-    throw new Error((data as { error?: string }).error ?? "Failed to load transaction");
-  }
-
-  return {
-    order: data.order,
-    paymentTransaction: data.paymentTransaction ?? null,
-    emailLogs: data.emailLogs ?? [],
-  };
-}
 
 function fmtDate(iso: string | null | undefined, opts?: Intl.DateTimeFormatOptions) {
   if (!iso) {
@@ -347,16 +339,30 @@ function SectionCard({ title, children }: { title: string; children: React.React
 
 export default function TransactionDetailPage() {
   const params = useParams();
-  const router = useRouter();
-  const orderId = params.orderId as string;
 
-  const [order, setOrder] = useState<Order | null>(null);
-  const [paymentTx, setPaymentTx] = useState<PaymentTransaction | null>(null);
-  const [emailLogs, setEmailLogs] = useState<EmailLog[]>([]);
-  const [customerSummary, setCustomerSummary] =
-    useState<TransactionPayload["customer"]>(null);
-  const [isLoading, setIsLoading] = useState(true);
-  const [error, setError] = useState<string | null>(null);
+  const orderId = params.orderId as string;
+  return <TransactionDetail key={orderId} orderId={orderId} />;
+}
+function TransactionDetail({ orderId }: { orderId: string }) {
+  const router = useRouter();
+
+  const load = useCallback(
+    (signal: AbortSignal) =>
+      fetchJsonWithDeadline<TransactionPayload>(
+        `/api/admin/transactions/${orderId}`,
+        "Transaction unavailable",
+        signal,
+      ),
+    [orderId],
+  );
+  const read = useAdminRead(load, "transaction");
+  const order = read.data?.order;
+  const paymentTx = read.data?.paymentTransaction;
+  const emailLogs = read.data?.emailLogs ?? [];
+  const customerSummary = read.data?.customer;
+  const command = useAsyncAction();
+  const [previewInvoker, setPreviewInvoker] = useState<HTMLElement | null>(null);
+  const [uncertain, setUncertain] = useState<Record<string, string>>({});
   const [emailPreview, setEmailPreview] = useState<EmailLog | null>(null);
   const [toast, setToast] = useState<{
     message: string;
@@ -367,109 +373,54 @@ export default function TransactionDetailPage() {
   const [itemInvoker, setItemInvoker] = useState<HTMLButtonElement | null>(null);
   const [itemModalOpen, setItemModalOpen] = useState(false);
 
-  const [previousOrderId, setPreviousOrderId] = useState(orderId);
-  if (previousOrderId !== orderId) {
-    setPreviousOrderId(orderId);
-    setIsLoading(true);
-    setError(null);
-  }
-
-  const loadTransaction = useCallback(
-    (signal?: AbortSignal) => {
-      return fetchTransactionData(orderId, signal)
-        .then((data) => {
-          if (signal?.aborted) return;
-          setError(null);
-          setOrder(data.order);
-          setPaymentTx(data.paymentTransaction);
-          setEmailLogs(data.emailLogs);
-          setCustomerSummary(data.customer ?? null);
-        })
-        .catch((err: unknown) => {
-          if (signal?.aborted) return;
-          setError(err instanceof Error ? err.message : "Failed to load transaction");
-        })
-        .finally(() => {
-          if (!signal?.aborted) setIsLoading(false);
-        });
-    },
-    [orderId],
-  );
-
-  useEffect(() => {
-    const controller = new AbortController();
-    void loadTransaction(controller.signal);
-    return () => controller.abort();
-  }, [loadTransaction]);
-
-  useEffect(() => {
-    if (!emailPreview) {
-      return;
-    }
-
-    const previousOverflow = document.body.style.overflow;
-    document.body.style.overflow = "hidden";
-
-    return () => {
-      document.body.style.overflow = previousOverflow;
-    };
-  }, [emailPreview]);
-
-  const handleResendEmail = async (emailType: string) => {
+  const handleResendEmail = async (emailType: string, logId: string) => {
     if (!order || resendingEmail) {
       return;
     }
 
+    const key = "email:" + order.id + ":" + emailType;
+    if (pendingProviderCheck(key) === logId) return;
+    rememberProviderCheck(key, logId);
     setResendingEmail(emailType);
     try {
-      const response = await fetch(`/api/admin/orders/${order.id}/resend-email`, {
+      const { response, data } = await adminCommand<{
+        success?: boolean;
+        error?: string;
+      }>(`/api/admin/orders/${order.id}/resend-email`, {
         method: "POST",
         headers: { "Content-Type": "application/json" },
         body: JSON.stringify({ emailType }),
       });
-      const data = await response.json().catch(() => ({}));
-
-      if (response.ok) {
+      if (response.ok && data?.success) {
+        rememberProviderCheck(key, null);
         setToast({ message: "Email resent successfully.", tone: "success" });
-        setIsLoading(true);
-        setError(null);
-        await loadTransaction();
-      } else {
-        setToast({
-          message: (data as { error?: string }).error ?? "Failed to resend email.",
-          tone: "error",
-        });
-      }
+        read.retry();
+      } else if (response.status >= 400 && response.status < 500) {
+        rememberProviderCheck(key, null);
+        setToast({ message: data?.error ?? "Email request declined.", tone: "error" });
+      } else throw new Error("Unknown delivery");
     } catch {
-      setToast({ message: "Failed to resend email.", tone: "error" });
+      setUncertain((previous) => ({ ...previous, [emailType]: logId }));
+      setToast({
+        message:
+          "Email delivery is unconfirmed. Check the email log before sending again.",
+        tone: "info",
+      });
+      read.retry();
     } finally {
       setResendingEmail(null);
     }
   };
-  if (isLoading) {
-    return (
-      <div className="flex items-center justify-center py-24 text-gray-400">
-        Loading...
-      </div>
-    );
-  }
-
-  if (error || !order) {
+  if (!order)
     return (
       <div className="space-y-4">
-        <button
-          type="button"
-          onClick={() => router.push("/admin/transactions")}
-          className="flex items-center gap-2 text-sm text-gray-400 hover:text-white"
-        >
-          <ArrowLeft className="h-4 w-4" />
+        <button type="button" onClick={() => router.push("/admin/transactions")}>
           Back to Transactions
         </button>
-        <p className="text-red-400">{error ?? "Transaction not found."}</p>
+        <AdminReadStatus read={read} shape="detail" label="Loading transaction" />
+        {read.data && <p>Transaction not found.</p>}
       </div>
     );
-  }
-
   const statusMeta = getOrderStatusMeta(order.status);
   const shippingAddr = Array.isArray(order.shipping_address)
     ? order.shipping_address[0]
@@ -527,6 +478,7 @@ export default function TransactionDetailPage() {
 
   return (
     <AdminPage>
+      <AdminReadStatus read={read} label="Refreshing transaction" shape="detail" />
       <AdminPageHeader
         eyebrow="Transaction detail"
         title={`#${order.id.slice(0, 8)}`}
@@ -872,6 +824,12 @@ export default function TransactionDetailPage() {
                   );
 
                   const isResending = resendingEmail === emailType;
+                  const needsCheck =
+                    !!latestLog &&
+                    !isResending &&
+                    (uncertain[emailType] === latestLog.id ||
+                      pendingProviderCheck("email:" + order.id + ":" + emailType) ===
+                        latestLog.id);
 
                   return (
                     <div
@@ -893,29 +851,50 @@ export default function TransactionDetailPage() {
                         <div className="mt-0.5">{statusEl}</div>
                       </div>
                       <div className="flex shrink-0 items-center gap-3">
+                        {needsCheck && (
+                          <button
+                            type="button"
+                            disabled={read.pending}
+                            onClick={read.retry}
+                          >
+                            Check email log
+                          </button>
+                        )}
                         {latestLog?.html_snapshot && (
                           <button
                             type="button"
-                            onClick={() => setEmailPreview(latestLog)}
+                            aria-haspopup="dialog"
+                            onClick={(event) => {
+                              setPreviewInvoker(event.currentTarget);
+                              setEmailPreview(latestLog);
+                            }}
                             className="text-xs text-zinc-400 transition-colors hover:text-white"
                           >
                             View
                           </button>
                         )}
                         {latestLog && (
-                          <button
+                          <ActionButton
                             type="button"
                             onClick={() => {
-                              void handleResendEmail(emailType);
+                              void command.run(() =>
+                                handleResendEmail(emailType, latestLog.id),
+                              );
                             }}
-                            disabled={isResending || Boolean(resendingEmail)}
+                            disabled={
+                              read.pending ||
+                              !!read.error ||
+                              command.pending ||
+                              needsCheck
+                            }
+                            aria-busy={isResending}
                             className="flex items-center gap-1 text-xs text-red-400 transition-colors hover:text-red-300 disabled:cursor-not-allowed disabled:opacity-50"
                           >
                             <RefreshCw
                               className={`h-3 w-3 ${isResending ? "animate-spin" : ""}`}
                             />
                             {isResending ? "Sending..." : "Resend"}
-                          </button>
+                          </ActionButton>
                         )}
                       </div>
                     </div>
@@ -990,7 +969,12 @@ export default function TransactionDetailPage() {
       </div>
 
       {emailPreview && (
-        <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/70 p-4">
+        <ModalPortal
+          open
+          label="Email preview"
+          invoker={previewInvoker}
+          onClose={() => setEmailPreview(null)}
+        >
           <div className="flex max-h-[90vh] w-full max-w-2xl flex-col border border-zinc-800 bg-zinc-900">
             <div className="flex items-center justify-between border-b border-zinc-800 px-4 py-3">
               <div>
@@ -1001,6 +985,7 @@ export default function TransactionDetailPage() {
               </div>
               <button
                 type="button"
+                aria-label="Close email preview"
                 onClick={() => setEmailPreview(null)}
                 className="text-zinc-400 hover:text-white"
               >
@@ -1016,7 +1001,7 @@ export default function TransactionDetailPage() {
               />
             </div>
           </div>
-        </div>
+        </ModalPortal>
       )}
 
       <AdminOrderItemDetailsModal

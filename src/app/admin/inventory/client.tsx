@@ -1,8 +1,13 @@
 "use client";
+import { adminCommand } from "@/components/admin/admin-command";
 
-import { useState } from "react";
+import { useAsyncAction } from "@/components/ui/useAsyncAction";
+import { ActionButton } from "@/components/ui/ActionButton";
+import { withRequestDeadline } from "@/lib/http/request-deadline";
+
+import { useState, useTransition } from "react";
 import Image from "next/image";
-import Link from "next/link";
+import { FeedbackLink as Link } from "@/components/ui/FeedbackLink";
 import { useRouter } from "next/navigation";
 import { Archive, Download, Plus, RotateCcw, Trash2 } from "lucide-react";
 
@@ -43,6 +48,9 @@ export function InventoryClient({
   initialInventoryUnitTotal,
   initialFilters,
 }: InventoryClientProps) {
+  const mutation = useAsyncAction();
+  const exporting = useAsyncAction();
+  const [navigating, startTransition] = useTransition();
   const router = useRouter();
   const [query, setQuery] = useState(initialFilters.q ?? "");
   const [category, setCategory] = useState<Category | "all">(
@@ -75,7 +83,7 @@ export function InventoryClient({
     if (nextPage > 1) {
       params.set("page", String(nextPage));
     }
-    router.push(`/admin/inventory?${params.toString()}`);
+    startTransition(() => router.push(`/admin/inventory?${params.toString()}`));
   };
 
   const runAction = async (
@@ -86,21 +94,25 @@ export function InventoryClient({
       return;
     }
     setBusyId(product.id);
-    setMessage(null);
+    setMessage(`Updating ${product.name}…`);
     try {
       const endpoint =
         action === "delete"
           ? `/api/admin/products/${product.id}`
           : `/api/admin/products/${product.id}?action=${action}`;
-      const response = await fetch(endpoint, {
+      const { response, data } = await adminCommand<{
+        error?: string;
+        archived?: boolean;
+      }>(endpoint, {
         method: action === "delete" ? "DELETE" : "PATCH",
       });
-      const data = await response.json().catch(() => null);
       if (!response.ok) {
         throw new Error(data?.error ?? `Failed to ${action} product`);
       }
-      setMessage(`${product.name} ${action === "delete" ? "deleted" : `${action}d`}.`);
-      router.refresh();
+      setMessage(
+        `${product.name} ${action === "delete" ? (data?.archived ? "archived" : "deleted") : `${action}d`}.`,
+      );
+      startTransition(() => router.refresh());
     } catch (error) {
       setMessage(error instanceof Error ? error.message : "Inventory action failed.");
     } finally {
@@ -123,6 +135,32 @@ export function InventoryClient({
     return `/api/admin/products/export?${params.toString()}`;
   };
 
+  const exportInventory = async () => {
+    setMessage("Preparing inventory download…");
+    try {
+      const { blob, filename } = await withRequestDeadline(async (signal) => {
+        const response = await fetch(getExportHref(), { signal });
+        if (!response.ok || !response.headers.get("Content-Type")?.includes("text/csv"))
+          throw new Error("Export unavailable");
+        return {
+          blob: await response.blob(),
+          filename:
+            response.headers
+              .get("Content-Disposition")
+              ?.match(/filename="([^"]+)"/)?.[1] ?? "inventory.csv",
+        };
+      });
+      const url = URL.createObjectURL(blob);
+      const anchor = document.createElement("a");
+      anchor.href = url;
+      anchor.download = filename;
+      anchor.click();
+      setTimeout(() => URL.revokeObjectURL(url), 1000);
+      setMessage("Inventory download started.");
+    } catch {
+      setMessage("Unable to export inventory. Try Export again.");
+    }
+  };
   return (
     <AdminPage>
       <AdminPageHeader
@@ -131,9 +169,14 @@ export function InventoryClient({
         description="Manage website products, variants, and available stock."
         actions={
           <>
-            <a download href={getExportHref()} className="admin-button-secondary">
+            <ActionButton
+              type="button"
+              pending={exporting.pending}
+              className="admin-button-secondary"
+              onClick={() => void exporting.run(exportInventory)}
+            >
               <Download className="h-4 w-4" /> Export
-            </a>
+            </ActionButton>
             <Link href="/admin/inventory/create" className="admin-button-primary">
               <Plus className="h-4 w-4" /> Add product
             </Link>
@@ -187,8 +230,12 @@ export function InventoryClient({
         </button>
       </form>
 
+      {navigating && <p role="status">Updating inventory…</p>}
       {message && (
-        <div className="border border-zinc-700 bg-zinc-900 px-4 py-3 text-sm text-zinc-200">
+        <div
+          role="status"
+          className="border border-zinc-700 bg-zinc-900 px-4 py-3 text-sm text-zinc-200"
+        >
           {message}
         </div>
       )}
@@ -265,9 +312,12 @@ export function InventoryClient({
                         {product.archived_at ? (
                           <button
                             type="button"
-                            disabled={busy}
-                            onClick={() => void runAction(product, "restore")}
-                            className="border border-zinc-700 p-2 hover:bg-zinc-800 disabled:opacity-50"
+                            disabled={mutation.pending || navigating}
+                            aria-busy={busy}
+                            onClick={() =>
+                              void mutation.run(() => runAction(product, "restore"))
+                            }
+                            className="min-h-10 min-w-10 border border-zinc-700 p-2 hover:bg-zinc-800 disabled:opacity-50"
                             aria-label="Restore product"
                           >
                             <RotateCcw className="h-4 w-4" />
@@ -275,9 +325,12 @@ export function InventoryClient({
                         ) : (
                           <button
                             type="button"
-                            disabled={busy}
-                            onClick={() => void runAction(product, "archive")}
-                            className="border border-zinc-700 p-2 hover:bg-zinc-800 disabled:opacity-50"
+                            disabled={mutation.pending || navigating}
+                            aria-busy={busy}
+                            onClick={() =>
+                              void mutation.run(() => runAction(product, "archive"))
+                            }
+                            className="min-h-10 min-w-10 border border-zinc-700 p-2 hover:bg-zinc-800 disabled:opacity-50"
                             aria-label="Archive product"
                           >
                             <Archive className="h-4 w-4" />
@@ -285,9 +338,12 @@ export function InventoryClient({
                         )}
                         <button
                           type="button"
-                          disabled={busy}
-                          onClick={() => void runAction(product, "delete")}
-                          className="border border-red-900/60 p-2 text-red-400 hover:bg-red-950/40 disabled:opacity-50"
+                          disabled={mutation.pending || navigating}
+                          aria-busy={busy}
+                          onClick={() =>
+                            void mutation.run(() => runAction(product, "delete"))
+                          }
+                          className="min-h-10 min-w-10 border border-red-900/60 p-2 text-red-400 hover:bg-red-950/40 disabled:opacity-50"
                           aria-label="Delete product"
                         >
                           <Trash2 className="h-4 w-4" />

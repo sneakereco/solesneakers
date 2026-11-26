@@ -1,9 +1,15 @@
 // app/admin/shipping/page.tsx
 "use client";
+import { useAdminOrderQueue } from "@/components/admin/useAdminOrderQueue";
+import { useAsyncAction } from "@/components/ui/useAsyncAction";
+import { adminCommand } from "@/components/admin/admin-command";
+import { useAdminRead } from "@/components/admin/useAdminRead";
+import { AdminReadStatus } from "@/components/admin/AdminSkeletons";
+import { fetchJsonWithDeadline } from "@/lib/http/request-deadline";
 
 import Image from "next/image";
 
-import { Fragment, useEffect, useMemo, useState } from "react";
+import { Fragment, useMemo, useState } from "react";
 import { ChevronDown, ExternalLink, AlertCircle } from "lucide-react";
 
 import { AdminPage, AdminPageHeader } from "@/components/admin/AdminPage";
@@ -242,35 +248,60 @@ const getPackageProfile = (
   );
 };
 
+const orderParams = (tab: (typeof TABS)[number], page: number, limit: number) => {
+  const params = new URLSearchParams({
+    fulfillment: "ship",
+    fulfillmentStatus: tab.status,
+    page: String(page),
+    limit: String(limit),
+  });
+  SHIPPING_ORDER_STATUSES.forEach((status) => params.append("status", status));
+  return params;
+};
+const loadSetup = async (signal: AbortSignal) => {
+  const [origin, defaults] = await Promise.all([
+    fetchJsonWithDeadline<{ origin: ShippingOrigin | null }>(
+      "/api/admin/shipping/origin",
+      "Origin unavailable",
+      signal,
+    ),
+    fetchJsonWithDeadline<{ defaults: ShippingDefault[] }>(
+      "/api/admin/shipping/defaults",
+      "Defaults unavailable",
+      signal,
+    ),
+  ]);
+  return {
+    origin: origin.origin,
+    defaults: Object.fromEntries(
+      defaults.defaults.map((entry) => [entry.category, entry]),
+    ),
+  };
+};
 export default function ShippingPage() {
+  const setup = useAdminRead(loadSetup, "shipping configuration");
+  const fulfill = useAsyncAction();
+  const originAction = useAsyncAction();
+  const [commandMessage, setCommandMessage] = useState("");
+  const [blockedLabel, setBlockedLabel] = useState<Record<string, boolean>>({});
+
   const [activeTab, setActiveTab] = useState<TabKey>("label");
-  const [orders, setOrders] = useState<ShippingOrder[]>([]);
-  const [isLoading, setIsLoading] = useState(true);
   const [expandedItems, setExpandedItems] = useState<Record<string, boolean>>({});
   const [expandedDetails, setExpandedDetails] = useState<Record<string, boolean>>({});
-  const [shippingDefaults, setShippingDefaults] = useState<
-    Record<string, ShippingDefault>
-  >({});
+  const shippingDefaults = setup.data?.defaults;
   const [pageByTab, setPageByTab] = useState<Record<TabKey, number>>({
     label: 1,
     ready: 1,
     shipped: 1,
     delivered: 1,
   });
-  const [counts, setCounts] = useState<Record<TabKey, number>>({
-    label: 0,
-    ready: 0,
-    shipped: 0,
-    delivered: 0,
-  });
-  const [refreshToken, setRefreshToken] = useState(0);
   const [markingShippedId, setMarkingShippedId] = useState<string | null>(null);
   const [confirmMarkShipped, setConfirmMarkShipped] = useState<ShippingOrder | null>(
     null,
   );
   const [selectedItem, setSelectedItem] = useState<OrderItem | null>(null);
   const [modalInvoker, setModalInvoker] = useState<HTMLElement | null>(null);
-  const [originAddress, setOriginAddress] = useState<ShippingOrigin | null>(null);
+  const [originDraft, setOriginAddress] = useState<ShippingOrigin | null>(null);
   const [originModalOpen, setOriginModalOpen] = useState(false);
   const [originMessage, setOriginMessage] = useState("");
   const [originError, setOriginError] = useState("");
@@ -279,121 +310,14 @@ export default function ShippingPage() {
 
   const [labelOrder, setLabelOrder] = useState<ShippingOrder | null>(null);
 
+  const [savedOrigin, setSavedOrigin] = useState<ShippingOrigin | null>(null);
+  const originAddress = savedOrigin ?? setup.data?.origin ?? null;
   const currentPage = pageByTab[activeTab];
-  const activeCount = counts[activeTab] ?? 0;
-  const totalPages = Math.max(1, Math.ceil(activeCount / PAGE_SIZE));
-
-  const loadOriginAddress = () => {
-    return fetch("/api/admin/shipping/origin", { cache: "no-store" })
-      .then(async (response) => {
-        if (!response.ok) {
-          throw new Error("Failed to load shipping origin");
-        }
-        const data = await response.json();
-        setOriginAddress(data.origin ?? null);
-      })
-      .catch((error: unknown) => {
-        logError(error, { layer: "frontend", event: "admin_load_shipping_origin" });
-        setOriginAddress(null);
-      });
-  };
-
-  useEffect(() => {
-    const loadCounts = async () => {
-      try {
-        const results = await Promise.all(
-          TABS.map(async (tab) => {
-            const params = new URLSearchParams({
-              fulfillment: "ship",
-              fulfillmentStatus: tab.status,
-              limit: "1",
-              page: "1",
-            });
-            SHIPPING_ORDER_STATUSES.forEach((status) => params.append("status", status));
-            const response = await fetch(`/api/admin/orders?${params.toString()}`);
-            const data = await response.json();
-            return { key: tab.key, count: Number(data.count ?? 0) };
-          }),
-        );
-
-        const nextCounts: Record<TabKey, number> = {
-          label: 0,
-          ready: 0,
-          shipped: 0,
-          delivered: 0,
-        };
-        results.forEach((result) => {
-          nextCounts[result.key] = result.count;
-        });
-        setCounts(nextCounts);
-      } catch (error) {
-        logError(error, { layer: "frontend", event: "admin_load_shipping_counts" });
-      }
-    };
-
-    void loadCounts();
-  }, [refreshToken]);
-
-  useEffect(() => {
-    const loadShippingDefaults = async () => {
-      try {
-        const response = await fetch("/api/admin/shipping/defaults", {
-          cache: "no-store",
-        });
-        if (!response.ok) {
-          throw new Error("Failed to load shipping defaults");
-        }
-        const data = await response.json();
-        const defaultsMap: Record<string, ShippingDefault> = {};
-        (data.defaults ?? []).forEach((entry: ShippingDefault) => {
-          defaultsMap[entry.category] = entry;
-        });
-        setShippingDefaults(defaultsMap);
-      } catch (error) {
-        logError(error, { layer: "frontend", event: "admin_load_shipping_defaults" });
-      }
-    };
-
-    void loadShippingDefaults();
-    void loadOriginAddress();
-  }, []);
-
-  useEffect(() => {
-    const loadOrders = async () => {
-      setIsLoading(true);
-      try {
-        const tab = TABS.find((entry) => entry.key === activeTab) ?? TABS[0];
-        const params = new URLSearchParams({
-          fulfillment: "ship",
-          fulfillmentStatus: tab.status,
-          limit: String(PAGE_SIZE),
-          page: String(currentPage),
-        });
-        SHIPPING_ORDER_STATUSES.forEach((status) => params.append("status", status));
-        const response = await fetch(`/api/admin/orders?${params.toString()}`);
-
-        if (!response.ok) {
-          const errorText = await response.text();
-          throw new Error(`Failed to fetch orders: ${response.status} ${errorText}`);
-        }
-
-        const data = await response.json();
-        setOrders(data.orders || []);
-        if (typeof data.count === "number") {
-          setCounts((prev) => ({ ...prev, [activeTab]: data.count }));
-        }
-      } catch (error) {
-        logError(error, { layer: "frontend", event: "admin_load_shipping_orders" });
-        setOrders([]);
-      } finally {
-        setIsLoading(false);
-      }
-    };
-
-    void loadOrders();
-  }, [activeTab, currentPage, refreshToken]);
-
-  if (currentPage > totalPages) {
+  const { list, totals, orders, counts, totalPages } = useAdminOrderQueue<
+    ShippingOrder,
+    (typeof TABS)[number]
+  >(TABS, orderParams, activeTab, currentPage, PAGE_SIZE);
+  if (list.data && currentPage > totalPages) {
     setPageByTab((prev) => ({ ...prev, [activeTab]: totalPages }));
   }
 
@@ -422,7 +346,10 @@ export default function ShippingPage() {
   const handleMarkShipped = async (order: ShippingOrder) => {
     setMarkingShippedId(order.id);
     try {
-      const response = await fetch(`/api/admin/orders/${order.id}/fulfill`, {
+      const { response, data } = await adminCommand<{
+        order?: { id: string };
+        error?: string;
+      }>(`/api/admin/orders/${order.id}/fulfill`, {
         method: "POST",
         headers: { "Content-Type": "application/json" },
         body: JSON.stringify({
@@ -430,13 +357,23 @@ export default function ShippingPage() {
           trackingNumber: order.tracking_number ?? null,
         }),
       });
-      if (!response.ok) {
-        throw new Error("Failed to mark as shipped");
+      if (response.status >= 400 && response.status < 500) {
+        setCommandMessage(data?.error ?? "Fulfillment request declined.");
+        setConfirmMarkShipped(null);
+        return;
       }
-      setRefreshToken((token) => token + 1);
+      if (!response.ok || data?.order?.id !== order.id)
+        throw new Error("Unconfirmed fulfillment");
+      setCommandMessage("Order marked shipped.");
+      list.retry();
+      totals.retry();
       setConfirmMarkShipped(null);
     } catch (error) {
       logError(error, { layer: "frontend", event: "admin_mark_shipped" });
+      setConfirmMarkShipped(null);
+      setCommandMessage("Shipment update is unconfirmed. Checking current order status.");
+      list.retry();
+      totals.retry();
     } finally {
       setMarkingShippedId(null);
     }
@@ -457,7 +394,7 @@ export default function ShippingPage() {
   };
 
   const handleSaveOrigin = async () => {
-    const payload = originAddress ?? EMPTY_ORIGIN;
+    const payload = originDraft ?? EMPTY_ORIGIN;
     setSavingOrigin(true);
     setOriginError("");
     setOriginMessage("");
@@ -472,12 +409,15 @@ export default function ShippingPage() {
     }
 
     try {
-      const response = await fetch("/api/admin/shipping/origin", {
+      const { response, data } = await adminCommand<{
+        origin?: ShippingOrigin;
+        error?: string;
+        issues?: Record<string, { _errors?: string[] }>;
+      }>("/api/admin/shipping/origin", {
         method: "POST",
         headers: { "Content-Type": "application/json" },
         body: JSON.stringify(payload),
       });
-      const data = await response.json().catch(() => ({}));
       if (!response.ok) {
         const fieldErrors = extractOriginErrors(data?.issues);
         if (Object.keys(fieldErrors).length > 0) {
@@ -487,7 +427,7 @@ export default function ShippingPage() {
         }
         throw new Error(data?.error || "Failed to save origin");
       }
-      setOriginAddress(data.origin ?? payload);
+      setSavedOrigin(data?.origin ?? payload);
       setOriginMessage("Origin address updated.");
       setOriginModalOpen(false);
     } catch (error: unknown) {
@@ -499,8 +439,10 @@ export default function ShippingPage() {
   };
 
   const handleLabelSuccess = () => {
+    setCommandMessage("Label purchased. Customer notification queued.");
     setLabelOrder(null);
-    setRefreshToken((t) => t + 1);
+    list.retry();
+    totals.retry();
     // Optionally switch to "Need to Ship" tab
     setActiveTab("ready");
   };
@@ -616,6 +558,9 @@ export default function ShippingPage() {
         <button
           type="button"
           aria-haspopup="dialog"
+          disabled={
+            !setup.data || list.pending || !!list.error || !!blockedLabel[order.id]
+          }
           onClick={(event) => {
             event.stopPropagation();
             setModalInvoker(event.currentTarget);
@@ -634,7 +579,7 @@ export default function ShippingPage() {
             setModalInvoker(event.currentTarget);
             setConfirmMarkShipped(order);
           }}
-          disabled={markingShippedId === order.id}
+          disabled={list.pending || !!list.error || fulfill.pending}
           className="text-sm text-zinc-400 hover:text-zinc-300 disabled:text-zinc-600"
         >
           {markingShippedId === order.id ? "Marking..." : "Mark shipped"}
@@ -661,7 +606,19 @@ export default function ShippingPage() {
               "-"
             )}
           </td>
-          <td className="p-3 text-white sm:p-4">#{order.id.slice(0, 8)}</td>
+          <td className="p-3 text-white sm:p-4">
+            <button
+              type="button"
+              aria-expanded={itemsExpanded || detailsExpanded}
+              aria-label={`Details for order ${order.id}`}
+              onClick={(e) => {
+                e.stopPropagation();
+                toggleOrderExpansion(order.id);
+              }}
+            >
+              #{order.id.slice(0, 8)}
+            </button>
+          </td>
           <td className="hidden p-3 text-gray-400 sm:p-4 md:table-cell">
             {customerName}
           </td>
@@ -1005,7 +962,7 @@ export default function ShippingPage() {
   const originLine = formatOriginAddress(originAddress);
 
   const labelModalDefaults = useMemo(
-    () => (labelOrder ? getPackageProfile(labelOrder, shippingDefaults) : null),
+    () => (labelOrder ? getPackageProfile(labelOrder, shippingDefaults ?? {}) : null),
     [labelOrder, shippingDefaults],
   );
 
@@ -1031,6 +988,10 @@ export default function ShippingPage() {
         </div>
       )}
 
+      <AdminReadStatus read={setup} label="Loading shipping configuration" shape="form" />
+      {commandMessage && <p role="status">{commandMessage}</p>}
+      {originMessage && <p role="status">{originMessage}</p>}
+      <AdminReadStatus read={totals} label="Loading queue counts" />
       <div
         data-admin-tabs
         className="flex flex-nowrap gap-2 overflow-x-auto border-b border-zinc-800/70 sm:gap-6"
@@ -1049,7 +1010,7 @@ export default function ShippingPage() {
           >
             {tab.label}
             <span className="rounded-sm border border-zinc-800/70 bg-zinc-900 px-1 py-0.5 text-[9px] text-gray-300 sm:px-2 sm:text-[11px]">
-              {tabBadge(counts[tab.key] ?? 0)}
+              {counts?.[tab.key] === undefined ? "—" : tabBadge(counts[tab.key]!)}
             </span>
           </button>
         ))}
@@ -1061,18 +1022,19 @@ export default function ShippingPage() {
       >
         <div className="text-gray-400">
           <span className="text-gray-500">Origin:</span>{" "}
-          {originLine ? originLine : "Not set"}
+          {setup.data ? originLine || "Not set" : "—"}
         </div>
         <button
           type="button"
           aria-haspopup="dialog"
+          disabled={!setup.data}
           onClick={(event) => {
             setModalInvoker(event.currentTarget);
             setOriginError("");
             setOriginMessage("");
             setOriginFieldErrors({});
             setOriginModalOpen(true);
-            void loadOriginAddress();
+            setOriginAddress(originAddress);
           }}
           className="border border-zinc-800/70 bg-zinc-900 px-4 py-2 text-sm text-white hover:border-zinc-700"
         >
@@ -1080,9 +1042,8 @@ export default function ShippingPage() {
         </button>
       </div>
 
-      {isLoading ? (
-        <div className="py-12 text-center text-gray-400">Loading...</div>
-      ) : orders.length === 0 ? (
+      <AdminReadStatus read={list} shape="table" label="Loading orders" />
+      {!list.data ? null : orders.length === 0 ? (
         <div className="rounded-sm border border-zinc-800/70 bg-zinc-900 p-6 text-sm text-zinc-500">
           No orders in this queue.
         </div>
@@ -1153,6 +1114,14 @@ export default function ShippingPage() {
             : null
         }
         onClose={() => setLabelOrder(null)}
+        onUnconfirmed={(orderId) => {
+          setBlockedLabel((prev) => ({ ...prev, [orderId]: true }));
+          setCommandMessage(
+            "Label purchase is unconfirmed. Check the order and Shippo transaction history before buying another label.",
+          );
+          list.retry();
+          totals.retry();
+        }}
         onSuccess={handleLabelSuccess}
       />
 
@@ -1161,28 +1130,32 @@ export default function ShippingPage() {
         isOpen={!!confirmMarkShipped}
         title="Mark as shipped manually?"
         description="Important: This should only be used if the carrier hasn't scanned the package yet. Normally, Shippo automatically updates tracking status and sends customer emails when the carrier scans the package. Using this button will manually update the status without waiting for carrier confirmation."
-        confirmLabel="Mark shipped anyway"
+        confirmLabel={fulfill.pending ? "Marking shipped…" : "Mark shipped anyway"}
         onConfirm={() => {
           if (confirmMarkShipped) {
-            void handleMarkShipped(confirmMarkShipped);
+            void fulfill.run(() => handleMarkShipped(confirmMarkShipped));
           }
         }}
-        onCancel={() => setConfirmMarkShipped(null)}
+        onCancel={() => {
+          if (!fulfill.pending) setConfirmMarkShipped(null);
+        }}
       />
 
       <OriginModal
         invoker={modalInvoker}
         open={originModalOpen}
-        originAddress={originAddress}
+        originAddress={originDraft}
         emptyOrigin={EMPTY_ORIGIN}
         originError={originError}
         originMessage={originMessage}
         originFieldErrors={originFieldErrors}
         savingOrigin={savingOrigin}
-        onClose={() => setOriginModalOpen(false)}
+        onClose={() => {
+          if (!savingOrigin) setOriginModalOpen(false);
+        }}
         onChange={handleOriginChange}
         onSave={() => {
-          void handleSaveOrigin();
+          void originAction.run(handleSaveOrigin);
         }}
       />
     </AdminPage>

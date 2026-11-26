@@ -12,6 +12,8 @@ export type RdkSelectOption = {
 
 type Props = {
   id?: string;
+  "aria-invalid"?: boolean;
+  "aria-describedby"?: string;
   "aria-label"?: string;
   "aria-labelledby"?: string;
   value: string;
@@ -28,6 +30,8 @@ type Props = {
 
 export function RdkSelect({
   id,
+  "aria-invalid": invalid,
+  "aria-describedby": describedBy,
   "aria-label": ariaLabel,
   "aria-labelledby": ariaLabelledBy,
   value,
@@ -167,6 +171,7 @@ export function RdkSelect({
         type="button"
         disabled={disabled}
         aria-haspopup="listbox"
+        aria-describedby={describedBy}
         aria-label={ariaLabel}
         aria-labelledby={ariaLabelledBy}
         aria-expanded={open && !disabled}
@@ -206,9 +211,7 @@ export function RdkSelect({
 
       {open && !disabled && (
         <div
-          id={menuId}
           data-ui-select-menu
-          role="listbox"
           className={[
             "absolute z-50 mt-2 w-full",
             "max-h-72 overflow-y-auto rounded-lg border border-zinc-200 bg-white p-1 shadow-xl",
@@ -219,6 +222,16 @@ export function RdkSelect({
             <div className="sticky top-0 z-10 border-b border-zinc-200 bg-white p-2">
               <input
                 ref={searchRef}
+                role="combobox"
+                aria-invalid={invalid}
+                aria-describedby={describedBy}
+                aria-label={searchPlaceholder}
+                aria-expanded="true"
+                aria-autocomplete="list"
+                aria-controls={menuId}
+                aria-activedescendant={
+                  filteredOptions[activeIndex] ? `${menuId}-${activeIndex}` : undefined
+                }
                 data-ui-select-search
                 type="text"
                 value={searchQuery}
@@ -228,47 +241,50 @@ export function RdkSelect({
               />
             </div>
           )}
-          {filteredOptions.length === 0 && (
-            <div className="px-3 py-2 text-sm text-zinc-500">No matches</div>
-          )}
-          {filteredOptions.map((opt, idx) => {
-            const isSelected = opt.value === value;
-            const isActive = idx === activeIndex;
+          <div id={menuId} role="listbox" aria-label={ariaLabel ?? placeholder}>
+            {filteredOptions.length === 0 && (
+              <div className="px-3 py-2 text-sm text-zinc-500">No matches</div>
+            )}
+            {filteredOptions.map((opt, idx) => {
+              const isSelected = opt.value === value;
+              const isActive = idx === activeIndex;
 
-            return (
-              <button
-                key={opt.value}
-                data-ui-select-option
-                type="button"
-                role="option"
-                aria-selected={isSelected}
-                data-active={isActive ? "true" : "false"}
-                disabled={opt.disabled}
-                onFocus={() => setActiveIndex(idx)}
-                onMouseEnter={() => setActiveIndex(idx)}
-                onClick={() => {
-                  if (opt.disabled) {
-                    return;
-                  }
-                  onChange(opt.value);
-                  setOpen(false);
-                  buttonRef.current?.focus();
-                }}
-                className={[
-                  "w-full rounded-md px-3 py-2 text-left text-sm",
-                  "transition-colors",
-                  opt.disabled
-                    ? "cursor-not-allowed text-zinc-400"
-                    : "cursor-pointer text-zinc-800",
-                  isSelected || isActive
-                    ? "bg-zinc-900 text-white"
-                    : "bg-white hover:bg-zinc-100 hover:text-zinc-950",
-                ].join(" ")}
-              >
-                {opt.label}
-              </button>
-            );
-          })}
+              return (
+                <button
+                  id={`${menuId}-${idx}`}
+                  key={opt.value}
+                  data-ui-select-option
+                  type="button"
+                  role="option"
+                  aria-selected={isSelected}
+                  data-active={isActive ? "true" : "false"}
+                  disabled={opt.disabled}
+                  onFocus={() => setActiveIndex(idx)}
+                  onMouseEnter={() => setActiveIndex(idx)}
+                  onClick={() => {
+                    if (opt.disabled) {
+                      return;
+                    }
+                    onChange(opt.value);
+                    setOpen(false);
+                    buttonRef.current?.focus();
+                  }}
+                  className={[
+                    "w-full rounded-md px-3 py-2 text-left text-sm",
+                    "transition-colors",
+                    opt.disabled
+                      ? "cursor-not-allowed text-zinc-400"
+                      : "cursor-pointer text-zinc-800",
+                    isSelected || isActive
+                      ? "bg-zinc-900 text-white"
+                      : "bg-white hover:bg-zinc-100 hover:text-zinc-950",
+                  ].join(" ")}
+                >
+                  {opt.label}
+                </button>
+              );
+            })}
+          </div>
         </div>
       )}
     </div>

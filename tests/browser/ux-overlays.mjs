@@ -457,7 +457,7 @@ try {
         await select.press("Enter");
         const menu = dialog.getByRole("listbox");
         await expect(menu).toBeVisible();
-        await expect(menu.getByRole("textbox")).toBeFocused();
+        await expect(dialog.getByRole("combobox")).toBeFocused();
         await page.evaluate(() => {
           window.escapesObserved = 0;
           window.addEventListener("keydown", (event) => {

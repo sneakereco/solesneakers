@@ -1,7 +1,9 @@
 "use client";
 
-import { useEffect, useState } from "react";
-import Link from "next/link";
+import { useAdminRead } from "@/components/admin/useAdminRead";
+import { AdminSkeleton, AdminReadStatus } from "@/components/admin/AdminSkeletons";
+import { fetchJsonWithDeadline } from "@/lib/http/request-deadline";
+import { FeedbackLink as Link } from "@/components/ui/FeedbackLink";
 import {
   ArrowRight,
   ArrowUpRight,
@@ -12,8 +14,6 @@ import {
   Truck,
 } from "lucide-react";
 
-import { logError } from "@/lib/utils/log";
-
 type OrderSummary = {
   id: string;
   user_id?: string | null;
@@ -21,24 +21,26 @@ type OrderSummary = {
   status?: string | null;
 };
 
+async function loadDashboard(signal: AbortSignal) {
+  const [products, activity] = await Promise.all([
+    fetchJsonWithDeadline<{ total: number }>(
+      "/api/store/products?limit=1",
+      "Products unavailable",
+      signal,
+    ),
+    fetchJsonWithDeadline<{ orders: OrderSummary[] }>(
+      "/api/admin/orders",
+      "Orders unavailable",
+      signal,
+    ),
+  ]);
+  if (!Number.isFinite(products.total) || !Array.isArray(activity.orders))
+    throw new Error("Incomplete dashboard");
+  return { productsCount: products.total, orders: activity.orders };
+}
 export default function DashboardPage() {
-  const [productsCount, setProductsCount] = useState(0);
-  const [orders, setOrders] = useState<OrderSummary[]>([]);
-
-  useEffect(() => {
-    Promise.all([
-      fetch("/api/store/products?limit=1").then((response) => response.json()),
-      fetch("/api/admin/orders").then((response) => response.json()),
-    ])
-      .then(([productsData, ordersData]) => {
-        setProductsCount(Number(productsData.total ?? 0));
-        setOrders(ordersData.orders ?? []);
-      })
-      .catch((error) => {
-        logError(error, { layer: "frontend", event: "admin_load_dashboard" });
-      });
-  }, []);
-
+  const read = useAdminRead(loadDashboard, "dashboard");
+  const { orders = [], productsCount } = read.data ?? {};
   const completedOrders = orders.filter((order) =>
     ["paid", "shipped", "completed"].includes(order.status ?? ""),
   );
@@ -80,27 +82,29 @@ export default function DashboardPage() {
         </div>
       </section>
 
-      <div className="grid gap-3 sm:grid-cols-3 sm:gap-6">
-        {stats.map(({ label, value, icon: Icon }) => (
-          <div
-            key={label}
-            className="rounded-xl border border-zinc-800/70 bg-zinc-900 p-5 sm:p-6"
-          >
-            <div className="mb-8 flex items-center justify-between">
-              <span className="text-[0.65rem] font-semibold uppercase tracking-[0.18em] text-gray-400">
-                {label}
-              </span>
-              <span className="flex h-9 w-9 items-center justify-center rounded-full bg-zinc-800">
-                <Icon className="h-4 w-4 text-gray-400" />
+      <AdminReadStatus read={read} label="Loading dashboard" shape="metrics" />
+      {read.data && (
+        <div className="grid gap-3 sm:grid-cols-3 sm:gap-6">
+          {stats.map(({ label, value, icon: Icon }) => (
+            <div
+              key={label}
+              className="rounded-xl border border-zinc-800/70 bg-zinc-900 p-5 sm:p-6"
+            >
+              <div className="mb-8 flex items-center justify-between">
+                <span className="text-[0.65rem] font-semibold uppercase tracking-[0.18em] text-gray-400">
+                  {label}
+                </span>
+                <span className="flex h-9 w-9 items-center justify-center rounded-full bg-zinc-800">
+                  <Icon className="h-4 w-4 text-gray-400" />
+                </span>
+              </div>
+              <span className="text-3xl font-semibold tracking-[-0.04em] text-white">
+                {value}
               </span>
             </div>
-            <span className="text-3xl font-semibold tracking-[-0.04em] text-white">
-              {value}
-            </span>
-          </div>
-        ))}
-      </div>
-
+          ))}
+        </div>
+      )}
       <div className="grid gap-6 xl:grid-cols-[minmax(0,1fr)_20rem]">
         <section className="rounded-xl border border-zinc-800/70 bg-zinc-900 p-5 sm:p-6">
           <div className="mb-5 flex items-center justify-between">
@@ -117,40 +121,45 @@ export default function DashboardPage() {
               View all <ArrowRight className="h-3.5 w-3.5" />
             </Link>
           </div>
-          <div className="overflow-x-auto">
-            <table className="w-full">
-              <thead>
-                <tr className="border-b border-zinc-800/70 text-left text-sm text-gray-400">
-                  <th className="py-3">Order</th>
-                  <th className="py-3">Status</th>
-                  <th className="py-3 text-right">Amount</th>
-                </tr>
-              </thead>
-              <tbody>
-                {orders.slice(0, 5).map((order) => (
-                  <tr
-                    key={order.id}
-                    className="border-b border-zinc-800/70 text-sm text-white last:border-0"
-                  >
-                    <td className="py-4 font-medium">#{order.id.slice(0, 8)}</td>
-                    <td className="py-4 capitalize text-gray-400">
-                      {order.status ?? "pending"}
-                    </td>
-                    <td className="py-4 text-right font-medium">
-                      ${Number(order.total ?? 0).toFixed(2)}
-                    </td>
+          {read.pending && !read.data && (
+            <AdminSkeleton shape="table" label="Loading recent orders" />
+          )}
+          {read.data && (
+            <div className="overflow-x-auto">
+              <table className="w-full">
+                <thead>
+                  <tr className="border-b border-zinc-800/70 text-left text-sm text-gray-400">
+                    <th className="py-3">Order</th>
+                    <th className="py-3">Status</th>
+                    <th className="py-3 text-right">Amount</th>
                   </tr>
-                ))}
-                {orders.length === 0 && (
-                  <tr>
-                    <td colSpan={3} className="py-12 text-center text-gray-500">
-                      No orders yet.
-                    </td>
-                  </tr>
-                )}
-              </tbody>
-            </table>
-          </div>
+                </thead>
+                <tbody>
+                  {orders.slice(0, 5).map((order) => (
+                    <tr
+                      key={order.id}
+                      className="border-b border-zinc-800/70 text-sm text-white last:border-0"
+                    >
+                      <td className="py-4 font-medium">#{order.id.slice(0, 8)}</td>
+                      <td className="py-4 capitalize text-gray-400">
+                        {order.status ?? "pending"}
+                      </td>
+                      <td className="py-4 text-right font-medium">
+                        ${Number(order.total ?? 0).toFixed(2)}
+                      </td>
+                    </tr>
+                  ))}
+                  {read.data && orders.length === 0 && (
+                    <tr>
+                      <td colSpan={3} className="py-12 text-center text-gray-500">
+                        No orders yet.
+                      </td>
+                    </tr>
+                  )}
+                </tbody>
+              </table>
+            </div>
+          )}
         </section>
 
         <aside className="rounded-xl border border-zinc-800/70 bg-zinc-900 p-5 sm:p-6">
