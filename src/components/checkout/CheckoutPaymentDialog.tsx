@@ -17,6 +17,8 @@ import type { ShippingAddressValidationError } from "@/lib/checkout/shipping-add
 
 type PaymentDialogProps = {
   open: boolean;
+  preparing?: boolean;
+  cartRecovery?: boolean;
   providerActive?: boolean;
   loadingProvider?: "Afterpay" | "Cash App Pay" | null;
   addressReview?: ShippingAddressValidationError | null;
@@ -59,6 +61,8 @@ export function CheckoutPaymentDialog(props: PaymentDialogProps) {
 function PaymentDialogContent({
   open,
   providerActive = false,
+  preparing = false,
+  cartRecovery = false,
   loadingProvider = null,
   error,
   onDismiss,
@@ -134,9 +138,11 @@ function PaymentDialogContent({
                   ? "Confirm in Cash App"
                   : error
                     ? "Payment could not be completed"
-                    : loadingProvider
-                      ? `Loading ${loadingProvider}…`
-                      : "Processing your payment"}
+                    : preparing
+                      ? "Preparing your order"
+                      : loadingProvider
+                        ? `Loading ${loadingProvider}…`
+                        : "Processing your payment"}
         </h2>
         {addressReview && (
           <p className="mt-3 text-sm font-semibold">
@@ -157,10 +163,17 @@ function PaymentDialogContent({
                 : cashAppReapproval
                   ? "Approve the updated total with Cash App to finish your order."
                   : error) ||
-            (loadingProvider
-              ? `Complete your payment approval in ${loadingProvider}.`
-              : "This may take a few seconds. Please keep this page open while we process your payment and confirm your order. Don't submit another payment.")}
+            (preparing
+              ? "Checking your checkout details and total…"
+              : loadingProvider
+                ? `Complete your payment approval in ${loadingProvider}.`
+                : "This may take a few seconds. Please keep this page open while we process your payment and confirm your order. Don't submit another payment.")}
         </p>
+        {cartRecovery && error && (
+          <a href="/cart" className="mt-3 block underline">
+            Review your cart
+          </a>
+        )}
         {walletReview}
         {addressReview && onAcceptAddress && (
           <CheckoutAddressReview

@@ -23,6 +23,34 @@ describe("checkout order polling", () => {
     expect(fetch).toHaveBeenCalledTimes(requests);
   });
 
+  it.each([
+    {
+      id: "another",
+      status: "paid",
+      subtotal: 1,
+      tax: 0,
+      shipping: 0,
+      total: 1,
+      fulfillment: "pickup",
+    },
+    { id: "order-1", status: "paid" },
+  ])("rejects malformed or mismatched paid evidence", async (data) => {
+    global.fetch = jest.fn().mockResolvedValue(Response.json(data));
+    const state = jest.fn();
+    startCheckoutOrderPolling("order-1", null, state);
+    await jest.advanceTimersByTimeAsync(0);
+    expect(state).toHaveBeenCalledWith("error");
+  });
+
+  it("handles forbidden evidence without retrying", async () => {
+    global.fetch = jest.fn().mockResolvedValue(Response.json({}, { status: 403 }));
+    const state = jest.fn();
+    startCheckoutOrderPolling("order-1", null, state);
+    await jest.advanceTimersByTimeAsync(60_000);
+    expect(fetch).toHaveBeenCalledTimes(1);
+    expect(state).toHaveBeenCalledWith("unauthorized");
+  });
+
   it("bounds a hung request and ignores a response after cancellation", async () => {
     let resolveResponse!: (response: Response) => void;
     global.fetch = jest.fn().mockImplementation(

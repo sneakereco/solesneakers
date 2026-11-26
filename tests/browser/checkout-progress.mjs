@@ -139,12 +139,26 @@ try {
   await page
     .getByRole("heading", { name: "Processing your payment", exact: true })
     .waitFor();
-  await page.evaluate(() => window.navigate("/checkout/cancel"));
+  await page.evaluate(() => {
+    sessionStorage.setItem("checkout_idempotency_key", "newer-key");
+    sessionStorage.setItem("checkout_cart_fingerprint", "newer-fingerprint");
+    sessionStorage.setItem("rdk_guest_shipping_address_v1", "newer-draft");
+    window.navigate("/checkout/cancel");
+  });
   await page.getByRole("heading", { name: "Checkout Canceled", exact: true }).waitFor();
   assert.equal(
     await page.locator("dialog[open]").count(),
     0,
     "Cancellation clears retained progress",
+  );
+  assert.deepEqual(
+    await page.evaluate(() => [
+      sessionStorage.getItem("checkout_idempotency_key"),
+      sessionStorage.getItem("checkout_cart_fingerprint"),
+      sessionStorage.getItem("rdk_guest_shipping_address_v1"),
+      sessionStorage.getItem("checkout:confirmed:test-order"),
+    ]),
+    ["newer-key", "newer-fingerprint", "newer-draft", null],
   );
   assert.deepEqual(errors, []);
   console.log(

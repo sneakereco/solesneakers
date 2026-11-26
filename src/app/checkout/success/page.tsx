@@ -7,14 +7,11 @@ import { CheckoutPaymentDialog } from "@/components/checkout/CheckoutPaymentDial
 import { useCart } from "@/components/cart/CartProvider";
 import { useSession } from "@/contexts/SessionContext";
 import { useHydrated } from "@/components/ui/useHydrated";
-import { classifyCheckoutOrderStatus } from "@/lib/checkout/checkout-order-state";
-import { buildCheckoutStatusUrl } from "@/lib/checkout/checkout-status-url";
+import { startCheckoutOrderPolling } from "@/lib/checkout/checkout-order-polling";
 import {
   readGuestOrderAccess,
   storeGuestOrderAccess,
 } from "@/lib/checkout/client-session";
-import { withRequestDeadline } from "@/lib/http/request-deadline";
-import { readJsonResponse, ResponseError } from "@/lib/http/read-json-response";
 import { INSTAGRAM_HANDLE, INSTAGRAM_URL } from "@/config/constants/contact";
 import type { OrderStatusResponse } from "@/types/domain/checkout";
 
@@ -70,6 +67,9 @@ function Notice({ message, retry }: { message: string; retry?: () => void }) {
           Check again
         </button>
       )}
+      <a href="/contact" className="ml-4 underline">
+        Contact support
+      </a>
       <button
         type="button"
         onClick={() => router.push("/store")}
@@ -134,74 +134,33 @@ function Receipt({
   const [visibleStatus, setStatus] = useState<OrderStatusResponse | null>(null);
   const [message, setMessage] = useState<string | null>(null);
   useEffect(() => {
-    const controller = new AbortController();
-    let pollTimer: ReturnType<typeof setTimeout> | undefined;
-    const deadline = setTimeout(() => {
-      controller.abort();
-      clearTimeout(pollTimer);
-      setMessage(
-        "We are still waiting for confirmation. Check again before making another payment.",
-      );
-    }, 60000);
-    async function poll() {
-      try {
-        const data = await withRequestDeadline(
-          async (signal) =>
-            readJsonResponse<OrderStatusResponse>(
-              await fetch(buildCheckoutStatusUrl(orderId, token, false), {
-                signal,
-                cache: "no-store",
-              }),
-              "Could not load the order",
-            ),
-          controller.signal,
-        );
-        if (controller.signal.aborted) return;
-        if (data.id !== orderId || typeof data.status !== "string")
-          throw Error("Invalid order");
-        const state = classifyCheckoutOrderStatus(data.status);
-        if (state === "waiting") {
-          pollTimer = setTimeout(() => void poll(), 2000);
-          return;
-        }
-        if (state === "paid") {
-          if (
-            ![data.total, data.tax, data.shipping, data.subtotal].every(
-              Number.isFinite,
-            ) ||
-            !["ship", "pickup"].includes(data.fulfillment)
-          )
-            throw Error("Invalid receipt");
+    return startCheckoutOrderPolling(
+      orderId,
+      token,
+      (state, order) => {
+        if (state === "paid" && order) {
           if (token) {
             try {
               storeGuestOrderAccess(orderId, token);
             } catch {
-              /* Access to this page is already verified. */
+              /* Already verified by this read. */
             }
           }
-          setStatus(data);
-        } else
-          setMessage(
-            state === "review"
-              ? "This payment is under review. Check again before submitting another payment."
-              : "The order has no confirmed payment. Check your order details or contact support.",
-          );
-      } catch (error) {
-        if (controller.signal.aborted) return;
+          setStatus(order);
+          return;
+        }
         setMessage(
-          error instanceof ResponseError && [401, 403].includes(error.status)
-            ? "Open the secure order link from your email or sign in to view this order."
-            : "We could not load your order details. Check again before making another payment.",
+          state === "delayed"
+            ? "We are still waiting for confirmation. Check again before making another payment."
+            : state === "review"
+              ? "This payment is under review. Check again before submitting another payment."
+              : state === "unauthorized"
+                ? "Open the secure order link from your email or sign in to view this order."
+                : "We could not verify a confirmed payment. Check again or contact support before paying again.",
         );
-      }
-      clearTimeout(deadline);
-    }
-    void poll();
-    return () => {
-      controller.abort();
-      clearTimeout(pollTimer);
-      clearTimeout(deadline);
-    };
+      },
+      { reconcile: false },
+    );
   }, [orderId, token, retry]);
 
   if (message)

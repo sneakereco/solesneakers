@@ -21,7 +21,7 @@ jest.mock("@/components/cart/CartProvider", () => ({
 }));
 
 jest.mock("@/contexts/SessionContext", () => ({
-  useSession: () => ({ user: null }),
+  useSession: () => ({ user: { id: "user-1" } }),
 }));
 
 import {
@@ -74,6 +74,7 @@ describe("CheckoutClient", () => {
         initialData={{
           isGuest: false,
           customer: {
+            ownerId: "user-1",
             email: "buyer@example.com",
             address: {
               name: "Buyer Example",
@@ -112,7 +113,7 @@ describe("CheckoutClient", () => {
     expect(html).toContain("focus-visible:outline-none");
     expect(html).toContain("Subtotal");
     expect(html).toContain("Tax");
-    expect(html).toContain("Estimated total");
+    expect(html).toContain("Updating totals");
     expect(html).toContain("air-runner.jpg");
     expect(html).toContain('<h1 class="sr-only">Checkout</h1>');
     expect(html.indexOf("Order summary")).toBeLessThan(html.indexOf("Contact"));

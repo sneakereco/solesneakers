@@ -13,6 +13,7 @@ export function startCheckoutOrderPolling(
   orderId: string,
   token: string | null,
   onState: (state: CheckoutConfirmationState, order?: OrderStatusResponse) => void,
+  { reconcile = true }: { reconcile?: boolean } = {},
 ): () => void {
   let stopped = false;
   let attempts = 0;
@@ -39,14 +40,18 @@ export function startCheckoutOrderPolling(
     attempts += 1;
     try {
       const response = await fetch(
-        buildCheckoutStatusUrl(orderId, token, attempts === 2 || attempts % 3 === 0),
+        buildCheckoutStatusUrl(
+          orderId,
+          token,
+          reconcile && (attempts === 2 || attempts % 3 === 0),
+        ),
         { cache: "no-store", signal: controller.signal },
       );
       const data = await response.json().catch(() => null);
       if (stopped) {
         return;
       }
-      if (response.status === 401) {
+      if (response.status === 401 || response.status === 403) {
         return finish("unauthorized");
       }
       if (response.status === 404) {
@@ -56,6 +61,14 @@ export function startCheckoutOrderPolling(
         const state = classifyCheckoutOrderStatus(String(data?.status ?? ""));
         if (state !== "waiting") {
           if (state === "paid") {
+            if (
+              data?.id !== orderId ||
+              ![data.subtotal, data.tax, data.shipping, data.total].every(
+                Number.isFinite,
+              ) ||
+              !["ship", "pickup"].includes(data.fulfillment)
+            )
+              return finish("error");
             stop();
             onState("paid", data as OrderStatusResponse);
             return;

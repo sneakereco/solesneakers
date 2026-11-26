@@ -31,6 +31,20 @@ export function getOrCreateCheckoutIdempotencyKey(
   return key;
 }
 
+export function clearCheckoutAttempt(
+  key: string,
+  storage: Storage | null = getSessionStorage(),
+): void {
+  try {
+    if (storage?.getItem(IDEMPOTENCY_KEY) === key) {
+      storage.removeItem(IDEMPOTENCY_KEY);
+      storage.removeItem(CART_FINGERPRINT_KEY);
+    }
+  } catch {
+    // A local cleanup failure cannot change the payment outcome.
+  }
+}
+
 export function getOrCreateCheckoutDeviceSessionId(
   storage: Storage | null = getSessionStorage(),
   createId: () => string = generateIdempotencyKey,

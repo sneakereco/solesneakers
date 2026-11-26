@@ -182,6 +182,10 @@ const bundle = await build({
       setup(builder) {
         const mocks = new Map([
           [
+            "next/link",
+            "export default function Link({children,...props}){return <a {...props}>{children}</a>}",
+          ],
+          [
             "next/navigation",
             "export const useRouter = () => ({ push() {} }); export const usePathname = () => window.location.pathname;",
           ],
@@ -212,14 +216,14 @@ const bundle = await build({
           ],
           [
             "@/components/checkout/SquarePaymentMethods",
-            "export const SquarePaymentMethods = ({ children }) => <div data-payment>{children}</div>;",
+            "export class CheckoutCartUnavailable extends Error {}; export const SquarePaymentMethods = ({ children }) => <div data-payment>{children}</div>;",
           ],
           [
             "@/lib/checkout/client-session",
             `
               export const getOrCreateCheckoutDeviceSessionId = () => "device";
               export const getOrCreateCheckoutIdempotencyKey = () => "idempotency";
-              export const storeGuestOrderAccess = () => {};
+              export const clearCheckoutAttempt = () => {}; export const storeGuestOrderAccess = () => {};
             `,
           ],
           [
@@ -312,12 +316,12 @@ try {
       status: 200,
       contentType: "application/json",
       body: JSON.stringify({
-        completeness: "estimate",
-        quoteFingerprint: "a".repeat(64),
+        completeness: "preliminary",
+        quoteFingerprint: null,
         totals: {
           subtotalCents: 10000,
           shippingCents: 0,
-          taxCents: 0,
+          taxCents: null,
           totalCents: 10000,
         },
       }),

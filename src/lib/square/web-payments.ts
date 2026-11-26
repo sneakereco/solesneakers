@@ -110,30 +110,33 @@ export function squareWebPaymentsScriptUrl(environment: SquareEnvironment): stri
 }
 
 function loadScript(src: string): Promise<void> {
-  if (window.Square) {
-    return Promise.resolve();
-  }
+  if (window.Square) return Promise.resolve();
   const existing = document.querySelector<HTMLScriptElement>(`script[src="${src}"]`);
-  if (existing) {
-    return new Promise((resolve, reject) => {
-      existing.addEventListener("load", () => resolve(), { once: true });
-      existing.addEventListener(
-        "error",
-        () => reject(new Error("square_sdk_unavailable")),
-        {
-          once: true,
-        },
-      );
-    });
-  }
-
+  const script = existing ?? document.createElement("script");
   return new Promise((resolve, reject) => {
-    const script = document.createElement("script");
-    script.src = src;
-    script.async = true;
-    script.onload = () => resolve();
-    script.onerror = () => reject(new Error("square_sdk_unavailable"));
-    document.head.appendChild(script);
+    const timer = window.setTimeout(failed, 15_000);
+    function cleanup() {
+      window.clearTimeout(timer);
+      script.removeEventListener("load", loaded);
+      script.removeEventListener("error", failed);
+    }
+    function failed() {
+      cleanup();
+      script.remove();
+      reject(new Error("square_sdk_unavailable"));
+    }
+    function loaded() {
+      if (!window.Square) return failed();
+      cleanup();
+      resolve();
+    }
+    script.addEventListener("load", loaded);
+    script.addEventListener("error", failed);
+    if (!existing) {
+      script.src = src;
+      script.async = true;
+      document.head.appendChild(script);
+    }
   });
 }
 
