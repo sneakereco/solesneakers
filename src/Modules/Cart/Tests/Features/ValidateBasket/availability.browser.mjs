@@ -265,6 +265,249 @@ test("reset retires an unbound start, refuses its late bind and permits a fresh 
   assert.equal(result.fresh.status, "captured");
   assert.notEqual(result.fresh.captureId, proof.captureId);
 });
+test("conditional scope release cannot clear a newer registration and fences its outstanding response", async (t) => {
+  const { page, close } = await mountCheckoutBrowser({
+    view: "fullCart",
+    guestItems: [other],
+    setupDocument: () => {
+      window.seen = [];
+      const fetch = window.fetch.bind(window);
+      window.fetch = (input, init) =>
+        input === "/api/cart/validate"
+          ? new Promise((resolve) =>
+              window.seen.push({ order: JSON.parse(init.body).order, resolve }),
+            )
+          : fetch(input, init);
+    },
+    route: offline,
+  });
+  t.after(close);
+  await page.waitForFunction(() => window.seen.length === 1);
+  const order = {
+    orderId: "44444444-4444-4444-8444-444444444444",
+    guestAccessToken: "old-proof",
+  };
+  const returnsRelease = await page.evaluate((order) => {
+    window.oldRelease = window.testCart.scopeValidationToOrder(order);
+    return typeof window.oldRelease === "function";
+  }, order);
+  assert.equal(returnsRelease, true);
+  await page.waitForFunction(() => window.seen.length === 2);
+  await page.evaluate((order) => {
+    window.newRelease = window.testCart.scopeValidationToOrder({
+      ...order,
+      guestAccessToken: "new-proof",
+    });
+    window.oldRelease();
+  }, order);
+  await page.waitForFunction(() => window.seen.length === 3);
+  await page.evaluate(() => {
+    void window.testCart.recheckAvailability();
+  });
+  await page.waitForFunction(() => window.seen.length === 4);
+  assert.equal(
+    await page.evaluate(() => window.seen[3].order?.guestAccessToken),
+    "new-proof",
+  );
+  const saved = await page.evaluate(() => sessionStorage.getItem("rdk_cart_session"));
+  await page.evaluate((row) => {
+    window.newRelease();
+    window.seen[3].resolve(
+      Response.json({
+        items: [],
+        removed: [
+          { productId: row.productId, variantId: row.variantId, reason: "not_found" },
+        ],
+      }),
+    );
+  }, other);
+  await page.evaluate(() => new Promise((r) => setTimeout(r, 0)));
+  assert.equal(
+    await page.evaluate(() => sessionStorage.getItem("rdk_cart_session")),
+    saved,
+  );
+  await page.evaluate(() => {
+    void window.testCart.recheckAvailability();
+  });
+  await page.waitForFunction(() => window.seen.length === 5);
+  assert.equal(await page.evaluate(() => window.seen[4].order), undefined);
+});
+test("late unscoped and superseded-order validation cannot overwrite a restored stock-zero hold", async (t) => {
+  const current = { orderId: "44444444-4444-4444-8444-444444444444" },
+    prior = { orderId: "55555555-5555-4555-8555-555555555555" };
+  const { page, close } = await mountCheckoutBrowser({
+    view: "fullCart",
+    initialUser: { id: "a", email: "a@fixture.invalid" },
+    accountItems: { a: [other] },
+    setupDocument: () => {
+      window.pendingChecks = [];
+      const fetch = window.fetch.bind(window);
+      window.fetch = (input, init) =>
+        input === "/api/cart/validate"
+          ? new Promise((resolve) =>
+              window.pendingChecks.push({ payload: JSON.parse(init.body), resolve }),
+            )
+          : fetch(input, init);
+    },
+    route: offline,
+  });
+  t.after(close);
+  await page.waitForFunction(() => window.pendingChecks.length === 1);
+  await page.evaluate((order) => window.testCart.scopeValidationToOrder(order), prior);
+  await page.waitForFunction(() => window.pendingChecks.length === 2);
+  await page.evaluate((order) => window.testCart.scopeValidationToOrder(order), current);
+  await page.waitForFunction(() => window.pendingChecks.length === 3);
+  assert.deepEqual(
+    await page.evaluate(() => window.pendingChecks.map((r) => r.payload.order ?? null)),
+    [null, prior, current],
+  );
+  const reply = async (index, owns) =>
+    page.evaluate(
+      ({ index, owns, row }) => {
+        const pair = { productId: row.productId, variantId: row.variantId };
+        const availability = owns ? "available" : "unavailable";
+        window.pendingChecks[index].resolve(
+          Response.json({
+            contractVersion: 2,
+            items: [],
+            removed: [{ ...pair, reason: "out_of_stock" }],
+            lineState: [
+              {
+                ...pair,
+                requestedQuantity: 1,
+                availableQuantity: owns ? 1 : 0,
+                availability,
+                reason: availability,
+                facts: row,
+                ...(owns ? { orderScoped: true } : {}),
+              },
+            ],
+          }),
+        );
+      },
+      { index, owns, row: other },
+    );
+  await reply(2, true);
+  await expect
+    .poll(() => page.evaluate(() => window.testCart.items[0].orderScoped))
+    .toBe(true);
+  const version = () =>
+    page.evaluate(() => [
+      localStorage.getItem("rdk_cart_user_a"),
+      localStorage.getItem("rdk_cart_user_a:revision"),
+    ]);
+  const saved = await version();
+  await reply(1, false);
+  await reply(0, false);
+  await page.evaluate(() => navigator.locks.request("rdk_cart", () => {}));
+  assert.deepEqual(await version(), saved);
+  assert.equal(await page.evaluate(() => window.testCart.items[0].maxStock), 1);
+});
+test("same verified guest keeps its scoped stock-zero hold across visibility and a new owner never inherits it", async (t) => {
+  const order = {
+    orderId: "44444444-4444-4444-8444-444444444444",
+    guestAccessToken: "synthetic-private-order-proof",
+  };
+  const seen = [];
+  let user = null;
+  const { page, close } = await mountCheckoutBrowser({
+    view: "fullCart",
+    guestItems: [other],
+    accountItems: { b: [other] },
+    sessionRoute: (route) =>
+      route.fulfill({ json: { user, role: user ? "customer" : null } }),
+    route: async (route, url) => {
+      if (url.pathname !== "/api/cart/validate") return offline(route);
+      const request = route.request().postDataJSON();
+      seen.push(request.order);
+      const authorized =
+        request.order?.orderId === order.orderId &&
+        request.order.guestAccessToken === order.guestAccessToken;
+      return route.fulfill({
+        json: {
+          contractVersion: 2,
+          items: [],
+          removed: [
+            {
+              productId: other.productId,
+              variantId: other.variantId,
+              reason: "out_of_stock",
+            },
+          ],
+          lineState: [
+            {
+              productId: other.productId,
+              variantId: other.variantId,
+              requestedQuantity: 1,
+              availableQuantity: authorized ? 1 : 0,
+              availability: authorized ? "available" : "unavailable",
+              reason: authorized ? "available" : "unavailable",
+              facts: other,
+              ...(authorized ? { orderScoped: true } : {}),
+            },
+          ],
+        },
+      });
+    },
+  });
+  t.after(close);
+  await expect
+    .poll(() => page.evaluate(() => window.testCart.items[0]?.availability))
+    .toBe("unavailable");
+  await page.evaluate((order) => {
+    window.oldScope = window.testCart.scopeValidationToOrder;
+    window.oldRelease = window.oldScope(order);
+    return window.testCart.recheckAvailability();
+  }, order);
+  await expect
+    .poll(() => page.evaluate(() => window.testCart.items[0]?.maxStock))
+    .toBe(1);
+  const verify = async () => {
+    const start = seen.length;
+    await page.evaluate(() => document.dispatchEvent(new Event("visibilitychange")));
+    await expect.poll(() => seen.length).toBeGreaterThan(start);
+    await page.waitForFunction(() => window.testCart.isReady);
+  };
+  await verify();
+  await expect.poll(() => seen.at(-1)).toEqual(order);
+  await page.evaluate(() => {
+    window.oldScope({ orderId: "wrong-old-scope", guestAccessToken: "stale" });
+    return window.testCart.recheckAvailability();
+  });
+  assert.deepEqual(seen.at(-1), order);
+  await expect
+    .poll(() => page.evaluate(() => window.testCart.items[0]?.maxStock))
+    .toBe(1);
+  user = { id: "b", email: "b@fixture.invalid" };
+  await verify();
+  await expect.poll(() => page.evaluate(() => window.testSession.user?.id)).toBe("b");
+  await page.evaluate(() => window.testCart.recheckAvailability());
+  assert.equal(seen.at(-1), undefined);
+  const accountOrder = { orderId: "66666666-6666-4666-8666-666666666666" };
+  await page.evaluate((order) => {
+    window.testCart.scopeValidationToOrder(order);
+    window.oldRelease();
+    return window.testCart.recheckAvailability();
+  }, accountOrder);
+  assert.deepEqual(seen.at(-1), accountOrder);
+  user = null;
+  await verify();
+  await expect
+    .poll(() => page.evaluate(() => window.testSession.user?.id ?? null))
+    .toBe(null);
+  await page.evaluate(() => window.testCart.recheckAvailability());
+  assert.equal(seen.at(-1), undefined);
+  assert.equal(
+    await page.evaluate(
+      (token) =>
+        [localStorage, sessionStorage].some((area) =>
+          Object.keys(area).some((k) => area.getItem(k)?.includes(token)),
+        ),
+      order.guestAccessToken,
+    ),
+    false,
+  );
+});
 const offline = (route) => route.fulfill({ status: 503, body: "offline" });
 for (const mixed of [false, true])
   test("full page has one notice for unreadable rows " + mixed, async (t) => {

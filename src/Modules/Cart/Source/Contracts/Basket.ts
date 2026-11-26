@@ -80,7 +80,7 @@ export interface BasketReviewActions {
     conflicts: readonly StockConflict[],
     recoveryRequired?: boolean,
   ) => Promise<BasketMutationResult>;
-  scopeValidationToOrder: (order: ValidationOrder) => void;
+  scopeValidationToOrder: (order: ValidationOrder) => () => void;
   resetSavedBasket: () => Promise<BasketMutationResult>;
 }
 export interface CartContextType extends CartPurchaseActions, BasketReviewActions {

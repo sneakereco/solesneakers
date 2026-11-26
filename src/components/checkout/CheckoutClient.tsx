@@ -1,5 +1,5 @@
 "use client";
-import { BasketAccessNotice } from "@/Modules/Cart/Source/Client";
+import { BasketAccessNotice, type ValidationOrder } from "@/Modules/Cart/Source/Client";
 
 import { useEffect, useLayoutEffect, useMemo, useRef, useState } from "react";
 import { useRouter } from "next/navigation";
@@ -150,6 +150,20 @@ function OwnerCheckout({
     scopeValidationToOrder,
   } = useCart();
   const isReady = verified && cartReady;
+  // An owned prepare can finish during a visibility check; attach its reference
+  // through the newly verified connection when that continuation resumes.
+  const pendingScope = useRef<ValidationOrder | null>(null);
+  const readyScopeAction = useRef<typeof scopeValidationToOrder | null>(null);
+  useLayoutEffect(() => {
+    readyScopeAction.current = isReady ? scopeValidationToOrder : null;
+    if (readyScopeAction.current && pendingScope.current) {
+      readyScopeAction.current(pendingScope.current);
+      pendingScope.current = null;
+    }
+    return () => {
+      readyScopeAction.current = null;
+    };
+  }, [isReady, scopeValidationToOrder]);
   const { isCurrent } = useSession();
   const [hasOpened, setHasOpened] = useState(false);
   if (isReady && items.length && !hasOpened) setHasOpened(true);
@@ -289,7 +303,13 @@ function OwnerCheckout({
     !stockBlocked && !needsRecovery && !quotePending && quoteState.status === "ready";
   const exactQuote =
     quoteReady && quoteState.quote.completeness === "exact" ? quoteState.quote : null;
-  const currentQuote = stockBlocked || needsRecovery ? null : (quoteState.quote ?? null);
+  const activeOwnHold =
+    stockBlocked &&
+    items.every((i) => !i.availability && i.previousPriceCents === undefined);
+  // Keep a prepared wallet's SDK attached during its verified reservation. The
+  // quoteReady gate still blocks new authorizations against order-scoped stock.
+  const currentQuote =
+    (stockBlocked && !activeOwnHold) || needsRecovery ? null : (quoteState.quote ?? null);
 
   function updateAddress(field: keyof CheckoutAddressForm, value: string) {
     setAddress((current) => ({ ...current, [field]: value }));
@@ -486,10 +506,9 @@ function OwnerCheckout({
     if (typeof data.guestAccessToken === "string" && data.guestAccessToken) {
       storeGuestOrderAccess(data.orderId, data.guestAccessToken);
     }
-    scopeValidationToOrder({
-      orderId: data.orderId,
-      guestAccessToken: data.guestAccessToken,
-    });
+    const orderScope = { orderId: data.orderId, guestAccessToken: data.guestAccessToken };
+    if (readyScopeAction.current) readyScopeAction.current(orderScope);
+    else pendingScope.current = orderScope;
     return {
       assertCurrentBasket,
       orderId: data.orderId,

@@ -1080,7 +1080,16 @@ function accountCheckoutData(id) {
     },
   };
 }
-async function checkoutOwnershipFixture(t, { reviewAddress = false } = {}) {
+async function checkoutOwnershipFixture(
+  t,
+  { reviewAddress = false, stockZeroAfterPrepare = false } = {},
+) {
+  const heldLine = {
+    ...line("a"),
+    productId: "11111111-1111-4111-8111-111111111111",
+    variantId: "22222222-2222-4222-8222-222222222222",
+    maxStock: 1,
+  };
   let sessionUser = { id: "a", email: "a@fixture.invalid" };
   let sessionAvailable = true;
   let holdQuote,
@@ -1090,6 +1099,7 @@ async function checkoutOwnershipFixture(t, { reviewAddress = false } = {}) {
     holdPay,
     permitOk = false;
   const requests = {
+    validations: [],
     quotes: [],
     prepares: [],
     permits: 0,
@@ -1100,7 +1110,7 @@ async function checkoutOwnershipFixture(t, { reviewAddress = false } = {}) {
   const mounted = await mountCheckoutBrowser({
     view: "checkout",
     initialUser: sessionUser,
-    accountItems: { a: [line("a")], b: [line("b")] },
+    accountItems: { a: [stockZeroAfterPrepare ? heldLine : line("a")], b: [line("b")] },
     guestItems: [line("guest")],
     documentData: accountCheckoutData("a"),
     setupDocument: (data) => {
@@ -1170,8 +1180,42 @@ async function checkoutOwnershipFixture(t, { reviewAddress = false } = {}) {
       return route.fulfill({ json: { user, role: user ? "customer" : null } });
     },
     route: async (route, url) => {
-      if (url.pathname === "/api/cart/validate")
+      if (url.pathname === "/api/cart/validate") {
+        const input = route.request().postDataJSON();
+        requests.validations.push(input);
+        if (stockZeroAfterPrepare) {
+          if (!requests.prepares.length)
+            return route.fulfill({ json: { items: [heldLine], removed: [] } });
+          const owns = input.order?.orderId === "fixture-order";
+          const availability = owns ? "available" : "unavailable";
+          return route.fulfill({
+            json: {
+              contractVersion: 2,
+              items: [],
+              removed: [
+                {
+                  productId: heldLine.productId,
+                  variantId: heldLine.variantId,
+                  reason: "out_of_stock",
+                },
+              ],
+              lineState: [
+                {
+                  productId: heldLine.productId,
+                  variantId: heldLine.variantId,
+                  requestedQuantity: 1,
+                  availableQuantity: owns ? 1 : 0,
+                  availability,
+                  reason: availability,
+                  facts: heldLine,
+                  ...(owns ? { orderScoped: true } : {}),
+                },
+              ],
+            },
+          });
+        }
         return route.fulfill({ status: 503, json: {} });
+      }
       if (url.pathname === "/api/checkout/quote") {
         requests.quotes.push(route.request().postDataJSON());
         if (holdQuote) await holdQuote;
@@ -1392,6 +1436,8 @@ test("same-owner visibility preserves active checkout method, billing and a sing
     releaseSession();
     await expect.poll(() => f.requests.permits).toBe(1);
     await expect(page.getByText("Fixture payment paused", { exact: true })).toBeVisible();
+    await page.evaluate(() => window.testCart.recheckAvailability());
+    assert.deepEqual(f.requests.validations.at(-1).order, { orderId: "fixture-order" });
     assert.ok(
       await page.evaluate(
         () =>
@@ -1578,6 +1624,49 @@ test("accepted payment resumes once after unavailable session is verified", asyn
   }
 });
 
+test("prepared Cash App payment keeps its stock-zero own hold and SDK through same-owner re-verification", async (t) => {
+  const f = await checkoutOwnershipFixture(t, { stockZeroAfterPrepare: true }),
+    { page } = f;
+  await page.waitForFunction(() => typeof window.beginCash === "function");
+  await page.getByRole("radio", { name: "Cash App Pay", exact: true }).click();
+  const releasePay = f.deferPay();
+  let releaseSession;
+  try {
+    assert.equal(await page.evaluate(() => window.beginCash()), true);
+    assert.equal(await page.evaluate(() => window.completeCash()), true);
+    await expect.poll(() => f.requests.pays).toBe(1);
+    await expect
+      .poll(() => page.evaluate(() => window.testCart.items[0]?.orderScoped))
+      .toBe(true);
+    releaseSession = f.deferSession();
+    await page.evaluate(() => document.dispatchEvent(new Event("visibilitychange")));
+    await expect.poll(() => page.evaluate(() => window.testCart.access)).toBe("checking");
+    const after = f.requests.validations.length;
+    releaseSession();
+    await expect.poll(() => f.requests.validations.length).toBeGreaterThan(after);
+    await expect.poll(() => page.evaluate(() => window.testCart.isReady)).toBe(true);
+    await page.evaluate(() => window.testCart.recheckAvailability());
+    assert.deepEqual(f.requests.validations.at(-1).order, { orderId: "fixture-order" });
+    const line = await page.evaluate(() => window.testCart.items[0]);
+    assert.equal(line.maxStock, 1);
+    assert.equal(line.orderScoped, true);
+    assert.equal(line.availability, undefined);
+    assert.deepEqual(await page.evaluate(() => window.cashCounters), {
+      created: 1,
+      destroyed: 0,
+      authorized: 1,
+      callbacks: 1,
+    });
+    releasePay();
+    await expect.poll(() => new URL(page.url()).pathname).toBe("/checkout/processing");
+    assert.equal(f.requests.prepares.length, 1);
+    assert.equal(f.requests.permits, 1);
+    assert.equal(f.requests.pays, 1);
+  } finally {
+    releaseSession?.();
+    releasePay();
+  }
+});
 for (const outcome of ["same quote", "changed quote", "new owner"]) {
   test("Cash App callback during verification with " + outcome, async (t) => {
     const f = await checkoutOwnershipFixture(t),

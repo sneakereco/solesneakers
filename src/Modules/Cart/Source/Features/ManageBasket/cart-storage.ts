@@ -44,6 +44,11 @@ type StoredVersion = {
   revision: string | null;
 };
 type Snapshot = ReturnType<typeof decodeSavedBasket> & StoredVersion;
+// Provider-local memory. An auth check can replace a storage connection without
+// replacing the verified shopper. Neither the credential nor this handle is serialized.
+export type OwnerValidationScope = {
+  current?: { owner: string | null; order: ValidationOrder; registration: symbol };
+};
 export type BasketView = {
   review: BasketReviewActions;
   items: CartItem[];
@@ -67,7 +72,7 @@ export const unavailableReview: BasketReviewActions = {
   resetSavedBasket: unavailableEdit,
   applyStockConflicts: unavailableEdit,
   acceptPrice: unavailableEdit,
-  scopeValidationToOrder: () => {},
+  scopeValidationToOrder: () => () => {},
 };
 class OversizedBasket extends SavedBasketLimitError {
   constructor(
@@ -96,16 +101,16 @@ export class BasketStorage {
   private readonly revisionKey: string;
   private connection?: AbortController;
   private listener?: (view: BasketView) => void;
-  private pending?: Snapshot;
+  private pending?: Snapshot & { scope: OwnerValidationScope["current"] };
   private published?: Snapshot;
   private readonly proofKey: string;
 
   private blocked = false;
   private repair?: OversizedBasket;
-  private scope?: ValidationOrder;
   constructor(
     private readonly userId: string | null,
     private readonly observed: () => boolean,
+    private readonly validation: OwnerValidationScope,
   ) {
     this.key = userId ? "rdk_cart_user_" + userId : "rdk_cart_session";
     this.revisionKey = this.key + ":revision";
@@ -310,10 +315,16 @@ export class BasketStorage {
         ...unavailableReview,
         recheckAvailability: () => this.validate(true),
         scopeValidationToOrder: (order) => {
-          if (eligible()()) {
-            this.scope = { ...order };
-            this.pending = undefined;
-          }
+          if (!eligible()()) return () => {};
+          const registration = Symbol();
+          const validation = this.validation;
+          validation.current = { owner: this.userId, order: { ...order }, registration };
+          this.pending = undefined;
+          void this.validate(true);
+          return () => {
+            if (validation.current?.registration === registration)
+              validation.current = undefined;
+          };
         },
         applyStockConflicts: (conflicts, recoveryRequired) =>
           this.reviewEdit(snapshot, (rows) =>
@@ -413,6 +424,8 @@ export class BasketStorage {
   }
   connect(listener: (view: BasketView) => void) {
     this.listener = listener;
+    if (this.observed() && this.validation.current?.owner !== this.userId)
+      this.validation.current = undefined;
     const connection = new AbortController();
     this.connection = connection;
     window.addEventListener("storage", this.onStorage);
@@ -426,7 +439,6 @@ export class BasketStorage {
     return () => {
       window.removeEventListener("storage", this.onStorage);
       connection.abort();
-      this.scope = undefined;
       this.repair = undefined;
       this.connection = undefined;
       this.listener = undefined;
@@ -437,6 +449,8 @@ export class BasketStorage {
   async validate(force = false): Promise<boolean> {
     const snapshot = await this.atomic(() => {
       const current = this.read();
+      const scope = this.validation.current;
+      if (scope && scope.owner !== this.userId) return;
       // A background refresh cannot rewrite a partially recoverable basket.
       if (
         !current.complete ||
@@ -444,19 +458,28 @@ export class BasketStorage {
         (current.rows.some((r) => !r.units) &&
           this.area.getItem(this.proofKey) !== null) ||
         !current.items.length ||
-        (!force && this.pending && sameSnapshot(this.pending, current))
+        (!force &&
+          this.pending &&
+          this.pending.scope === scope &&
+          sameSnapshot(this.pending, current))
       )
         return;
-      this.pending = current;
-      return current;
+      const request = { ...current, scope };
+      this.pending = request;
+      return request;
     });
-    if (!snapshot || this.pending !== snapshot) return false;
+    if (!snapshot) return false;
+    const isCurrent = () =>
+      this.pending === snapshot &&
+      this.validation.current === snapshot.scope &&
+      this.observed();
+    if (!isCurrent()) return false;
     try {
-      const accepted = await requestValidation(snapshot.items, this.scope);
-      if (this.pending !== snapshot) return false;
+      const accepted = await requestValidation(snapshot.items, snapshot.scope?.order);
+      if (!isCurrent()) return false;
       return (
         (await this.atomic(() => {
-          if (this.pending !== snapshot) return;
+          if (!isCurrent()) return;
           const current = this.read();
           if (!sameSnapshot(snapshot, current)) this.sync(current);
           else if (accepted) {
@@ -469,14 +492,7 @@ export class BasketStorage {
             }));
             if (accepted.every((item, index) => item === snapshot.items[index]))
               return true;
-            return (
-              this.save(
-                rows,
-                false,
-                () => this.pending === snapshot && this.observed(),
-                snapshot,
-              ) === true
-            );
+            return this.save(rows, false, isCurrent, snapshot) === true;
           }
         })) === true
       );

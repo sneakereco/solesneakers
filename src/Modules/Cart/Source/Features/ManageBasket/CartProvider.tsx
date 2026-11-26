@@ -22,6 +22,7 @@ import {
   unavailablePurchases,
   unavailableReview,
   type BasketView,
+  type OwnerValidationScope,
 } from "./cart-storage";
 import { useBasketIdentity } from "./use-basket-identity";
 
@@ -36,9 +37,16 @@ export function CartProvider({
 }) {
   const identity = useBasketIdentity();
   const { userId: owner, isCurrent } = identity;
+  const [validation] = useState<OwnerValidationScope>(() => ({}));
+  useLayoutEffect(
+    () => () => {
+      validation.current = undefined;
+    },
+    [validation],
+  );
   const basket = useMemo(
-    () => (owner === undefined ? null : new BasketStorage(owner, isCurrent)),
-    [owner, isCurrent],
+    () => (owner === undefined ? null : new BasketStorage(owner, isCurrent, validation)),
+    [owner, isCurrent, validation],
   );
   const [view, setView] = useState<BasketView & { basket: BasketStorage }>();
   useLayoutEffect(
