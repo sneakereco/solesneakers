@@ -11,6 +11,11 @@ export type RunRecord = {
   end: number;
   expiresAt: number;
   revoked: boolean;
+  workerId?: string;
+};
+export type WorkerLeases = {
+  runId: string;
+  workers: Record<string, { start: number; end: number; expiresAt: number }>;
 };
 export interface RunStore {
   get<T>(kind: string, id: string): Promise<T | null>;
@@ -138,4 +143,3 @@ export function createLoadRunStore(settings: LoadTestSettings): RunStore {
     `soles:load:{${settings.target.expected.deploymentId}}`,
   );
 }
-

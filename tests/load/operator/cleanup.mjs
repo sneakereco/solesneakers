@@ -74,6 +74,8 @@ export async function cleanupRun(target, journal, clients) {
         remaining: unknown,
       };
     await clients.finish();
+    await journal.intent?.("lifecycle", "cleanup-complete", { id: "cleanup-complete" });
+    await journal.commit?.("lifecycle", "cleanup-complete");
     return { status: "cleaned", remaining: [], reasons: [] };
   } catch {
     return {
@@ -91,7 +93,10 @@ export function createCleanupClients({ db, admin, control, runId, journal }) {
         .map((x) => x.data),
     variants = () => catalog().map((x) => x.variantId);
   return {
-    snapshot: () => collectQueueSnapshot(db, variants()),
+    snapshot: async () => {
+      await control("events", { runId });
+      return collectQueueSnapshot(db, variants());
+    },
     async deleteOrders() {
       await db.query("begin");
       try {

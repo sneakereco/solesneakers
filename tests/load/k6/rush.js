@@ -1,15 +1,16 @@
 import { sleep } from "k6";
-import { config, sessions, shopperSession } from "./shopping.js";
+import { config, sessions, shopperSession, activateConfig } from "./shopping.js";
+import { waitForRelease } from "./lib/coordination.js";
 import { createTransport, initializeCookies } from "./lib/http.js";
 import { logicalSession } from "./lib/session.js";
 import { emit } from "./lib/metrics.js";
 import { runCheckoutJourney, requestOperation } from "../shared/journeys.mjs";
 export { options, setup } from "./shopping.js";
 let participated = false;
-export async function rushSession() {
+export async function rushSession(data) {
   const slot = config.shard.start + __VU - 1;
   if (slot >= config.shard.end) throw Error("Rush slot outside worker lease");
-  if (slot >= config.plan.contenders || participated) return shopperSession();
+  if (slot >= config.plan.contenders || participated) return shopperSession(data);
   participated = true;
   const identity = sessions[__VU - 1];
   initializeCookies(config, identity);
@@ -40,6 +41,7 @@ export async function rushSession() {
         },
         (x) => x?.completeness === "exact" && /^[a-f0-9]{64}$/.test(x.quoteFingerprint),
       );
+    if (config.coordinator) activateConfig({ phaseStart: waitForRelease(config, slot) });
     if (Date.now() > config.phaseStart)
       throw Error("Rush contender was not ready before opening");
     sleep((config.phaseStart - Date.now()) / 1000);

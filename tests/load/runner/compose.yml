@@ -1,0 +1,17 @@
+services:
+  load-runner:
+    build:
+      context: ../../..
+      dockerfile: tests/load/runner/Dockerfile
+    init: true
+    environment:
+      - LOAD_TEST_SIGNING_KEY
+      - SUPABASE_SECRET_KEY
+      - SUPABASE_DB_URL
+      - UPSTASH_REDIS_REST_TOKEN
+      - NEXT_PUBLIC_SUPABASE_ANON_KEY
+      - LOAD_TEST_WORKERS
+      - LOAD_TEST_RUNNER_REGION
+    volumes:
+      - ../../../.load-test:/workspace/.load-test
+    command: ["--profile", "${LOAD_PROFILE:-smoke}"]

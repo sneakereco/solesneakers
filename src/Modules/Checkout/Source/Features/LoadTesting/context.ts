@@ -3,7 +3,12 @@ import { createHmac, timingSafeEqual } from "node:crypto";
 import { z } from "zod";
 import type { LoadTestSettings } from "./settings";
 import { readLoadTestSettings } from "./settings";
-import { createLoadRunStore, type RunRecord, type RunStore } from "./run-store";
+import {
+  createLoadRunStore,
+  type RunRecord,
+  type RunStore,
+  type WorkerLeases,
+} from "./run-store";
 
 const verified = Symbol("verified-load-context");
 export type LoadTestContext = Readonly<
@@ -18,6 +23,10 @@ const tokenSchema = z
     expiresAt: z.number().int().positive(),
     start: z.number().int().nonnegative(),
     end: z.number().int().positive().max(12000),
+    workerId: z
+      .string()
+      .regex(/^[\w-]{1,100}$/)
+      .optional(),
   })
   .strict();
 function mac(value: string, key: string) {
@@ -43,6 +52,7 @@ export function issuePhaseCredential(run: RunRecord, settings: LoadTestSettings)
       expiresAt: run.expiresAt,
       start: run.start,
       end: run.end,
+      ...(run.workerId ? { workerId: run.workerId } : {}),
     }),
   ).toString("base64url");
   return `${value}.${mac(value, settings.signingKey)}`;
@@ -123,10 +133,22 @@ export async function verifyHarnessRequest(
     run.phaseId !== claims.phaseId ||
     run.targetDigest !== claims.targetDigest ||
     run.expiresAt !== claims.expiresAt ||
-    run.start !== claims.start ||
-    run.end !== claims.end
+    run.start > claims.start ||
+    run.end < claims.end
   )
     throw new Error("Harness phase inactive");
+  const leases = await store.get<WorkerLeases>("leases", run.runId);
+  if (claims.workerId) {
+    const lease = leases?.workers[claims.workerId];
+    if (
+      !lease ||
+      lease.start !== claims.start ||
+      lease.end !== claims.end ||
+      lease.expiresAt <= Date.now()
+    )
+      throw Error("Worker lease inactive");
+  } else if (leases && Object.keys(leases.workers).length)
+    throw Error("Global credential cannot bypass worker partitions");
   return contextFor(run, slot);
 }
 export async function resolveFixtureContext(

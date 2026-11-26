@@ -56,7 +56,7 @@ export class MemoryRunStore implements RunStore {
     if (index >= 0) list.splice(index, 1);
     return Promise.resolve();
   }
-  async purgeRun(runId: string) {
+  purgeRun(runId: string) {
     let removed = 0;
     for (const [key, value] of this.values) {
       if ((value as { runId?: string })?.runId === runId) {
@@ -66,7 +66,7 @@ export class MemoryRunStore implements RunStore {
     }
     for (const key of this.queues.keys())
       if (key.endsWith(":" + runId)) this.queues.delete(key);
-    return removed;
+    return Promise.resolve(removed);
   }
 }
 export function fixtureSettings() {

@@ -1,5 +1,9 @@
 import { handleLoadTestControl } from "../../../Source/Features/LoadTesting/control-handler";
 import {
+  verifyHarnessRequest,
+  issuePhaseCredential,
+} from "../../../Source/Features/LoadTesting/context";
+import {
   fixtureSettings,
   fixtureRun,
   MemoryRunStore,
@@ -7,6 +11,63 @@ import {
 } from "./fixtures";
 
 describe("load control plane", () => {
+  test("only a live worker credential admits its own slots after partitioning", async () => {
+    const { settings } = fixtureSettings(),
+      store = new MemoryRunStore(),
+      run = fixtureRun(settings.target.digest);
+    await store.put("run", run.runId, run);
+    const root = issuePhaseCredential(run, settings);
+    const response = await handleLoadTestControl(
+      signControlRequest(settings, "lease", {
+        nonce: "scope",
+        runId: run.runId,
+        workerId: "http-0",
+        start: 0,
+        end: 100,
+      }),
+      "lease",
+      { settings, store },
+    );
+    const body = await response.json();
+    const request = (token: string, slot = 1) =>
+      new Request(settings.target.baseUrl + "/api/checkout/quote", {
+        headers: { "x-load-test-credential": token, "x-load-test-slot": String(slot) },
+      });
+    expect(
+      (await verifyHarnessRequest(request(body.credential), settings, store))?.slot,
+    ).toBe(1);
+    await expect(
+      verifyHarnessRequest(request(body.credential, 100), settings, store),
+    ).rejects.toThrow();
+    await expect(verifyHarnessRequest(request(root), settings, store)).rejects.toThrow();
+    await store.put("leases", run.runId, {
+      runId: run.runId,
+      workers: { "http-0": { start: 0, end: 100, expiresAt: Date.now() - 1 } },
+    });
+    await expect(
+      verifyHarnessRequest(request(body.credential), settings, store),
+    ).rejects.toThrow();
+  });
+  test("worker ranges cannot overlap and expired heartbeats reject new shopper work", async () => {
+    const { settings } = fixtureSettings(),
+      store = new MemoryRunStore(),
+      run = fixtureRun(settings.target.digest);
+    await store.put("run", run.runId, run);
+    const call = (nonce: string, start: number, end: number, workerId: string) =>
+      handleLoadTestControl(
+        signControlRequest(settings, "lease", {
+          nonce,
+          runId: run.runId,
+          start,
+          end,
+          workerId,
+        }),
+        "lease",
+        { settings, store },
+      );
+    expect((await call("a", 0, 100, "http-0")).status).toBe(200);
+    expect((await call("b", 50, 150, "http-1")).status).toBe(503);
+  });
   test("expired dirty target lease blocks a different run until scoped cleanup", async () => {
     const { settings } = fixtureSettings(),
       store = new MemoryRunStore(),

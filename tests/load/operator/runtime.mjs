@@ -14,7 +14,7 @@ import { openJournal, privateJson, secureDirectory } from "./journal.mjs";
 import { seedFixtures } from "./seed.mjs";
 import { createFixtureClients } from "./fixture-clients.mjs";
 import { createSessionAuth, prepareSessionPool, leaseShopper } from "./sessions.mjs";
-import { launchWorkers } from "./workers.mjs";
+import { launchWorkers, stopJournalWorkers } from "./workers.mjs";
 import {
   startTelemetry,
   createGeneratorCollector,
@@ -141,6 +141,7 @@ export async function runCommand(input) {
       workers = [],
       browserAbort = new AbortController(),
       monitor,
+      leaseTimer,
       coordinator,
       measured = false,
       stopReason;
@@ -196,7 +197,8 @@ export async function runCommand(input) {
               : ordinaryAccounts > 0 && slot % 10 < 3;
           if (account && slot < plan.httpSlots) ordinaryAccounts--;
           const lease = await leaseShopper(pool, slot, 0, { account });
-          const { release, ...identity } = lease;
+          const identity = { ...lease };
+          delete identity.release;
           context.fixtures.sessions.push(identity);
         }
         return pool;
@@ -230,8 +232,13 @@ export async function runCommand(input) {
         };
         const { createCoordinator } = await import("../runner/bootstrap.mjs");
         const phaseStart = Date.now() + 120000;
+        const leaseIds = [];
         coordinator = await createCoordinator(plan, {
           workerCount: Number(env.LOAD_TEST_WORKERS ?? 1),
+          heartbeat: async () => {
+            if (leaseIds.length)
+              await control("heartbeat", { runId: plan.runId, workerIds: leaseIds });
+          },
         });
         plan.provenance = {
           ...target.expected,
@@ -268,11 +275,31 @@ export async function runCommand(input) {
             phaseStart,
             workerCount: Number(env.LOAD_TEST_WORKERS ?? 1),
             coordinator,
+            leaseCredential: async (shard) => {
+              const lease = await control("lease", {
+                runId: plan.runId,
+                workerId: shard.workerId,
+                start: shard.start,
+                end: shard.end,
+              });
+              leaseIds.push(shard.workerId);
+              leaseTimer ??= setInterval(() => {
+                void coordinator
+                  .heartbeat()
+                  .catch(() => safeAbort("Worker lease renewal failed"));
+              }, 10000);
+              return lease.credential;
+            },
           });
           for (const worker of workers)
             await journal.intent("worker", worker.workerId, {
               id: worker.workerId,
               pid: worker.pid,
+            });
+          for (const worker of workers)
+            void worker.done.then(() => {
+              if (Date.now() < (plan.measurementEnd ?? Infinity))
+                void safeAbort("A generator stopped before the measured hold ended");
             });
           telemetryHandle = await startTelemetry(plan, {
             generator: createGeneratorCollector(runner.networkReader),
@@ -375,7 +402,15 @@ export async function runCommand(input) {
           }, 5000);
           const browserPromise = runBrowserCohort(plan, context.fixtures, {
             target,
-            credential: context.registration.credential,
+            credential: await control("lease", {
+              runId: plan.runId,
+              workerId: "browser-0",
+              start: plan.httpSlots,
+              end: plan.totalSlots,
+            }).then((value) => {
+              leaseIds.push("browser-0");
+              return value.credential;
+            }),
             signal: browserAbort.signal,
             ready: (slot) => coordinator.browserReady(slot),
             get phaseStart() {
@@ -413,6 +448,7 @@ export async function runCommand(input) {
           return { workers: results, telemetry: null };
         } finally {
           clearInterval(monitor);
+          clearInterval(leaseTimer);
           process.removeListener("SIGINT", signals);
           process.removeListener("SIGTERM", signals);
           await Promise.allSettled(workers.map((x) => x.stop()));
@@ -432,7 +468,11 @@ export async function runCommand(input) {
         });
         return drainRun(target, plan, cleanupClients, journal);
       },
-      assert: async () => {const value=await collectDurableOutcomes(clients,plan,journal);await privateJson(join(artifactDir,'durable-invariants.json'),value);return value;},
+      assert: async () => {
+        const value = await collectDurableOutcomes(clients, plan, journal);
+        await privateJson(join(artifactDir, "durable-invariants.json"), value);
+        return value;
+      },
       cleanup: () => cleanupRun(target, journal, cleanupClients),
       report: async (context) => {
         context.report.artifactDir = artifactDir;
@@ -561,13 +601,28 @@ export async function runCommand(input) {
         plan = JSON.parse(await readFile(join(dir, "run-plan.json"), "utf8"));
       if (plan.runId !== input.runId || plan.targetDigest !== target.digest)
         throw Error("Recovery target identity changed");
-      const check = await preflightRun(target, "smoke", {
+      const check = await preflightRun(target, "recovery", {
         env,
         control,
         resources,
         tooling: async () => ({ status: "pass" }),
       });
       if (!check.allowed) return { summary: check, exitCode: 2 };
+      const recoveryJournal = await openJournal(plan, dir);
+      if (
+        recoveryJournal
+          .records()
+          .some(
+            (x) =>
+              x.kind === "lifecycle" &&
+              x.key === "cleanup-complete" &&
+              x.status === "committed",
+          )
+      )
+        return {
+          summary: { status: "cleaned", runId: input.runId, artifactDir: dir },
+          exitCode: 0,
+        };
       await control("revoke", { runId: input.runId });
       await writeFile(join(dir, "stop.request"), "stop", { mode: 0o600 });
       if (input.action === "stop")
@@ -579,6 +634,8 @@ export async function runCommand(input) {
           },
           exitCode: 3,
         };
+      await stopJournalWorkers(await openJournal(plan, dir), dir);
+      plan.recoverySeconds = Math.max(60, plan.recoverySeconds ?? 0);
       const journal = await openJournal(plan, dir),
         clients = createCleanupClients({
           db,
@@ -630,4 +687,3 @@ export async function runCommand(input) {
     if (connected) await db.end();
   }
 }
-

@@ -80,7 +80,7 @@ export function createRunPlan(target, profile, options = {}) {
     (options.contenders !== undefined && profile !== "claim-rush")
   )
     throw new Error("Invalid contender allocation");
-  const warmupSeconds = profile === "peak" ? 750 : profile === "arrival" ? 600 : 0;
+  const warmupSeconds = profile === "peak" ? 780 : profile === "arrival" ? 600 : 0;
   const plan = {
     version: 1,
     runId,

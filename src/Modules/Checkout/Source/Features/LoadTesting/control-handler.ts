@@ -2,7 +2,12 @@ import { createHash, createHmac, timingSafeEqual } from "node:crypto";
 import { z } from "zod";
 import { loadDigest } from "./contracts";
 import { issuePhaseCredential } from "./context";
-import { createLoadRunStore, type RunRecord, type RunStore } from "./run-store";
+import {
+  createLoadRunStore,
+  type RunRecord,
+  type RunStore,
+  type WorkerLeases,
+} from "./run-store";
 import { readLoadTestSettings, type LoadTestSettings } from "./settings";
 import { dispatchDueEvents } from "./square-adapter";
 import { getSquareConfig } from "@/lib/square/config";
@@ -16,6 +21,8 @@ const operations = [
   "events",
   "faults",
   "cleanup",
+  "lease",
+  "heartbeat",
 ];
 const registration = z
   .object({
@@ -42,7 +49,7 @@ export function verifyControlHeaders(
   if (
     request.method !== "POST" ||
     url.origin !== settings.target.baseUrl ||
-    !/^\/api\/internal\/load-test\/(?:attest|register|fixtures|revoke|status|events|faults|cleanup)$/.test(
+    !/^\/api\/internal\/load-test\/(?:attest|register|fixtures|revoke|status|events|faults|cleanup|lease|heartbeat)$/.test(
       url.pathname,
     ) ||
     !nonce ||
@@ -142,6 +149,65 @@ export async function handleLoadTestControl(
     }
     if (!run || run.targetDigest !== settings.target.digest)
       return json({ error: "Run not found" }, 404);
+    if (operation === "lease" || operation === "heartbeat") {
+      if (run.revoked || run.expiresAt <= Date.now())
+        return json({ error: "Phase inactive" }, 403);
+      if (operation === "lease") {
+        const input = z
+          .object({
+            workerId: z.string().regex(/^[\w-]{1,100}$/),
+            start: z.number().int().nonnegative(),
+            end: z.number().int().positive(),
+          })
+          .parse(body);
+        if (input.start < run.start || input.end > run.end || input.end <= input.start)
+          return json({ error: "Invalid worker range" }, 400);
+        const expiresAt = Math.min(run.expiresAt, Date.now() + 45000);
+        await store.mutate<WorkerLeases>(
+          "leases",
+          runId,
+          { runId, workers: {} },
+          (old) => {
+            if (old.workers[input.workerId]) throw Error("Worker already leased");
+            if (
+              Object.values(old.workers).some(
+                (other) => input.start < other.end && input.end > other.start,
+              )
+            )
+              throw Error("Worker ranges overlap");
+            return {
+              ...old,
+              workers: {
+                ...old.workers,
+                [input.workerId]: { start: input.start, end: input.end, expiresAt },
+              },
+            };
+          },
+        );
+        return json({
+          credential: issuePhaseCredential({ ...run, ...input }, settings),
+          expiresAt,
+        });
+      }
+      const workerIds = z
+        .array(z.string().regex(/^[\w-]{1,100}$/))
+        .min(1)
+        .max(100)
+        .parse(body.workerIds);
+      await store.mutate<WorkerLeases>("leases", runId, { runId, workers: {} }, (old) => {
+        const workers = { ...old.workers };
+        for (const id of workerIds) {
+          if (!workers[id] || workers[id].expiresAt <= Date.now())
+            throw Error("Worker heartbeat expired");
+          workers[id] = {
+            ...workers[id],
+            expiresAt: Math.min(run.expiresAt, Date.now() + 45000),
+          };
+        }
+        return { ...old, workers };
+      });
+      return json({ renewed: true });
+    }
     if (operation === "revoke") {
       await store.put("run", runId, { ...run, revoked: true });
       return json({ revoked: true });

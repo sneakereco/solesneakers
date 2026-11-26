@@ -70,6 +70,12 @@ export async function preflightRun(rawTarget, profile, dependencies = {}) {
     }
   };
   target = await check("target-isolation", () => parseTarget(rawTarget));
+  await check("bulk-provider-mode", () => {
+    if (profile !== "recovery" && target?.providerMode !== "simulated")
+      throw Error(
+        "Bulk profiles require simulated providers; real Sandbox checks must be separately bounded",
+      );
+  });
   await check("staging-authorization", () => {
     const missing = REQUIRED_SECRETS.filter((key) => !env[key]);
     if (missing.length)

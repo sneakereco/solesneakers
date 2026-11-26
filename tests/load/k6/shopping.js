@@ -10,6 +10,7 @@ import {
 import { createTransport, initializeCookies } from "./lib/http.js";
 import { logicalSession } from "./lib/session.js";
 import { emit } from "./lib/metrics.js";
+import { coordinate, waitForRelease } from "./lib/coordination.js";
 // The large customer-cookie partition lives once per worker, not per VU.
 const metadata = new SharedArray("run-metadata", () => {
   const raw = JSON.parse(open(__ENV.LOAD_RUN_CONFIG));
@@ -17,7 +18,24 @@ const metadata = new SharedArray("run-metadata", () => {
   delete fixtures.sessions;
   return [{ ...raw, fixtures }];
 });
-export const config = metadata[0];
+export let config = metadata[0];
+export function activateConfig(data) {
+  if (data?.phaseStart)
+    config = {
+      ...config,
+      phaseStart: data.phaseStart,
+      plan: {
+        ...config.plan,
+        deadline: new Date(
+          data.phaseStart +
+            (config.plan.warmupSeconds +
+              config.plan.measurementSeconds +
+              config.plan.gracefulStopSeconds) *
+              1000,
+        ).toISOString(),
+      },
+    };
+}
 export const sessions = new SharedArray(
   "private-slot-sessions",
   () => JSON.parse(open(__ENV.LOAD_RUN_CONFIG)).fixtures.sessions,
@@ -29,11 +47,20 @@ export function setup() {
   if (!config.baseUrl || !config.credential || !config.shard)
     throw Error("Missing enrolled worker config");
   console.log("LOAD_WORKER_READY");
+  if (config.coordinator) {
+    coordinate(config, "/ready");
+    if (config.plan.contenders) return {};
+    return { phaseStart: waitForRelease(config) };
+  }
+  return { phaseStart: config.phaseStart };
 }
 let generation = 0,
   initialized = false,
   lastAuth = 0;
-export async function shopperSession() {
+export async function shopperSession(data) {
+  activateConfig(data);
+  if (config.coordinator && !data?.phaseStart)
+    activateConfig({ phaseStart: waitForRelease(config) });
   const slot = config.shard.start + __VU - 1;
   if (slot >= config.shard.end) throw Error("Worker exceeded leased slot range");
   const identity = sessions[__VU - 1];

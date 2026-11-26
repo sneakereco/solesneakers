@@ -10,6 +10,23 @@ const secrets = {
   UPSTASH_REDIS_REST_TOKEN: "secret",
   NEXT_PUBLIC_SUPABASE_ANON_KEY: "public",
 };
+test("bulk load cannot send ten thousand shoppers to real Sandbox provider APIs", async () => {
+  const target = parseTarget(targetFixture({ providerMode: "sandbox" }));
+  const result = await preflightRun(target, "peak", {
+    env: secrets,
+    control: async () => ({
+      ...target.expected,
+      baseUrl: target.baseUrl,
+      resourceDigest: manifestDigest(target.resources),
+      schema: target.migrationHeads,
+      providerMode: "sandbox",
+      capabilities: ["shopping"],
+    }),
+    tooling: async () => ({ status: "pass" }),
+    resources: async () => ({ status: "pass" }),
+  });
+  assert.equal(result.allowed, false);
+});
 test("missing secret or deployment drift prevents admission while missing specialty remains explicit", async () => {
   const target = parseTarget(targetFixture());
   const attest = {

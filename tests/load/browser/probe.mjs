@@ -173,7 +173,7 @@ export async function runBrowserCohort(plan, fixtures, options) {
           });
           await collectVitals(page, (value) => observations.push(value), viewport);
           capture = captureJourneyRequests(page, options.target.baseUrl);
-          if (options.ready) await options.ready(slot);
+          if (options.ready){const initial=await page.goto(options.target.baseUrl,{waitUntil:'domcontentloaded'});if(!initial?.ok()||new URL(page.url()).origin!==options.target.baseUrl)throw Error('Browser admission failed before ready barrier');admitted=true;started++;sample(1);await options.ready(slot);}
           const release = options.phaseStart ?? Date.now();
           if (Date.now() < release)
             await new Promise((resolve) => setTimeout(resolve, release - Date.now()));
