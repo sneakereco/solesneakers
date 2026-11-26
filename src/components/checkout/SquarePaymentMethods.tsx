@@ -453,7 +453,7 @@ export function SquarePaymentMethods({
     context?: CheckoutPreparationContext,
   ): Promise<PreparedCheckout>;
   accessSuspended?: boolean;
-  requireOwner?: () => Promise<void>;
+  requireOwner?: (options?: { waitForQuote: true }) => Promise<void>;
   clearCart(): void;
   children?: ReactNode;
 }) {
@@ -759,6 +759,7 @@ export function SquarePaymentMethods({
       return;
     }
     let active = true;
+    let tokenDelivered = false;
     const current = latest.current;
     if (current.quote?.completeness !== "exact") {
       return;
@@ -787,6 +788,7 @@ export function SquarePaymentMethods({
                 (!latest.current.isGuest || Boolean(turnstileTokenRef.current)) &&
                 validateCheckoutFields(regularForm.current);
               if (ready) {
+                tokenDelivered = false;
                 setError(null);
                 setLoadingProvider("Cash App Pay");
                 setProviderActive(true);
@@ -797,8 +799,26 @@ export function SquarePaymentMethods({
           });
         },
         async (method) => {
+          const continueCashApp = async (result: SquareTokenResult) => {
+            try {
+              await requireOwner?.({ waitForQuote: true });
+              assertPaymentQuoteCurrent(
+                cashAppQuoteKey,
+                latest.current.exactQuote?.quoteFingerprint,
+                latest.current.quoteReady,
+              );
+              if (active) void submitCashAppRef.current("cashAppPay", result);
+            } catch (methodError) {
+              setLoadingProvider(null);
+              setError(
+                methodError instanceof Error
+                  ? methodError.message
+                  : "Checkout changed. Please try again.",
+              );
+            }
+          };
           method.addEventListener("ontokenization", (event) => {
-            if (!active) {
+            if (!active || tokenDelivered) {
               return;
             }
             setProviderActive(false);
@@ -812,21 +832,8 @@ export function SquarePaymentMethods({
                 "Cash App Pay could not authorize this payment. Please try again.",
               );
             } else if (detail?.tokenResult) {
-              try {
-                assertPaymentQuoteCurrent(
-                  cashAppQuoteKey,
-                  latest.current.exactQuote?.quoteFingerprint,
-                  latest.current.quoteReady,
-                );
-                void submitCashAppRef.current("cashAppPay", detail.tokenResult);
-              } catch (methodError) {
-                setLoadingProvider(null);
-                setError(
-                  methodError instanceof Error
-                    ? methodError.message
-                    : "Checkout changed. Please try again.",
-                );
-              }
+              tokenDelivered = true;
+              void continueCashApp(detail.tokenResult);
             }
           });
           await method.attach("#square-cash-app-pay-container", {
@@ -857,7 +864,7 @@ export function SquarePaymentMethods({
         .dispose()
         .catch((methodError) => reportUnavailable("cashAppPay", "create", methodError));
     };
-  }, [payments, cashAppQuoteKey, methodRetries.cashAppPay, lifecycles]);
+  }, [payments, cashAppQuoteKey, methodRetries.cashAppPay, lifecycles, requireOwner]);
 
   useEffect(() => {
     if (!isGuest || !turnstileContainer.current) {

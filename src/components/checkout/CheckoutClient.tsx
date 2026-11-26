@@ -141,7 +141,7 @@ function OwnerCheckout({
 }) {
   const { items, isReady: cartReady, clearCart } = useCart();
   const isReady = verified && cartReady;
-  const requireOwner = useCheckoutOwnerAccess(initialData.ownerId);
+  const { isCurrent } = useSession();
   const [hasOpened, setHasOpened] = useState(false);
   if (isReady && items.length && !hasOpened) setHasOpened(true);
   const [isRedirecting, setIsRedirecting] = useState(false);
@@ -151,7 +151,10 @@ function OwnerCheckout({
   const [quoteState, setQuoteState] = useState<CheckoutQuoteState>({
     status: "loading",
   });
-  const [resolvedQuoteKey, setResolvedQuoteKey] = useState<string | null>(null);
+  const [resolvedQuote, setResolvedQuote] = useState<{
+    key: string;
+    observation: () => boolean;
+  } | null>(null);
   const [quoteRevision, setQuoteRevision] = useState(0);
   const requestSequence = useRef(0);
   const didCaptureCheckoutStart = useRef(false);
@@ -208,8 +211,8 @@ function OwnerCheckout({
         controller.signal,
       )
         .then((quote) => {
-          if (requestSequence.current === requestId) {
-            setResolvedQuoteKey(quoteKey);
+          if (!controller.signal.aborted && requestSequence.current === requestId) {
+            setResolvedQuote({ key: quoteKey, observation: isCurrent });
             setQuoteState({ status: "ready", quote });
           }
         })
@@ -217,6 +220,7 @@ function OwnerCheckout({
           if (controller.signal.aborted || requestSequence.current !== requestId) {
             return;
           }
+          setResolvedQuote({ key: quoteKey, observation: isCurrent });
           setQuoteState({
             status: "error",
             message:
@@ -232,9 +236,16 @@ function OwnerCheckout({
       controller.abort();
     };
     // quoteKey is the canonical trigger and prevents stale address responses.
-  }, [isReady, quoteKey]);
+  }, [isReady, isCurrent, quoteKey]);
 
-  const quoteReady = quoteState.status === "ready" && resolvedQuoteKey === quoteKey;
+  // A matching basket can return before the quote from its new observation does.
+  const quotePending =
+    !isReady ||
+    resolvedQuote?.key !== quoteKey ||
+    resolvedQuote.observation !== isCurrent ||
+    quoteState.status === "loading";
+  const requireOwner = useCheckoutOwnerAccess(initialData.ownerId, quotePending);
+  const quoteReady = !quotePending && quoteState.status === "ready";
   const exactQuote =
     quoteReady && quoteState.quote.completeness === "exact" ? quoteState.quote : null;
   const currentQuote = quoteState.quote ?? null;

@@ -1081,11 +1081,19 @@ function accountCheckoutData(id) {
 async function checkoutOwnershipFixture(t, { reviewAddress = false } = {}) {
   let sessionUser = { id: "a", email: "a@fixture.invalid" };
   let sessionAvailable = true;
+  let holdQuote,
+    fingerprint = "a".repeat(64);
   let holdSession,
     holdPrepare,
     holdPay,
     permitOk = false;
-  const requests = { quotes: [], prepares: [], permits: 0, pays: 0 };
+  const requests = {
+    quotes: [],
+    prepares: [],
+    permits: 0,
+    pays: 0,
+    usedCashSource: false,
+  };
   const totals = { subtotalCents: 1100, shippingCents: 0, taxCents: 0, totalCents: 1100 };
   const mounted = await mountCheckoutBrowser({
     view: "checkout",
@@ -1113,6 +1121,38 @@ async function checkoutOwnershipFixture(t, { reviewAddress = false } = {}) {
       const payments = window.Square.payments();
       window.Square.payments = () => ({
         ...payments,
+        cashAppPay: async (_request, options) => {
+          const counters = (window.cashCounters ??= {
+            created: 0,
+            destroyed: 0,
+            authorized: 0,
+            callbacks: 0,
+          });
+          counters.created++;
+          let alive = true;
+          return {
+            attach: async () => {},
+            destroy: async () => {
+              alive = false;
+              counters.destroyed++;
+            },
+            addEventListener(_event, callback) {
+              window.beginCash = () => {
+                const ready = alive && options.shouldTokenize();
+                if (ready) counters.authorized++;
+                return ready;
+              };
+              window.completeCash = () => {
+                if (!alive) return false;
+                counters.callbacks++;
+                callback({
+                  detail: { tokenResult: { status: "OK", token: "synthetic-cash" } },
+                });
+                return true;
+              };
+            },
+          };
+        },
         afterpayClearpay: async () => ({
           attach: async () => {},
           tokenize: async () => ({ status: "CANCEL" }),
@@ -1131,8 +1171,15 @@ async function checkoutOwnershipFixture(t, { reviewAddress = false } = {}) {
         return route.fulfill({ status: 503, json: {} });
       if (url.pathname === "/api/checkout/quote") {
         requests.quotes.push(route.request().postDataJSON());
+        if (holdQuote) await holdQuote;
         return route.fulfill({
-          json: { completeness: "exact", quoteFingerprint: "a".repeat(64), totals },
+          json: {
+            completeness: "exact",
+            quoteFingerprint: fingerprint,
+            totals: fingerprint.startsWith("a")
+              ? totals
+              : { ...totals, totalCents: 1200 },
+          },
         });
       }
       if (url.pathname === "/api/checkout/prepare") {
@@ -1162,6 +1209,8 @@ async function checkoutOwnershipFixture(t, { reviewAddress = false } = {}) {
       }
       if (url.pathname === "/api/checkout/pay") {
         requests.pays++;
+        requests.usedCashSource =
+          route.request().postDataJSON().sourceId === "synthetic-cash";
         if (holdPay) await holdPay;
         return route.fulfill({
           json: { statusUrl: "/checkout/processing?orderId=fixture-only" },
@@ -1187,6 +1236,17 @@ async function checkoutOwnershipFixture(t, { reviewAddress = false } = {}) {
       holdSession = new Promise((resolve) => (release = resolve));
       return () => {
         holdSession = undefined;
+        release();
+      };
+    },
+    deferQuote(changed) {
+      if (changed) fingerprint = "b".repeat(64);
+      let release;
+      holdQuote = new Promise((resolve) => {
+        release = resolve;
+      });
+      return () => {
+        holdQuote = undefined;
         release();
       };
     },
@@ -1514,3 +1574,99 @@ test("accepted payment resumes once after unavailable session is verified", asyn
     release();
   }
 });
+
+for (const outcome of ["same quote", "changed quote", "new owner"]) {
+  test("Cash App callback during verification with " + outcome, async (t) => {
+    const f = await checkoutOwnershipFixture(t),
+      { page } = f;
+    await page.waitForFunction(() => typeof window.beginCash === "function");
+    await page.getByRole("radio", { name: "Cash App Pay", exact: true }).click();
+    assert.equal(await page.evaluate(() => window.beginCash()), true);
+    const releaseSession = f.deferSession();
+    const releaseQuote = f.deferQuote(outcome === "changed quote");
+    const releasePay = f.deferPay();
+    try {
+      if (outcome === "new owner") f.changeOwner("b");
+      await page.evaluate(() => document.dispatchEvent(new Event("visibilitychange")));
+      await expect
+        .poll(() => page.evaluate(() => window.testCart.access))
+        .toBe("checking");
+      assert.equal(await page.evaluate(() => window.completeCash()), true);
+      assert.deepEqual(await page.evaluate(() => window.cashCounters), {
+        created: 1,
+        destroyed: 0,
+        authorized: 1,
+        callbacks: 1,
+      });
+      assert.equal(f.requests.prepares.length, 0);
+      releaseSession();
+      if (outcome === "new owner") {
+        await visible(page, [line("b")]);
+        await expect(
+          page.getByRole("button", { name: "Refresh checkout" }),
+        ).toBeVisible();
+        await expect
+          .poll(() => page.evaluate(() => window.cashCounters.destroyed))
+          .toBe(1);
+        assert.equal(await page.evaluate(() => window.completeCash()), false);
+      } else {
+        await expect.poll(() => f.requests.quotes.length).toBe(2);
+        await page.waitForFunction(() => window.testCart.isReady);
+        assert.equal(
+          f.requests.prepares.length,
+          0,
+          "session and cart restored; fresh quote still pending",
+        );
+        assert.equal(await page.evaluate(() => window.cashCounters.destroyed), 0);
+        await expect(
+          page.getByText(
+            "Your checkout changed. Review the updated total and try again.",
+            { exact: true },
+          ),
+        ).toBeHidden();
+        if (outcome === "same quote") {
+          // An SDK can deliver the same completed authorization again while the quote is pending.
+          assert.equal(await page.evaluate(() => window.completeCash()), true);
+        }
+        releaseQuote();
+        if (outcome === "same quote") {
+          await expect.poll(() => f.requests.pays).toBe(1);
+          assert.deepEqual(await page.evaluate(() => window.cashCounters), {
+            created: 1,
+            destroyed: 0,
+            authorized: 1,
+            callbacks: 2,
+          });
+          assert.equal(f.requests.prepares.length, 1);
+          assert.equal(f.requests.permits, 1);
+          assert.equal(f.requests.usedCashSource, true);
+          assert.equal(f.requests.prepares[0].paymentMethod, "cashAppPay");
+          releasePay();
+          await expect
+            .poll(() => new URL(page.url()).pathname)
+            .toBe("/checkout/processing");
+        } else {
+          await expect(
+            page.getByText(
+              "Your checkout changed. Review the updated total and try again.",
+              { exact: true },
+            ),
+          ).toBeVisible();
+          await expect
+            .poll(() => page.evaluate(() => window.cashCounters.destroyed))
+            .toBe(1);
+        }
+      }
+      if (outcome !== "same quote") {
+        assert.equal(f.requests.prepares.length, 0);
+        assert.equal(f.requests.permits, 0);
+        assert.equal(f.requests.pays, 0);
+        assert.equal(await page.evaluate(() => window.cashCounters.authorized), 1);
+      }
+    } finally {
+      releaseSession();
+      releaseQuote();
+      releasePay();
+    }
+  });
+}
