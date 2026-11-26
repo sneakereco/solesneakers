@@ -24,6 +24,7 @@ export function ProductCard({
   priority = false,
   view = "grid",
 }: ProductCardProps) {
+  if (product.category === "specialty") return null;
   const primaryImage =
     product.images.find((image) => image.is_primary) ?? product.images[0];
   const prices = product.variants.map((variant) => variant.sale_price_cents);

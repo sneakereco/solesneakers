@@ -7,6 +7,7 @@ import { ChevronLeft, ChevronRight } from "lucide-react";
 
 import { logError } from "@/lib/utils/log";
 import type { ProductWithDetails } from "@/types/domain/product";
+import { DiscoveryInsertion } from "@/Modules/SpecialtyProducts/Source/Features/Discovery/DiscoveryInsertion";
 
 type FeaturedProduct = {
   id: string;
@@ -15,7 +16,10 @@ type FeaturedProduct = {
   minPrice: number;
 };
 
-export function FeaturedItems({ category }: { category?: "clothing" } = {}) {
+export function FeaturedItems({
+  category,
+  allowSpecialty = false,
+}: { category?: "clothing"; allowSpecialty?: boolean } = {}) {
   const isClothing = category === "clothing";
   const heading = isClothing ? "Shop Clothing" : "Featured Items";
   const headingId = isClothing ? "clothing-items-heading" : "featured-items-heading";
@@ -174,36 +178,44 @@ export function FeaturedItems({ category }: { category?: "clothing" } = {}) {
               className="flex snap-x snap-mandatory gap-4 overflow-x-auto px-1 pb-2 motion-safe:scroll-smooth sm:gap-6 lg:gap-8 [&::-webkit-scrollbar]:hidden"
               style={{ scrollbarWidth: "none", msOverflowStyle: "none" }}
             >
-              {featured.map((product) => (
-                <Link
-                  key={product.id}
-                  href={`/store/${product.id}`}
-                  className={`group shrink-0 text-center sm:w-[calc((100%-1.5rem)/2)] sm:snap-start md:w-[calc((100%-3rem)/3)] lg:w-[calc((100%-6rem)/4)] ${isClothing ? "w-full snap-center" : "w-[78%] snap-start"}`}
-                >
-                  <div className="relative h-48 w-full sm:h-52 md:h-56">
-                    {product.primaryImage ? (
-                      <Image
-                        src={product.primaryImage}
-                        alt=""
-                        fill
-                        sizes={`(min-width: 1024px) 25vw, (min-width: 768px) 33vw, (min-width: 640px) 50vw, ${isClothing ? "100vw" : "78vw"}`}
-                        className="object-contain transition-transform duration-300 group-hover:scale-[1.03]"
-                        quality={75}
-                      />
-                    ) : (
-                      <div className="flex h-full items-center justify-center text-sm text-zinc-500">
-                        No Image
+              <DiscoveryInsertion
+                allowed={allowSpecialty && !isClothing}
+                onDiscoveryChange={checkScrollButtons}
+                specialtyClassName="w-[78%] shrink-0 snap-start sm:w-[calc((100%-1.5rem)/2)] md:w-[calc((100%-3rem)/3)] lg:w-[calc((100%-6rem)/4)]"
+                items={featured.map((product) => ({
+                  id: product.id,
+                  node: (
+                    <Link
+                      key={product.id}
+                      href={`/store/${product.id}`}
+                      className={`group shrink-0 text-center sm:w-[calc((100%-1.5rem)/2)] sm:snap-start md:w-[calc((100%-3rem)/3)] lg:w-[calc((100%-6rem)/4)] ${isClothing ? "w-full snap-center" : "w-[78%] snap-start"}`}
+                    >
+                      <div className="relative h-48 w-full sm:h-52 md:h-56">
+                        {product.primaryImage ? (
+                          <Image
+                            src={product.primaryImage}
+                            alt=""
+                            fill
+                            sizes={`(min-width: 1024px) 25vw, (min-width: 768px) 33vw, (min-width: 640px) 50vw, ${isClothing ? "100vw" : "78vw"}`}
+                            className="object-contain transition-transform duration-300 group-hover:scale-[1.03]"
+                            quality={75}
+                          />
+                        ) : (
+                          <div className="flex h-full items-center justify-center text-sm text-zinc-500">
+                            No Image
+                          </div>
+                        )}
                       </div>
-                    )}
-                  </div>
-                  <h3 className="mt-5 min-h-10 text-xs font-medium uppercase leading-5 tracking-[0.02em] sm:text-sm">
-                    {product.titleDisplay}
-                  </h3>
-                  <p className="mt-1 text-sm tabular-nums text-zinc-500">
-                    ${(product.minPrice / 100).toFixed(2)}
-                  </p>
-                </Link>
-              ))}
+                      <h3 className="mt-5 min-h-10 text-xs font-medium uppercase leading-5 tracking-[0.02em] sm:text-sm">
+                        {product.titleDisplay}
+                      </h3>
+                      <p className="mt-1 text-sm tabular-nums text-zinc-500">
+                        ${(product.minPrice / 100).toFixed(2)}
+                      </p>
+                    </Link>
+                  ),
+                }))}
+              />
             </div>
 
             {canScrollRight && (

@@ -19,6 +19,8 @@ const schema = z.object({
   ADMIN_SESSION_SECRET: z.string(),
   ORDER_ACCESS_TOKEN_SECRET: z.string().min(16),
   CHECKOUT_IDENTITY_HMAC_SECRET: z.string().min(32).optional(),
+  SPECIALTY_CLAIMS_SECRET: z.string().min(32).optional(),
+  SPECIALTY_CAMPAIGN_SLUG: z.string().min(1).default("black-friday-2026"),
   CRON_SECRET: z.string().min(32).optional(),
   TURNSTILE_SECRET_KEY: z.string().min(1).optional(),
   NEXT_PUBLIC_TURNSTILE_SITE_KEY: z.string().min(1).optional(),

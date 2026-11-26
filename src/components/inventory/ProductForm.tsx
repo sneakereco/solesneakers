@@ -27,11 +27,18 @@ import type { ProductCreateInput } from "@/services/product-service";
 import { logError } from "@/lib/utils/log";
 import { Toast } from "@/components/ui/Toast";
 import { RdkSelect } from "@/components/ui/Select";
+import { SpecialtyProductForm } from "@/Modules/SpecialtyProducts/Source/Features/ManageProducts/SpecialtyProductForm";
+import type {
+  SpecialtyProductDraft,
+  SpecialtyProductWrite,
+} from "@/Modules/SpecialtyProducts/Source/Features/ManageProducts/specialty-product-contract";
 
 // OPTIMIZATION: Lazy load image compression library
 const loadImageCompression = () => import("browser-image-compression");
 
 interface ProductFormProps {
+  specialtyInitial?: SpecialtyProductDraft;
+  onSpecialtySubmit?: (data: SpecialtyProductWrite) => Promise<void>;
   initialData?: Omit<Partial<ProductCreateInput>, "variants"> & {
     id?: string;
     variants?: Array<
@@ -224,7 +231,38 @@ function SortableVariantRow({ id, className, children }: SortableVariantRowProps
   );
 }
 
-export function ProductForm({
+export function ProductForm(props: ProductFormProps) {
+  const [specialty, setSpecialty] = useState(props.initialData?.category === "specialty");
+  const editing = Boolean(props.initialData?.id || props.specialtyInitial);
+  return (
+    <div className="space-y-4">
+      {!editing && props.onSpecialtySubmit && (
+        <label className="block text-sm text-zinc-300">
+          Product category
+          <select
+            className="ml-3 rounded border border-zinc-700 bg-zinc-900 p-2"
+            value={specialty ? "specialty" : "ordinary"}
+            onChange={(event) => setSpecialty(event.target.value === "specialty")}
+          >
+            <option value="ordinary">Standard product</option>
+            <option value="specialty">Specialty giveaway</option>
+          </select>
+        </label>
+      )}
+      {specialty && props.onSpecialtySubmit ? (
+        <SpecialtyProductForm
+          initial={props.specialtyInitial}
+          onSubmit={props.onSpecialtySubmit}
+          onCancel={props.onCancel}
+        />
+      ) : (
+        <OrdinaryProductForm {...props} />
+      )}
+    </div>
+  );
+}
+
+function OrdinaryProductForm({
   initialData,
   onSubmit,
   onCancel,

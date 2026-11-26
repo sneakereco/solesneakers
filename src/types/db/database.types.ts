@@ -1226,6 +1226,263 @@ export type Database = {
           },
         ]
       }
+      specialty_campaigns: {
+        Row: {
+          created_at: string
+          enabled: boolean
+          id: string
+          identity_key_fingerprint: string | null
+          normalization_version: number
+          revision: number
+          slug: string
+          updated_at: string
+          updated_by: string | null
+        }
+        Insert: {
+          created_at?: string
+          enabled?: boolean
+          id?: string
+          identity_key_fingerprint?: string | null
+          normalization_version?: number
+          revision?: number
+          slug: string
+          updated_at?: string
+          updated_by?: string | null
+        }
+        Update: {
+          created_at?: string
+          enabled?: boolean
+          id?: string
+          identity_key_fingerprint?: string | null
+          normalization_version?: number
+          revision?: number
+          slug?: string
+          updated_at?: string
+          updated_by?: string | null
+        }
+        Relationships: []
+      }
+      specialty_claim_attempts: {
+        Row: {
+          attempt_id: string
+          campaign_id: string
+          claim_id: string | null
+          created_at: string
+          input_hash: string
+          payload_hash: string
+          product_id: string
+          recovery_hash: string
+          result: Json
+        }
+        Insert: {
+          attempt_id: string
+          campaign_id: string
+          claim_id?: string | null
+          created_at?: string
+          input_hash: string
+          payload_hash: string
+          product_id: string
+          recovery_hash: string
+          result: Json
+        }
+        Update: {
+          attempt_id?: string
+          campaign_id?: string
+          claim_id?: string | null
+          created_at?: string
+          input_hash?: string
+          payload_hash?: string
+          product_id?: string
+          recovery_hash?: string
+          result?: Json
+        }
+        Relationships: [
+          {
+            foreignKeyName: "specialty_claim_attempts_campaign_id_fkey"
+            columns: ["campaign_id"]
+            isOneToOne: false
+            referencedRelation: "specialty_campaigns"
+            referencedColumns: ["id"]
+          },
+          {
+            foreignKeyName: "specialty_claim_attempts_claim_id_fkey"
+            columns: ["claim_id"]
+            isOneToOne: false
+            referencedRelation: "specialty_claims"
+            referencedColumns: ["id"]
+          },
+        ]
+      }
+      specialty_claim_status_audit: {
+        Row: {
+          actor_id: string
+          changed_at: string
+          claim_id: string
+          id: string
+          new_status: string
+          previous_status: string
+          revision: number
+        }
+        Insert: {
+          actor_id: string
+          changed_at?: string
+          claim_id: string
+          id?: string
+          new_status: string
+          previous_status: string
+          revision: number
+        }
+        Update: {
+          actor_id?: string
+          changed_at?: string
+          claim_id?: string
+          id?: string
+          new_status?: string
+          previous_status?: string
+          revision?: number
+        }
+        Relationships: [
+          {
+            foreignKeyName: "specialty_claim_status_audit_claim_id_fkey"
+            columns: ["claim_id"]
+            isOneToOne: false
+            referencedRelation: "specialty_claims"
+            referencedColumns: ["id"]
+          },
+        ]
+      }
+      specialty_claims: {
+        Row: {
+          accepted_at: string
+          address_key: string
+          campaign_id: string
+          decision_ordinal: number
+          eligibility_address: Json
+          follow_up_status: string
+          id: string
+          instagram_handle: string
+          instagram_key: string
+          instructions: string
+          product_id: string
+          product_image_url: string | null
+          product_name: string
+          revision: number
+          updated_at: string
+          updated_by: string | null
+          variant_id: string
+        }
+        Insert: {
+          accepted_at?: string
+          address_key: string
+          campaign_id: string
+          decision_ordinal: number
+          eligibility_address: Json
+          follow_up_status?: string
+          id?: string
+          instagram_handle: string
+          instagram_key: string
+          instructions: string
+          product_id: string
+          product_image_url?: string | null
+          product_name: string
+          revision?: number
+          updated_at?: string
+          updated_by?: string | null
+          variant_id: string
+        }
+        Update: {
+          accepted_at?: string
+          address_key?: string
+          campaign_id?: string
+          decision_ordinal?: number
+          eligibility_address?: Json
+          follow_up_status?: string
+          id?: string
+          instagram_handle?: string
+          instagram_key?: string
+          instructions?: string
+          product_id?: string
+          product_image_url?: string | null
+          product_name?: string
+          revision?: number
+          updated_at?: string
+          updated_by?: string | null
+          variant_id?: string
+        }
+        Relationships: [
+          {
+            foreignKeyName: "specialty_claims_campaign_id_product_id_variant_id_fkey"
+            columns: ["campaign_id", "product_id", "variant_id"]
+            isOneToOne: false
+            referencedRelation: "specialty_product_config"
+            referencedColumns: ["campaign_id", "product_id", "variant_id"]
+          },
+        ]
+      }
+      specialty_product_config: {
+        Row: {
+          campaign_id: string
+          created_at: string
+          created_by: string
+          decision_ordinal: number
+          initial_quantity: number
+          product_id: string
+          revision: number
+          updated_at: string
+          updated_by: string
+          variant_id: string
+          winning_instructions: string | null
+        }
+        Insert: {
+          campaign_id: string
+          created_at?: string
+          created_by: string
+          decision_ordinal?: number
+          initial_quantity: number
+          product_id: string
+          revision?: number
+          updated_at?: string
+          updated_by: string
+          variant_id: string
+          winning_instructions?: string | null
+        }
+        Update: {
+          campaign_id?: string
+          created_at?: string
+          created_by?: string
+          decision_ordinal?: number
+          initial_quantity?: number
+          product_id?: string
+          revision?: number
+          updated_at?: string
+          updated_by?: string
+          variant_id?: string
+          winning_instructions?: string | null
+        }
+        Relationships: [
+          {
+            foreignKeyName: "specialty_product_config_campaign_id_fkey"
+            columns: ["campaign_id"]
+            isOneToOne: false
+            referencedRelation: "specialty_campaigns"
+            referencedColumns: ["id"]
+          },
+          {
+            foreignKeyName: "specialty_product_config_product_id_fkey"
+            columns: ["product_id"]
+            isOneToOne: true
+            referencedRelation: "products"
+            referencedColumns: ["id"]
+          },
+          {
+            foreignKeyName: "specialty_product_config_variant_id_fkey"
+            columns: ["variant_id"]
+            isOneToOne: true
+            referencedRelation: "product_variants"
+            referencedColumns: ["id"]
+          },
+        ]
+      }
       square_disputes: {
         Row: {
           amount_cents: number
@@ -1778,6 +2035,12 @@ export type Database = {
       [_ in never]: never
     }
     Functions: {
+      _record_specialty_claim_attempt: {
+        Args: { p_claim_id?: string; p_command: Json; p_result: Json }
+        Returns: Json
+      }
+      _single_store_compat_owner: { Args: never; Returns: string }
+      accept_specialty_claim: { Args: { p_command: Json }; Returns: Json }
       accept_tag_candidate: {
         Args: { accepted_label: string; candidate_id: string }
         Returns: Json
@@ -1816,6 +2079,7 @@ export type Database = {
         Args: { p_notification_id: string; p_succeeded: boolean }
         Returns: boolean
       }
+      get_store_access_settings: { Args: never; Returns: Json }
       is_admin: { Args: never; Returns: boolean }
       is_admin_for_tenant: { Args: { target_tenant: string }; Returns: boolean }
       is_dev: { Args: never; Returns: boolean }
@@ -1874,6 +2138,14 @@ export type Database = {
         }
         Returns: Json
       }
+      read_specialty_claim_result: {
+        Args: { p_attempt_id: string; p_recovery_hash: string }
+        Returns: Json
+      }
+      read_specialty_claim_result_with_context: {
+        Args: { p_attempt_id: string; p_recovery_hash: string }
+        Returns: Json
+      }
       record_shippo_tracking_update: {
         Args: {
           p_carrier: string
@@ -1898,31 +2170,56 @@ export type Database = {
         Args: { p_order_id: string; p_reason: string }
         Returns: boolean
       }
-      reserve_square_checkout_inventory: {
-        Args: {
-          p_billing_address: Json
-          p_cart_hash: string
-          p_currency: string
-          p_customer_state: string
-          p_expires_at: string
-          p_fulfillment: string
-          p_guest_email: string
-          p_idempotency_key: string
-          p_items: Json
-          p_payment_method: string
-          p_pickup_contact?: Json
-          p_protection_evidence: Json
-          p_shipping_address: Json
-          p_shipping_cents: number
-          p_subtotal_cents: number
-          p_tax_calculation_id: string
-          p_tax_cents: number
-          p_tenant_id: string
-          p_total_cents: number
-          p_user_id: string
-        }
-        Returns: Json
-      }
+      reserve_square_checkout_inventory:
+        | {
+            Args: {
+              p_billing_address: Json
+              p_cart_hash: string
+              p_currency: string
+              p_customer_state: string
+              p_expires_at: string
+              p_fulfillment: string
+              p_guest_email: string
+              p_idempotency_key: string
+              p_items: Json
+              p_payment_method: string
+              p_pickup_contact?: Json
+              p_protection_evidence: Json
+              p_shipping_address: Json
+              p_shipping_cents: number
+              p_subtotal_cents: number
+              p_tax_calculation_id: string
+              p_tax_cents: number
+              p_tenant_id: string
+              p_total_cents: number
+              p_user_id: string
+            }
+            Returns: Json
+          }
+        | {
+            Args: {
+              p_billing_address: Json
+              p_cart_hash: string
+              p_currency: string
+              p_customer_state: string
+              p_expires_at: string
+              p_fulfillment: string
+              p_guest_email: string
+              p_idempotency_key: string
+              p_items: Json
+              p_payment_method: string
+              p_pickup_contact?: Json
+              p_protection_evidence: Json
+              p_shipping_address: Json
+              p_shipping_cents: number
+              p_subtotal_cents: number
+              p_tax_calculation_id: string
+              p_tax_cents: number
+              p_total_cents: number
+              p_user_id: string
+            }
+            Returns: Json
+          }
       reserve_square_checkout_inventory_with_address: {
         Args: {
           p_cart_hash: string
@@ -1964,6 +2261,43 @@ export type Database = {
           p_tenant_id: string
           p_total_cents: number
           p_user_id: string
+        }
+        Returns: Json
+      }
+      save_specialty_product: {
+        Args: {
+          p_actor_id: string
+          p_compatibility_tenant_id: string
+          p_input: Json
+          p_product_id: string
+        }
+        Returns: Json
+      }
+      set_specialty_campaign_enabled: {
+        Args: {
+          p_actor_id: string
+          p_campaign_id: string
+          p_enabled: boolean
+          p_expected_revision: number
+          p_identity_key_fingerprint: string
+        }
+        Returns: Json
+      }
+      update_specialty_claim_status: {
+        Args: {
+          p_actor_id: string
+          p_claim_id: string
+          p_expected_revision: number
+          p_status: string
+        }
+        Returns: Json
+      }
+      upsert_store_access_settings: {
+        Args: {
+          p_checkout_lock_enabled: boolean
+          p_checkout_lock_message: string
+          p_site_lock_enabled: boolean
+          p_site_unlock_at: string
         }
         Returns: Json
       }
