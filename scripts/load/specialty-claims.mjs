@@ -2,7 +2,7 @@ import http from "node:http";
 import { createConnection } from "node:net";
 import { performance } from "node:perf_hooks";
 import { execFileSync } from "node:child_process";
-import { writeFile, mkdir } from "node:fs/promises";
+import { writeFile, mkdir, readFile } from "node:fs/promises";
 import { resolve } from "node:path";
 import { fileURLToPath } from "node:url";
 import {
@@ -75,7 +75,14 @@ export function qualifyReport(report) {
 export function sendLoadRequest(
   origin,
   path,
-  { agent, cookie, payload, timeout = 30000, onDispatch = () => {} } = {},
+  {
+    agent,
+    cookie,
+    payload,
+    ip = "198.51.100.25",
+    timeout = 30000,
+    onDispatch = () => {},
+  } = {},
 ) {
   return new Promise((resolveResponse) => {
     let ended = false;
@@ -93,7 +100,7 @@ export function sendLoadRequest(
         headers: {
           Origin: origin,
           "User-Agent": "Mozilla/5.0 SpecialtyQualification/1.0",
-          "x-forwarded-for": "198.51.100.25",
+          "x-forwarded-for": ip,
           ...(cookie ? { Cookie: cookie } : {}),
           ...(data
             ? {
@@ -247,6 +254,7 @@ export async function runSpecialtyBurst(manifest, options = {}) {
         let response = await request(manifest.origin, "/api/specialty/claims", {
           agent,
           cookie: actor.cookie,
+          ip: actor.ip,
           payload: actor.payload,
           onDispatch: () => {
             dispatches.push(performance.now());
@@ -279,6 +287,7 @@ export async function runSpecialtyBurst(manifest, options = {}) {
           response = await request(manifest.origin, "/api/specialty/claims/result", {
             agent,
             cookie: actor.cookie,
+            ip: actor.ip,
             payload: credentials,
             timeout: Math.max(1, 30000 - (performance.now() - start)),
           });
@@ -287,6 +296,7 @@ export async function runSpecialtyBurst(manifest, options = {}) {
             response = await request(manifest.origin, "/api/specialty/claims", {
               agent,
               cookie: actor.cookie,
+              ip: actor.ip,
               payload: actor.payload,
               timeout: Math.max(1, 30000 - (performance.now() - start)),
             });
@@ -329,12 +339,17 @@ export async function runSpecialtyBurst(manifest, options = {}) {
         maxInFlight: networkMax,
         scheduledDispatchWindowMs: burst.dispatchWindowMs,
         establishedConnections: agents.length,
+        distinctSyntheticIps: new Set(actors.map((actor) => actor.ip)).size,
         serverIngressWindowMs: null,
       },
       initialHttpStatuses: initialCodes,
       retryCount,
       lostResponses,
       reconciliation: await reconcileLoadRun(manifest),
+      runtimeDiagnostics: {
+        gateway: app.services.getDiagnostics(),
+        next: await nextTimings(app.privateDir),
+      },
       expected: {
         winners: manifest.expectedWinners,
         remainingStock: manifest.initialStock - manifest.expectedWinners,
@@ -343,7 +358,7 @@ export async function runSpecialtyBurst(manifest, options = {}) {
         "Next development server; local shared machine and Docker",
         "Prepared signed eligibility; Shippo cold validation not measured",
         "BotID supported development HUMAN verdict; no hosted WAF/bot evidence",
-        "Actual Redis scripts via local REST bridge; shared loopback IP quota remains enforced",
+        "Actual Redis scripts via local REST bridge; IP quotas enforced with trusted loopback-only synthetic forwarded addresses; shared-IP run is separate",
         "Synthetic Auth provider; real app origin/browser-cookie/credential checks",
         "Server ingress timing unavailable; socket flush dispatch measured",
       ],
@@ -364,6 +379,22 @@ export async function runSpecialtyBurst(manifest, options = {}) {
     void app;
     void options;
   }
+}
+async function nextTimings(privateDir) {
+  const log = await readFile(resolve(privateDir, "next.log"), "utf8");
+  const requests = log
+    .split("\n")
+    .filter((line) => line.includes("POST /api/specialty/claims "));
+  const values = (label) =>
+    requests.flatMap((line) => {
+      const match = line.match(new RegExp(label + ": ([\\d.]+)(ms|s)"));
+      return match ? [Number(match[1]) * (match[2] === "s" ? 1000 : 1)] : [];
+    });
+  return {
+    completedResponses: requests.length,
+    proxyP95Ms: percentile(values("proxy.ts"), 0.95),
+    handlerP95Ms: percentile(values("application-code"), 0.95),
+  };
 }
 if (process.argv[1] && resolve(process.argv[1]) === fileURLToPath(import.meta.url)) {
   const args = Object.fromEntries(

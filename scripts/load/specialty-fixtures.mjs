@@ -19,6 +19,7 @@ const scenarios = new Set([
   "replayed-attempt",
   "lost-response",
   "overload",
+  "shared-ip",
 ]);
 export async function assertLoadTarget(options) {
   assert.equal(
@@ -141,6 +142,10 @@ export async function prepareSpecialtyLoadRun(options) {
         expiresAt: Date.now() + 600000,
       };
       actors.push({
+        ip:
+          settings.scenario === "shared-ip"
+            ? "198.51.100.25"
+            : "198.18." + Math.floor(i / 254) + "." + (1 + (i % 254)),
         cookie:
           "specialty_browser=" +
           app.helpers.signBrowserCookie(

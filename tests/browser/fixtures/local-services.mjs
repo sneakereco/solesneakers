@@ -276,7 +276,25 @@ export async function startLocalSpecialtyServices({
       }
       await wait(100);
     }
+    const diagnostics = {};
     gateway = createServer(async (request, response) => {
+      const started = performance.now();
+      const pathname = new URL(request.url, "http://127.0.0.1").pathname;
+      const kind = pathname.startsWith("/redis")
+        ? "redis"
+        : pathname.startsWith("/rest/v1/rpc/")
+          ? pathname.slice("/rest/v1/rpc/".length)
+          : pathname.startsWith("/rest/v1/")
+            ? "database_reads"
+            : pathname.startsWith("/auth/")
+              ? "auth"
+              : "other";
+      const entry = (diagnostics[kind] ??= { count: 0, errors: 0, maxMs: 0 });
+      entry.count++;
+      response.once("finish", () => {
+        entry.maxMs = Math.max(entry.maxMs, performance.now() - started);
+        if (response.statusCode >= 400) entry.errors++;
+      });
       response.setHeader("Access-Control-Allow-Origin", appOrigin);
       response.setHeader(
         "Access-Control-Allow-Headers",
@@ -389,6 +407,7 @@ export async function startLocalSpecialtyServices({
         );
       },
       stop,
+      getDiagnostics: () => structuredClone(diagnostics),
     };
   } catch (error) {
     await stop();
