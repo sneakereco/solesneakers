@@ -68,7 +68,7 @@ const requests = [];
 let storedDecision = null;
 async function newPage(blockStorage = false) {
   const context = await browser.newContext({ viewport: { width: 390, height: 640 } });
-  if (blockStorage)
+  if (blockStorage === true)
     await context.addInitScript(() =>
       Object.defineProperty(window, "sessionStorage", {
         get() {
@@ -76,6 +76,15 @@ async function newPage(blockStorage = false) {
         },
       }),
     );
+  if (blockStorage === "quota")
+    await context.addInitScript(() => {
+      const original = Storage.prototype.setItem;
+      Storage.prototype.setItem = function (key, value) {
+        if (key === "sole:specialty:attempts:v1")
+          throw new DOMException("Quota exceeded", "QuotaExceededError");
+        original.call(this, key, value);
+      };
+    });
   const page = await context.newPage();
   const errors = [];
   page.on("pageerror", (error) => errors.push(error.message));
@@ -134,7 +143,9 @@ async function newPage(blockStorage = false) {
         ? { status: "sold_out" }
         : mode === "already_claimed"
           ? { status: "already_claimed" }
-          : { status: "won", receipt };
+          : mode === "closed"
+            ? { status: "closed" }
+            : { status: "won", receipt };
     return route.fulfill({ json: { result: storedDecision, replayed: false } });
   });
   await page.goto("https://specialty-ui.test/");
@@ -258,6 +269,43 @@ try {
     assert.deepEqual(current.errors, []);
     await current.context.close();
   }
+  mode = "closed";
+  storedDecision = null;
+  const paused = await newPage();
+  await paused.page.getByRole("button", { name: "Claim", exact: true }).click();
+  await fill(paused.page);
+  await paused.page.getByRole("button", { name: "Submit claim", exact: true }).click();
+  await expect(
+    paused.page.getByText("This giveaway is currently closed.", { exact: true }),
+  ).toBeVisible();
+  const closedAttempt = requests
+    .filter((item) => item.path === "/api/specialty/claims")
+    .at(-1).body;
+  mode = "won";
+  storedDecision = null;
+  await expect(
+    paused.page.getByRole("button", { name: "Try claiming again", exact: true }),
+  ).toBeVisible();
+  await paused.page
+    .getByRole("button", { name: "Try claiming again", exact: true })
+    .click();
+  await expect(paused.page.getByLabel("Instagram handle", { exact: true })).toBeFocused();
+  await paused.page.getByRole("button", { name: "Submit claim", exact: true }).click();
+  await expect(
+    paused.page.getByRole("heading", { name: "You claimed it!" }),
+  ).toBeVisible();
+  const reopenedAttempt = requests
+    .filter((item) => item.path === "/api/specialty/claims")
+    .at(-1).body;
+  assert.equal(
+    reopenedAttempt.attemptId !== closedAttempt.attemptId &&
+      reopenedAttempt.recoverySecret !== closedAttempt.recoverySecret,
+    true,
+  );
+  await expect(
+    paused.page.getByRole("button", { name: "Try claiming again", exact: true }),
+  ).toHaveCount(0);
+  await paused.context.close();
   mode = "uncertain";
   storedDecision = null;
   const current = await newPage();
@@ -273,6 +321,9 @@ try {
     current.page.getByRole("button", { name: "Check result again", exact: true }),
   ).toBeVisible();
   await expect(current.page.getByText(/someone else claimed/)).toHaveCount(0);
+  await expect(
+    current.page.getByRole("button", { name: "Try claiming again", exact: true }),
+  ).toHaveCount(0);
   const submitCount = requests.filter(
     (item) => item.path === "/api/specialty/claims",
   ).length;
@@ -341,6 +392,40 @@ try {
   ).toBeVisible();
   assert.deepEqual(limited.errors, []);
   await limited.context.close();
+  mode = "won";
+  storedDecision = null;
+  const quota = await newPage("quota");
+  await quota.page.getByRole("button", { name: "Claim", exact: true }).click();
+  await fill(quota.page);
+  await quota.page.getByRole("button", { name: "Submit claim", exact: true }).click();
+  await expect(
+    quota.page.getByRole("heading", { name: "You claimed it!" }),
+  ).toBeVisible();
+  const quotaAttempt = requests
+    .filter((item) => item.path === "/api/specialty/claims")
+    .at(-1).body;
+  await expect(quota.page.getByText(/Your browser cannot save this claim/)).toBeVisible();
+  await quota.page.getByRole("button", { name: "Close claim form", exact: true }).click();
+  await quota.page
+    .getByText("Check your giveaway claim results", { exact: true })
+    .click();
+  await quota.page
+    .getByRole("button", { name: "Check claim result", exact: true })
+    .click();
+  await expect(
+    quota.page.getByRole("heading", { name: "You claimed it!" }),
+  ).toBeVisible();
+  const quotaRecovery = requests
+    .filter((item) => item.path === "/api/specialty/claims/result")
+    .at(-1).body;
+  assert.equal(
+    quotaRecovery.attemptId === quotaAttempt.attemptId &&
+      quotaRecovery.recoverySecret === quotaAttempt.recoverySecret,
+    true,
+  );
+  await expect(quota.page.getByText(/Your browser cannot save this claim/)).toBeVisible();
+  assert.deepEqual(quota.errors, []);
+  await quota.context.close();
   console.log(
     "PASS: real claim dialog keyboard/mobile, corrections, duplicate click, private storage, refresh recovery, truthful loss and uncertain-outcome recovery (mocked HTTP)",
   );

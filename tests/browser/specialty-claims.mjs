@@ -198,6 +198,90 @@ try {
   assert.equal(anonymousAdmin.status(), 401);
   assert.match(anonymousAdmin.headers()["cache-control"] ?? "", /no-store/);
 
+  if (mode === "database") {
+    stage = "confirmed closed claim: pause and reopen in same tab";
+    const retryRunId = randomUUID(),
+      retryPrize = await seedBrowserPrize(retryRunId, 1),
+      retryGuest = await customerPage();
+    const setCampaign = async (enabled) => {
+      const { rows } = await app.db.query(
+        "select revision from public.specialty_campaigns where id=$1",
+        [app.campaignId],
+      );
+      await app.db.query("select public.set_specialty_campaign_enabled($1,$2,$3,$4,$5)", [
+        app.campaignId,
+        enabled,
+        rows[0].revision,
+        retryPrize.actor,
+        app.helpers.getIdentityKeyFingerprint(app.secret),
+      ]);
+    };
+    let paused = false;
+    await retryGuest.page.route("**/api/specialty/eligibility", async (route) => {
+      const response = await fixtureEligibilityResponse(
+        route.request().postDataJSON(),
+        await addFixtureBrowserCookies(retryGuest.context),
+      );
+      if (!paused) {
+        paused = true;
+        await setCampaign(false);
+      }
+      await route.fulfill({
+        status: response.status,
+        headers: Object.fromEntries(response.headers),
+        body: await response.text(),
+      });
+    });
+    await openPrize(retryGuest.page, retryPrize.productId);
+    await fill(retryGuest.page, "reopened.fixture", {
+      ...address,
+      line1: "745 REOPEN ST",
+      line2: null,
+    });
+    await retryGuest.page
+      .getByRole("button", { name: "Submit claim", exact: true })
+      .click();
+    await expect(
+      retryGuest.page.getByRole("button", { name: "Try claiming again", exact: true }),
+    ).toBeVisible();
+    const previous = await retryGuest.page.evaluate(
+      () => JSON.parse(sessionStorage.getItem("sole:specialty:attempts:v1"))[0],
+    );
+    assert.deepEqual(await readBrowserRunState(retryRunId), {
+      winningClaims: 0,
+      remainingStock: 1,
+      ordinaryPrizeOrderItems: 0,
+    });
+    await setCampaign(true);
+    await retryGuest.page
+      .getByRole("button", { name: "Try claiming again", exact: true })
+      .click();
+    await retryGuest.page
+      .getByRole("button", { name: "Submit claim", exact: true })
+      .click();
+    await expect(
+      retryGuest.page.getByRole("heading", { name: "You claimed it!" }),
+    ).toBeVisible();
+    const next = await retryGuest.page.evaluate(
+      () => JSON.parse(sessionStorage.getItem("sole:specialty:attempts:v1"))[0],
+    );
+    assert.equal(previous.attemptId === next.attemptId, false);
+    assert.equal(previous.recoverySecret === next.recoverySecret, false);
+    const original = await retryGuest.context.request.post(
+      origin + "/api/specialty/claims/result",
+      {
+        headers: { Origin: origin },
+        data: { attemptId: previous.attemptId, recoverySecret: previous.recoverySecret },
+      },
+    );
+    assert.equal((await original.json()).result.status, "closed");
+    assert.deepEqual(await readBrowserRunState(retryRunId), {
+      winningClaims: 1,
+      remainingStock: 0,
+      ordinaryPrizeOrderItems: 0,
+    });
+    await retryGuest.context.close();
+  }
   stage = "claim form: open";
   const loser = await customerPage();
   await loser.page.goto(origin + "/store/" + app.probe.productId); // Keep a legitimately stale card alive before the win.
@@ -417,7 +501,7 @@ try {
           [app.campaignId],
         )
       ).rows[0].n,
-      1,
+      2,
     );
     for (const prize of [addressPrize, instagramPrize])
       assert.equal(

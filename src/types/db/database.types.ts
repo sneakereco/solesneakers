@@ -2142,6 +2142,10 @@ export type Database = {
         Args: { p_attempt_id: string; p_recovery_hash: string }
         Returns: Json
       }
+      read_specialty_claim_result_with_context: {
+        Args: { p_attempt_id: string; p_recovery_hash: string }
+        Returns: Json
+      }
       record_shippo_tracking_update: {
         Args: {
           p_carrier: string

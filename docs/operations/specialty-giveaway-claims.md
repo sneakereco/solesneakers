@@ -4,12 +4,13 @@ Specialty products use a private claim flow. They have no cart, checkout, paymen
 
 ## Runtime setup and release gates
 
-Apply the four additive migrations in order:
+Apply the five additive migrations in order:
 
 1. `20261125120000_specialty_product_foundation.sql`
 2. `20261125121000_specialty_claim_awards.sql`
 3. `20261125122000_specialty_claim_admin.sql`
 4. `20261125123000_specialty_claim_contention.sql`
+5. `20261125124000_specialty_claim_observation.sql`
 
 The seeded `black-friday-2026` campaign begins disabled. Configure these server runtime variables before enabling it:
 
@@ -43,6 +44,10 @@ The public discovery pool has five-second CDN freshness with no stale extension.
 The browser stores only product/attempt IDs and a random recovery credential in session storage. Submitted contact data, validation tokens, and full receipts are not stored there. A conditional control in existing footer Customer Resources makes saved attempts accessible after a claimed prize disappears. Blocked browser storage uses memory and asks the winner to keep the confirmation open.
 
 Timeouts, connection failures, and unknown results never become a confirmed loss. Automatic recovery retries the same attempt for up to 30 seconds; Check result again retains the credentials afterward. After a refresh with no committed result, the original details can be re-entered with the same attempt.
+
+A confirmed closed attempt offers **Try claiming again**. That explicit action creates new credentials while the original closed result remains immutable; unresolved attempts and winners cannot use this action. If session storage is readable but writes fail, the current tab retains its credentials in memory and continues to show the storage warning.
+
+Decision metrics distinguish a fresh award from replayed results. They include safe product/campaign IDs, operation, elapsed request/provider/RPC time and allowlisted provider, protection, timeout or contention categories. Repeated receipt checks are replay events and cannot inflate the award count. Contact data, identity keys and credentials are excluded. The extra private recovery RPC adds observation context while preserving the original RPC contract for older application instances.
 
 ## Initial protection policy
 
@@ -78,10 +83,39 @@ Browser reports contain structural counts/outcomes only. Do not enable private-f
 
 ## Qualification status
 
-Qualification is in progress. The protected local Next development path has failed the 1,000-submission gate: requests timed out before reaching award SQL. These failures are retained as failures, with inventory/winner reconciliation, rather than being counted as capacity evidence. Do not enable a real giveaway on that basis.
+**Release decision: NO-GO.** Feature implementation and the final review fixes are locally verified, but capacity qualification is incomplete. The protected local Next development path failed the 1,000-submission gate: requests timed out before reaching award SQL. These failures are retained as failures, with inventory/winner reconciliation. Keep the real campaign disabled.
 
 Run the protected path with `--mode=protected` (the default). The separate `--mode=award-rpc` sends 1,000 independent requests to the real private PostgREST award/recovery RPCs using only this run's synthetic credentials. It isolates transaction contention, stock, campaign identity caps and recovery. Its reports explicitly set `siteCapacityPassed: false`; it does not measure the application's origin, browser, bot, Redis or proxy path. No application bypass route or deployed bypass flag is introduced.
 
 Nominal local HTTP actors use distinct synthetic forwarded IPs trusted only by the loopback app. The `shared-ip` scenario separately exercises the original shared IP pressure. All deployed quotas remain unchanged. Latency percentiles include recovery until a terminal result; initial HTTP latency is reported separately. The generator must deliver 1,000 in-flight submissions within one second, with terminal p95 ≤ 3 seconds, p99 ≤ 10 seconds and every attempt resolved within 30 seconds. The overload case separately checks bounded recovery and integrity.
 
-Hosted staging and production provider qualification remains pending. The CLI currently refuses remote targets: this worktree has no selected Doppler project/config or explicitly permitted hosted synthetic campaign/bot-test binding. It must not infer a staging project, seed live prizes, change a deployment's selected campaign, or weaken deployed protection. Runtime variable presence, real Shippo cold validation/provider quotas, hosted BotID/WAF behavior, CDN freshness and hosted 1,000-submission capacity require the normal release path. The final evidence section will record the exact tested source and local results.
+Hosted staging and production provider qualification remains pending. The CLI currently refuses remote targets: this worktree has no selected Doppler project/config or explicitly permitted hosted synthetic campaign/bot-test binding. It must not infer a staging project, seed live prizes, change a deployment's selected campaign, or weaken deployed protection. Runtime variable presence, real Shippo cold validation/provider quotas, hosted BotID/WAF behavior, CDN freshness and hosted 1,000-submission capacity require the normal release path.
+
+### Measured local load
+
+The eight award-engine scenarios below ran against clean source `ef6adc3fa14936b532af8231a78688ed57682c7c`. Each dispatched 1,000 actual concurrent HTTP submissions within 12 ms. Every scenario reconciled correctly with no duplicate identity, negative stock, ordinary prize order, unexpected error or unresolved attempt. **All seven nominal latency gates failed.** The forced-lock overload case passed its separate bounded-recovery/integrity check; it does not pass website capacity.
+
+| Scenario                | Winning responses | Persisted winners | Remaining stock | Terminal p95 / p99 (seconds) |
+| ----------------------- | ----------------: | ----------------: | --------------: | ---------------------------: |
+| Hot one                 |                 1 |                 1 |               0 |                21.55 / 22.05 |
+| Hot many                |                10 |                10 |               0 |                24.15 / 24.55 |
+| Multiple products       |               100 |               100 |               0 |                11.25 / 11.41 |
+| Duplicate address       |                 1 |                 1 |             999 |                  6.36 / 6.44 |
+| Duplicate Instagram     |                 1 |                 1 |             999 |                  7.88 / 8.03 |
+| Same attempt replayed   |             1,000 |                 1 |               0 |                  8.16 / 8.27 |
+| Lost committed response |                 1 |                 1 |               0 |                12.76 / 12.91 |
+| Forced-lock overload    |                 1 |                 1 |               0 |                14.28 / 14.38 |
+
+The latest protected hot-one run on the same source had 1,000 unresolved attempts at 30 seconds, zero winners and stock still one. All nine protected scenarios, including shared-IP pressure, failed qualification. Those outcomes are safe retryable uncertainty, not a claim that the giveaway remains available under that traffic. The standalone local Redis probe accepted 1,000 logical checks without timeout; that probe is not website evidence.
+
+[Sanitized machine-readable reports](evidence/2026-11-25-specialty-load.json) preserve exact source SHAs, initial/terminal latency, dispatch/concurrency, retries, statuses, reconciliation and provider differences. [Implementation decisions and deferred review findings](evidence/2026-11-25-specialty-decisions.md) preserve the native execution record.
+
+### Verification and remaining work
+
+After the four Important review fixes, the full unit suite passed (137 suites, 695 tests), integration passed (3 suites, 21 tests), disposable-database/safety checks passed (35 tests), and load-runner safety/barrier checks passed (8 tests). Actual Next/Chromium checks passed real win/loss, immutable recovery after a lost committed response, campaign-wide identity caps, pause/reopen with a new attempt, audited staff follow-up and ordinary cart exclusion. The separate dialog harness passed keyboard/mobile, uncertain recovery and readable-storage/write-quota failures.
+
+The production webpack build passed with synthetic fixture environment and complete TypeScript/static generation. The default local Turbopack build is blocked by the shared `node_modules` junction outside its filesystem root; it is not reported as passing. Real Auth, Shippo, hosted BotID/WAF, CDN and deployed runtime behavior remain unverified.
+
+Standalone typecheck, changed-file formatting and whitespace checks passed. Whole-repository ESLint completed with zero errors and nine existing warnings; no lint rule was weakened.
+
+Before release, identify a permitted staging project and synthetic campaign, supply its supported bot-test setup through existing secret management, qualify the protected deployment and provider behavior, and meet the latency/resolution gates. Local database correctness does not waive those gates. No merge, push, deployment or real campaign enablement was performed during implementation.

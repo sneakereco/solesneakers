@@ -1,6 +1,7 @@
 import { randomUUID } from "node:crypto";
 import type { EligibilityDependencies } from "../ValidateEligibility/validate-eligibility-handler";
 import type { ClaimMetric } from "../RequestProtection/claim-telemetry";
+import { observeAddressValidation } from "../RequestProtection/validation-observation";
 import {
   attemptCredentialsSchema,
   claimSubmissionSchema,
@@ -29,6 +30,10 @@ export type ClaimDependencies = EligibilityDependencies & {
   recordMetric(event: ClaimMetric): void;
 };
 const unavailable = () => reply({ status: "unavailable", retryAfterSeconds: 1 }, 503, 1);
+type Observation = Pick<
+  ClaimMetric,
+  "requestId" | "productId" | "campaignId" | "failure" | "guard" | "databaseDurationMs"
+>;
 function failure(error: unknown): Response {
   if (error instanceof ClaimBodyError) return reply({ status: "invalid" }, error.status);
   if (error instanceof ClaimRepositoryError && error.code === "unauthorized")
@@ -40,10 +45,24 @@ function failure(error: unknown): Response {
 async function protectedReply(
   request: Request,
   deps: ClaimDependencies,
-  operation: "recover" | "submit",
+  operation: "recover" | "submit" | "validate",
   browserId = "",
+  observation?: Observation,
 ): Promise<Response | null> {
-  const decision = await deps.protect(request, operation, browserId);
+  let decision;
+  try {
+    decision = await deps.protect(request, operation, browserId);
+  } catch (error) {
+    if (observation) {
+      observation.failure = "protection_unavailable";
+      observation.guard = operation;
+    }
+    throw error;
+  }
+  if (!decision.allowed && observation) {
+    observation.guard = operation;
+    if (decision.status === 503) observation.failure = "protection_unavailable";
+  }
   return decision.allowed
     ? null
     : reply(
@@ -62,21 +81,36 @@ async function protectedReply(
 }
 async function withMetric(
   deps: ClaimDependencies,
-  work: () => Promise<Response>,
+  operation: "submit" | "recover",
+  work: (observation: Observation) => Promise<Response>,
 ): Promise<Response> {
   const requestId = randomUUID(),
     started = deps.nowMs();
   let response: Response;
+  const observation: Observation = { requestId };
   try {
-    response = await work();
+    response = await work(observation);
   } catch (error) {
+    if (error instanceof ClaimRepositoryError && error.code === "temporary_unavailable")
+      observation.failure = error.reason;
     response = failure(error);
   }
   try {
     const data = await response.clone().json();
     deps.recordMetric({
-      requestId,
-      outcome: data.result?.status ?? data.status ?? "unavailable",
+      ...observation,
+      operation,
+      event: data.replayed
+        ? "replay"
+        : data.result?.status === "won"
+          ? "award"
+          : response.status >= 400
+            ? "failure"
+            : "decision",
+      outcome: data.replayed
+        ? "replayed"
+        : (data.result?.status ?? data.status ?? "unavailable"),
+      ...(data.result ? { decision: data.result.status } : {}),
       durationMs: Math.max(0, deps.nowMs() - started),
     });
   } catch {
@@ -88,12 +122,16 @@ export async function recoverClaimHandler(
   request: Request,
   deps: ClaimDependencies,
 ): Promise<Response> {
-  return withMetric(deps, async () => {
-    const blocked = await protectedReply(request, deps, "recover");
+  return withMetric(deps, "recover", async (observation) => {
+    const blocked = await protectedReply(request, deps, "recover", "", observation);
     if (blocked) return blocked;
     const credentials = attemptCredentialsSchema.safeParse(await readClaimJson(request));
     if (!credentials.success) return reply({ status: "invalid" }, 422);
     const stored = await deps.findAttempt(credentials.data);
+    if (stored) {
+      observation.productId = stored.productId;
+      observation.campaignId = stored.campaignId;
+    }
     return stored
       ? reply({ result: stored.result, replayed: true })
       : reply({ status: "pending", retryAfterSeconds: 1 }, 202, 1);
@@ -103,20 +141,25 @@ export async function submitClaimHandler(
   request: Request,
   deps: ClaimDependencies,
 ): Promise<Response> {
-  return withMetric(deps, async () => {
+  return withMetric(deps, "submit", async (observation) => {
     // Replays have recovery-level protection and never depend on a live bot/address provider.
-    const blockedRead = await protectedReply(request, deps, "recover");
+    const blockedRead = await protectedReply(request, deps, "recover", "", observation);
     if (blockedRead) return blockedRead;
     const parsed = claimSubmissionSchema.safeParse(await readClaimJson(request));
     if (!parsed.success) return reply({ status: "invalid" }, 422);
     const input = parsed.data;
+    observation.productId = input.productId;
     const credentials = {
       attemptId: input.attemptId,
       recoverySecret: input.recoverySecret,
     };
     const stored = await deps.findAttempt(credentials);
+    if (stored) observation.campaignId = stored.campaignId;
     const secret = deps.secret();
-    if (!secret) return unavailable();
+    if (!secret) {
+      observation.failure = "identity_unavailable";
+      return unavailable();
+    }
     let inputHash: string, handle: string;
     try {
       inputHash = fingerprintInput(input, secret);
@@ -129,9 +172,21 @@ export async function submitClaimHandler(
         ? reply({ result: stored.result, replayed: true })
         : reply({ status: "payload_conflict" }, 409);
     const context = await deps.getContext(request, input.productId);
-    if (!context || context.identityKeyFingerprint !== getIdentityKeyFingerprint(secret))
+    if (context) observation.campaignId = context.campaignId;
+    if (
+      !context ||
+      context.identityKeyFingerprint !== getIdentityKeyFingerprint(secret)
+    ) {
+      observation.failure = "identity_unavailable";
       return unavailable();
-    const blocked = await protectedReply(request, deps, "submit", context.browserId);
+    }
+    const blocked = await protectedReply(
+      request,
+      deps,
+      "submit",
+      context.browserId,
+      observation,
+    );
     if (blocked) return blocked;
     let eligibility: ValidatedEligibility | null;
     if (input.validationToken) {
@@ -149,8 +204,25 @@ export async function submitClaimHandler(
       )
         return reply({ status: "validation_required" }, 422);
     } else {
-      const validation = await deps.validateAddress(input.address);
-      if (validation.status === "unavailable") return unavailable();
+      const providerBlocked = await protectedReply(
+        request,
+        deps,
+        "validate",
+        context.browserId,
+        observation,
+      );
+      if (providerBlocked) return providerBlocked;
+      let validation;
+      try {
+        validation = await observeAddressValidation(deps, input.address, observation);
+      } catch (error) {
+        observation.failure = "address_provider_unavailable";
+        throw error;
+      }
+      if (validation.status === "unavailable") {
+        observation.failure = "address_provider_unavailable";
+        return unavailable();
+      }
       if (validation.status !== "valid")
         return reply({ status: "validation_required" }, 422);
       eligibility = {
@@ -162,13 +234,19 @@ export async function submitClaimHandler(
         expiresAt: deps.nowMs() + 600000,
       };
     }
-    const result = await deps.accept({
-      attemptId: input.attemptId,
-      recoveryHash: hashRecoverySecret(input.recoverySecret),
-      inputHash,
-      payloadHash: fingerprintSubmission(input.productId, eligibility),
-      eligibility,
-    });
+    const databaseStarted = deps.nowMs();
+    let result: ClaimReply;
+    try {
+      result = await deps.accept({
+        attemptId: input.attemptId,
+        recoveryHash: hashRecoverySecret(input.recoverySecret),
+        inputHash,
+        payloadHash: fingerprintSubmission(input.productId, eligibility),
+        eligibility,
+      });
+    } finally {
+      observation.databaseDurationMs = Math.max(0, deps.nowMs() - databaseStarted);
+    }
     return reply(result);
   });
 }

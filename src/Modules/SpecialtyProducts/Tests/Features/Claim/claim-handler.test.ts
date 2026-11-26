@@ -11,6 +11,8 @@ import {
   getIdentityKeyFingerprint,
 } from "@/Modules/SpecialtyProducts/Source/Features/Claim/normalize-identity";
 import { issueEligibilityToken } from "@/Modules/SpecialtyProducts/Source/Features/Claim/validation-token";
+import { validateEligibilityHandler } from "@/Modules/SpecialtyProducts/Source/Features/ValidateEligibility/validate-eligibility-handler";
+import type { ClaimMetric } from "@/Modules/SpecialtyProducts/Source/Features/RequestProtection/claim-telemetry";
 
 const secret = "a-test-specialty-signing-secret-with-at-least-32-chars";
 const now = 1800000000000;
@@ -64,6 +66,154 @@ function dependencies(): ClaimDependencies {
   };
 }
 describe("specialty claim HTTP decisions", () => {
+  test("one award plus repeated result checks produces one award and distinct replay metrics", async () => {
+    const deps = dependencies(),
+      events: ClaimMetric[] = [];
+    deps.recordMetric = (event) => {
+      events.push(event);
+    };
+    const receipt = {
+      claimId: randomUUID(),
+      productId: context.productId,
+      productName: "Fixture",
+      instagramHandle: "sole",
+      instructions: "Keep this confirmation.",
+      acceptedAt: new Date(now).toISOString(),
+      decisionOrdinal: 1,
+    };
+    deps.accept = () =>
+      Promise.resolve({ result: { status: "won", receipt }, replayed: false });
+    expect(
+      (
+        await submitClaimHandler(
+          request({ ...input, validationToken: issueEligibilityToken(proof, secret) }),
+          deps,
+        )
+      ).status,
+    ).toBe(200);
+    deps.findAttempt = () =>
+      Promise.resolve({
+        inputHash: fingerprintInput(input, secret),
+        payloadHash: "d".repeat(64),
+        result: { status: "won", receipt },
+        productId: context.productId,
+        campaignId: context.campaignId,
+      });
+    await recoverClaimHandler(request(credentials), deps);
+    await recoverClaimHandler(request(credentials), deps);
+    expect(events.filter((event) => event.outcome === "won")).toHaveLength(1);
+    expect(events.filter((event) => event.event === "award")).toHaveLength(1);
+    expect(events.filter((event) => event.event === "replay")).toHaveLength(2);
+    expect(events[0]).toMatchObject({
+      operation: "submit",
+      productId: context.productId,
+      campaignId: context.campaignId,
+    });
+    expect(events.at(-1)).toMatchObject({
+      operation: "recover",
+      outcome: "replayed",
+      decision: "won",
+      productId: context.productId,
+      campaignId: context.campaignId,
+    });
+  });
+  test("provider failure and database contention produce distinct safe observations", async () => {
+    const deps = dependencies(),
+      events: ClaimMetric[] = [];
+    deps.recordMetric = (event) => {
+      events.push(event);
+    };
+    deps.validateAddress = () => Promise.resolve({ status: "unavailable" });
+    await validateEligibilityHandler(
+      request({
+        productId: context.productId,
+        instagramHandle: input.instagramHandle,
+        address,
+      }),
+      deps,
+    );
+    expect(events).toEqual(
+      expect.arrayContaining([
+        expect.objectContaining({
+          event: "validation",
+          operation: "validate",
+          failure: "address_provider_unavailable",
+          productId: context.productId,
+          campaignId: context.campaignId,
+        }),
+      ]),
+    );
+    events.length = 0;
+    deps.accept = () =>
+      Promise.reject(
+        new ClaimRepositoryError("temporary_unavailable", "lock_contention"),
+      );
+    expect(
+      (
+        await submitClaimHandler(
+          request({ ...input, validationToken: issueEligibilityToken(proof, secret) }),
+          deps,
+        )
+      ).status,
+    ).toBe(503);
+    expect(events).toEqual(
+      expect.arrayContaining([
+        expect.objectContaining({
+          event: "failure",
+          operation: "submit",
+          failure: "lock_contention",
+        }),
+      ]),
+    );
+    expect(JSON.stringify(events)).not.toContain(credentials.recoverySecret);
+    expect(JSON.stringify(events)).not.toContain(address.line1);
+  });
+  test("eligibility and tokenless submissions share the provider quota without charging prepared proofs", async () => {
+    const deps = dependencies();
+    let validationChecks = 0;
+    deps.protect = (_request, operation) =>
+      Promise.resolve(
+        operation === "validate" && ++validationChecks > 2
+          ? { allowed: false, status: 429, retryAfterSeconds: 45 }
+          : { allowed: true },
+      );
+    const provider = jest.fn(() =>
+      Promise.resolve({ status: "valid" as const, address }),
+    );
+    deps.validateAddress = provider;
+    expect(
+      (
+        await validateEligibilityHandler(
+          request({
+            productId: context.productId,
+            instagramHandle: input.instagramHandle,
+            address,
+          }),
+          deps,
+        )
+      ).status,
+    ).toBe(200);
+    expect((await submitClaimHandler(request(), deps)).status).toBe(200);
+    expect(
+      (await submitClaimHandler(request({ ...input, attemptId: randomUUID() }), deps))
+        .status,
+    ).toBe(429);
+    expect(provider).toHaveBeenCalledTimes(2);
+    expect(
+      (
+        await submitClaimHandler(
+          request({
+            ...input,
+            attemptId: randomUUID(),
+            validationToken: issueEligibilityToken(proof, secret),
+          }),
+          deps,
+        )
+      ).status,
+    ).toBe(200);
+    expect(provider).toHaveBeenCalledTimes(2);
+    expect(validationChecks).toBe(3);
+  });
   test("submits verified identity hashes and never forwards recovery credentials to the award", async () => {
     const deps = dependencies();
     const accept = jest.fn(deps.accept);

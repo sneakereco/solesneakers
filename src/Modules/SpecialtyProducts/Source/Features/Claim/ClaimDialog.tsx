@@ -11,6 +11,7 @@ import {
   createAttempt,
   hasDurableAttemptStorage,
   readAttempt,
+  replaceClosedAttempt,
   saveAttempt,
   type SavedAttempt,
 } from "./attempt-storage";
@@ -345,6 +346,37 @@ export function ClaimDialog({
                     ? "You have already claimed a specialty product in this giveaway."
                     : "This giveaway is currently closed."}
               </p>
+            )}
+            {decision.status === "closed" && product.claimable && (
+              <button
+                type="button"
+                className="min-h-11 rounded bg-zinc-950 px-5 py-2 text-white"
+                onClick={() => {
+                  if (locked.current || !attempt.current) return;
+                  try {
+                    const next = replaceClosedAttempt(attempt.current);
+                    operation.current?.abort();
+                    attempt.current = next;
+                    frozen.current = null;
+                    setDecision(null);
+                    setMessage("");
+                    setCorrection(null);
+                    setFieldErrors({});
+                    setCanReenter(true);
+                    setStorageLimited(!hasDurableAttemptStorage());
+                    setPhase("form");
+                    requestAnimationFrame(() =>
+                      dialog.current?.querySelector<HTMLInputElement>("input")?.focus(),
+                    );
+                  } catch {
+                    setMessage(
+                      "Reopen the claim form to check your current result before trying again.",
+                    );
+                  }
+                }}
+              >
+                Try claiming again
+              </button>
             )}
           </div>
         )}

@@ -11,13 +11,17 @@ import {
   type StoredAttempt,
 } from "./claim-contract";
 import { hashRecoverySecret } from "./normalize-identity";
+import type { ClaimFailure } from "../RequestProtection/claim-telemetry";
 
 export type ClaimRepositoryErrorCode =
   | "unauthorized"
   | "payload_conflict"
   | "temporary_unavailable";
 export class ClaimRepositoryError extends Error {
-  constructor(readonly code: ClaimRepositoryErrorCode) {
+  constructor(
+    readonly code: ClaimRepositoryErrorCode,
+    readonly reason: ClaimFailure = "database_unavailable",
+  ) {
     super(
       code === "unauthorized"
         ? "This claim result cannot be accessed with these credentials."
@@ -43,15 +47,24 @@ const storedAttemptSchema = z
     inputHash: digest,
     payloadHash: digest,
     result: claimDecisionSchema,
+    productId: z.string().uuid().optional(),
+    campaignId: z.string().uuid().optional(),
   })
   .strict();
-function failure(error: { message?: string }): ClaimRepositoryError {
+function failure(error: { message?: string; code?: string }): ClaimRepositoryError {
   return new ClaimRepositoryError(
     error.message?.includes("specialty_attempt_unauthorized")
       ? "unauthorized"
       : error.message?.includes("specialty_payload_conflict")
         ? "payload_conflict"
         : "temporary_unavailable",
+    error.code === "55P03"
+      ? "lock_contention"
+      : error.code === "57014"
+        ? "database_timeout"
+        : error.code === "PGRST003"
+          ? "database_pool_timeout"
+          : "database_unavailable",
   );
 }
 export class SpecialtyClaimRepository {
@@ -59,10 +72,13 @@ export class SpecialtyClaimRepository {
   async findAttempt(credentials: AttemptCredentials): Promise<StoredAttempt | null> {
     try {
       const parsed = attemptCredentialsSchema.parse(credentials);
-      const { data, error } = await this.client.rpc("read_specialty_claim_result", {
-        p_attempt_id: parsed.attemptId,
-        p_recovery_hash: hashRecoverySecret(parsed.recoverySecret),
-      });
+      const { data, error } = await this.client.rpc(
+        "read_specialty_claim_result_with_context",
+        {
+          p_attempt_id: parsed.attemptId,
+          p_recovery_hash: hashRecoverySecret(parsed.recoverySecret),
+        },
+      );
       if (error) throw failure(error);
       if (data === null) return null;
       const stored = storedAttemptSchema.safeParse(data);

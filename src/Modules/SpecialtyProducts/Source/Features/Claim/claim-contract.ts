@@ -111,6 +111,8 @@ export type AwardCommand = {
   eligibility: ValidatedEligibility;
 };
 export type StoredAttempt = {
+  productId?: string;
+  campaignId?: string;
   inputHash: string;
   payloadHash: string;
   result: ClaimDecision;

@@ -66,7 +66,7 @@ test("result recovery sends only a credential hash and returns bound outcome or 
     status: "won",
     receipt,
   });
-  expect(rpc).toHaveBeenCalledWith("read_specialty_claim_result", {
+  expect(rpc).toHaveBeenCalledWith("read_specialty_claim_result_with_context", {
     p_attempt_id: attemptId,
     p_recovery_hash: command.recoveryHash,
   });
@@ -107,4 +107,32 @@ test("rejects malformed terminal replies and accidental raw credential fields", 
       recoverySecret: credentials.recoverySecret,
     } as AwardCommand),
   ).rejects.toThrow();
+});
+test("recovery reads immutable product/campaign context through the additive private RPC", async () => {
+  const rpc = jest.fn().mockResolvedValue({
+    data: {
+      inputHash: command.inputHash,
+      payloadHash: command.payloadHash,
+      result: { status: "won", receipt },
+      productId,
+      campaignId: command.eligibility.campaignId,
+    },
+    error: null,
+  });
+  const repo = new SpecialtyClaimRepository({ rpc } as unknown as AdminSupabaseClient);
+  const result = await repo.findAttempt(credentials);
+  expect(result).toMatchObject({ productId, campaignId: command.eligibility.campaignId });
+  expect(rpc.mock.calls[0][0]).toBe("read_specialty_claim_result_with_context");
+});
+test("lock contention has a safe diagnostic category without exposing SQL details", async () => {
+  const rpc = jest.fn().mockResolvedValue({
+    data: null,
+    error: { code: "55P03", message: "private SQL and contact data" },
+  });
+  const repo = new SpecialtyClaimRepository({ rpc } as unknown as AdminSupabaseClient);
+  await expect(repo.accept(command)).rejects.toMatchObject({
+    code: "temporary_unavailable",
+    reason: "lock_contention",
+  });
+  await expect(repo.accept(command)).rejects.not.toThrow("private SQL");
 });

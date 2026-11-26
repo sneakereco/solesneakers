@@ -1,3 +1,6 @@
+import { randomUUID } from "node:crypto";
+import type { ClaimMetric } from "../RequestProtection/claim-telemetry";
+import { observeAddressValidation } from "../RequestProtection/validation-observation";
 import {
   ELIGIBILITY_TTL_MS,
   eligibilityRequestSchema,
@@ -33,6 +36,7 @@ export type EligibilityDependencies = {
   ): ReturnType<typeof validateEligibilityAddress>;
   secret(): string | null;
   nowMs(): number;
+  recordMetric?(metric: ClaimMetric): void;
 };
 function reply(body: ValidationReply, status = 200, retryAfter?: number): Response {
   return Response.json(body, {
@@ -115,7 +119,11 @@ export async function validateEligibilityHandler(
         validationToken: issueEligibilityToken(confirmed, secret),
       });
     }
-    const result = await deps.validateAddress(input.address);
+    const result = await observeAddressValidation(deps, input.address, {
+      requestId: randomUUID(),
+      productId: context.productId,
+      campaignId: context.campaignId,
+    });
     if (result.status === "unavailable") return unavailable();
     if (result.status === "invalid") return invalid("address");
     const proof: ValidatedEligibility = {
