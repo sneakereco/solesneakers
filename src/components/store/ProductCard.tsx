@@ -1,4 +1,4 @@
-import Image from "next/image";
+import { ProductImage } from "./ProductImage";
 import { FeedbackLink } from "@/components/ui/FeedbackLink";
 
 import type { ProductWithDetails } from "@/types/domain/product";
@@ -48,7 +48,7 @@ export function ProductCard({
       >
         <div className="relative h-36 w-full bg-[var(--storefront-surface)] sm:h-56 lg:h-64">
           {primaryImage && (
-            <Image
+            <ProductImage
               src={primaryImage.url}
               alt={product.name}
               fill
@@ -82,7 +82,7 @@ export function ProductCard({
       <article>
         <div className="relative aspect-[1/1.02] bg-[var(--storefront-surface)]">
           {primaryImage && (
-            <Image
+            <ProductImage
               src={primaryImage.url}
               alt={product.name}
               fill

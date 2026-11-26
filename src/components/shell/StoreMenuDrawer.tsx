@@ -2,7 +2,7 @@
 
 import { ActionButton } from "@/components/ui/ActionButton";
 import { useEffect, useLayoutEffect, useRef, useState, type Ref } from "react";
-import { FeedbackLink } from "@/components/ui/FeedbackLink";
+import { StoreOverlayLink as FeedbackLink } from "@/components/shell/StoreOverlayLink";
 import { ChevronLeft, ChevronRight, Minus, Plus, X } from "lucide-react";
 
 import { RequestError } from "@/components/ui/RequestError";

@@ -974,7 +974,11 @@ function AccountDetails({
                     <ActionButton
                       type="button"
                       onClick={() => handleDefault(retryAddress ?? null, "retry-default")}
-                      disabled={addressAction.pending || !addressActionsAvailable}
+                      disabled={
+                        addressAction.pending ||
+                        !addressActionsAvailable ||
+                        Boolean(retryAddress && !savedDefaultAvailable)
+                      }
                       pending={
                         addressAction.pending && addressOperation === "retry-default"
                       }

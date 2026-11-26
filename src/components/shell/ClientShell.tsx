@@ -31,6 +31,7 @@ export function ClientShell({ children }: { children: React.ReactNode }) {
       <div className="min-h-screen bg-[var(--storefront-surface)] text-black">
         <StorefrontHeader />
         <main
+          tabIndex={-1}
           className="min-h-screen bg-[var(--storefront-surface)] text-black"
           style={{ paddingTop: "var(--rdk-header-height, 5rem)" }}
         >

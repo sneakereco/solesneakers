@@ -133,6 +133,7 @@ const address = {
 };
 
 async function check(name, run, options = {}) {
+  if (process.argv[2] && !name.includes(process.argv[2])) return;
   const context = await browser.newContext({
     viewport: { width: 1200, height: 900 },
     ...options,
@@ -443,6 +444,67 @@ try {
       assert.equal(defaultBodies.length, 2);
       assert.equal(defaultBodies[1].address_line2, revised.line2);
       assert.equal(defaultBodies[1].full_name, revised.name);
+    },
+  );
+
+  await check(
+    "partial second address after stale default requires refresh before retry",
+    async (page) => {
+      const another = {
+        ...address,
+        id: "38bd4a46-df48-41a0-bca4-a4e3a939662a",
+        name: "New recipient",
+        line1: "5 Other Street",
+      };
+      let saves = 0,
+        writes = 0;
+      await openAccount(page, {
+        addresses: (route) => {
+          if (route.request().method() === "GET")
+            return route.fulfill(json({ addresses: saves ? [address, another] : [] }));
+          return route.fulfill(
+            json(
+              ++saves === 1 ? { address, addresses: [address] } : { address: another },
+            ),
+          );
+        },
+        shipping: (route) => {
+          if (route.request().method() === "GET") return route.fulfill(json({}));
+          writes++;
+          return route.fulfill(
+            writes === 2
+              ? json(
+                  { code: "saved_address_changed", error: "Saved address changed" },
+                  412,
+                )
+              : writes === 4
+                ? json(route.request().postDataJSON())
+                : unavailable,
+          );
+        },
+      });
+      const save = page.getByRole("button", { name: "Add Address" }),
+        retry = page.getByRole("button", { name: "Retry default update" });
+      await fillAddress(page);
+      await page.getByLabel("Set as default shipping address").check();
+      await save.click();
+      await retry.click();
+      await expect(retry).toHaveCount(0);
+      await fillAddress(page);
+      await page.getByLabel("Full Name").fill(another.name);
+      await page.getByLabel(/Address Line 1/).fill(another.line1);
+      await page.getByLabel("Set as default shipping address").check();
+      await save.click();
+      await expect(retry).toBeVisible();
+      await expect(retry).toBeDisabled();
+      await page.getByLabel("Full Name").fill("Unsaved draft");
+      await page.getByRole("button", { name: "Refresh saved addresses" }).click();
+      await retry.click();
+      await expect(
+        page.getByText("Default shipping address updated.", { exact: true }),
+      ).toBeVisible();
+      await expect(page.getByLabel("Full Name")).toHaveValue("Unsaved draft");
+      assert.equal(writes, 4);
     },
   );
 

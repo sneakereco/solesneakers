@@ -5,6 +5,7 @@ import { ActionButton } from "@/components/ui/ActionButton";
 import { adminCommand } from "@/components/admin/admin-command";
 import { fetchJsonWithDeadline } from "@/lib/http/request-deadline";
 import { useId } from "react";
+import { useHydrated } from "@/components/ui/useHydrated";
 
 import { useState, useEffect, useMemo, useRef, useCallback } from "react";
 import { GripVertical, ImagePlus, Plus, Trash2, X } from "lucide-react";
@@ -240,6 +241,7 @@ export function ProductForm({
   initialSizes = [],
 }: ProductFormProps) {
   const id = useId();
+  const hydrated = useHydrated();
   const work = useAsyncAction();
   const [workKind, setWorkKind] = useState<"save" | "upload">("save");
   const [saved, setSaved] = useState(false);
@@ -329,10 +331,10 @@ export function ProductForm({
     const sortedInitialVariants = [...(initialData?.variants ?? [])].sort(
       (a, b) => (a.sort_order ?? 0) - (b.sort_order ?? 0),
     );
-    const mapped = sortedInitialVariants.map((variant) => ({
-      draft_id: createVariantDraftId(),
+    const mapped = sortedInitialVariants.map((variant, index) => ({
+      draft_id: variant.id ?? `initial-${index}`,
       id: variant.id ?? undefined,
-      sku: variant.sku?.trim() || createDraftSku(),
+      sku: variant.sku?.trim() ?? "",
       size_id: variant.size_id,
       size_label: variant.size?.label.trim() ?? "",
       salePrice: formatMoney(variant.sale_price_cents / 100),
@@ -346,8 +348,8 @@ export function ProductForm({
       ? mapped
       : [
           {
-            draft_id: createVariantDraftId(),
-            sku: createDraftSku(),
+            draft_id: "initial-0",
+            sku: "",
             size_id: defaultSize?.id ?? "",
             size_label: defaultSize?.label ?? "",
             salePrice: "",
@@ -356,6 +358,14 @@ export function ProductForm({
           },
         ];
   });
+
+  if (hydrated && variants.some((variant) => !variant.sku)) {
+    setVariants(
+      variants.map((variant) =>
+        variant.sku ? variant : { ...variant, sku: createDraftSku() },
+      ),
+    );
+  }
 
   const [images, setImages] = useState<ImageDraft[]>(() =>
     normalizeImages(initialData?.images ?? []),
@@ -373,7 +383,10 @@ export function ProductForm({
     () => variants.map((variant) => variant.draft_id),
     [variants],
   );
-  const scheduleMin = useMemo(() => toDateTimeLocalValue(new Date().toISOString()), []);
+  const scheduleMin = useMemo(
+    () => (hydrated ? toDateTimeLocalValue(new Date().toISOString()) : undefined),
+    [hydrated],
+  );
   const variantDragSensors = useSensors(
     useSensor(PointerSensor, { activationConstraint: { distance: 6 } }),
     useSensor(KeyboardSensor, { coordinateGetter: sortableKeyboardCoordinates }),
@@ -1447,6 +1460,7 @@ export function ProductForm({
           </button>
         </div>
         <DndContext
+          id={`${id}-variants`}
           sensors={variantDragSensors}
           collisionDetection={closestCenter}
           modifiers={[restrictToVerticalAxis, restrictToParentElement]}

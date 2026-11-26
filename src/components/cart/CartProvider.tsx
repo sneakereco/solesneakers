@@ -106,6 +106,7 @@ export function CartProvider({
         ? previous
         : { ...next, cart, readable: true },
     );
+    return next;
   }, [cart, current]);
 
   const validate = useCallback(async () => {
@@ -243,20 +244,17 @@ export function CartProvider({
       setSaving(null);
     }
     if (current()) {
-      setError(
-        saved
-          ? null
-          : {
-              cart,
-              message: "Could not save your cart. Check browser storage and try again.",
-            },
-      );
-      if (!saved) {
+      if (saved) setError(null);
+      else {
+        let message = "Could not save your cart. Check browser storage and try again.";
         try {
-          reload();
+          const latest = reload();
+          if (latest && latest.revision !== revision)
+            message = "Your cart changed. Review the current quantities and try again.";
         } catch {
           /* Keep the displayed basket for recovery. */
         }
+        setError({ cart, message });
       }
     }
     return saved;

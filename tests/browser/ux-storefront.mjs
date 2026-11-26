@@ -83,6 +83,22 @@ const bundle = await compileUxHarness(
     return <PasswordLoginForm onRequiresEmailVerification={handleVerification} onSwitchToOtp={() => {}} onForgotPassword={() => {}} />;
   }
 
+  import StoreNotFound from "./src/app/(store)/not-found";
+  import RootNotFound from "./src/app/not-found";
+  import StoreError from "./src/app/(store)/error";
+  import CatalogError from "./src/app/(store)/store/error";
+  import CartError from "./src/app/(store)/cart/error";
+  import AccountError from "./src/app/(store)/account/error";
+  import AdminError from "./src/app/admin/error";
+  import CheckoutError from "./src/app/checkout/error";
+  const routeErrors={store:StoreError,catalog:CatalogError,cart:CartError,account:AccountError,admin:AdminError,checkout:CheckoutError};
+  const boundaryError=new Error("Controlled route read failed");
+  function RouteFailure({view}){
+    const [retry,setRetry]=useState(false);
+    const [completed]=useState(()=>new Promise(resolve=>{window.completeReset=resolve;}));
+    const Fallback=routeErrors[view];
+    return retry ? use(completed) : <Fallback error={boundaryError} reset={()=>setRetry(true)} />;
+  }
   function Fixture() {
     const [searchOpen, setSearchOpen] = useState(false);
     const [cartOpen, setCartOpen] = useState(false);
@@ -93,6 +109,14 @@ const bundle = await compileUxHarness(
           <SearchOverlay isOpen={searchOpen} onClose={() => setSearchOpen(false)} /></>;
       case "/cart":
         return <CartPage />;
+      case "/failure": {
+        const view=new URLSearchParams(location.search).get("view");
+        if(view==="root-missing") return <RootNotFound/>;
+        const content=view==="missing" ? <StoreNotFound/> : <Suspense fallback={<p role="status">Loading destination</p>}><RouteFailure view={view}/></Suspense>;
+        return ["admin","checkout"].includes(view) ? <main>{content}</main> : <ClientShell>{content}</ClientShell>;
+      }
+      case "/gallery":
+        return <ProductDetail product={{...product,images:[{id:"a",url:"/local-photo-a.png",is_primary:true},{id:"b",url:"/local-photo-b.png"}]}}/>;
       case "/product":
         return <><ProductDetail product={product} />
           <button onClick={() => setCartOpen(true)}>Open cart</button>
@@ -183,6 +207,7 @@ const browser = await chromium.launch({ headless: true });
 const failures = [];
 
 async function check(width, name, run) {
+  if (process.argv[2] && !name.includes(process.argv[2])) return;
   const page = await browser.newPage({
     viewport: { width, height: 860 },
     reducedMotion: width === 320 ? "reduce" : "no-preference",
@@ -867,6 +892,69 @@ async function checkMenu(page) {
 }
 
 try {
+  for (const view of [
+    "root-missing",
+    "missing",
+    "store",
+    "catalog",
+    "cart",
+    "account",
+    "admin",
+    "checkout",
+  ]) {
+    await check(390, "route recovery " + view, async (page) => {
+      await openUxHarness(page, bundle, "https://ux.test/failure?view=" + view);
+      await expect(page.getByRole("main")).toHaveCount(1);
+      if (view.includes("missing")) {
+        await expect(
+          page.getByRole("link", { name: "Shop new arrivals" }),
+        ).toHaveAttribute("href", "/store");
+        return;
+      }
+      await page.getByRole("button", { name: "Try again" }).press("Enter");
+      await expect(
+        page.getByRole("status").filter({ hasText: "Loading destination" }),
+      ).toBeVisible();
+      await page.evaluate(() => window.completeReset("Route recovered"));
+      await expect(page.getByText("Route recovered", { exact: true })).toBeVisible();
+    });
+  }
+  await check(
+    390,
+    "gallery represents held and failed assets without blocking shopping",
+    async (page) => {
+      const held = holdResponse();
+      await page.route("**/local-photo-a.png", held.fulfill);
+      await page.route("**/local-photo-b.png", (r) =>
+        r.fulfill({
+          contentType: "image/gif",
+          body: Buffer.from("R0lGODlhAQABAAD/ACwAAAAAAQABAAACADs=", "base64"),
+        }),
+      );
+      await openUxHarness(page, bundle, "https://ux.test/gallery");
+      try {
+        await held.received;
+        const photo = page.getByRole("img", { name: "Held Product", exact: true });
+        await expect(photo.locator("..")).toHaveAttribute("aria-busy", "true");
+        await expect(photo.locator("..").locator("[data-ui-skeleton]")).toHaveAttribute(
+          "aria-hidden",
+          "true",
+        );
+      } finally {
+        held.release({ status: 404, body: "missing" });
+      }
+      await expect(
+        page.getByText("Image unavailable", { exact: true }).last(),
+      ).toBeVisible();
+      await page.getByRole("button", { name: "View product image 2" }).click();
+      await expect(
+        page.getByRole("img", { name: "Held Product", exact: true }).locator(".."),
+      ).not.toHaveAttribute("aria-busy", "true");
+      await expect(
+        page.getByRole("button", { name: "View product image 2" }),
+      ).toHaveAttribute("aria-pressed", "true");
+    },
+  );
   for (const failure of ["storage", "session"])
     await check(320, "product can retry unavailable cart after " + failure, (page) =>
       checkProductCartRecovery(page, failure === "session"),

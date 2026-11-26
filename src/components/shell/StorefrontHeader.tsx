@@ -1,6 +1,8 @@
 "use client";
 
-import { useEffect, useState } from "react";
+import { useEffect, useRef, useState, useTransition } from "react";
+import { StoreOverlayNavigation } from "./StoreOverlayLink";
+import { useRouter } from "next/navigation";
 
 import { CartDrawer } from "@/components/cart/CartDrawer";
 import { SearchOverlay } from "@/components/search/SearchOverlay";
@@ -23,6 +25,27 @@ export function StorefrontHeader({
   userEmail,
   role = null,
 }: StorefrontHeaderProps) {
+  const router = useRouter();
+  const [navigationPending, startNavigation] = useTransition();
+  const destination = useRef<string | null>(null);
+  const [navigationLabel, setNavigationLabel] = useState("");
+  function navigate(href: string, label: string) {
+    destination.current = new URL(href, location.href).href;
+    setNavigationLabel(label);
+    startNavigation(() => router.push(href));
+  }
+  useEffect(() => {
+    if (navigationPending || !destination.current) return;
+    const focusDestination = () => {
+      if (location.href !== destination.current || document.querySelector("dialog[open]"))
+        return;
+      destination.current = null;
+      document.querySelector<HTMLElement>("main")?.focus({ preventScroll: true });
+    };
+    focusDestination();
+    document.addEventListener("close", focusDestination, true);
+    return () => document.removeEventListener("close", focusDestination, true);
+  }, [navigationPending, navigationLabel]);
   const [search, setSearch] = useState<{ invoker: HTMLElement | null } | null>(null);
   const [cart, setCart] = useState<{ invoker: HTMLElement | null } | null>(null);
 
@@ -46,9 +69,18 @@ export function StorefrontHeader({
   }, []);
 
   return (
-    <>
+    <StoreOverlayNavigation.Provider value={navigate}>
       <ScrollHeader isAuthenticated={isAuthenticated} userEmail={userEmail} role={role} />
+      {navigationPending && (
+        <p
+          role="status"
+          className="fixed inset-x-0 top-[var(--rdk-visible-header-height,0px)] z-40 border-b border-zinc-200 bg-white px-5 py-2 text-center text-sm text-zinc-700"
+        >
+          {navigationLabel}
+        </p>
+      )}
       <SearchOverlay
+        onSearch={(href) => navigate(href, "Loading search results…")}
         isOpen={search !== null}
         invoker={search?.invoker}
         onClose={() => setSearch(null)}
@@ -58,6 +90,6 @@ export function StorefrontHeader({
         invoker={cart?.invoker}
         onClose={() => setCart(null)}
       />
-    </>
+    </StoreOverlayNavigation.Provider>
   );
 }

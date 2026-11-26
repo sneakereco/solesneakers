@@ -1,8 +1,6 @@
 // src/lib/auth/session.ts
-import {
-  isAuthSessionMissingError,
-  type AuthError as SupabaseAuthError,
-} from "@supabase/supabase-js";
+import { isRejectedSessionError } from "./rejected-session";
+export { isRejectedSessionError } from "./rejected-session";
 import { redirect } from "next/navigation";
 import { isDynamicServerError } from "next/dist/client/components/hooks-server-context";
 
@@ -10,6 +8,7 @@ import { createSupabaseServerClient } from "@/lib/supabase/server";
 import { ProfileRepository } from "@/repositories/profile-repo";
 import type { ProfileRole } from "@/config/constants/roles";
 import { isAdminRole, isProfileRole } from "@/config/constants/roles";
+import { withRequestDeadline } from "@/lib/http/request-deadline";
 import { logError } from "@/lib/utils/log";
 
 export interface ServerSession {
@@ -35,27 +34,13 @@ export class AuthError extends Error {
   }
 }
 
-const rejectedSessionCodes = new Set([
-  "bad_jwt",
-  "no_authorization",
-  "user_not_found",
-  "session_not_found",
-  "session_expired",
-  "refresh_token_not_found",
-  "refresh_token_already_used",
-  "user_banned",
-]);
-
-export function isRejectedSessionError(error: SupabaseAuthError) {
-  return (
-    isAuthSessionMissingError(error) ||
-    Boolean(error.code && rejectedSessionCodes.has(error.code))
-  );
-}
-
 /** Read the validated session for callers that can represent temporary unavailability. */
 export async function readServerSession(): Promise<ServerSession | null> {
-  const supabase = await createSupabaseServerClient();
+  return withRequestDeadline(readVerifiedSession);
+}
+
+async function readVerifiedSession(signal: AbortSignal): Promise<ServerSession | null> {
+  const supabase = await createSupabaseServerClient(signal);
   const {
     data: { user },
     error,
@@ -67,6 +52,7 @@ export async function readServerSession(): Promise<ServerSession | null> {
   }
   if (!user) return null;
 
+  if (signal.aborted) throw signal.reason;
   const profileRepo = new ProfileRepository(supabase);
   const row = await profileRepo.getByUserId(user.id);
   const profile = row

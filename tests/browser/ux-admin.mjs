@@ -3,7 +3,8 @@ import { compileUxHarness, openUxHarness } from "./helpers/ux-harness.mjs";
 
 const bundle = await compileUxHarness(
   `
-import {createRoot} from "react-dom/client";
+import {createRoot,hydrateRoot} from "react-dom/client";
+import {renderToString} from "react-dom/server.browser";
 import {InventoryClient} from "@/app/admin/inventory/client";
 import {CreateProductClient} from "@/app/admin/inventory/create/client";
 import Detail from "@/app/admin/transactions/[orderId]/page";
@@ -19,9 +20,13 @@ import Shipping from "@/app/admin/shipping/page";
 import Tags from "@/app/admin/tags/page";
 import {StoreAccessSettingsPanel} from "@/components/admin/settings/StoreAccessSettingsPanel";
 import {FeaturedItemsManager} from "@/app/admin/featured-items/client";
-const views={settings:Settings,detail:Detail,product:()=> <CreateProductClient initialBrands={[{id:"brand",label:"Fixture"},{id:"other",label:"Other"}]} initialSizes={initialSizes}/>,inventory:()=> <InventoryClient initialProducts={[product]} initialTotal={1} initialSkuTotal={0} initialInventoryUnitTotal={0} initialFilters={{}}/>,label:()=> <CreateLabelForm open order={order} originLine="Fixture origin" onClose={()=>{}} onSuccess={()=>{}}/>, dashboard: Dashboard, pickups: Pickups, transactions: Transactions, shipping: Shipping, tags: Tags, access: StoreAccessSettingsPanel, featured: FeaturedItemsManager };
+const views={settings:Settings,detail:Detail,product:()=> <CreateProductClient initialBrands={[{id:"brand",label:"Fixture"},{id:"other",label:"Other"}]} initialSizes={location.search === '?no-sizes' ? [] : initialSizes}/>,inventory:()=> <InventoryClient initialProducts={[product]} initialTotal={1} initialSkuTotal={0} initialInventoryUnitTotal={0} initialFilters={{}}/>,label:()=> <CreateLabelForm open order={order} originLine="Fixture origin" onClose={()=>{}} onSuccess={()=>{}}/>, dashboard: Dashboard, pickups: Pickups, transactions: Transactions, shipping: Shipping, tags: Tags, access: StoreAccessSettingsPanel, featured: FeaturedItemsManager };
 const View=views[location.pathname.slice(1)];
-createRoot(document.getElementById("root")).render(<View/>);`,
+const root=document.getElementById("root");
+if(location.search==="?hydrate") {
+  root.innerHTML=renderToString(<View/>);
+  window.hydrateForm=()=>hydrateRoot(root,<View/>);
+} else createRoot(root).render(<View/>);`,
   {
     plugins: [
       {
@@ -205,6 +210,32 @@ try {
     await expect(page.getByText("Existing")).toBeVisible();
     if (writes !== 1) throw Error("Duplicate tag write");
   });
+  await check(
+    "server-rendered variant validation focuses the hydrated field",
+    async (page) => {
+      const hydration = [];
+      page.on("console", (msg) => {
+        if (/hydrated|hydration/i.test(msg.text()))
+          hydration.push(msg.text().split("\n")[0]);
+      });
+      await page.route("**/api/admin/**", (r) => r.fulfill({ json: { models: [] } }));
+      await openUxHarness(page, bundle, "https://ux.test/product?hydrate");
+      await page.evaluate(() => {
+        window.hydrateForm();
+      });
+      await page.getByLabel(/Full Title/).fill("Fixture");
+      await page.getByLabel("Override Brand").fill("Fixture");
+      const price = page.getByLabel(/Sale Price/);
+      await page
+        .getByRole("button", { name: "Create Product" })
+        .evaluate((el) =>
+          el.form.dispatchEvent(new Event("submit", { bubbles: true, cancelable: true })),
+        );
+      await expect(price).toBeFocused();
+      await expect(price).toHaveAttribute("aria-invalid", "true");
+      await expect.poll(() => hydration).toEqual([]);
+    },
+  );
   await check("product select, parse, upload and save", async (page) => {
     const parseGate = deferred(),
       uploadGate = deferred(),
@@ -268,13 +299,20 @@ try {
       uploadGate.release();
     }
     await expect(page.getByText(/All 1 upload\(s\) failed/i)).toBeVisible();
+    const idleSaveSize = await page
+      .getByRole("button", { name: "Create Product" })
+      .boundingBox();
     await page.getByRole("button", { name: "Create Product" }).evaluate((el) => {
       el.form.requestSubmit();
       el.form.requestSubmit();
     });
     try {
       await expect.poll(() => saves).toBe(1);
-      await expect(page.getByRole("button", { name: /saving/i })).toBeDisabled();
+      const saving = page.getByRole("button", { name: /saving/i });
+      await expect(saving).toBeDisabled();
+      const size = await saving.boundingBox();
+      expect(size.width).toBe(idleSaveSize.width);
+      expect(size.height).toBe(idleSaveSize.height);
     } finally {
       saveGate.release();
     }
@@ -308,6 +346,24 @@ try {
     await expect(page.getByRole("status")).toContainText(/Unable to export/);
   });
 
+  await check("invalid product size focuses the closed invalid trigger", async (page) => {
+    await page.route("**/api/admin/**", (route) =>
+      route.fulfill({ json: { models: [] } }),
+    );
+    await openUxHarness(page, bundle, "https://ux.test/product?no-sizes");
+    await page.getByLabel(/Full Title/).fill("Fixture");
+    await page.getByLabel("Override Brand").fill("Fixture");
+    await page.getByLabel(/Sale Price/).fill("10");
+    await page
+      .getByRole("button", { name: "Create Product" })
+      .evaluate((el) =>
+        el.form.dispatchEvent(new Event("submit", { bubbles: true, cancelable: true })),
+      );
+    const size = page.getByLabel(/^Size/).first();
+    await expect(size).toBeFocused();
+    await expect(size).toHaveAttribute("aria-invalid", "true");
+    await expect(size).toHaveAccessibleDescription(/size is required/i);
+  });
   await check("searchable variant option association", async (page) => {
     await openUxHarness(page, bundle, "https://ux.test/product");
     await page.getByLabel(/^Size/).first().click();

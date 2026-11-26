@@ -1,40 +1,41 @@
-// src/app/api/auth/logout/route.ts
-import { NextResponse } from "next/server";
-
-import { AuthService } from "@/services/auth-service";
-import { createSupabaseServerClient } from "@/lib/supabase/server";
+import { isChunkLike } from "@supabase/ssr";
+import { NextResponse, type NextRequest } from "next/server";
+import { env } from "@/config/env";
 import { clearAdminSessionCookie } from "@/lib/http/admin-session-cookie";
+import { withRequestDeadline } from "@/lib/http/request-deadline";
 import { getRequestIdFromHeaders } from "@/lib/http/request-id";
+import { createSupabaseServerClient } from "@/lib/supabase/server";
 import { logError } from "@/lib/utils/log";
+import { AuthService } from "@/services/auth-service";
 
-export async function POST(request: Request) {
-  const requestId = getRequestIdFromHeaders(request.headers);
-
+export async function POST(request: NextRequest) {
+  // Leave time to deliver local cookie expiry inside the browser's request deadline.
   try {
-    const supabase = await createSupabaseServerClient();
-    const authService = new AuthService(supabase);
-
-    await authService.signOut();
-
-    let res = NextResponse.json(
-      { ok: true },
-      { headers: { "Cache-Control": "no-store" } },
+    await withRequestDeadline(
+      async (signal) => {
+        const supabase = await createSupabaseServerClient(signal);
+        await new AuthService(supabase).signOut();
+      },
+      undefined,
+      5000,
     );
-    res = clearAdminSessionCookie(res);
-
-    return res; // IMPORTANT: return the response you mutated
-  } catch (error: unknown) {
+  } catch (error) {
     logError(error, {
       layer: "auth",
-      requestId,
+      requestId: getRequestIdFromHeaders(request.headers),
       route: "/api/auth/logout",
     });
-
-    const message = error instanceof Error ? error.message : "Logout failed";
-
-    return NextResponse.json(
-      { ok: false, error: message, requestId },
-      { status: 400, headers: { "Cache-Control": "no-store" } },
-    );
   }
+
+  const response = clearAdminSessionCookie(
+    NextResponse.json({ ok: true }, { headers: { "Cache-Control": "no-store" } }),
+  );
+  // This is the default storage key used by our Supabase SSR client.
+  const hostname = new URL(env.NEXT_PUBLIC_SUPABASE_URL).hostname;
+  const storageKey = `sb-${hostname.split(".")[0]}-auth-token`;
+  const authKeys = [storageKey, storageKey + "-code-verifier", storageKey + "-user"];
+  for (const { name } of request.cookies.getAll()) {
+    if (authKeys.some((key) => isChunkLike(name, key))) response.cookies.delete(name);
+  }
+  return response;
 }

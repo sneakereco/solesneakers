@@ -170,7 +170,9 @@ export function RdkSelect({
         data-ui-select-trigger
         type="button"
         disabled={disabled}
+        role={invalid === undefined ? undefined : "combobox"}
         aria-haspopup="listbox"
+        aria-invalid={invalid}
         aria-describedby={describedBy}
         aria-label={ariaLabel}
         aria-labelledby={ariaLabelledBy}

@@ -29,11 +29,9 @@ const lockAnnouncements = [
 ];
 
 export default async function LockedPage(props: {
-  searchParams?: Promise<{ next?: string }> | { next?: string };
+  searchParams?: Promise<{ next?: string }>;
 }) {
-  const searchParams = props.searchParams
-    ? await Promise.resolve(props.searchParams)
-    : undefined;
+  const searchParams = await props.searchParams;
   const next = searchParams?.next || "/";
   const session = await getServerSession();
 

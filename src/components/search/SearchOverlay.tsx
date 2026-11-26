@@ -3,7 +3,7 @@
 import { ActionButton } from "@/components/ui/ActionButton";
 import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import Image from "next/image";
-import { FeedbackLink } from "@/components/ui/FeedbackLink";
+import { StoreOverlayLink as FeedbackLink } from "@/components/shell/StoreOverlayLink";
 import { useRouter } from "next/navigation";
 import { Search, X } from "lucide-react";
 
@@ -17,6 +17,7 @@ import { logError } from "@/lib/utils/log";
 interface SearchOverlayProps {
   isOpen: boolean;
   onClose: () => void;
+  onSearch?: (href: string) => void;
   invoker?: HTMLElement | null;
 }
 
@@ -118,7 +119,12 @@ function buildSuggestions(results: SearchResult[], query: string) {
   return Array.from(suggestions.values()).slice(0, 6);
 }
 
-export function SearchOverlay({ isOpen, onClose, invoker }: SearchOverlayProps) {
+export function SearchOverlay({
+  isOpen,
+  onClose,
+  invoker,
+  onSearch,
+}: SearchOverlayProps) {
   const router = useRouter();
   const requestGeneration = useRef(0);
   const inputRef = useRef<HTMLInputElement>(null);
@@ -227,7 +233,9 @@ export function SearchOverlay({ isOpen, onClose, invoker }: SearchOverlayProps) 
   const handleSubmit = (event: React.FormEvent) => {
     event.preventDefault();
     if (!normalizedQuery) return;
-    router.push(searchHref(normalizedQuery));
+    const href = searchHref(normalizedQuery);
+    if (onSearch) onSearch(href);
+    else router.push(href);
     closeSearch();
   };
 

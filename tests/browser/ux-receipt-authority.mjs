@@ -396,6 +396,16 @@ try {
   );
   for (const page of [first, second])
     await expect(page.locator("output")).toHaveText("2");
+  await first.evaluate(() => {
+    window.previousEdit = window.cart.updateQuantity;
+  });
+  await second.evaluate((row) => window.cart.addItem(row), row);
+  await expect(first.locator("output")).toHaveText("3");
+  assert.equal(await first.evaluate(() => window.previousEdit("p", "v", 1)), false);
+  await expect(first.getByRole("alert")).toContainText(/cart changed.*review/i);
+  await expect(first.locator("output")).toHaveText("3");
+  assert.equal(await first.evaluate(() => window.cart.updateQuantity("p", "v", 2)), true);
+  await expect(first.getByRole("alert")).toHaveCount(0);
   // Both documents share one account basket and must agree on the first order binding.
   const firstBound = await first.evaluate(() =>
     window.cart.bindCheckoutSnapshot("shared", window.cart.captureCheckoutSnapshot()),

@@ -12,9 +12,12 @@ import { CheckoutPaymentDialog } from "@/components/checkout/CheckoutPaymentDial
 type ViewState = "waiting" | "delayed" | "review" | "error";
 
 function ProcessingContent() {
+  const orderId = useSearchParams().get("orderId");
+  return <OrderProgress key={orderId} orderId={orderId} />;
+}
+
+function OrderProgress({ orderId }: { orderId: string | null }) {
   const router = useRouter();
-  const searchParams = useSearchParams();
-  const orderId = searchParams.get("orderId");
   const [view, setView] = useState<ViewState>("waiting");
   const [message, setMessage] = useState("Confirming your payment securely...");
 

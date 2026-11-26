@@ -21,7 +21,7 @@ export default function ErrorPage({
 
   return (
     <div className="flex min-h-screen items-center justify-center bg-[var(--storefront-surface)] px-6 text-zinc-900">
-      <main className="w-full max-w-3xl">
+      <div className="w-full max-w-3xl">
         <div className="border border-zinc-200 bg-white px-6 py-8 sm:px-10 sm:py-10">
           <p className="text-center text-[11px] uppercase tracking-[0.18em] text-zinc-500">
             {BRAND_NAME}
@@ -60,7 +60,7 @@ export default function ErrorPage({
             </Link>
           </div>
         </div>
-      </main>
+      </div>
     </div>
   );
 }

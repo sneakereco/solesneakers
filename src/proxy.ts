@@ -31,7 +31,13 @@ export async function proxy(request: NextRequest): Promise<NextResponse> {
   }
 
   // Refresh Supabase session and get response with cookies
-  const sessionResponse = await refreshSession(request);
+  // Logout removes local credentials even while the identity provider is unavailable.
+  const sessionResponse =
+    pathname === "/api/auth/logout" && request.method === "POST"
+      ? NextResponse.next({ request })
+      : await refreshSession(request);
+  if (!sessionResponse.ok)
+    return finalizeProxyResponse(sessionResponse, requestId, pathname);
 
   // Create forwarded headers with request ID for downstream handlers
   const forwardedHeaders = new Headers(request.headers);

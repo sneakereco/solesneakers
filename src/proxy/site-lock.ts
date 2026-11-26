@@ -1,6 +1,8 @@
 import type { NextRequest } from "next/server";
 import { NextResponse } from "next/server";
 
+import { withRequestDeadline } from "@/lib/http/request-deadline";
+import { temporaryUnavailableResponse } from "@/lib/http/temporary-unavailable";
 import { isAdminRole, isProfileRole } from "@/config/constants/roles";
 import { security, startsWithAny } from "@/config/security";
 import { verifyAdminSessionToken } from "@/lib/http/admin-session";
@@ -23,11 +25,12 @@ async function awaitMaybeVerify(token: string) {
   }
 }
 
-async function getLockSettings() {
+async function getLockSettings(signal: AbortSignal) {
   const supabase = createSupabaseAdminClient();
   const tenantRepo = new TenantRepository(supabase);
   const tenantId = await tenantRepo.getFirstTenantId();
 
+  if (signal.aborted) throw signal.reason;
   if (!tenantId) {
     return null;
   }
@@ -38,13 +41,17 @@ async function getLockSettings() {
   return { service, settings };
 }
 
-async function isSignedInAdmin(request: NextRequest): Promise<boolean> {
+async function isSignedInAdmin(
+  request: NextRequest,
+  signal: AbortSignal,
+): Promise<boolean> {
   const supabase = createSupabaseProxyClient(request);
   const {
     data: { user },
     error,
   } = await supabase.auth.getUser();
 
+  if (signal.aborted) throw signal.reason;
   if (error || !user) {
     return false;
   }
@@ -65,32 +72,6 @@ export async function checkSiteLock(
     return null;
   }
 
-  let lockSettings: Awaited<ReturnType<typeof getLockSettings>>;
-
-  try {
-    lockSettings = await getLockSettings();
-  } catch (error) {
-    logError(error, {
-      layer: "proxy",
-      requestId,
-      route: pathname,
-      message: "site_lock_settings_lookup_failed",
-    });
-    return null;
-  }
-
-  if (!lockSettings) {
-    return null;
-  }
-
-  const { service, settings } = lockSettings;
-
-  if (!service.isSiteLocked(settings)) {
-    return null;
-  }
-
-  const unlockAt = settings.siteUnlockAt ? new Date(settings.siteUnlockAt) : null;
-
   const allowPrefixes = [
     "/locked",
     "/auth",
@@ -104,6 +85,50 @@ export async function checkSiteLock(
     return null;
   }
 
+  try {
+    return await withRequestDeadline((signal) =>
+      checkSettingsAndBypass(request, requestId, signal),
+    );
+  } catch (error) {
+    if (error instanceof DOMException && error.name === "TimeoutError")
+      return temporaryUnavailableResponse(request, "store");
+    throw error;
+  }
+}
+
+async function checkSettingsAndBypass(
+  request: NextRequest,
+  requestId: string,
+  signal: AbortSignal,
+) {
+  const { pathname } = request.nextUrl;
+  let lockSettings: Awaited<ReturnType<typeof getLockSettings>>;
+
+  try {
+    lockSettings = await getLockSettings(signal);
+  } catch (error) {
+    logError(error, {
+      layer: "proxy",
+      requestId,
+      route: pathname,
+      message: "site_lock_settings_lookup_failed",
+    });
+    return null;
+  }
+
+  if (signal.aborted) throw signal.reason;
+  if (!lockSettings) {
+    return null;
+  }
+
+  const { service, settings } = lockSettings;
+
+  if (!service.isSiteLocked(settings)) {
+    return null;
+  }
+
+  const unlockAt = settings.siteUnlockAt ? new Date(settings.siteUnlockAt) : null;
+
   const adminCookieValue = request.cookies.get(
     security.proxy.adminSession.cookieName,
   )?.value;
@@ -115,7 +140,8 @@ export async function checkSiteLock(
   }
 
   try {
-    if (await isSignedInAdmin(request)) {
+    if (signal.aborted) throw signal.reason;
+    if (await isSignedInAdmin(request, signal)) {
       return null;
     }
   } catch (error) {

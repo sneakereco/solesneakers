@@ -2,7 +2,7 @@
 
 import { ActionButton } from "@/components/ui/ActionButton";
 import { useEffect, useRef, useState } from "react";
-import Image from "next/image";
+import { ProductImage } from "./ProductImage";
 import { FeedbackLink } from "@/components/ui/FeedbackLink";
 import { ChevronDown } from "lucide-react";
 
@@ -148,7 +148,7 @@ export function ProductDetail({ product }: ProductDetailProps) {
                       : "border border-transparent hover:border-zinc-400"
                   }`}
                 >
-                  <Image
+                  <ProductImage
                     src={image.url}
                     alt={`${product.name}, view ${index + 1}`}
                     fill
@@ -164,7 +164,7 @@ export function ProductDetail({ product }: ProductDetailProps) {
           )}
 
           <div className="relative order-1 aspect-square min-w-0 flex-1 lg:order-2 lg:aspect-auto lg:min-h-[39rem]">
-            <Image
+            <ProductImage
               src={selectedImage?.url || "/placeholder.png"}
               alt={product.name}
               fill
