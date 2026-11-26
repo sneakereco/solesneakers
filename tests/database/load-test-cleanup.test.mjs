@@ -65,3 +65,73 @@ test("actual scoped SQL cleanup can restart and preserves an unrelated catalog c
     await rm(directory, { recursive: true, force: true });
   }
 });
+test("cleanup refuses normal shoppers on a public fixture SKU and adopts only synthetic purchaser orders", async () => {
+  const { reserve, applyExpansion, newSignature } = await import(
+    "./fixtures/single-store-expansion.mjs"
+  );
+  const stack = await createDisposableLoadDatabase(),
+    directory = await mkdtemp(join(tmpdir(), "sole-cleanup-ownership-"));
+  try {
+    const db = await stack.connect();
+    if (
+      !(await db.query("select to_regprocedure($1) present", [newSignature])).rows[0]
+        .present
+    )
+      await applyExpansion(db);
+    const runId = randomUUID(),
+      plan = {
+        runId,
+        targetDigest: "d",
+        accountPoolSize: 0,
+        ordinaryStockUnits: 30,
+        hotStock: 1,
+      },
+      journal = await openJournal(plan, directory),
+      control = async () => ({ cleaned: true });
+    const fixtures = await seedFixtures(
+        { digest: "d" },
+        plan,
+        createFixtureClients({ db, runId, control }),
+        journal,
+      ),
+      product = fixtures.products[0],
+      catalog = { product: product.id, variant: product.variantId };
+    const own = await reserve(db, catalog, {
+        key: randomUUID(),
+        email: `guest-0-0-${randomUUID()}@${runId}.load.test`,
+      }),
+      other = await reserve(db, catalog, {
+        key: randomUUID(),
+        email: "normal-shopper@example.invalid",
+      });
+    for (const order of [own, other])
+      await db.query(
+        "select public.release_square_checkout_reservation($1,'load-release')",
+        [order.order_id],
+      );
+    const clients = createCleanupClients({ db, runId, journal, control });
+    await assert.rejects(clients.deleteOrders(), /ownership/);
+    assert.equal(
+      (
+        await db.query(
+          "select count(*)::int n from public.orders where id=any($1::uuid[])",
+          [[own.order_id, other.order_id]],
+        )
+      ).rows[0].n,
+      2,
+    );
+    await db.query("delete from public.orders where id=$1", [other.order_id]);
+    await clients.deleteOrders();
+    assert.equal(
+      (
+        await db.query("select count(*)::int n from public.orders where id=$1", [
+          own.order_id,
+        ])
+      ).rows[0].n,
+      0,
+    );
+  } finally {
+    await stack.close();
+    await rm(directory, { recursive: true, force: true });
+  }
+});

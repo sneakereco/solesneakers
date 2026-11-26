@@ -68,6 +68,7 @@ export function scenarioOptions(plan, shard) {
   if (plan.contenders) scenario.duration = `${plan.measurementSeconds + 120}s`;
   const allThresholds = buildThresholds(plan);
   return {
+    noCookiesReset: true,
     scenarios: { shoppers: scenario },
     thresholds: {
       dropped_iterations: allThresholds.dropped_iterations,

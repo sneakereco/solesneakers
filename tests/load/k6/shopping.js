@@ -7,7 +7,7 @@ import {
   requestOperation,
   roleForSlot,
 } from "../shared/journeys.mjs";
-import { createTransport, initializeCookies } from "./lib/http.js";
+import { createTransport, initializeCookies, resetSessionCookies } from "./lib/http.js";
 import { logicalSession } from "./lib/session.js";
 import { emit } from "./lib/metrics.js";
 import { coordinate, waitForRelease } from "./lib/coordination.js";
@@ -68,6 +68,7 @@ export async function shopperSession(data) {
     initializeCookies(config, identity);
     initialized = true;
   }
+  resetSessionCookies(config, identity);
   if (Date.now() < config.phaseStart) sleep((config.phaseStart - Date.now()) / 1000);
   const session = logicalSession(config, slot, generation++, identity),
     transport = createTransport(config, slot);

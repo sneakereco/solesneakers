@@ -167,3 +167,48 @@ test("CLI strict parsing rejects unknown flags and never treats missing run IDs 
   for (const args of [["--stop"], ["--unknown"], ["--cleanup", "../../other"]])
     assert.equal(await main(args, { print: () => {} }), 2);
 });
+test("real evaluated smoke with outstanding readiness gates advances while final acceptance stays unmet", async () => {
+  const { fixture } = await import("./report-fixture.mjs"),
+    { evaluateRun } = await import("../operator/report.mjs");
+  const calls = [];
+  const result = await executeAcceptance(
+    { budget: { maxDurationSeconds: 86400 } },
+    {
+      capabilities: ["shopping"],
+      run: async (profile) => {
+        calls.push(profile);
+        const f = fixture();
+        f.plan.provenance.tiers.verified = false;
+        const report = evaluateRun(f.plan, f.workers, f.invariants, f.telemetry);
+        report.gates.push(
+          { name: "provider-perimeter", status: "unmet" },
+          { name: "resource-cost", status: "unmet" },
+          { name: "redis-health", status: "unmet" },
+        );
+        if (profile === "calibration")
+          report.gates.push({
+            name: "browser-vitals",
+            status: "unmet",
+            reasons: ["LCP /store desktop: insufficient samples (1/20)"],
+          });
+        return { ...report, profile, status: "unmet", cleanup: { status: "cleaned" } };
+      },
+    },
+  );
+  assert.ok(calls.includes("calibration"));
+  assert.ok(calls.includes("perimeter"));
+  assert.equal(result.status, "unmet");
+});
+
+test("calibration cannot advance with zero vital samples or missing generator headroom", async () => {
+  const { mayAdvance } = await import("../operator/orchestrate.mjs");
+  for (const gate of [
+    {
+      name: "browser-vitals",
+      status: "unmet",
+      reasons: ["LCP /store desktop: insufficient samples (0/20)"],
+    },
+    { name: "generator-headroom", status: "unmet" },
+  ])
+    assert.equal(mayAdvance({ status: "unmet", gates: [gate] }, "calibration"), false);
+});

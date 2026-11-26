@@ -142,3 +142,76 @@ test("provider contract refuses production mode before touching the SDK", async 
   );
   assert.equal(result.status, "unmet");
 });
+test("Sandbox stop dispatch never resumes provider writes, including an intent-only journal", async () => {
+  const { dispatchSandboxAction } = await import("../operator/provider-contracts.mjs");
+  let stopped = false,
+    resumed = false;
+  const result = await dispatchSandboxAction("stop", {
+    requestStop: async () => {
+      stopped = true;
+    },
+    resume: async () => {
+      resumed = true;
+    },
+  });
+  assert.equal(stopped, true);
+  assert.equal(resumed, false);
+  assert.equal(result.exitCode, 3);
+});
+test("an active Sandbox probe observes stop before initiating provider work", async () => {
+  let calls = 0;
+  const result = await runSandboxContract(
+    {
+      SQUARE_ENVIRONMENT: "sandbox",
+      SQUARE_ACCESS_TOKEN: "private",
+      SQUARE_LOCATION_ID: "loc",
+    },
+    {
+      runId: "11111111-1111-4111-8111-111111111111",
+      targetDigest: "a".repeat(64),
+      baseUrl: "https://stage.test",
+      load: async () => null,
+      save: async () => {},
+      assertActive: async () => {
+        throw Error("operator stop");
+      },
+      makeClient: () => ({
+        locations: {
+          get: async () => {
+            calls++;
+            throw Error("should be stopped");
+          },
+        },
+      }),
+    },
+  );
+  assert.equal(calls, 0);
+  assert.equal(result.cleanup.status, "incomplete");
+});
+test("Sandbox cleanup of an intent never initiates a capture", async () => {
+  const result = await runSandboxContract(
+    {
+      SQUARE_ENVIRONMENT: "sandbox",
+      SQUARE_ACCESS_TOKEN: "private",
+      SQUARE_LOCATION_ID: "loc",
+    },
+    {
+      runId: "11111111-1111-4111-8111-111111111111",
+      targetDigest: "a".repeat(64),
+      baseUrl: "https://stage.test",
+      cleanupOnly: true,
+      load: async () => null,
+      save: async () => {},
+      makeClient: () => ({
+        locations: { get: async () => ({ location: { id: "loc" } }) },
+        webhooks: {
+          subscriptions: { list: async () => ({ data: [], hasNextPage: () => false }) },
+        },
+        orders: { create: () => assert.fail("cleanup must not create") },
+        payments: { create: () => assert.fail("cleanup must not capture") },
+      }),
+    },
+  );
+  assert.equal(result.cleanup.status, "incomplete");
+  assert.match(result.reasons[0], /will not initiate/);
+});

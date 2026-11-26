@@ -32,7 +32,12 @@ import {
   collectInventoryOutcomes,
   inventoryViolations,
 } from "./assertions.mjs";
-import { drainRun, cleanupRun, createCleanupClients } from "./cleanup.mjs";
+import {
+  drainRun,
+  cleanupRun,
+  createCleanupClients,
+  recoverOwnedRun,
+} from "./cleanup.mjs";
 import { evaluateRun, readWorkerResult, writeRunReport } from "./report.mjs";
 import { runBrowserCohort } from "../browser/probe.mjs";
 import { enrollTarget } from "./enroll.mjs";
@@ -688,24 +693,36 @@ export async function runCommand(input) {
       });
       if (!check.allowed) return { summary: check, exitCode: 2 };
       if (plan.profile === "sandbox-contract") {
-        const { probeBoundedContracts } = await import("./provider-contracts.mjs");
-        const result = await probeBoundedContracts("sandbox", target, {
-          ...env,
-          LOAD_TEST_SANDBOX_RUN_ID: input.runId,
-        });
-        return {
-          summary: {
-            status: result.sdkStatus,
-            report: result.files.markdownPath,
-            cleanup: result.cleanup,
+        const { probeBoundedContracts, dispatchSandboxAction } = await import(
+          "./provider-contracts.mjs"
+        );
+        return dispatchSandboxAction(input.action, {
+          requestStop: () => privateJson(join(dir, "stop.request"), { stop: true }),
+          resume: async (options) => {
+            const result = await probeBoundedContracts(
+              "sandbox",
+              target,
+              {
+                ...env,
+                LOAD_TEST_SANDBOX_RUN_ID: input.runId,
+              },
+              options,
+            );
+            return {
+              summary: {
+                status: result.sdkStatus,
+                report: result.files.markdownPath,
+                cleanup: result.cleanup,
+              },
+              exitCode:
+                result.cleanup?.status === "incomplete"
+                  ? 3
+                  : result.sdkStatus === "pass"
+                    ? 0
+                    : 2,
+            };
           },
-          exitCode:
-            result.cleanup?.status === "incomplete"
-              ? 3
-              : result.sdkStatus === "pass"
-                ? 0
-                : 2,
-        };
+        });
       }
       const recoveryJournal = await openJournal(plan, dir);
       if (
@@ -763,10 +780,12 @@ export async function runCommand(input) {
           runId: input.runId,
           journal,
         });
-      const drain = await drainRun(target, plan, clients, journal);
-      const invariant = await collectDurableOutcomes({ db, control }, plan, journal);
-      const cleanup = await cleanupRun(target, journal, clients);
-      await privateJson(join(dir, "recovery.json"), { drain, invariant, cleanup });
+      const { cleanup } = await recoverOwnedRun({
+        drain: () => drainRun(target, plan, clients, journal),
+        collect: () => collectDurableOutcomes({ db, control }, plan, journal),
+        cleanup: () => cleanupRun(target, journal, clients),
+        save: (value) => privateJson(join(dir, "recovery.json"), value),
+      });
       return {
         summary: { status: cleanup.status, artifactDir: dir },
         exitCode: cleanup.status === "cleaned" ? 0 : 3,

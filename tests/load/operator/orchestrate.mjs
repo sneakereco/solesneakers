@@ -1,5 +1,34 @@
 import { createRunPlan, acceptanceProfiles } from "../shared/profiles.mjs";
 import { redactArtifact } from "../shared/redact.mjs";
+export function mayAdvance(report, profile) {
+  if (report.status === "fail" || report.cleanup?.status === "incomplete") return false;
+  if (report.status === "pass") return true;
+  const pending = (report.gates ?? []).filter((gate) => gate.status !== "pass");
+  const readiness = new Set([
+    "provider-perimeter",
+    "resource-cost",
+    "tier-parity",
+    "redis-health",
+  ]);
+  return (
+    pending.length > 0 &&
+    pending.every(
+      (gate) =>
+        gate.status === "unmet" &&
+        (readiness.has(gate.name) ||
+          (profile === "calibration" &&
+            gate.name === "browser-vitals" &&
+            gate.reasons?.length &&
+            gate.reasons.every((reason) =>
+              /insufficient samples \([1-9][0-9]*\/20\)$/.test(reason),
+            )) ||
+          (profile === "smoke" &&
+            /^(?:telemetry:|database-headroom-evidence$|generator-headroom$|redis-health$|browser-vitals$)/.test(
+              gate.name,
+            ))),
+    )
+  );
+}
 export async function executeSelectedProfile(profile, run) {
   if (profile === "smoke") return run(profile);
   const smoke = await run("smoke");
@@ -157,8 +186,7 @@ export async function executeAcceptance(target, dependencies) {
       ...(item.profile === "arrival" ? { arrivalEvidence } : {}),
     });
     reports.push(report);
-    if (report.status !== "pass" || report.cleanup?.status === "incomplete")
-      blocked = true;
+    if (!mayAdvance(report, item.profile)) blocked = true;
     if (item.profile === "peak") {
       const evidence = report.fullSessionEvidence;
       arrivalEvidence = evidence && {

@@ -93,3 +93,13 @@ export function initializeCookies(config, session) {
   for (const cookie of session.cookies ?? [])
     http.cookieJar().set(config.baseUrl, cookie.name, cookie.value, { path: "/" });
 }
+export function resetSessionCookies(config, identity) {
+  const jar = http.cookieJar(),
+    current = jar.cookiesForURL(config.baseUrl);
+  const names = new Set((identity.cookies ?? []).map((cookie) => cookie.name));
+  jar.clear(config.baseUrl);
+  if (identity.accountId || names.size)
+    for (const [name, values] of Object.entries(current))
+      if (names.has(name) || /^sb-.*-auth-token(?:\.\d+)?$/.test(name))
+        for (const value of values) jar.set(config.baseUrl, name, value, { path: "/" });
+}

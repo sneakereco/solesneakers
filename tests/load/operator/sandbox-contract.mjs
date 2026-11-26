@@ -105,6 +105,7 @@ export async function runSandboxContract(env, dependencies) {
         timeoutInSeconds: 5,
       }),
       call = async (work) => {
+        await dependencies.assertActive?.();
         if (++requests > 12) throw Error("Sandbox request ceiling");
         return work();
       };
@@ -131,6 +132,10 @@ export async function runSandboxContract(env, dependencies) {
         "Sandbox webhook subscriptions are not isolated to the enrolled target",
       );
     state.checks.webhookIsolation = true;
+    if (dependencies.cleanupOnly && !state.paymentId)
+      return result("unmet", [
+        "No confirmed payment ID; cleanup will not initiate an order or capture. Use explicit recovery to resolve uncertain provider requests.",
+      ]);
     const orderInput = {
       locationId: state.locationId,
       referenceId: runId,
@@ -142,62 +147,74 @@ export async function runSandboxContract(env, dependencies) {
         },
       ],
     };
-    const quote = await call(() => client.orders.calculate({ order: orderInput }));
-    if (!amount(quote.order?.totalMoney)) throw Error("Sandbox quote contract mismatch");
-    state.checks.quote = true;
-    const order = state.orderId
-      ? await call(() => client.orders.get({ orderId: state.orderId }))
-      : await call(() =>
-          client.orders.create({ idempotencyKey: state.orderKey, order: orderInput }),
-        );
-    if (
-      !order.order?.id ||
-      order.order.referenceId !== runId ||
-      order.order.locationId !== state.locationId ||
-      !amount(order.order.totalMoney)
-    )
-      throw Error("Unowned Sandbox order");
-    state.orderId = order.order.id;
-    state.phase = "ordered";
-    state.checks.order = true;
-    await save(state);
-    const payload = {
-      idempotencyKey: state.paymentKey,
-      sourceId: "cnon:card-nonce-ok",
-      autocomplete: true,
-      amountMoney: { amount: 100n, currency: "USD" },
-      orderId: state.orderId,
-      locationId: state.locationId,
-      referenceId: runId,
-    };
-    const payment = state.paymentId
-      ? await call(() => client.payments.get({ paymentId: state.paymentId }))
-      : await call(() => client.payments.create(payload));
-    if (
-      !payment.payment?.id ||
-      payment.payment.status !== "COMPLETED" ||
-      payment.payment.orderId !== state.orderId ||
-      payment.payment.referenceId !== runId ||
-      !amount(payment.payment.amountMoney)
-    )
-      throw Error("Sandbox capture contract mismatch");
-    state.paymentId = payment.payment.id;
-    state.phase = "captured";
-    state.checks.capture = true;
-    await save(state);
-    const replay = await call(() => client.payments.create(payload));
-    if (replay.payment?.id !== state.paymentId)
-      throw Error("Sandbox idempotency mismatch");
-    state.checks.idempotency = true;
-    const read = await call(() => client.payments.get({ paymentId: state.paymentId }));
-    if (
-      read.payment?.id !== state.paymentId ||
-      read.payment.orderId !== state.orderId ||
-      !amount(read.payment.amountMoney)
-    )
-      throw Error("Sandbox authoritative read mismatch");
-    state.checks.authoritativeRead = true;
-    await save(state);
+    if (!dependencies.cleanupOnly) {
+      const quote = await call(() => client.orders.calculate({ order: orderInput }));
+      if (!amount(quote.order?.totalMoney))
+        throw Error("Sandbox quote contract mismatch");
+      state.checks.quote = true;
+      const order = state.orderId
+        ? await call(() => client.orders.get({ orderId: state.orderId }))
+        : await call(() =>
+            client.orders.create({ idempotencyKey: state.orderKey, order: orderInput }),
+          );
+      if (
+        !order.order?.id ||
+        order.order.referenceId !== runId ||
+        order.order.locationId !== state.locationId ||
+        !amount(order.order.totalMoney)
+      )
+        throw Error("Unowned Sandbox order");
+      state.orderId = order.order.id;
+      state.phase = "ordered";
+      state.checks.order = true;
+      await save(state);
+      const payload = {
+        idempotencyKey: state.paymentKey,
+        sourceId: "cnon:card-nonce-ok",
+        autocomplete: true,
+        amountMoney: { amount: 100n, currency: "USD" },
+        orderId: state.orderId,
+        locationId: state.locationId,
+        referenceId: runId,
+      };
+      const payment = state.paymentId
+        ? await call(() => client.payments.get({ paymentId: state.paymentId }))
+        : await call(() => client.payments.create(payload));
+      if (
+        !payment.payment?.id ||
+        payment.payment.status !== "COMPLETED" ||
+        payment.payment.orderId !== state.orderId ||
+        payment.payment.referenceId !== runId ||
+        !amount(payment.payment.amountMoney)
+      )
+        throw Error("Sandbox capture contract mismatch");
+      state.paymentId = payment.payment.id;
+      state.phase = "captured";
+      state.checks.capture = true;
+      await save(state);
+      const replay = await call(() => client.payments.create(payload));
+      if (replay.payment?.id !== state.paymentId)
+        throw Error("Sandbox idempotency mismatch");
+      state.checks.idempotency = true;
+      const read = await call(() => client.payments.get({ paymentId: state.paymentId }));
+      if (
+        read.payment?.id !== state.paymentId ||
+        read.payment.orderId !== state.orderId ||
+        !amount(read.payment.amountMoney)
+      )
+        throw Error("Sandbox authoritative read mismatch");
+      state.checks.authoritativeRead = true;
+      await save(state);
+    } else {
+      const read = await call(() => client.payments.get({ paymentId: state.paymentId }));
+      if (
+        read.payment?.id !== state.paymentId ||
+        read.payment.orderId !== state.orderId ||
+        read.payment.referenceId !== runId ||
+        !amount(read.payment.amountMoney)
+      )
+        throw Error("Sandbox cleanup payment ownership mismatch");
+    }
     const refund = state.refundId
       ? await call(() => client.refunds.get({ refundId: state.refundId }))
       : await call(() =>

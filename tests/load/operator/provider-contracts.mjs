@@ -6,7 +6,20 @@ import { writeRunReport } from "./report.mjs";
 import { readFile } from "node:fs/promises";
 import { randomUUID } from "node:crypto";
 import { resolve, join } from "node:path";
-export async function probeBoundedContracts(profile, target, env) {
+export async function dispatchSandboxAction(action, dependencies) {
+  if (action === "stop") {
+    await dependencies.requestStop();
+    return {
+      summary: {
+        status: "stopped",
+        action: "Recover this same run ID after the active probe stops",
+      },
+      exitCode: 3,
+    };
+  }
+  return dependencies.resume({ ignoreStop: true, cleanupOnly: action === "cleanup" });
+}
+export async function probeBoundedContracts(profile, target, env, options = {}) {
   if (profile === "sandbox") {
     const runId = env.LOAD_TEST_SANDBOX_RUN_ID ?? randomUUID();
     if (!/^[a-f0-9]{8}-(?:[a-f0-9]{4}-){3}[a-f0-9]{12}$/i.test(runId))
@@ -33,10 +46,22 @@ export async function probeBoundedContracts(profile, target, env) {
       targetDigest: target.digest,
       profile: "sandbox-contract",
     });
+    process.stderr.write(`Sandbox run ${runId}; private artifacts: ${artifactDir}\n`);
     const sdk = await runSandboxContract(env, {
       runId,
       targetDigest: target.digest,
       baseUrl: target.baseUrl,
+      cleanupOnly: options.cleanupOnly,
+      assertActive: async () => {
+        if (options.ignoreStop) return;
+        try {
+          await readFile(join(artifactDir, "stop.request"));
+        } catch (error) {
+          if (error.code === "ENOENT") return;
+          throw error;
+        }
+        throw Error("Operator stop requested");
+      },
       load: async () => {
         try {
           return JSON.parse(await readFile(statePath, "utf8"));

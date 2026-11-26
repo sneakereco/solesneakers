@@ -1,4 +1,11 @@
 import { collectQueueSnapshot } from "./telemetry.mjs";
+export async function recoverOwnedRun({ drain, collect, cleanup, save }) {
+  const evidence = { drain: await drain(), invariant: await collect() };
+  await save(evidence);
+  const result = { ...evidence, cleanup: await cleanup() };
+  await save(result);
+  return result;
+}
 function identity(target, journal, plan) {
   if (
     target.digest !== journal.targetDigest ||
@@ -114,19 +121,34 @@ export function createCleanupClients({ db, admin, control, runId, journal }) {
     async deleteOrders() {
       await db.query("begin");
       try {
-        const unsafe = await db.query(
-          `select o.id from public.orders o where exists(select 1 from public.order_items i where i.order_id=o.id and i.variant_id=any($1::uuid[])) and (o.status='pending' or exists(select 1 from public.order_items other where other.order_id=o.id and (other.variant_id is null or not(other.variant_id=any($1::uuid[]))))) for update of o`,
-          [variants()],
+        const accountIds = journal
+          .records()
+          .filter((x) => x.kind === "account")
+          .map((x) => x.data.id);
+        const candidates = await db.query(
+          `select o.id,o.status,o.user_id,o.guest_email, exists(select 1 from auth.users u where u.id=o.user_id and u.id=any($2::uuid[]) and u.raw_app_meta_data->>'load_test_run'=$3) owned_account, exists(select 1 from public.order_items other where other.order_id=o.id and (other.variant_id is null or not(other.variant_id=any($1::uuid[])))) mixed from public.orders o where exists(select 1 from public.order_items i where i.order_id=o.id and i.variant_id=any($1::uuid[])) for update of o`,
+          [variants(), accountIds, runId],
         );
-        if (unsafe.rows.length) throw Error("Unresolved or mixed ownership order");
+        const guestPattern = new RegExp(
+          `^guest-[0-9]+-[0-9]+-[a-f0-9]{8}-(?:[a-f0-9]{4}-){3}[a-f0-9]{12}@${runId.replaceAll("-", "\\-")}\\.load\\.test$`,
+        );
+        if (
+          candidates.rows.some(
+            (order) =>
+              order.status === "pending" ||
+              order.mixed ||
+              !(order.user_id
+                ? order.owned_account
+                : guestPattern.test(order.guest_email ?? "")),
+          )
+        )
+          throw Error("Unresolved or ambiguous order ownership");
+        const ownedIds = candidates.rows.map((order) => order.id);
         await db.query(
-          `delete from public.email_audit_log where order_id in(select order_id from public.order_items where variant_id=any($1::uuid[]))`,
-          [variants()],
+          `delete from public.email_audit_log where order_id=any($1::uuid[])`,
+          [ownedIds],
         );
-        await db.query(
-          `delete from public.orders where id in(select order_id from public.order_items where variant_id=any($1::uuid[]))`,
-          [variants()],
-        );
+        await db.query(`delete from public.orders where id=any($1::uuid[])`, [ownedIds]);
         await db.query("commit");
       } catch (error) {
         await db.query("rollback");

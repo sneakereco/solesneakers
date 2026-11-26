@@ -66,3 +66,35 @@ test("SMTP restoration is observed through the real interval and no worker is ac
   assert.equal(result.status, "drained");
   assert.ok(now >= 600000);
 });
+test("recovery saves durable evidence before cleanup and retains fixtures on storage failure", async () => {
+  const { recoverOwnedRun } = await import("../operator/cleanup.mjs");
+  let deleted = false;
+  await assert.rejects(
+    recoverOwnedRun({
+      drain: async () => ({ status: "drained" }),
+      collect: async () => ({ captures: ["capture"] }),
+      cleanup: async () => {
+        deleted = true;
+        return { status: "cleaned" };
+      },
+      save: async () => {
+        throw Error("disk full");
+      },
+    }),
+    /disk full/,
+  );
+  assert.equal(deleted, false);
+  const order = [];
+  await recoverOwnedRun({
+    drain: async () => ({}),
+    collect: async () => ({}),
+    save: async (value) => {
+      order.push(value.cleanup ? "final" : "evidence");
+    },
+    cleanup: async () => {
+      order.push("cleanup");
+      return { status: "cleaned" };
+    },
+  });
+  assert.deepEqual(order, ["evidence", "cleanup", "final"]);
+});

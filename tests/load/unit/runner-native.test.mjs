@@ -2,10 +2,12 @@ import test from "node:test";
 import assert from "node:assert/strict";
 import { createServer } from "node:http";
 import { once } from "node:events";
-import { access, mkdtemp, rm } from "node:fs/promises";
+import { access, mkdtemp, rm, writeFile } from "node:fs/promises";
 import { resolve, join } from "node:path";
 import { tmpdir } from "node:os";
-import { launchWorkers } from "../operator/workers.mjs";
+import { launchWorkers, scenarioOptions } from "../operator/workers.mjs";
+import { execFile } from "node:child_process";
+import { promisify } from "node:util";
 import { createCoordinator } from "../runner/bootstrap.mjs";
 import { readWorkerResult } from "../operator/report.mjs";
 import { createRunPlan } from "../shared/profiles.mjs";
@@ -17,6 +19,53 @@ const binary =
     () => true,
     () => false,
   );
+test(
+  "two actual k6 iterations retain rotated customer auth and reset guest state",
+  { skip: !available },
+  async () => {
+    const directory = await mkdtemp(join(tmpdir(), "sole auth iterations ")),
+      seen = [];
+    const server = createServer((req, res) => {
+      seen.push(req.headers.cookie ?? "");
+      res.setHeader("Set-Cookie", [
+        "sb-fixture-auth-token=rotated; Path=/",
+        "cart=old; Path=/",
+      ]);
+      res.end("{}");
+    });
+    server.listen(0, "127.0.0.1");
+    await once(server, "listening");
+    try {
+      const url = `http://127.0.0.1:${server.address().port}`,
+        path = join(directory, "cookies.js"),
+        modulePath = resolve("tests/load/k6/lib/http.js").replaceAll("\\", "/"),
+        options = {
+          noCookiesReset: scenarioOptions(
+            { measurementSeconds: 1, gracefulStopSeconds: 1, profile: "smoke" },
+            { start: 0, end: 1 },
+          ).noCookiesReset,
+          vus: 1,
+          iterations: 2,
+        };
+      await writeFile(
+        path,
+        `import http from 'k6/http';import * as cookies from ${JSON.stringify(modulePath)};export const options=${JSON.stringify(options)};let initialized=false;export default function(){const config={baseUrl:${JSON.stringify(url)}},identity={cookies:[{name:'sb-fixture-auth-token',value:'initial'}]};if(!initialized){cookies.initializeCookies(config,identity);initialized=true;}cookies.resetSessionCookies?.(config,identity);http.get(config.baseUrl+'/session');}`,
+      );
+      await promisify(execFile)(binary, ["run", "--quiet", path], {
+        windowsHide: true,
+        timeout: 15000,
+      });
+      assert.equal(seen.length, 2);
+      assert.match(seen[0], /sb-fixture-auth-token=initial/);
+      assert.match(seen[1], /sb-fixture-auth-token=rotated/);
+      assert.ok(!seen[1].includes("cart=old"));
+    } finally {
+      server.closeAllConnections();
+      await new Promise((done) => server.close(done));
+      await rm(directory, { recursive: true, force: true });
+    }
+  },
+);
 test(
   "two actual generators share one barrier and disjoint eight-slot budget with paths containing spaces",
   { skip: !available },
