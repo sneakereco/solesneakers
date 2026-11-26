@@ -130,7 +130,6 @@ function Receipt({
   isAuthenticated: boolean;
 }) {
   const router = useRouter();
-  const { isReady } = useCart();
   const [retry, setRetry] = useState(0);
   const [visibleStatus, setStatus] = useState<OrderStatusResponse | null>(null);
   const [message, setMessage] = useState<string | null>(null);
@@ -226,7 +225,7 @@ function Receipt({
         Thank you for your purchase. Your order has been successfully processed.
       </p>
 
-      {isReady && <ReceiptCartUpdate order={visibleStatus} />}
+      <ReceiptCartUpdate order={visibleStatus} />
       <div className="mb-6 border border-zinc-300 bg-white p-6 text-left">
         <h2 className="mb-4 text-xl font-semibold text-zinc-950">Order Details</h2>
         <div className="space-y-2 text-zinc-600">

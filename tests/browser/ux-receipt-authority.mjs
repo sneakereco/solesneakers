@@ -36,7 +36,7 @@ import {SessionProvider,useSession} from "./src/contexts/SessionContext";
 import {CartFeedback} from "./src/components/cart/CartFeedback";
 import Receipt from "./src/app/checkout/success/page";
 function App(){
- const [receipt,show]=useState(false); window.showReceipt=()=>show(true);
+ const [receipt,show]=useState(location.pathname==="/checkout/success"); window.showReceipt=()=>show(true);
  const cart=useCart(); window.cart=cart; window.session=useSession();
  return <><CartFeedback/><output>{cart.isReady ? cart.items.map(x=>x.quantity).join(","):"unready"}</output>{receipt&&<Receipt/>}</>;
 }
@@ -45,7 +45,8 @@ if(!sessionStorage.getItem("seeded")){
  sessionStorage.setItem("rdk_cart_session",JSON.stringify([${JSON.stringify(row)}]));
  sessionStorage.setItem("checkout:confirmed:order",JSON.stringify(${JSON.stringify(order)}));
 }
-createRoot(document.getElementById("root")).render(<SessionProvider initialUser={null} initialRole={null}><CartProvider userId="stale-server-prop"><App/></CartProvider></SessionProvider>);
+const owner=new URLSearchParams(location.search).get("fixtureOwner");
+createRoot(document.getElementById("root")).render(<SessionProvider initialUser={owner?{id:owner,email:"buyer@example.test"}:null} initialRole={owner?"customer":null}><CartProvider userId="stale-server-prop"><App/></CartProvider></SessionProvider>);
 `,
   {
     plugins: [
@@ -65,8 +66,105 @@ createRoot(document.getElementById("root")).render(<SessionProvider initialUser=
     ],
   },
 );
+async function checkColdReceipt(browser, owner) {
+  const page = await browser.newPage();
+  const errors = [];
+  page.on("pageerror", (error) => errors.push(error.message));
+  const ownerParam = owner ? "fixtureOwner=" + owner : "";
+  let orderReads = 0;
+  try {
+    await page.route("**/api/cart/validate", (route) =>
+      route.fulfill({
+        json: {
+          items: route
+            .request()
+            .postDataJSON()
+            .items.map((item) => ({ ...row, ...item })),
+        },
+      }),
+    );
+    await page.route("**/api/orders/order*", (route) => {
+      orderReads++;
+      return route.fulfill({ json: { ...order, customerId: owner } });
+    });
+    await openUxHarness(page, bundle, "https://ux.test/prepare?" + ownerParam);
+    await page.waitForFunction(
+      () => window.cart?.isReady && window.cart.validationStatus === "idle",
+    );
+    if (owner) await page.evaluate((item) => window.cart.addItem(item), row);
+    await expect(page.locator("output")).toHaveText("1");
+    assert.equal(
+      await page.evaluate(() =>
+        window.cart.bindCheckoutSnapshot("order", window.cart.captureCheckoutSnapshot()),
+      ),
+      true,
+    );
+    assert.equal(await page.evaluate((item) => window.cart.addItem(item), row), true);
+    const newerRange = await page.evaluate((owner) => {
+      const storage = owner ? localStorage : sessionStorage;
+      return JSON.parse(
+        storage.getItem(owner ? "rdk_cart_user_" + owner : "rdk_cart_session"),
+      )[0].unitsV1.at(-1);
+    }, owner);
+
+    // The new receipt document starts with an existing binding and cannot hydrate its basket.
+    await page.addInitScript((owner) => {
+      if (location.pathname !== "/checkout/success") return;
+      if (owner) {
+        const request = navigator.locks.request.bind(navigator.locks);
+        navigator.locks.request = () => Promise.reject(Error("Lock unavailable"));
+        window.restoreCartAccess = () => {
+          navigator.locks.request = request;
+        };
+      } else {
+        const read = Storage.prototype.getItem;
+        Storage.prototype.getItem = function (key) {
+          if (key === "rdk_cart_session") throw Error("Storage unavailable");
+          return read.call(this, key);
+        };
+        window.restoreCartAccess = () => {
+          Storage.prototype.getItem = read;
+        };
+      }
+    }, owner);
+    await openUxHarness(
+      page,
+      bundle,
+      "https://ux.test/checkout/success?orderId=order&token=test&" + ownerParam,
+    );
+    const confirmation = page.getByRole("heading", { name: "Order Confirmed!" });
+    const retry = page.getByRole("button", { name: "Retry cart update" });
+    await expect(confirmation).toBeVisible();
+    await expect(page.locator("output")).toHaveText("unready");
+    await expect(retry).toBeVisible();
+    const requests = [];
+    page.on("request", (request) => requests.push(request.url()));
+    await page.evaluate(() => window.restoreCartAccess());
+    await retry.click();
+    await expect(page.locator("output")).toHaveText("1");
+    await expect(retry).toHaveCount(0);
+    await expect(confirmation).toBeVisible();
+    await expect(page.getByRole("alert")).toHaveCount(0);
+    assert.deepEqual(
+      await page.evaluate((owner) => {
+        const storage = owner ? localStorage : sessionStorage;
+        return JSON.parse(
+          storage.getItem(owner ? "rdk_cart_user_" + owner : "rdk_cart_session"),
+        )[0].unitsV1;
+      }, owner),
+      [newerRange],
+    );
+    assert.equal(orderReads, 1);
+    assert.deepEqual(requests, []);
+    assert.deepEqual(errors, []);
+  } finally {
+    await page.close();
+  }
+}
+
 const browser = await chromium.launch();
 try {
+  for (const owner of [null, "cold-buyer"]) await checkColdReceipt(browser, owner);
   for (const scenario of [
     "read-failure",
     "save-failure",

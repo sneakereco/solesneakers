@@ -75,6 +75,7 @@ export function CartProvider({
   const [validation, setValidation] = useState<{
     cart: CartService;
     status: ValidationStatus;
+    hydrationFailed?: boolean;
   } | null>(null);
   const writer = useRef<CartService | null>(null);
   const [saving, setSaving] = useState<CartService | null>(null);
@@ -96,6 +97,10 @@ export function CartProvider({
   const reload = useCallback(() => {
     if (!cart || !current()) return;
     const next = cart.read();
+    // A successful primary read recovers an earlier hydration failure. Stock validation has its own retry.
+    setValidation((previous) =>
+      previous?.cart === cart && previous.hydrationFailed ? null : previous,
+    );
     setView((previous) =>
       previous?.cart === cart && previous.readable && previous.revision === next.revision
         ? previous
@@ -171,7 +176,7 @@ export function CartProvider({
         void validate();
       }
     } catch {
-      if (current()) setValidation({ cart, status: "error" });
+      if (current()) setValidation({ cart, status: "error", hydrationFailed: true });
     }
   }, [cart, current, reload, validate]);
   useEffect(() => {
@@ -184,7 +189,7 @@ export function CartProvider({
           setView((previous) =>
             previous?.cart === cart ? { ...previous, readable: false } : previous,
           );
-          setValidation({ cart, status: "error" });
+          setValidation({ cart, status: "error", hydrationFailed: true });
         }
       }
     };
@@ -203,7 +208,7 @@ export function CartProvider({
           setView((previous) =>
             previous?.cart === cart ? { ...previous, readable: false } : previous,
           );
-          setValidation({ cart, status: "error" });
+          setValidation({ cart, status: "error", hydrationFailed: true });
         }
       });
     };
@@ -260,11 +265,10 @@ export function CartProvider({
     async (order: OrderStatusResponse, onUpdateUnavailable?: () => void) =>
       Boolean(
         cart &&
-          ready &&
           current() &&
           (await cart.consumeConfirmedOrder(order, current, onUpdateUnavailable)),
       ),
-    [cart, current, ready],
+    [cart, current],
   );
   return (
     <cartContext.Provider

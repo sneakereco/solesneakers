@@ -214,6 +214,7 @@ test.each(["binding", "primary", "lock"])(
         buyer.captureCheckoutSnapshot(buyer.read().revision),
       ),
     ).toBe(true);
+    const receiptCart = new CartService("buyer");
     const originalRead = account.getItem;
     const originalLocks = navigator.locks;
     const onUnavailable = jest.fn();
@@ -228,18 +229,19 @@ test.each(["binding", "primary", "lock"])(
             throw Error("Unavailable");
           return originalRead(storageKey);
         };
+      if (denial !== "binding") expect(await receiptCart.hydrate()).toBe(false);
       const order = { ...paid, customerId: "buyer" };
       expect(
-        await buyer.consumeConfirmedOrder(
+        await receiptCart.consumeConfirmedOrder(
           { ...order, purchasedItems: undefined },
           () => true,
           onUnavailable,
         ),
       ).toBe(false);
       expect(onUnavailable).not.toHaveBeenCalled();
-      expect(await buyer.consumeConfirmedOrder(order, () => true, onUnavailable)).toBe(
-        false,
-      );
+      expect(
+        await receiptCart.consumeConfirmedOrder(order, () => true, onUnavailable),
+      ).toBe(false);
       expect(onUnavailable).toHaveBeenCalledTimes(1);
     } finally {
       account.getItem = originalRead;
@@ -247,7 +249,7 @@ test.each(["binding", "primary", "lock"])(
     }
     expect(buyer.getCart()[0].quantity).toBe(1);
     expect(
-      await buyer.consumeConfirmedOrder(
+      await receiptCart.consumeConfirmedOrder(
         { ...paid, customerId: "buyer" },
         () => true,
         onUnavailable,
