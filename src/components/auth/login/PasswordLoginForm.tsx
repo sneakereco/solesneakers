@@ -1,6 +1,8 @@
 // src/components/auth/login/PasswordLoginForm.tsx
 "use client";
 
+import { notifySessionUpdate } from "@/lib/auth/session-events";
+
 import { useReducer } from "react";
 import { useRouter, useSearchParams } from "next/navigation";
 import Link from "next/link";
@@ -86,6 +88,7 @@ export function PasswordLoginForm({
         return;
       }
 
+      notifySessionUpdate();
       if (json.isAdmin && json.requiresTwoFASetup) {
         return router.push("/auth/2fa/setup");
       }

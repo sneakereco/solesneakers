@@ -43,6 +43,7 @@ import type {
 } from "@/lib/checkout/checkout-page-data";
 import { ShippingAddressValidationError } from "@/lib/checkout/shipping-address-validation";
 import { clearIdempotencyKeyFromStorage } from "@/lib/checkout/idempotency";
+import { useCheckoutMeasurement } from "@/Modules/Analytics/Source/Features/VisitorMeasurement/view-grant";
 import {
   captureCheckoutStarted,
   hasUsableCheckout,
@@ -108,18 +109,20 @@ export function CheckoutClient({ initialData }: { initialData: CheckoutPageData 
   const [resolvedQuoteKey, setResolvedQuoteKey] = useState<string | null>(null);
   const [quoteRevision, setQuoteRevision] = useState(0);
   const requestSequence = useRef(0);
+  const checkoutMeasurement = useCheckoutMeasurement();
   const didCaptureCheckoutStart = useRef(false);
 
   useEffect(() => {
     if (
+      checkoutMeasurement === "hydrating" ||
       didCaptureCheckoutStart.current ||
       !hasUsableCheckout({ cartReady: isReady, itemCount: items.length, isRedirecting })
     ) {
       return;
     }
     didCaptureCheckoutStart.current = true;
-    captureCheckoutStarted();
-  }, [isReady, items.length, isRedirecting]);
+    if (checkoutMeasurement === "ready") captureCheckoutStarted();
+  }, [checkoutMeasurement, isReady, items.length, isRedirecting]);
 
   const checkoutItems = useMemo(
     () =>

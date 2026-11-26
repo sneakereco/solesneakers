@@ -41,6 +41,8 @@ async function writeChoice(choice: "accepted" | "declined"): Promise<ConsentStat
     );
     return result;
   }
+  if (choice === "accepted")
+    throw new Error("Browser cannot coordinate an analytics grant");
   return write();
 }
 export async function setAnalyticsConsent(

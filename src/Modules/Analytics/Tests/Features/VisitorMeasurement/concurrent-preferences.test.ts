@@ -33,3 +33,38 @@ it("serializes simultaneous grants so another tab can reuse the first response c
     Reflect.deleteProperty(globalThis, "window");
   }
 });
+it("refuses concurrent new grants without Web Locks and still withdraws a previous receipt", async () => {
+  const active = new Set(["previous"]);
+  let cookie = "previous",
+    n = 0;
+  const fetcher = jest.spyOn(globalThis, "fetch").mockImplementation((_url, init) => {
+    const { choice } = JSON.parse(String(init?.body));
+    if (choice === "accepted") {
+      cookie = "grant-" + ++n;
+      active.add(cookie);
+    } else active.delete(cookie);
+    return Promise.resolve(
+      Response.json({ choice, receiptId: "123e4567-e89b-42d3-a456-426614174000" }),
+    );
+  });
+  Object.defineProperty(globalThis, "window", {
+    configurable: true,
+    value: {
+      navigator: {},
+      localStorage: { getItem: () => null, setItem: () => {}, removeItem: () => {} },
+    },
+  });
+  try {
+    const choices = await Promise.allSettled([
+      setAnalyticsConsent("accepted"),
+      setAnalyticsConsent("accepted"),
+    ]);
+    expect(choices.map((choice) => choice.status)).toEqual(["rejected", "rejected"]);
+    expect(fetcher).not.toHaveBeenCalled();
+    expect(await setAnalyticsConsent("declined")).toEqual({ choice: "declined" });
+    expect(active.size).toBe(0);
+  } finally {
+    fetcher.mockRestore();
+    Reflect.deleteProperty(globalThis, "window");
+  }
+});

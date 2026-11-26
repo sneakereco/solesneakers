@@ -9,6 +9,7 @@ import {
 } from "react";
 import { usePathname } from "next/navigation";
 import { useSession } from "@/contexts/SessionContext";
+import { SESSION_REVALIDATING } from "@/lib/auth/session-events";
 import { isAdminRole } from "@/config/constants/roles";
 import { configuredMeasurement, isApprovedMeasurementHostname } from "./host-gate";
 import { getAnalyticsConsent, setAnalyticsConsent } from "./consent";
@@ -16,18 +17,26 @@ import {
   capture,
   getCheckoutTrackingContext,
   initializeMeasurement,
-  identifyConsentingCustomer,
+  verifyMeasurementIdentity,
   revokeMeasurement,
   setMeasurementAccount,
+  suspendMeasurementAccount,
 } from "./client";
 import { safePathname, type ConsentState } from "./contract";
 import { withdrawalKey } from "./preference-marker";
 import { ConsentBanner } from "./ConsentBanner";
-import { ViewGrant } from "./view-grant";
+import { CheckoutMeasurement, ViewGrant } from "./view-grant";
 
 const config = configuredMeasurement();
 export function MeasurementProvider({ children }: { children: ReactNode }) {
-  const { user, role, isLoading } = useSession();
+  const {
+    user,
+    role,
+    isLoading,
+    sessionRevision = 0,
+    sessionAvailable = true,
+    refreshSession,
+  } = useSession();
   const userId = user?.id ?? null;
   const pathname = usePathname();
   const allowed = Boolean(
@@ -41,15 +50,24 @@ export function MeasurementProvider({ children }: { children: ReactNode }) {
   const [verified, setVerified] = useState<{
     receiptId: string;
     accountId: string | null;
+    revision: number;
   } | null>(null);
   const grant =
     allowed &&
     !isLoading &&
     state?.choice === "accepted" &&
     verified?.receiptId === state.receiptId &&
+    sessionAvailable &&
+    verified.revision === sessionRevision &&
     verified.accountId === userId
       ? verified.receiptId
       : null;
+  const checkoutPhase =
+    !allowed || (state && state.choice !== "accepted")
+      ? "off"
+      : grant
+        ? "ready"
+        : "hydrating";
   const [busy, setBusy] = useState(false);
   const [error, setError] = useState(false);
   const sequence = useRef(0);
@@ -57,11 +75,35 @@ export function MeasurementProvider({ children }: { children: ReactNode }) {
   const saving = useRef(false);
   const lastPage = useRef("");
   useLayoutEffect(() => {
-    setMeasurementAccount(userId, !allowed || isLoading);
-    const block = () => setMeasurementAccount(userId, true);
-    window.addEventListener("sessionUpdate", block);
-    return () => window.removeEventListener("sessionUpdate", block);
-  }, [allowed, isLoading, userId]);
+    if (isLoading || !sessionAvailable) suspendMeasurementAccount();
+    else setMeasurementAccount(userId, !allowed);
+    window.addEventListener(SESSION_REVALIDATING, suspendMeasurementAccount);
+    return () =>
+      window.removeEventListener(SESSION_REVALIDATING, suspendMeasurementAccount);
+  }, [allowed, isLoading, sessionAvailable, userId]);
+  const accepted = state?.choice === "accepted";
+  useEffect(() => {
+    if (!accepted || !allowed || !refreshSession) return;
+    let refreshing = false;
+    const resume = () => {
+      if (refreshing) return;
+      refreshing = true;
+      void refreshSession().finally(() => {
+        refreshing = false;
+      });
+    };
+    const restored = (event: PageTransitionEvent) => {
+      if (event.persisted) resume();
+    };
+    window.addEventListener("focus", resume);
+    window.addEventListener("online", resume);
+    window.addEventListener("pageshow", restored);
+    return () => {
+      window.removeEventListener("focus", resume);
+      window.removeEventListener("online", resume);
+      window.removeEventListener("pageshow", restored);
+    };
+  }, [accepted, allowed, refreshSession]);
   const refresh = useCallback(() => {
     if (!allowed || saving.current) return;
     const current = invalidateRequests();
@@ -80,11 +122,11 @@ export function MeasurementProvider({ children }: { children: ReactNode }) {
         if (current === sequence.current) {
           setState(null);
           setVerified(null);
-          setMeasurementAccount(userId, true);
+          suspendMeasurementAccount();
         }
       },
     );
-  }, [allowed, userId, invalidateRequests]);
+  }, [allowed, invalidateRequests]);
   useEffect(() => {
     if (allowed) refresh();
     const stored = (e: StorageEvent) => {
@@ -115,7 +157,7 @@ export function MeasurementProvider({ children }: { children: ReactNode }) {
   }, [state, refresh]);
   useEffect(() => {
     let current = true;
-    if (!allowed || isLoading || !state || !config) {
+    if (!allowed || !state || !config) {
       lastPage.current = "";
       return;
     }
@@ -124,18 +166,28 @@ export function MeasurementProvider({ children }: { children: ReactNode }) {
       lastPage.current = "";
       return;
     }
+    if (isLoading || !sessionAvailable) return;
     setMeasurementAccount(userId, false);
     initializeMeasurement(config, state);
-    async function measure(receiptId: string) {
-      await identifyConsentingCustomer();
-      if (!current || !getCheckoutTrackingContext()) return;
-      setVerified({ receiptId, accountId: userId });
+    let timer: number | undefined;
+    async function measure(receiptId: string, canRetry: boolean) {
+      const result = await verifyMeasurementIdentity();
+      if (!current) return;
+      if (result === "unavailable" && canRetry) {
+        timer = window.setTimeout(() => {
+          void measure(receiptId, false);
+        }, 5000);
+        return;
+      }
+      if (result === "ready" && getCheckoutTrackingContext())
+        setVerified({ receiptId, accountId: userId, revision: sessionRevision });
     }
-    void measure(state.receiptId);
+    void measure(state.receiptId, true);
     return () => {
       current = false;
+      window.clearTimeout(timer);
     };
-  }, [allowed, isLoading, state, userId]);
+  }, [allowed, isLoading, sessionAvailable, sessionRevision, state, userId]);
   useEffect(() => {
     if (!allowed || isLoading || !grant) return;
     const page = grant + pathname;
@@ -166,7 +218,9 @@ export function MeasurementProvider({ children }: { children: ReactNode }) {
   }
   return (
     <ViewGrant.Provider value={grant}>
-      {children}
+      <CheckoutMeasurement.Provider value={checkoutPhase}>
+        {children}
+      </CheckoutMeasurement.Provider>
       {allowed && !isLoading && state && (
         <ConsentBanner state={state} busy={busy} error={error} onChoice={choose} />
       )}

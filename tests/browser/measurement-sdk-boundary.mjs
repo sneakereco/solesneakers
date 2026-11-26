@@ -1,6 +1,7 @@
 // Run: node tests/browser/measurement-sdk-boundary.mjs
 // Uses the installed PostHog SDK and intercepts its real browser transport.
 import assert from "node:assert/strict";
+import { checkMeasurementLifecycle } from "./measurement-lifecycle.mjs";
 import { gunzipSync } from "node:zlib";
 import { build } from "esbuild";
 import { chromium } from "playwright";
@@ -16,6 +17,7 @@ const bundle = await build({
     loader: "tsx",
     contents: `
       import React from "react";
+      import {SessionProvider} from "./src/contexts/SessionContext";
       import {MeasurementProvider} from "./src/Modules/Analytics/Source/Features/VisitorMeasurement/MeasurementProvider";
       import {ClientShell} from "./src/components/shell/ClientShell";
       import { createRoot } from "react-dom/client";
@@ -85,11 +87,19 @@ const bundle = await build({
         };
         const cfg=configuredMeasurement();
         const accepted={choice:"accepted",receiptId:"123e4567-e89b-42d3-a456-426614174000"};
-        window.actions={context:getCheckoutTrackingContext,withdraw:revokeMeasurement,account:setMeasurementAccount,identify:identifyConsentingCustomer,capture:captureCheckoutStarted,accept:()=>initializeMeasurement(cfg,accepted)};
-        if(window.fixtureMode==="provider"){
+        window.actions={nativeId:()=>posthog.get_distinct_id(),nativeSession:()=>posthog.get_session_id(),context:getCheckoutTrackingContext,withdraw:revokeMeasurement,account:setMeasurementAccount,identify:identifyConsentingCustomer,capture:captureCheckoutStarted,accept:()=>initializeMeasurement(cfg,accepted)};
+        if(window.fixtureMode==="provider"||window.fixtureMode==="lifecycle"){
           const root=createRoot(document.getElementById("root"));
           const init=posthog.init.bind(posthog);
           posthog.init=(token,options,name)=>init(token,{...options,opt_out_useragent_filter:true,disable_compression:true},name);
+          if(window.fixtureMode==="lifecycle"){
+            const user=window.initialAccount?{id:window.initialAccount,email:""}:null;
+            window.observe=()=>capture({event:"public_page_viewed"});
+            root.render(<SessionProvider initialUser={user} initialRole={user?"customer":null}><MeasurementProvider>
+              {window.location.pathname==="/checkout" ? <CartProvider userId={user?.id}><CheckoutClient initialData={initialData}/></CartProvider> : <div>Store</div>}
+            </MeasurementProvider></SessionProvider>);
+            test.complete=true;return;
+          }
           window.renderProvider=()=>root.render(<MeasurementProvider><ClientShell><div>Fixture storefront</div></ClientShell></MeasurementProvider>);
           window.renderProvider();test.complete=true;return;
         }
@@ -225,7 +235,7 @@ const bundle = await build({
           ["@/components/ui/Toast", "export const Toast = () => null;"],
           [
             "@/contexts/SessionContext",
-            "export const useSession = () => window.fixtureSession ?? ({user:null,role:null,isLoading:false});",
+            `import {useSession as real} from "./src/contexts/SessionContext"; export const useSession=()=>window.fixtureMode==="lifecycle"?real():(window.fixtureSession??{user:null,role:null,isLoading:false});`,
           ],
           [
             "@/components/checkout/CheckoutContactSection",
@@ -652,6 +662,7 @@ try {
       false,
       "no raw SDK write after reload, identity, or session transition",
     );
+  await checkMeasurementLifecycle(browser, bundle.outputFiles[0].text);
   await peer.close();
   await flow.close();
   console.log(

@@ -62,6 +62,14 @@ it("discards identity responses after account change and after withdrawal", asyn
       receiptId,
     });
     setMeasurementAccount("first", false);
+    jest
+      .mocked(posthog.get_distinct_id)
+      .mockReturnValue("sole-buyer:v1:" + "c".repeat(64));
+    fetcher.mockResolvedValueOnce(Response.json(null, { status: 503 }));
+    await identifyConsentingCustomer();
+    expect(getCheckoutTrackingContext()).toBeNull();
+    expect(posthog.reset).not.toHaveBeenCalled();
+    jest.mocked(posthog.get_distinct_id).mockReturnValue(visitor);
     const stale = identifyConsentingCustomer();
     setMeasurementAccount("second", false);
     finish(Response.json({ buyerKey: "sole-buyer:v1:" + "a".repeat(64) }));

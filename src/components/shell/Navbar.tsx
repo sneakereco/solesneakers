@@ -1,5 +1,7 @@
 "use client";
 
+import { notifySessionUpdate } from "@/lib/auth/session-events";
+
 import { useMemo, useState } from "react";
 import Image from "next/image";
 import Link from "next/link";
@@ -55,7 +57,7 @@ export function Navbar({
 
   const handleLogout = async () => {
     await fetch("/api/auth/logout", { method: "POST" });
-    window.dispatchEvent(new CustomEvent("sessionUpdate"));
+    notifySessionUpdate();
     window.location.href = "/";
   };
 

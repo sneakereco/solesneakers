@@ -199,8 +199,15 @@ export function setMeasurementAccount(next: string | null, blocked: boolean): vo
   identityReady = !next && !blocked;
   if (changed) resetIdentity();
 }
-export async function identifyConsentingCustomer(): Promise<void> {
-  if (!active || !account || !eligible(active.config)) return;
+export function suspendMeasurementAccount(): void {
+  setMeasurementAccount(account, true);
+}
+
+export async function verifyMeasurementIdentity(): Promise<
+  "ready" | "unavailable" | "denied"
+> {
+  if (!active || !eligible(active.config)) return "denied";
+  if (!account) return "ready";
   const stamp = ++generation;
   const { sdk } = active;
   identityReady = false;
@@ -208,19 +215,26 @@ export async function identifyConsentingCustomer(): Promise<void> {
     const response = await fetch("/api/analytics/identity", {
       cache: "no-store",
       credentials: "same-origin",
+      signal: AbortSignal.timeout(5000),
     });
     const buyerKey = response.ok ? (await response.json())?.buyerKey : null;
-    if (stamp !== generation || !active || !eligible(active.config)) return;
+    if (stamp !== generation || !active || !eligible(active.config)) return "denied";
+    if (!response.ok && response.status !== 403) return "unavailable";
     const prior = sdk.get_distinct_id();
     if (isBuyerKey(prior) && prior !== buyerKey) resetIdentity();
     if (isBuyerKey(buyerKey)) {
       authorizedBuyer = buyerKey;
       sdk.identify(buyerKey);
       identityReady = true;
+      return "ready";
     }
+    return "denied";
   } catch {
-    /* An unverified identity cannot authorize capture. */
+    return stamp === generation ? "unavailable" : "denied";
   }
+}
+export async function identifyConsentingCustomer(): Promise<void> {
+  await verifyMeasurementIdentity();
 }
 export function revokeMeasurement(): void {
   ++generation;

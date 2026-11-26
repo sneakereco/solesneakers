@@ -1,6 +1,8 @@
 // src/components/auth/login/VerifyEmailForm.tsx
 "use client";
 
+import { notifySessionUpdate } from "@/lib/auth/session-events";
+
 import { useRouter, useSearchParams } from "next/navigation";
 
 import { EmailCodeFlow } from "./EmailCodeFlow";
@@ -61,6 +63,7 @@ export function VerifyEmailForm({
       throw new Error(json.error ?? "Could not verify code.");
     }
 
+    notifySessionUpdate();
     // After successful verification, redirect to where they came from
     const destination = json.nextPath || nextUrl;
     if (onVerified) {

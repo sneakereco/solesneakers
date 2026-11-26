@@ -1,6 +1,8 @@
 // src/components/auth/login/OtpLoginForm.tsx
 "use client";
 
+import { notifySessionUpdate } from "@/lib/auth/session-events";
+
 import { useRouter, useSearchParams } from "next/navigation";
 import Link from "next/link";
 
@@ -52,6 +54,7 @@ export function OtpLoginForm({
       throw new Error(json.error ?? "Invalid or expired code");
     }
 
+    notifySessionUpdate();
     if (json.isAdmin && json.requiresTwoFASetup) {
       return router.push("/auth/2fa/setup");
     }

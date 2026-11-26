@@ -247,7 +247,7 @@ const bundle = await build({
         const mocks = new Map([
           [
             "@/Modules/Analytics/Source/Features/VisitorMeasurement/view-grant",
-            "export const useViewGrant = () => 'consented';",
+            "export const useViewGrant = () => 'consented'; export const useCheckoutMeasurement=()=>'ready';",
           ],
           [
             "next/navigation",

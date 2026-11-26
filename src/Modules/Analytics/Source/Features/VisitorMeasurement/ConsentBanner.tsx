@@ -13,6 +13,7 @@ export function ConsentBanner({
   onChoice: (choice: "accepted" | "declined") => Promise<void>;
 }) {
   const [open, setOpen] = useState(false);
+  const canAccept = typeof navigator !== "undefined" && Boolean(navigator.locks);
   const pending = state.choice === "declined" && state.pending;
   if (!open && state.choice !== "unknown" && !pending && !error)
     return (
@@ -37,7 +38,9 @@ export function ConsentBanner({
       <p className="mt-2 text-sm">
         {pending
           ? "Analytics are off on this device. We’ll retry saving your choice when you’re online."
-          : "Can we remember your visits to understand how shoppers find products and use the store? If you sign in, we can connect those visits to your account. You can change your choice here anytime."}
+          : !canAccept && state.choice !== "accepted"
+            ? "Optional shopping analytics are off in this browser."
+            : "Can we remember your visits to understand how shoppers find products and use the store? If you sign in, we can connect those visits to your account. You can change your choice here anytime."}
       </p>
       {error && (
         <p role="status" className="mt-2 text-sm">
@@ -52,7 +55,7 @@ export function ConsentBanner({
         >
           {pending ? "Retry saving" : "Decline"}
         </button>
-        {!pending && (
+        {!pending && canAccept && (
           <button
             disabled={busy}
             className="rounded-full bg-black px-4 py-2 text-sm text-white"

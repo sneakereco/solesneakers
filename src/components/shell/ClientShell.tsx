@@ -27,16 +27,23 @@ export function ClientShell({
   const grant = useViewGrant();
   const pathname = usePathname();
   const previousPathname = useRef<string | null>(null);
+  const lastGrant = useRef<string | null>(null);
 
   useEffect(() => {
     if (!grant) {
-      previousPathname.current = null;
+      if (pathname !== "/store") previousPathname.current = pathname;
       return;
     }
-    if (enteredStorefront(previousPathname.current, pathname)) {
+    if (
+      enteredStorefront(
+        lastGrant.current === grant ? previousPathname.current : null,
+        pathname,
+      )
+    ) {
       captureStorefrontViewed();
     }
     previousPathname.current = pathname;
+    lastGrant.current = grant;
   }, [grant, pathname]);
 
   useEffect(() => {
