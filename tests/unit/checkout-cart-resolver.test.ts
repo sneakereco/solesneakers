@@ -23,6 +23,18 @@ const product = {
 };
 
 describe("resolveCheckoutCart", () => {
+  it("rejects a forged specialty line even when its product data was retrieved", async () => {
+    const repository = {
+      getProductsForCheckout: jest
+        .fn()
+        .mockResolvedValue([{ ...product, category: "specialty" }]),
+    };
+    await expect(
+      resolveCheckoutCart(repository, "tenant-1", [
+        { productId: "product-1", variantId: "variant-1", quantity: 1 },
+      ]),
+    ).rejects.toThrow("checkout_cart_unavailable");
+  });
   it("uses only authoritative product values", async () => {
     const repository = {
       getProductsForCheckout: jest.fn().mockResolvedValue([product]),

@@ -243,7 +243,11 @@ export class ProductRepository {
       clauses.push(`model_id.in.(${this.buildInClause(modelIds)})`);
     }
 
-    let query = this.supabase.from("products").select("id").or(clauses.join(","));
+    let query = this.supabase
+      .from("products")
+      .select("id")
+      .neq("category", "specialty")
+      .or(clauses.join(","));
     if (tenantId) {
       query = query.eq("tenant_id", tenantId);
     }
@@ -450,6 +454,7 @@ export class ProductRepository {
         });
 
       baseQuery = baseQuery.eq("is_active", true);
+      if (searchMode !== "inventory") baseQuery = baseQuery.neq("category", "specialty");
       baseQuery = this.applyArchivedFilter(baseQuery, archivedStatus);
 
       if (!includeUnpublished) {
@@ -624,6 +629,8 @@ export class ProductRepository {
           .in("id", idBatch)
           .eq("is_active", true);
         detailQuery = this.applyArchivedFilter(detailQuery, archivedStatus);
+        if (searchMode !== "inventory")
+          detailQuery = detailQuery.neq("category", "specialty");
 
         if (!includeUnpublished) {
           detailQuery = detailQuery.lte("go_live_at", nowIso);
@@ -860,6 +867,7 @@ export class ProductRepository {
     query = this.applyArchivedFilter(query, archivedStatus);
 
     if (!includeUnpublished) {
+      query = query.neq("category", "specialty");
       query = query.lte("go_live_at", nowIso);
     }
 
@@ -1221,6 +1229,8 @@ export class ProductRepository {
           "id, brand_id, model_id, category, brand:tag_brands(canonical_label), model:tag_models(canonical_label)",
         )
         .eq("is_active", true)
+        .neq("category", "specialty")
+        .is("archived_at", null)
         .lte("go_live_at", new Date().toISOString())
         .order("id", { ascending: true });
 
@@ -1266,6 +1276,8 @@ export class ProductRepository {
         )
         .gt("stock", 0)
         .eq("product.is_active", true)
+        .neq("product.category", "specialty")
+        .is("product.archived_at", null)
         .lte("product.go_live_at", new Date().toISOString())
         .order("id", { ascending: true });
 
@@ -1387,6 +1399,8 @@ export class ProductRepository {
       )
       .gt("stock", 0)
       .eq("product.is_active", true)
+      .neq("product.category", "specialty")
+      .is("product.archived_at", null)
       .lte("product.go_live_at", new Date().toISOString());
 
     if (filters?.tenantId) {
@@ -1671,6 +1685,7 @@ export class ProductRepository {
       .eq("is_active", true);
 
     if (!includeUnpublished) {
+      countQuery = countQuery.neq("category", "specialty").is("archived_at", null);
       countQuery = countQuery.lte("go_live_at", nowIso);
     }
 
@@ -1788,6 +1803,9 @@ export class ProductRepository {
 
       query = query.eq("product.is_active", true);
       if (!includeUnpublished) {
+        query = query
+          .neq("product.category", "specialty")
+          .is("product.archived_at", null);
         query = query.lte("product.go_live_at", nowIso);
       }
 
@@ -1917,6 +1935,8 @@ export class ProductRepository {
         "id, name, brand_id, model_id, brand:tag_brands(canonical_label), model:tag_models(canonical_label), category, condition, tenant_id, variants:product_variants(id, sku, size_id, size:tag_sizes(canonical_label), sale_price_cents, unit_cost_cents, stock)",
       )
       .in("id", productIds)
+      .neq("category", "specialty")
+      .is("archived_at", null)
       .eq("is_active", true)
       .eq("is_out_of_stock", false)
       .lte("go_live_at", nowIso);
@@ -1953,8 +1973,10 @@ export class ProductRepository {
     const { data, error } = await this.supabase
       .from("product_variants")
       .select(
-        "id, product_id, sku, size_id, size:tag_sizes(canonical_label), sale_price_cents, stock, product:products(id, brand_id, brand:tag_brands(canonical_label), name, is_active, is_out_of_stock, go_live_at)",
+        "id, product_id, sku, size_id, size:tag_sizes(canonical_label), sale_price_cents, stock, product:products!inner(id, brand_id, brand:tag_brands(canonical_label), name, is_active, is_out_of_stock, go_live_at)",
       )
+      .neq("product.category", "specialty")
+      .is("product.archived_at", null)
       .in("id", variantIds);
 
     if (error) {
