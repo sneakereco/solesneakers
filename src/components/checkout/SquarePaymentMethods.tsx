@@ -430,6 +430,7 @@ export function SquarePaymentMethods({
   resolveWalletShippingContact,
   prepare,
   accessSuspended = false,
+  recoveryRequired = false,
   requireOwner,
   clearCart,
   children,
@@ -454,6 +455,7 @@ export function SquarePaymentMethods({
     context?: CheckoutPreparationContext,
   ): Promise<PreparedCheckout>;
   accessSuspended?: boolean;
+  recoveryRequired?: boolean;
   requireOwner?: (options?: { waitForQuote: true }) => Promise<void>;
   clearCart(): void;
   children?: ReactNode;
@@ -1464,7 +1466,7 @@ export function SquarePaymentMethods({
     : "Pay now";
 
   function submitRegularPayment() {
-    if (paymentInFlight.current) {
+    if (paymentInFlight.current || recoveryRequired) {
       return;
     }
     setError(null);
@@ -1592,7 +1594,7 @@ export function SquarePaymentMethods({
           cardholderName={cardholderName}
           billingAddress={billingAddress}
           isPaying={isPaying}
-          payDisabled={isPaying}
+          payDisabled={isPaying || recoveryRequired}
           cashAppCanPay={!cashAppDisabled}
           payLabel={selectedMethod === "afterpay" ? "Continue with Afterpay" : payLabel}
           error={paymentDialogOpen ? null : error}

@@ -69,9 +69,7 @@ export async function POST(request: NextRequest) {
         availableQuantity,
         availability,
         reason: availability,
-        ...(hold && (hold.recovery || (match?.stock ?? 0) < item.quantity)
-          ? { orderScoped: true }
-          : {}),
+        ...(hold && (hold.recovery || hold.quantity > 0) ? { orderScoped: true } : {}),
         ...(match
           ? {
               facts: {

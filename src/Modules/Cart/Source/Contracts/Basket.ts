@@ -79,6 +79,7 @@ export interface BasketReviewActions {
   applyStockConflicts: (
     conflicts: readonly StockConflict[],
     recoveryRequired?: boolean,
+    isCurrentAttempt?: () => boolean,
   ) => Promise<BasketMutationResult>;
   scopeValidationToOrder: (order: ValidationOrder) => () => void;
   resetSavedBasket: () => Promise<BasketMutationResult>;

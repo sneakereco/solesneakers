@@ -427,24 +427,25 @@ function OwnerCheckout({
       ) {
         const pending =
           "Check your order status in your account or through your secure order link before trying another payment.";
+        const sameAttempt = () => isCurrentCheckoutAttempt(attemptKey, cartFingerprint);
+        if (!sameAttempt())
+          throw new Error("Your cart changed. Review your items before paying.");
         const conflicts = inventoryConflict.array().nonempty().safeParse(data.conflicts);
         if (
           data.code === "INVENTORY_CONFLICT" &&
           response.status === 409 &&
-          conflicts.success &&
-          isCurrentCheckoutAttempt(attemptKey, cartFingerprint)
+          conflicts.success
         ) {
-          const knownUnsubmitted = data.paymentState === "not_submitted";
-          const saved = await applyStockConflicts(conflicts.data, !knownUnsubmitted);
+          if (data.paymentState !== "not_submitted") {
+            // Recovery belongs to the verified financial pair even if its Cart
+            // connection has retired or its optional stock update cannot persist.
+            setNeedsRecovery(true);
+            void applyStockConflicts(conflicts.data, true, sameAttempt);
+            throw new Error(pending);
+          }
+          const saved = await applyStockConflicts(conflicts.data, false, sameAttempt);
           await requireOwner();
-          if (
-            saved.status === "saved" &&
-            isCurrentCheckoutAttempt(attemptKey, cartFingerprint)
-          ) {
-            if (!knownUnsubmitted) {
-              setNeedsRecovery(true);
-              throw new Error(pending);
-            }
+          if (saved.status === "saved" && sameAttempt()) {
             const message = conflicts.data
               .map((c) =>
                 provenConflictMessage(
@@ -562,6 +563,7 @@ function OwnerCheckout({
               )}
               <SquarePaymentMethods
                 accessSuspended={!isReady}
+                recoveryRequired={needsRecovery}
                 requireOwner={requireOwner}
                 paymentConfig={initialData.paymentConfig}
                 quote={currentQuote}

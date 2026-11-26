@@ -566,10 +566,22 @@ const other = {
   titleDisplay: "Court",
   imageUrl: "/images/logo.png",
 };
-for (const state of ["not_submitted", "unknown", "submitted"]) {
+for (const [state, timing] of [
+  ["not_submitted", "immediate"],
+  ["unknown", "immediate"],
+  ["submitted", "immediate"],
+  ["unknown", "reverified"],
+  ["submitted", "denied cart write"],
+  ["submitted", "locked cart write"],
+  ["unknown", "superseded key"],
+  ["submitted", "superseded fingerprint"],
+  ["unknown", "superseded owner"],
+]) {
   test(
     "same-attempt stock conflict " +
       state +
+      " / " +
+      timing +
       " shows truthful feedback and blocks a mixed-basket charge",
     async (t) => {
       const totals = {
@@ -590,10 +602,17 @@ for (const state of ["not_submitted", "unknown", "submitted"]) {
       };
       const user = { id: "account-a", email: "a@fixture.invalid" };
       const calls = [];
+      let releasePrepare;
+      const delayed = new Promise((resolve) => {
+        releasePrepare = resolve;
+      });
+      let sessionUser = user;
       const { page, close } = await mountCheckoutBrowser({
         view: "checkout",
         initialUser: user,
-        accountItems: { "account-a": [runner, other] },
+        accountItems: { "account-a": [runner, other], "account-b": [other] },
+        sessionRoute: (route) =>
+          route.fulfill({ json: { user: sessionUser, role: "customer" } }),
         documentData: {
           ownerId: user.id,
           isGuest: false,
@@ -614,7 +633,8 @@ for (const state of ["not_submitted", "unknown", "submitted"]) {
             return route.fulfill({
               json: { completeness: "exact", quoteFingerprint: "a".repeat(64), totals },
             });
-          if (url.pathname === "/api/checkout/prepare")
+          if (url.pathname === "/api/checkout/prepare") {
+            if (timing !== "immediate") await delayed;
             return route.fulfill({
               status: 409,
               json: {
@@ -631,15 +651,106 @@ for (const state of ["not_submitted", "unknown", "submitted"]) {
                 ],
               },
             });
+          }
           return offline(route);
         },
       });
       t.after(close);
       await page.getByLabel("Name on card", { exact: true }).fill("Shopper A");
       await page.getByRole("button", { name: /Pay .* now/i }).click();
+      if (timing !== "immediate") {
+        await expect.poll(() => calls.includes("/api/checkout/prepare")).toBe(true);
+        if (timing === "reverified" || timing === "superseded owner") {
+          await page.evaluate(() => {
+            window.oldApply = window.testCart.applyStockConflicts;
+          });
+          if (timing === "superseded owner")
+            sessionUser = { id: "account-b", email: "b@fixture.invalid" };
+          await page.evaluate(() => window.testSession.refreshSession());
+          await page.waitForFunction(
+            (id) =>
+              window.testSession.user?.id === id &&
+              window.testCart.isReady &&
+              window.testCart.applyStockConflicts !== window.oldApply,
+            sessionUser.id,
+          );
+        }
+        if (timing === "superseded key" || timing === "superseded fingerprint") {
+          await page.evaluate(
+            (timing) =>
+              sessionStorage.setItem(
+                timing === "superseded key"
+                  ? "checkout_idempotency_key"
+                  : "checkout_cart_fingerprint",
+                "replacement-pair",
+              ),
+            timing,
+          );
+        }
+        if (timing === "locked cart write") {
+          await page.evaluate(() => {
+            void navigator.locks.request(
+              "rdk_cart",
+              () => new Promise((r) => (window.releaseProjectionLock = r)),
+            );
+          });
+          await page.waitForFunction(() => window.releaseProjectionLock);
+        }
+        if (timing === "denied cart write")
+          await page.evaluate(() => {
+            const write = Storage.prototype.setItem;
+            Storage.prototype.setItem = function (k, v) {
+              if (this === localStorage && k === "rdk_cart_user_account-a") {
+                Storage.prototype.setItem = write;
+                throw new DOMException("Controlled quota failure", "QuotaExceededError");
+              }
+              write.call(this, k, v);
+            };
+          });
+        const handled = page.waitForResponse(
+          (r) => new URL(r.url()).pathname === "/api/checkout/prepare",
+        );
+        releasePrepare();
+        await handled;
+        if (timing === "denied cart write") {
+          await page.waitForFunction(() => !window.testCart.isReady);
+          await page.evaluate(() => window.testCart.retryAccess());
+          await page.waitForFunction(() => window.testCart.isReady);
+        }
+      }
       const proof =
         "Someone else just reserved the last pair of Air Runner, size 10. You haven't been charged.";
-      if (state === "not_submitted") {
+      if (timing.startsWith("superseded")) {
+        if (timing === "superseded owner")
+          await expect(
+            page.getByRole("textbox", { name: "Email", exact: true }),
+          ).toHaveValue("b@fixture.invalid");
+        else {
+          await expect(
+            page.getByText("Your cart changed. Review your items before paying.", {
+              exact: true,
+            }),
+          ).toBeVisible({ timeout: 2500 });
+          assert.equal(
+            await page.evaluate(
+              (timing) =>
+                sessionStorage.getItem(
+                  timing === "superseded key"
+                    ? "checkout_idempotency_key"
+                    : "checkout_cart_fingerprint",
+                ),
+              timing,
+            ),
+            "replacement-pair",
+          );
+        }
+        await expect(page.getByText(/check your order status/i)).toHaveCount(0);
+        assert.ok(
+          await page.evaluate(() =>
+            window.testCart.items.every((row) => !row.orderScoped && !row.availability),
+          ),
+        );
+      } else if (state === "not_submitted") {
         await expect(page.getByText(proof, { exact: true })).toBeVisible({
           timeout: 2500,
         });
@@ -664,8 +775,55 @@ for (const state of ["not_submitted", "unknown", "submitted"]) {
           timeout: 2500,
         });
         await expect(page.getByText(/haven't been charged/i)).toHaveCount(0);
-        assert.equal(await page.evaluate(() => window.testCart.total), 3500);
+        await expect
+          .poll(() => page.evaluate(() => window.testCart.total))
+          .toBe(timing === "immediate" ? 3500 : 7000);
         assert.equal(await page.evaluate(() => window.testCart.items[0].quantity), 1);
+        if (timing !== "immediate") {
+          await expect(
+            page
+              .getByRole("status")
+              .getByText("Check your order status before trying another payment.", {
+                exact: true,
+              }),
+          ).toBeAttached();
+          assert.ok(
+            await page.evaluate(
+              () =>
+                sessionStorage.getItem("checkout_idempotency_key") &&
+                sessionStorage.getItem("checkout_cart_fingerprint"),
+            ),
+          );
+          if (timing === "locked cart write") {
+            await page.waitForFunction(async () =>
+              (await navigator.locks.query()).pending.some((l) => l.name === "rdk_cart"),
+            );
+            // A previously accepted recovery notice belongs to this form. Its
+            // queued cart edit must not stamp a successor financial pair.
+            await page.evaluate(() => {
+              sessionStorage.setItem("checkout_idempotency_key", "next-attempt");
+              window.releaseProjectionLock();
+              return navigator.locks.request("rdk_cart", () => {});
+            });
+            assert.equal(
+              await page.evaluate(() => window.testCart.items[0].orderScoped),
+              undefined,
+            );
+            assert.equal(
+              await page.evaluate(
+                () =>
+                  JSON.parse(localStorage.getItem("rdk_cart_user_account-a"))[0]
+                    .availability,
+              ),
+              undefined,
+            );
+          }
+          const dismiss = page.getByRole("button", { name: "Return to checkout" });
+          if (await dismiss.isVisible()) await dismiss.click();
+          await expect(
+            page.getByRole("button", { name: "Pay now", exact: true }),
+          ).toBeDisabled();
+        }
       }
       assert.equal(calls.filter((p) => p === "/api/checkout/prepare").length, 1);
       assert.equal(

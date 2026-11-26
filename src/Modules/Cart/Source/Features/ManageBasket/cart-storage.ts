@@ -326,9 +326,11 @@ export class BasketStorage {
               validation.current = undefined;
           };
         },
-        applyStockConflicts: (conflicts, recoveryRequired) =>
-          this.reviewEdit(snapshot, (rows) =>
-            this.markConflicts(rows, conflicts, recoveryRequired),
+        applyStockConflicts: (conflicts, recoveryRequired, isCurrentAttempt) =>
+          this.reviewEdit(
+            snapshot,
+            (rows) => this.markConflicts(rows, conflicts, recoveryRequired),
+            isCurrentAttempt,
           ),
         acceptPrice: (line) =>
           this.reviewEdit(snapshot, (rows) =>
@@ -373,9 +375,11 @@ export class BasketStorage {
   private reviewEdit(
     snapshot: Snapshot,
     edit: (rows: SavedLine[]) => SavedLine[] | undefined,
+    isCurrentAttempt: () => boolean = () => true,
   ) {
     return this.mutate(() => {
       if (
+        !isCurrentAttempt() ||
         this.published !== snapshot ||
         !snapshot.complete ||
         !sameSnapshot(snapshot, this.storedVersion())
@@ -387,7 +391,7 @@ export class BasketStorage {
         this.save(
           rows,
           false,
-          () => this.observed() && this.published === snapshot,
+          () => isCurrentAttempt() && this.observed() && this.published === snapshot,
           snapshot,
         )
       );
