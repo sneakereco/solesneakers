@@ -1,3 +1,5 @@
+import { readFileSync } from "node:fs";
+import { isDeepStrictEqual } from "node:util";
 import { createRequire, registerHooks } from "node:module";
 import { parseArgs } from "node:util";
 import { register } from "tsx/cjs/api";
@@ -6,6 +8,7 @@ import { createClient } from "@supabase/supabase-js";
 const { values } = parseArgs({
   options: {
     mode: { type: "string" },
+    fixture: { type: "string" },
     environment: { type: "string" },
     "start-instant": { type: "string" },
     "end-instant": { type: "string" },
@@ -44,7 +47,8 @@ const { getDefaultCalendarRange, resolveCalendarRange } = require(
 let category = "invalid-arguments";
 try {
   if (
-    !["reconcile", "transport"].includes(mode) ||
+    !["reconcile", "transport", "queries"].includes(mode) ||
+    (mode === "queries" && environment !== "staging") ||
     !["staging", "production"].includes(environment)
   )
     throw Error();
@@ -114,6 +118,63 @@ try {
         queryAsOf: now().toISOString(),
       }),
     );
+  } else if (mode === "queries") {
+    // The operator supplies independently expected DTOs for an isolated staging
+    // fixture window. This mode has no API for creating fixtures or Endpoints.
+    category = "fixture-unavailable";
+    if (!values.fixture || precise || values.from || values.to) throw Error();
+    const fixtures = JSON.parse(readFileSync(values.fixture, "utf8"));
+    if (!Array.isArray(fixtures) || !fixtures.length || fixtures.length > 8)
+      throw Error();
+    if (
+      !fixtures.some(
+        (f) =>
+          f?.sales?.grossMerchandise?.cents === 4800000 &&
+          f.sales.discounts?.cents === 480000 &&
+          f.sales.merchandiseRefunds?.cents === 90000 &&
+          f.sales.netMerchandise?.cents === 4230000 &&
+          f.sales.netShipping?.cents === 172500 &&
+          f.sales.netTax?.cents === 329700 &&
+          f.sales.totalCollected?.cents === 4732200,
+      )
+    )
+      throw Error();
+    const { parseReportRequest } = require(feature + "ReportContract/filters.ts");
+    const { executeCommerceReport } = require(feature + "Reporting/report-service.ts");
+    for (const fixture of fixtures) {
+      for (const report of ["sales", "payments", "health"]) {
+        category = "invalid-fixture";
+        if (
+          typeof fixture.from !== "string" ||
+          typeof fixture.to !== "string" ||
+          !fixture[report]
+        )
+          throw Error();
+        const request = parseReportRequest(
+          new URLSearchParams({
+            report,
+            from: fixture.from,
+            to: fixture.to,
+            compare: "true",
+          }),
+          now(),
+        );
+        category = "provider-unavailable";
+        const actual = await executeCommerceReport(request, scope, query);
+        category = "fixture-mismatch";
+        if (!isDeepStrictEqual(actual, fixture[report])) throw Error();
+      }
+    }
+    console.log(
+      JSON.stringify({
+        mode,
+        environment,
+        project,
+        status: "hosted-commerce-fixture-matched",
+        windows: fixtures.length,
+        queryAsOf: now().toISOString(),
+      }),
+    );
   } else {
     const { observation } = await readHistoryEvidence(db, scope.datasetId);
     const result = await reconcileAnalyticsFacts(range, {
@@ -137,7 +198,7 @@ try {
 } catch (e) {
   console.error(
     JSON.stringify({
-      mode: ["reconcile", "transport"].includes(mode) ? mode : null,
+      mode: ["reconcile", "transport", "queries"].includes(mode) ? mode : null,
       environment: ["staging", "production"].includes(environment) ? environment : null,
       status: "unavailable",
       category: e instanceof PostHogQueryError ? e.reason : category,

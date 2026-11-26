@@ -10,6 +10,7 @@ export const REPORT_ENDPOINT_VERSIONS = {
   sole_analytics_reconciliation_warehouse: 2,
   sole_analytics_overview: 1,
   sole_analytics_sales: 1,
+  sole_analytics_sales_series: 1,
   sole_analytics_customers: 1,
   sole_analytics_acquisition: 1,
   sole_analytics_products: 1,
@@ -49,3 +50,15 @@ export function validateCompiledQuery(query: CompiledQuery): CompiledQuery | nul
   }
   return parsed.data;
 }
+
+/** Fixed runtime calls keyed by the report section that consumes their aggregate rows. */
+export type CompiledReportQueries = {
+  queries: Record<string, CompiledQuery>;
+};
+
+export type SavedReportEndpoint = {
+  name: CompiledQuery["endpoint"];
+  version: number;
+  variables: Array<{ code_name: string; type: "String" }>;
+  sql: string;
+};

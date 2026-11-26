@@ -246,9 +246,12 @@ export type OverviewData = {
   components: SalesComponents;
 };
 
-export type SalesData = SalesComponents & {
-  series: TimeBucket[];
-  comparisonSeries: TimeBucket[] | null;
+export type SalesPeriod = SalesComponents & {
+  buyers: { known: number; missingOrders: number };
+  attribution: { eligibleOrders: number; attributedOrders: number };
+  /** Confirmed orders whose original reconciled merchandise value is unavailable. */
+  missingOrderValues: number;
+  missingReturnQuantities: number;
   confirmedOrders: number | null;
   averageOrderValue: MoneyValue;
   medianOrderValue: MoneyValue;
@@ -264,6 +267,12 @@ export type SalesData = SalesComponents & {
   costCoverage: { revenue: Rate; orders: Rate; lines: Rate };
   shippingContribution: MoneyValue;
   fees: MoneyValue;
+};
+
+export type SalesData = SalesPeriod & {
+  series: TimeBucket[];
+  comparisonSeries: TimeBucket[] | null;
+  comparison: SalesPeriod | null;
 };
 
 export type CustomersData = {
@@ -311,14 +320,21 @@ export type ProductsData = {
   };
 };
 
-export type PaymentsData = {
+export type PaymentsPeriod = {
+  attribution: SalesPeriod["attribution"];
   methods: PaginatedRows<PaymentRow>;
   paidOrders: number | null;
   resolvedAttempts: number | null;
   pendingAttempts: number | null;
 };
 
-export type HealthData = {
+export type PaymentsData = PaymentsPeriod & { comparison: PaymentsPeriod | null };
+
+export type HealthPeriod = {
+  attribution: SalesPeriod["attribution"];
+  fulfillmentDateBasis: "latest-state-of-orders-confirmed-in-range";
+  missingFulfillmentStates: number;
+  missingFulfillmentDurations: number;
   funnel: FunnelStep[];
   outcomes: Array<{ stage: string; outcome: string; reason: string; count: number }>;
   fulfillmentPreference: { ship: number; pickup: number; unknown: number } | null;
@@ -334,6 +350,8 @@ export type HealthData = {
     p90Seconds: number | null;
   }>;
 };
+
+export type HealthData = HealthPeriod & { comparison: HealthPeriod | null };
 
 export type ReportDataMap = {
   overview: OverviewData;
