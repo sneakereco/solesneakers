@@ -178,9 +178,16 @@ async function fixture(browser) {
       (f.statusQueries ??= []).push(u.search);
       f.statusCalls++;
       const ownerTag = f.statusOwner ?? "buyer";
+      // A signed-in buyer can authorize the first read even with an invalid URL token.
+      const responseStatus =
+        f.sessionStatus === 503 && f.outageToken
+          ? u.searchParams.get("token") === f.outageToken
+            ? 200
+            : 403
+          : (f.orderStatus ?? 200);
       if (f.orderHold) await f.orderHold.promise;
       await route.fulfill({
-        status: f.orderStatus ?? 200,
+        status: responseStatus,
         json: {
           ...order,
           supportEmail: ownerTag + "@example.test",
@@ -586,16 +593,59 @@ const cases = {
     await expect(p.getByText("buyer@example.test")).toHaveCount(0);
     await expect(p.locator("[aria-busy=true] [data-ui-skeleton]").first()).toBeVisible();
     f.sessionStatus = 503;
-    f.sessionHold.resolve();
-    await expect(p.getByRole("button", { name: "Retry" })).toBeVisible();
-    assert.equal(f.statusCalls, 1);
-    f.sessionStatus = 200;
-    f.session = { user: null, role: null };
+    f.outageToken = "fixture";
     f.statusOwner = "secure-token";
-    await p.getByRole("button", { name: "Retry" }).click();
+    f.sessionHold.resolve();
     await expect(p.getByText("secure-token@example.test")).toBeVisible();
+    await expect(p.getByText("buyer@example.test")).toHaveCount(0);
+    assert.equal(await p.evaluate(() => window.session.isSessionUnavailable), true);
     assert.equal(f.statusCalls, 2);
     assert.deepEqual(f.statusQueries, ["?token=fixture", "?token=fixture"]);
+  },
+  async orderOutageDenied(f) {
+    f.orderHold = gate();
+    const old = f.orderHold;
+    const p = await f.open("/order-status/order?token=invalid");
+    await expect.poll(() => f.statusCalls).toBe(1);
+    try {
+      f.orderHold = null;
+      f.sessionStatus = 503;
+      f.outageToken = "fixture";
+      f.statusOwner = "denied";
+      await p.evaluate(() => window.session.refreshSession());
+      await expect(
+        p.getByText("Open the secure order link from your email."),
+      ).toBeVisible();
+      old.resolve();
+      await expect.poll(() => f.finishedStatus).toContain("buyer");
+      await expect(
+        p.getByText("Open the secure order link from your email."),
+      ).toBeVisible();
+      await expect(
+        p.getByRole("heading", { name: "Order status", exact: true }),
+      ).toHaveCount(0);
+      await expect(p.getByText("buyer@example.test")).toHaveCount(0);
+      await expect(p.getByText("denied@example.test")).toHaveCount(0);
+      assert.equal(await p.evaluate(() => window.session.isSessionUnavailable), true);
+      assert.deepEqual(f.statusQueries, ["?token=invalid", "?token=invalid"]);
+    } finally {
+      old.resolve();
+    }
+  },
+  async orderOutageGuest(f) {
+    f.sessionStatus = 503;
+    f.outageToken = "fixture";
+    f.statusOwner = "outage";
+    const p = await f.open("/order-status/order?guest&unavailable&token=fixture");
+    await expect(p.getByText("outage@example.test")).toBeVisible();
+    assert.equal(await p.evaluate(() => window.session.isSessionUnavailable), true);
+    f.statusOwner = "confirmed-guest";
+    f.sessionStatus = 200;
+    f.session = { user: null, role: null };
+    await p.evaluate(() => window.session.refreshSession());
+    await expect(p.getByText("confirmed-guest@example.test")).toBeVisible();
+    await expect(p.getByText("outage@example.test")).toHaveCount(0);
+    assert.equal(f.statusCalls, 2);
   },
   async orderOwnerLate(f) {
     f.orderHold = gate();

@@ -11,16 +11,7 @@ import { withRequestDeadline } from "@/lib/http/request-deadline";
 import { readJsonResponse, ResponseError } from "@/lib/http/read-json-response";
 import type { OrderStatusResponse } from "@/types/domain/checkout";
 
-function StatusRead({
-  orderId,
-  token,
-  owner,
-}: {
-  orderId: string;
-  token: string;
-  owner: string | null;
-}) {
-  const { isIdentityCurrent } = useSession();
+function StatusRead({ orderId, token }: { orderId: string; token: string }) {
   const [status, setStatus] = useState<OrderStatusResponse | null>(null);
   const [error, setError] = useState<string | null>(null);
   const [attempt, setAttempt] = useState(0);
@@ -38,7 +29,7 @@ function StatusRead({
       controller.signal,
     )
       .then((data) => {
-        if (controller.signal.aborted || !isIdentityCurrent(owner)) return;
+        if (controller.signal.aborted) return;
         if (
           data.id !== orderId ||
           ![data.subtotal, data.shipping, data.tax, data.total].every(Number.isFinite) ||
@@ -48,7 +39,7 @@ function StatusRead({
         setStatus(data);
       })
       .catch((failure) => {
-        if (!controller.signal.aborted && isIdentityCurrent(owner))
+        if (!controller.signal.aborted)
           setError(
             failure instanceof ResponseError && [401, 403].includes(failure.status)
               ? "Open the secure order link from your email."
@@ -56,7 +47,7 @@ function StatusRead({
           );
       });
     return () => controller.abort();
-  }, [orderId, token, owner, isIdentityCurrent, attempt]);
+  }, [orderId, token, attempt]);
   if (error)
     return (
       <div className="mx-auto max-w-2xl px-4 py-20">
@@ -72,7 +63,7 @@ function StatusRead({
   return status ? <OrderStatusView status={status} /> : <OrderStatusSkeleton />;
 }
 function OrderStatusContent() {
-  const { user, isLoading, isSessionUnavailable, refreshSession } = useSession();
+  const { user, isLoading, isSessionUnavailable } = useSession();
   const orderId = useParams<{ orderId: string }>()?.orderId;
   const token = useSearchParams().get("token");
   if (!orderId || !token)
@@ -85,22 +76,13 @@ function OrderStatusContent() {
       </div>
     );
   if (isLoading) return <OrderStatusSkeleton />;
-  if (isSessionUnavailable)
-    return (
-      <div className="mx-auto max-w-2xl px-4 py-20">
-        <RequestError
-          message="We could not verify access to this order."
-          onRetry={() => void refreshSession()}
-        />
-      </div>
-    );
-  const owner = user?.id ?? null;
+  // A new lookup state gets its own token-bearing request and cannot reuse a prior owner's result.
+  const lookupState = isSessionUnavailable ? "unavailable" : "verified";
   return (
     <StatusRead
-      key={JSON.stringify([orderId, token, owner])}
+      key={JSON.stringify([orderId, token, lookupState, user?.id ?? null])}
       orderId={orderId}
       token={token}
-      owner={owner}
     />
   );
 }
