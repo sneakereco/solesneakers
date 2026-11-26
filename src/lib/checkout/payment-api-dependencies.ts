@@ -1,3 +1,4 @@
+import { scheduleOperationalOutcome } from "@/Modules/Analytics/Source/Features/CommerceFacts/operational-outcome";
 import { validateShippingAddress } from "@/lib/shipping/validate-shipping-address";
 import { env } from "@/config/env";
 import { getServerSession } from "@/lib/auth/session";
@@ -87,6 +88,7 @@ export function createDirectPaymentDependencies(
   return {
     validateShippingAddress: (address) =>
       validateShippingAddress(address, env.SHIPPO_API_TOKEN),
+    outcome: scheduleOperationalOutcome,
     consumePermit: (token) => permits.consume(token),
     loadOrder: (orderId) => reservations.findPaymentCheckout(orderId),
     createPayment: (input) => getPayments().create(input),

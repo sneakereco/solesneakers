@@ -88,6 +88,31 @@ describe("SquarePaymentsGateway", () => {
     expect(create.mock.calls[0]?.[0]).not.toHaveProperty("customerId");
   });
 
+  it("replays the same provider command on timeout and correlates only the exact returned note", async () => {
+    const create = jest.fn().mockRejectedValue(new Error("timeout"));
+    const gateway = new SquarePaymentsGateway(
+      { create, get: jest.fn() },
+      "fixture-location",
+    );
+    await expect(gateway.create(input)).rejects.toThrow("timeout");
+    await expect(gateway.create(input)).rejects.toThrow("timeout");
+    const first = create.mock.calls[0][0];
+    expect(create.mock.calls[1][0]).toEqual(first);
+    const { squareSourceEvidence } = await import("@/lib/square/payment-details");
+    const source = squareSourceEvidence(first);
+    expect(source.orderReference).toBe(input.localOrderId);
+    expect(source.attemptId).toEqual(expect.any(String));
+    expect(first.note).not.toContain(input.idempotencyKey);
+    await expect(
+      gateway.create({
+        ...input,
+        idempotencyKey: "55555555-5555-4555-8555-555555555555",
+      }),
+    ).rejects.toThrow();
+    expect(squareSourceEvidence(create.mock.calls[2][0]).attemptId).not.toBe(
+      source.attemptId,
+    );
+  });
   it("rejects a mismatched payment response", async () => {
     const gateway = new SquarePaymentsGateway(
       {

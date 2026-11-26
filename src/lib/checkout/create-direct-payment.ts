@@ -1,3 +1,8 @@
+import { randomUUID } from "node:crypto";
+import {
+  paymentAttemptId,
+  type OperationalOutcome,
+} from "@/Modules/Analytics/Source/Features/CommerceFacts/operational-outcome";
 import type { NextRequest } from "next/server";
 
 import {
@@ -18,6 +23,7 @@ import type {
 import type { PaymentCheckout } from "@/repositories/checkout-reservation-repo";
 
 export type CreateDirectPaymentDependencies = {
+  outcome?(value: OperationalOutcome): void;
   validateShippingAddress(address: ShippingAddress): Promise<ShippingValidationResult>;
   consumePermit(token: string): Promise<ConsumedPaymentPermit | null>;
   loadOrder(orderId: string): Promise<PaymentCheckout | null>;
@@ -65,6 +71,7 @@ export async function createDirectPaymentHandler(
   request: NextRequest,
   deps: CreateDirectPaymentDependencies,
 ): Promise<Response> {
+  const effectiveAt = deps.now().toISOString();
   const parsed = directPaymentRequestSchema.safeParse(
     await request.json().catch(() => null),
   );
@@ -77,16 +84,57 @@ export async function createDirectPaymentHandler(
     permit = await deps.consumePermit(parsed.data.permit);
   } catch (error) {
     deps.reportError(error);
+    deps.outcome?.({
+      attemptId: randomUUID(),
+      effectiveAt,
+      resolvedAt: deps.now().toISOString(),
+      orderId: null,
+      method: null,
+      stage: "verification",
+      outcome: "failed",
+      reason: "unavailable",
+    });
     return json({ error: "Checkout protection is temporarily unavailable" }, 503);
   }
   if (!permit) {
+    deps.outcome?.({
+      attemptId: randomUUID(),
+      effectiveAt,
+      resolvedAt: deps.now().toISOString(),
+      orderId: null,
+      method: null,
+      stage: "verification",
+      outcome: "expired",
+      reason: "expired",
+    });
     return json({ error: "Payment authorization expired" }, 403);
   }
 
+  const attemptId = paymentAttemptId(permit.squareIdempotencyKey);
+  const command = permit;
+  const report = (
+    outcome: OperationalOutcome["outcome"],
+    reason: OperationalOutcome["reason"],
+    stage: OperationalOutcome["stage"] = "payment",
+  ) =>
+    deps.outcome?.({
+      attemptId,
+      effectiveAt,
+      resolvedAt:
+        outcome === "unknown" || outcome === "pending" ? null : deps.now().toISOString(),
+      orderId: command.orderId,
+      method: command.method,
+      stage,
+      outcome,
+      reason,
+    });
+  let providerCalled = false;
+  let providerObserved = false;
   let declineIdentity: { tenantId: string; deviceSessionId: string } | null = null;
   try {
     const order = await deps.loadOrder(permit.orderId);
     if (!order || !matches(order, permit, deps.now())) {
+      report("failed", "invalid", "verification");
       return json({ error: "Checkout details changed; start again" }, 409);
     }
     declineIdentity = {
@@ -98,6 +146,7 @@ export async function createDirectPaymentHandler(
       order.fulfillment === "pickup" &&
       !checkoutPickupContactSchema.safeParse(order.pickupContact).success
     ) {
+      report("failed", "invalid", "verification");
       return json(
         {
           error:
@@ -112,6 +161,7 @@ export async function createDirectPaymentHandler(
     if (order.fulfillment === "ship") {
       const address = checkoutShippingAddressSchema.safeParse(order.shippingAddress);
       if (!address.success) {
+        report("failed", "invalid", "verification");
         return json(
           {
             error:
@@ -125,6 +175,7 @@ export async function createDirectPaymentHandler(
         try {
           validation = await deps.validateShippingAddress(address.data);
         } catch {
+          report("failed", "unavailable", "verification");
           return json(
             {
               error:
@@ -134,6 +185,11 @@ export async function createDirectPaymentHandler(
           );
         }
         if (validation.status !== "valid") {
+          report(
+            "failed",
+            validation.status === "unavailable" ? "unavailable" : "invalid",
+            "verification",
+          );
           return json(
             {
               error:
@@ -147,6 +203,7 @@ export async function createDirectPaymentHandler(
       }
     }
 
+    providerCalled = true;
     const payment = await deps.createPayment({
       localOrderId: order.orderId,
       squareOrderId: order.squareOrderId!,
@@ -156,13 +213,19 @@ export async function createDirectPaymentHandler(
       shippingAddress: order.shippingAddress,
       billingAddress: order.billingAddress,
     });
+    providerObserved = true;
     if (payment.status === "CANCELED" || payment.status === "FAILED") {
+      report(
+        payment.status === "CANCELED" ? "canceled" : "failed",
+        payment.status === "CANCELED" ? "canceled" : "declined",
+      );
       await deps.recordDecline(declineIdentity);
       return json(
         { error: "Payment was declined. Check your details and try again." },
         402,
       );
     }
+    report(payment.status === "COMPLETED" ? "succeeded" : "pending", "none");
     await deps.savePaymentId(order.orderId, payment.id, payment, permit.method);
     return json(
       {
@@ -176,12 +239,22 @@ export async function createDirectPaymentHandler(
   } catch (error) {
     deps.reportError(error);
     if (deps.isDefiniteDecline(error) && declineIdentity) {
+      if (!providerObserved) report("failed", "declined");
       await deps.recordDecline(declineIdentity);
       return json(
         { error: "Payment was declined. Check your details and try again." },
         402,
       );
     }
+    if (!providerObserved)
+      report(
+        providerCalled ? "unknown" : "failed",
+        error instanceof Error &&
+          /timeout|timed.out/i.test(error.name + " " + error.message)
+          ? "timeout"
+          : "unavailable",
+        providerCalled ? "payment" : "verification",
+      );
     return json(
       {
         orderId: permit.orderId,

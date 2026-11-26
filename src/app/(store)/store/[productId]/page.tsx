@@ -6,7 +6,7 @@ import type { Metadata } from "next";
 import { pageMetadata } from "@/lib/metadata";
 
 import { createSupabasePublicClient } from "@/lib/supabase/public";
-import { ProductRepository } from "@/repositories/product-repo";
+import { StorefrontService } from "@/services/storefront-service";
 import { ProductDetail } from "@/components/store/ProductDetail";
 
 const PRODUCT_REVALIDATE_SECONDS = 60;
@@ -16,10 +16,9 @@ const getCachedProduct = (productId: string) =>
   unstable_cache(
     async () => {
       const supabase = createSupabasePublicClient();
-      const repo = new ProductRepository(supabase);
-      return repo.getById(productId);
+      return new StorefrontService(supabase).getProductById(productId);
     },
-    ["storefront", "product", productId],
+    ["storefront", "public-product-v2", productId],
     { revalidate: PRODUCT_REVALIDATE_SECONDS, tags: [`product:${productId}`] },
   )();
 

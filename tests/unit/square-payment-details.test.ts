@@ -1,5 +1,33 @@
-import { squarePaymentDetails } from "@/lib/square/payment-details";
+import { squareSourceEvidence, squarePaymentDetails } from "@/lib/square/payment-details";
 
+it("uses signed USD provider fees and exact server payment correlation", () => {
+  const orderId = "34a328d0-4cfc-4ca7-a9f8-ade895f43c33";
+  const attemptId = "31a328d0-4cfc-8ca7-89f8-ade895f43c33";
+  const effectiveAt = "2026-11-25T10:00:00Z";
+  expect(
+    squareSourceEvidence({
+      referenceId: orderId,
+      note: `Sole Sneakers order ${orderId} attempt ${attemptId}`,
+      processingFee: [
+        { effectiveAt, type: "INITIAL", amountMoney: { currency: "USD", amount: 125n } },
+        {
+          effectiveAt,
+          type: "ADJUSTMENT",
+          amountMoney: { currency: "USD", amount: -25n },
+        },
+        { effectiveAt, type: "ADJUSTMENT", amountMoney: { currency: "EUR", amount: 3 } },
+      ],
+    }),
+  ).toEqual({
+    orderReference: orderId,
+    attemptId,
+    fees: [
+      { effectiveAt, type: "INITIAL", adjustment: "charge", amountCents: 125 },
+      { effectiveAt, type: "ADJUSTMENT", adjustment: "credit", amountCents: 25 },
+    ],
+  });
+  expect(squareSourceEvidence({ note: "untrusted note" })).toEqual({});
+});
 it.each([
   [{ sourceType: "WALLET", walletDetails: { brand: "CASH_APP" } }, "cashAppPay"],
   [

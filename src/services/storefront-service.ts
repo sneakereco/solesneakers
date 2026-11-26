@@ -2,6 +2,15 @@
 import type { TypedSupabaseClient } from "@/lib/supabase/server";
 import { ProductRepository, type ProductFilters } from "@/repositories/product-repo";
 
+import type { ProductWithDetails, StorefrontProduct } from "@/types/domain/product";
+
+function publicProduct(product: ProductWithDetails): StorefrontProduct {
+  const variants = product.variants.map(
+    ({ unit_cost_cents: _cost, unit_cost_recorded: _recorded, ...variant }) => variant,
+  );
+  return { ...product, variants };
+}
+
 export class StorefrontService {
   private productRepo: ProductRepository;
 
@@ -10,13 +19,17 @@ export class StorefrontService {
   }
 
   async listProducts(filters: ProductFilters) {
-    return this.productRepo.list(await this.resolveCanonicalSearch(filters));
+    const result = await this.productRepo.list(
+      await this.resolveCanonicalSearch(filters),
+    );
+    return { ...result, products: result.products.map(publicProduct) };
   }
 
   async getProductById(id: string, opts?: { includeOutOfStock?: boolean }) {
-    return this.productRepo.getById(id, {
+    const product = await this.productRepo.getById(id, {
       includeOutOfStock: opts?.includeOutOfStock,
     });
+    return product ? publicProduct(product) : null;
   }
 
   async listFilters(opts?: { includeOutOfStock?: boolean; filters?: ProductFilters }) {

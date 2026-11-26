@@ -49,6 +49,26 @@ function request(quoteFingerprint = QUOTE_FINGERPRINT) {
   }) as never;
 }
 
+it("keeps an optional identity outage outside the accepted checkout and its abuse evidence", async () => {
+  const deps = {
+    ...dependencies(),
+    resolveAnalyticsContext: jest
+      .fn()
+      .mockRejectedValue(new Error("identity unavailable")),
+    outcome: jest.fn(),
+  };
+  const body = await (request() as Request).json();
+  const req = new Request("https://shop.example.com/api/checkout/prepare", {
+    method: "POST",
+    body: JSON.stringify({ ...body, trackingContext: { consent: true } }),
+  });
+  const response = await prepareCheckoutHandler(req as never, deps);
+  expect(response.status).toBe(201);
+  const reserved = deps.reserve.mock.calls[0][0];
+  expect(reserved.analyticsContext).toBeNull();
+  expect(reserved.protectionEvidence).not.toHaveProperty("trackingContext");
+  expect(deps.outcome).not.toHaveBeenCalled();
+});
 function dependencies() {
   const item = {
     productId: PRODUCT_ID,

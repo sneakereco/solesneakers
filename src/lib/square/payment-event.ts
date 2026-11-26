@@ -5,6 +5,7 @@ import { z } from "zod";
 import type { TypedSupabaseClient } from "@/lib/supabase/server";
 import type { Json } from "@/types/db/database.types";
 import {
+  squareSourceEvidence,
   recordSquarePaymentDetails,
   squarePaymentDetails,
   type SquarePaymentDetails,
@@ -32,6 +33,21 @@ const paymentEventSchema = z.object({
         status: z.string().min(1),
         amount_money: moneySchema,
         source_type: z.string().optional(),
+        updated_at: z.string().optional(),
+        note: z.string().optional(),
+        reference_id: z.string().optional(),
+        processing_fee: z
+          .array(
+            z.object({
+              effective_at: z.string().optional(),
+              type: z.string().optional(),
+              amount_money: z
+                .object({ amount: z.number(), currency: z.string() })
+                .optional(),
+            }),
+          )
+          .catch([])
+          .optional(),
         card_details: z
           .object({
             card: z
@@ -117,6 +133,7 @@ export type SquarePaymentEventResult =
     };
 
 export type SquarePaymentSnapshot = {
+  sourceEvidence?: ReturnType<typeof squareSourceEvidence>;
   details?: SquarePaymentDetails;
   eventId: string;
   eventType: string;
@@ -189,6 +206,16 @@ export class SquarePaymentEventProcessor {
         amountCents: payment.amount_money.amount,
         currency: payment.amount_money.currency,
         riskLevel: payment.risk_evaluation?.risk_level ?? null,
+        sourceEvidence: squareSourceEvidence({
+          note: payment.note,
+          referenceId: payment.reference_id,
+          updatedAt: payment.updated_at ?? event.created_at,
+          processingFee: payment.processing_fee?.map((f) => ({
+            effectiveAt: f.effective_at,
+            type: f.type,
+            amountMoney: f.amount_money,
+          })),
+        }),
         details: squarePaymentDetails({
           sourceType: payment.source_type,
           walletDetails: payment.wallet_details,
@@ -235,6 +262,7 @@ export class SquarePaymentEventProcessor {
         paymentId: payment.paymentId,
         paymentStatus: payment.paymentStatus,
         riskLevel: payment.riskLevel,
+        ...payment.sourceEvidence,
         squareOrderId: payment.squareOrderId,
       },
       p_square_order_id: payment.squareOrderId,

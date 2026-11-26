@@ -1,5 +1,7 @@
 "use client";
 
+import { getCheckoutTrackingContext } from "@/Modules/Analytics/Source/Features/VisitorMeasurement/client";
+
 import { useEffect, useMemo, useRef, useState } from "react";
 import { Loader2 } from "lucide-react";
 
@@ -86,6 +88,7 @@ type CheckoutPreparePayload = {
   shippingAddressOverride?: boolean;
   idempotencyKey: string;
   deviceSessionId: string;
+  trackingContext?: ReturnType<typeof getCheckoutTrackingContext>;
 };
 
 export function buildCheckoutPreparePayload(
@@ -272,6 +275,7 @@ export function CheckoutClient({ initialData }: { initialData: CheckoutPageData 
           shippingAddressOverride: context?.shippingAddressOverride,
           idempotencyKey: getOrCreateCheckoutIdempotencyKey(cartFingerprint),
           deviceSessionId,
+          trackingContext: getCheckoutTrackingContext(),
         }),
       ),
     });

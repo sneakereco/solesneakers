@@ -1,3 +1,4 @@
+import { paymentAttemptId } from "@/Modules/Analytics/Source/Features/CommerceFacts/operational-outcome";
 import type * as Square from "square";
 import { SquareError } from "square";
 import {
@@ -95,7 +96,7 @@ export class SquarePaymentsGateway {
       shippingAddress: input.shippingAddress
         ? toSquareAddress(input.shippingAddress)
         : undefined,
-      note: `Sole Sneakers order ${input.localOrderId}`,
+      note: `Sole Sneakers order ${input.localOrderId} attempt ${paymentAttemptId(input.idempotencyKey)}`,
     });
     const payment = parsePayment(response.payment);
     if (

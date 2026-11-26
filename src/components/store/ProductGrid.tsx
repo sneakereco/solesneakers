@@ -1,9 +1,9 @@
-import type { ProductWithDetails } from "@/types/domain/product";
+import type { StorefrontProduct } from "@/types/domain/product";
 
 import { ProductCard } from "./ProductCard";
 
 interface ProductGridProps {
-  products: ProductWithDetails[];
+  products: StorefrontProduct[];
   storeHref?: string;
   view?: "grid" | "list";
 }

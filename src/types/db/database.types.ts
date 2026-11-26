@@ -157,6 +157,7 @@ export type Database = {
           discovery: Json | null
           line_snapshots: Json
           order_id: string
+          order_snapshot: Json | null
           purchase_session: Json | null
           receipt_id: string | null
           session_id: string | null
@@ -170,6 +171,7 @@ export type Database = {
           discovery?: Json | null
           line_snapshots: Json
           order_id: string
+          order_snapshot?: Json | null
           purchase_session?: Json | null
           receipt_id?: string | null
           session_id?: string | null
@@ -183,6 +185,7 @@ export type Database = {
           discovery?: Json | null
           line_snapshots?: Json
           order_id?: string
+          order_snapshot?: Json | null
           purchase_session?: Json | null
           receipt_id?: string | null
           session_id?: string | null
@@ -1092,6 +1095,7 @@ export type Database = {
           stock: number
           tenant_id: string
           unit_cost_cents: number
+          unit_cost_recorded: boolean
           updated_at: string
         }
         Insert: {
@@ -1105,6 +1109,7 @@ export type Database = {
           stock?: number
           tenant_id: string
           unit_cost_cents?: number
+          unit_cost_recorded?: boolean
           updated_at?: string
         }
         Update: {
@@ -1118,6 +1123,7 @@ export type Database = {
           stock?: number
           tenant_id?: string
           unit_cost_cents?: number
+          unit_cost_recorded?: boolean
           updated_at?: string
         }
         Relationships: [
@@ -2006,6 +2012,10 @@ export type Database = {
         }
         Returns: boolean
       }
+      analytics_record_operational_outcome: {
+        Args: { p_dataset_id: string; p_outcome: Json }
+        Returns: undefined
+      }
       analytics_revoke_receipt: {
         Args: { p_dataset_id: string; p_receipt_id: string }
         Returns: boolean
@@ -2162,6 +2172,10 @@ export type Database = {
           p_total_cents: number
           p_user_id: string
         }
+        Returns: Json
+      }
+      reserve_square_checkout_inventory_with_analytics: {
+        Args: { p_checkout: Json; p_analytics: Json }
         Returns: Json
       }
       reserve_square_checkout_inventory_with_address: {

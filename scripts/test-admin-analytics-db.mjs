@@ -1,3 +1,4 @@
+import { testCommerceSources } from "./test-admin-analytics-sources.mjs";
 import assert from "node:assert/strict";
 import { randomUUID } from "node:crypto";
 import { readFileSync } from "node:fs";
@@ -91,10 +92,20 @@ try {
     (await db.query("select current_database() as db,current_user as owner")).rows[0],
     { db: "admin_analytics_sdd", owner: "supabase_admin" },
   );
+  assert.equal(
+    (
+      await db.query(
+        "select to_regprocedure(\'public.reserve_square_checkout_inventory_with_analytics(jsonb,jsonb)\') is not null as installed",
+      )
+    ).rows[0].installed,
+    true,
+    "analytics reservation wrapper installed",
+  );
   assert(
     (await db.query("select pg_try_advisory_lock(25111800) as locked")).rows[0].locked,
     "another fixture runner is active",
   );
+  await testCommerceSources(db, worker);
   await db.query(
     "insert into public.analytics_datasets(dataset_id,environment,activated_at) values ($1,'staging',$2)",
     [ds, "2000-01-01T00:00:00Z"],
@@ -381,6 +392,9 @@ try {
     }
     for (const [statement, values] of [
       ["select public.analytics_append_fact($1)", [fact]],
+      ["select public.reserve_square_checkout_inventory_with_analytics($1,$2)", [{}, {}]],
+      ["select public.analytics_record_operational_outcome($1,$2)", [ds, {}]],
+      ["select analytics_source.dataset(now())", []],
       ["select public.analytics_revoke_receipt($1,$2)", [ds, orderId]],
       ["select * from public.analytics_claim_publications($1,1,1)", [ds]],
       ["select public.analytics_complete_publication($1,$2,$2)", [ds, orderId]],

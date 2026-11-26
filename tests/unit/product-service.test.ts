@@ -44,67 +44,78 @@ describe("variant SKU assignment", () => {
     expect(result).toEqual({ archived: false });
   });
 
-  it("persists canonical taxonomy IDs without generic tag writes", async () => {
-    const create = jest.fn().mockResolvedValue({ id: "product-1" });
-    const createVariant = jest.fn().mockResolvedValue({ id: "variant-1" });
-    const createImage = jest.fn();
-    const listVariantSkus = jest.fn().mockResolvedValue([]);
-    mockGetBrandById.mockResolvedValue({
-      id: "brand-1",
-      tenant_id: null,
-      is_active: true,
-    });
-    mockGetModelById.mockResolvedValue({
-      id: "model-1",
-      brand_id: "brand-1",
-      tenant_id: null,
-      is_active: true,
-    });
-    mockGetSizeById.mockResolvedValue({
-      id: "size-1",
-      size_type: "shoe",
-      tenant_id: null,
-      is_active: true,
-    });
-
-    const service = new ProductService({} as never);
-    (service as unknown as { repo: unknown }).repo = {
-      create,
-      createVariant,
-      createImage,
-      listVariantSkus,
-    };
-
-    await service.createProduct(
-      {
-        name: "Nike Dunk Low",
+  it.each([
+    [undefined, false],
+    [0, true],
+    [7000, true],
+  ] as const)(
+    "persists canonical taxonomy and trusted cost presence for %s",
+    async (cost, recorded) => {
+      const create = jest.fn().mockResolvedValue({ id: "product-1" });
+      const createVariant = jest.fn().mockResolvedValue({ id: "variant-1" });
+      const createImage = jest.fn();
+      const listVariantSkus = jest.fn().mockResolvedValue([]);
+      mockGetBrandById.mockResolvedValue({
+        id: "brand-1",
+        tenant_id: null,
+        is_active: true,
+      });
+      mockGetModelById.mockResolvedValue({
+        id: "model-1",
         brand_id: "brand-1",
-        model_id: "model-1",
-        category: "sneakers",
-        condition: "new",
+        tenant_id: null,
+        is_active: true,
+      });
+      mockGetSizeById.mockResolvedValue({
+        id: "size-1",
         size_type: "shoe",
-        variants: [
-          {
-            size_id: "size-1",
-            sale_price_cents: 12000,
-            unit_cost_cents: 7000,
-            stock: 1,
-            sort_order: 0,
-          },
-        ],
-        images: [],
-      },
-      { userId: "user-1", tenantId: "tenant-1" },
-    );
+        tenant_id: null,
+        is_active: true,
+      });
 
-    expect(create).toHaveBeenCalledWith(
-      expect.objectContaining({ brand_id: "brand-1", model_id: "model-1" }),
-    );
-    expect(createVariant).toHaveBeenCalledWith(
-      expect.objectContaining({ size_id: "size-1" }),
-    );
-    expect(
-      (service as unknown as { repo: Record<string, unknown> }).repo,
-    ).not.toHaveProperty("linkProductTag");
-  });
+      const service = new ProductService({} as never);
+      (service as unknown as { repo: unknown }).repo = {
+        create,
+        createVariant,
+        createImage,
+        listVariantSkus,
+      };
+
+      await service.createProduct(
+        {
+          name: "Nike Dunk Low",
+          brand_id: "brand-1",
+          model_id: "model-1",
+          category: "sneakers",
+          condition: "new",
+          size_type: "shoe",
+          variants: [
+            {
+              size_id: "size-1",
+              sale_price_cents: 12000,
+              ...(cost === undefined ? {} : { unit_cost_cents: cost }),
+              stock: 1,
+              sort_order: 0,
+            },
+          ],
+          images: [],
+        },
+        { userId: "user-1", tenantId: "tenant-1" },
+      );
+
+      expect(create).toHaveBeenCalledWith(
+        expect.objectContaining({ brand_id: "brand-1", model_id: "model-1" }),
+      );
+      expect(createVariant).toHaveBeenCalledWith(
+        expect.objectContaining({
+          size_id: "size-1",
+          unit_cost_cents: cost ?? 0,
+          unit_cost_recorded: recorded,
+        }),
+      );
+      expect(
+        (service as unknown as { repo: Record<string, unknown> }).repo,
+      ).not.toHaveProperty("linkProductTag");
+    },
+  );
 });

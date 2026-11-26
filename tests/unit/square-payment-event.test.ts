@@ -162,6 +162,7 @@ describe("SquarePaymentEventProcessor", () => {
           currency: "USD",
           paymentId: "payment-1",
           paymentStatus: "COMPLETED",
+          resolvedAt: "2026-08-26T18:00:00.000Z",
           riskLevel: "NORMAL",
           squareOrderId: "square-order-1",
         },

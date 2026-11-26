@@ -17,11 +17,17 @@ import { ProductSkuService } from "@/services/product-sku-service";
 
 type VariantWriteInput = Pick<
   TablesInsert<"product_variants">,
-  "sku" | "size_id" | "sale_price_cents" | "stock" | "unit_cost_cents" | "sort_order"
+  | "sku"
+  | "size_id"
+  | "sale_price_cents"
+  | "stock"
+  | "unit_cost_cents"
+  | "sort_order"
+  | "unit_cost_recorded"
 >;
 
 type VariantInput = Partial<Pick<VariantWriteInput, "sku">> &
-  Omit<VariantWriteInput, "sku"> & {
+  Omit<VariantWriteInput, "sku" | "unit_cost_recorded"> & {
     id?: string;
   };
 
@@ -214,6 +220,7 @@ export class ProductService {
             sale_price_cents: variant.sale_price_cents,
             stock: variant.stock,
             unit_cost_cents: variant.unit_cost_cents ?? 0,
+            unit_cost_recorded: variant.unit_cost_cents !== undefined,
             sort_order: variant.sort_order ?? index,
           },
         });
@@ -312,7 +319,9 @@ export class ProductService {
       variants: original.variants.map((variant) => ({
         size_id: variant.size_id,
         sale_price_cents: variant.sale_price_cents,
-        unit_cost_cents: variant.unit_cost_cents ?? 0,
+        ...(variant.unit_cost_cents > 0 || variant.unit_cost_recorded
+          ? { unit_cost_cents: variant.unit_cost_cents }
+          : {}),
         stock: variant.stock,
         sort_order: variant.sort_order ?? 0,
       })),
@@ -561,6 +570,7 @@ export class ProductService {
         size_id: variant.size_id,
         sale_price_cents: variant.sale_price_cents,
         unit_cost_cents: variant.unit_cost_cents ?? 0,
+        unit_cost_recorded: variant.unit_cost_cents !== undefined,
         stock: variant.stock,
         sort_order: variant.sort_order ?? index,
       };

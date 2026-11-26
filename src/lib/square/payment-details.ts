@@ -1,5 +1,66 @@
 import type { TypedSupabaseClient } from "@/lib/supabase/server";
 
+import { z } from "zod";
+
+type ProviderEvidenceInput = {
+  note?: string | null;
+  referenceId?: string | null;
+  updatedAt?: string | null;
+  processingFee?:
+    | {
+        effectiveAt?: string | null;
+        type?: string | null;
+        amountMoney?: {
+          currency?: string | null;
+          amount?: number | bigint | null;
+        } | null;
+      }[]
+    | null;
+};
+export function squareSourceEvidence(payment: ProviderEvidenceInput) {
+  const reference = payment.referenceId;
+  const prefix = `Sole Sneakers order ${reference} attempt `;
+  const attempt = payment.note?.startsWith(prefix)
+    ? payment.note.slice(prefix.length)
+    : null;
+  const fees = (payment.processingFee ?? []).flatMap((fee) => {
+    const amount = fee.amountMoney?.amount;
+    const cents = Number(amount);
+    if (
+      amount === null ||
+      amount === undefined ||
+      !Number.isSafeInteger(cents) ||
+      fee.amountMoney?.currency !== "USD" ||
+      !fee.effectiveAt ||
+      !z.iso.datetime({ offset: true }).safeParse(fee.effectiveAt).success ||
+      (fee.type !== "INITIAL" && fee.type !== "ADJUSTMENT")
+    )
+      return [];
+    return [
+      {
+        effectiveAt: fee.effectiveAt,
+        type: fee.type,
+        adjustment: cents < 0 ? "credit" : "charge",
+        amountCents: Math.abs(cents),
+      },
+    ];
+  });
+  return {
+    ...(reference &&
+    z.uuid().safeParse(reference).success &&
+    attempt &&
+    z.uuid().safeParse(attempt).success &&
+    attempt[14] === "8"
+      ? { orderReference: reference, attemptId: attempt }
+      : {}),
+    ...(fees.length ? { fees } : {}),
+    ...(payment.updatedAt &&
+    z.iso.datetime({ offset: true }).safeParse(payment.updatedAt).success
+      ? { resolvedAt: payment.updatedAt }
+      : {}),
+  };
+}
+
 export function squarePaymentDetails(payment: {
   sourceType?: string;
   walletDetails?: { brand?: string | null };

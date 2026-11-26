@@ -144,6 +144,28 @@ describe("POST /api/admin/shipping/labels", () => {
     expect((await response.json()).message).toContain("queued");
   });
 
+  it.each([
+    [null, "USD", null],
+    ["0.00", "USD", 0],
+    ["8.25", "USD", 825],
+    ["1.00", "EUR", null],
+    ["invalid", "USD", null],
+  ] as const)(
+    "preserves missing and zero actual label costs (%s, %s)",
+    async (rate, currency, expected) => {
+      mockPurchaseLabel.mockResolvedValue({
+        status: "SUCCESS",
+        trackingNumber: "tracking-1",
+        rate,
+        currency,
+      });
+      expect((await POST(request())).status).toBe(200);
+      expect(mockMarkReadyToShip).toHaveBeenCalledWith(
+        orderId,
+        expect.objectContaining({ actualShippingCost: expected }),
+      );
+    },
+  );
   it("does not purchase a label for an order under review", async () => {
     mockGetOrder.mockResolvedValue({
       id: orderId,

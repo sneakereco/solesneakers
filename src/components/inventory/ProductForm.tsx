@@ -35,7 +35,10 @@ interface ProductFormProps {
   initialData?: Omit<Partial<ProductCreateInput>, "variants"> & {
     id?: string;
     variants?: Array<
-      ProductCreateInput["variants"][number] & { size?: { id: string; label: string } }
+      ProductCreateInput["variants"][number] & {
+        unit_cost_recorded?: boolean;
+        size?: { id: string; label: string };
+      }
     >;
   };
   onSubmit: (data: ProductCreateInput) => Promise<void>;
@@ -301,7 +304,11 @@ export function ProductForm({
       size_id: variant.size_id,
       size_label: variant.size?.label.trim() ?? "",
       salePrice: formatMoney(variant.sale_price_cents / 100),
-      unitCost: formatMoney((variant.unit_cost_cents ?? 0) / 100),
+      unitCost:
+        variant.unit_cost_cents !== undefined &&
+        (variant.unit_cost_recorded || variant.unit_cost_cents > 0)
+          ? formatMoney(variant.unit_cost_cents / 100)
+          : "",
       stock: String(variant.stock ?? 0),
     }));
 

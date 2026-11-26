@@ -9,10 +9,10 @@ import { useCart } from "@/components/cart/CartProvider";
 import { Toast } from "@/components/ui/Toast";
 import { useViewGrant } from "@/Modules/Analytics/Source/Features/VisitorMeasurement/view-grant";
 import { captureProductViewed } from "@/Modules/Analytics/Source/Features/VisitorMeasurement/triggers";
-import type { ProductWithDetails } from "@/types/domain/product";
+import type { StorefrontProduct } from "@/types/domain/product";
 
 interface ProductDetailProps {
-  product: ProductWithDetails;
+  product: StorefrontProduct;
 }
 
 const formatPrice = (priceCents: number) =>

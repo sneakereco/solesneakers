@@ -6,7 +6,7 @@ import Link from "next/link";
 import { ChevronLeft, ChevronRight } from "lucide-react";
 
 import { logError } from "@/lib/utils/log";
-import type { ProductWithDetails } from "@/types/domain/product";
+import type { StorefrontProduct } from "@/types/domain/product";
 
 type FeaturedProduct = {
   id: string;
@@ -50,7 +50,7 @@ export function FeaturedItems({ category }: { category?: "clothing" } = {}) {
         if (controller.signal.aborted) return;
         if (isClothing) {
           if (!Array.isArray(data.products)) throw new Error("Invalid clothing products");
-          const products: ProductWithDetails[] = data.products;
+          const products: StorefrontProduct[] = data.products;
           setFeatured(
             products.flatMap((product) => {
               const prices = product.variants

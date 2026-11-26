@@ -34,6 +34,7 @@ export const orderContextSchema = z.strictObject({
   datasetId: datasetIdSchema,
   orderId: z.uuid(),
   buyerKey: factFields.buyerKey,
+  orderSnapshot: factPayloadSchemas.order.nullable().optional(),
   lineSnapshots: z.array(factPayloadSchemas.line),
   tracking: privateTrackingSchema.nullable(),
 });
@@ -117,13 +118,23 @@ export function createFactRepository(db: AdminSupabaseClient) {
       datasetId: string,
       orderId: string,
     ): Promise<{ publicationId: string; tracking: PrivateTrackingContext } | null> {
+      const { data: sale, error: saleError } = await db
+        .from("analytics_fact_versions")
+        .select("effective_at")
+        .eq("dataset_id", datasetIdSchema.parse(datasetId))
+        .eq("fact_id", "order:" + z.uuid().parse(orderId))
+        .eq("revision", 1)
+        .maybeSingle();
+      if (saleError) throw new Error("Analytics confirmation lookup failed");
+      if (!sale) return null;
       const { data, error } = await db
         .from("analytics_order_context")
         .select(
-          "tracked_publication_id,receipt_id,visitor_id,session_id,device,discovery,purchase_session,analytics_consent_receipts!inner(revoked_at)",
+          "tracked_publication_id,receipt_id,visitor_id,session_id,device,discovery,purchase_session,analytics_consent_receipts!inner(revoked_at,granted_at)",
         )
         .eq("dataset_id", datasetIdSchema.parse(datasetId))
         .eq("order_id", z.uuid().parse(orderId))
+        .lte("analytics_consent_receipts.granted_at", sale.effective_at)
         .is("analytics_consent_receipts.revoked_at", null)
         .maybeSingle();
       if (error) throw new Error("Analytics purchase context lookup failed");
