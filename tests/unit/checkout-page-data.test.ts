@@ -23,6 +23,7 @@ describe("loadCheckoutPageData", () => {
     const deps = dependencies();
 
     await expect(loadCheckoutPageData(deps)).resolves.toEqual({
+      ownerId: null,
       isGuest: true,
       customer: {
         email: "",
@@ -65,6 +66,7 @@ describe("loadCheckoutPageData", () => {
     });
 
     await expect(loadCheckoutPageData(deps)).resolves.toMatchObject({
+      ownerId: "user-1",
       isGuest: false,
       customer: {
         email: "account@example.com",

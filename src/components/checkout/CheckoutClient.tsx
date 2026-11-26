@@ -2,6 +2,9 @@
 import { BasketAccessNotice } from "@/Modules/Cart/Source/Client";
 
 import { useEffect, useMemo, useRef, useState } from "react";
+import { useRouter } from "next/navigation";
+import { useSession } from "@/contexts/SessionContext";
+import { useCheckoutOwnerAccess } from "@/Modules/Checkout/Source/Features/Preparation/use-checkout-owner-access";
 
 import { useCart } from "@/components/cart/CartProvider";
 import { CheckoutContactSection } from "@/components/checkout/CheckoutContactSection";
@@ -95,7 +98,52 @@ export function buildCheckoutPreparePayload(
 }
 
 export function CheckoutClient({ initialData }: { initialData: CheckoutPageData }) {
-  const { items, isReady, clearCart } = useCart();
+  const { status, user } = useSession();
+  const router = useRouter();
+  const ownerId = user?.id ?? null;
+  const mismatch =
+    status === "ready" &&
+    (initialData.ownerId !== ownerId || initialData.isGuest !== (ownerId === null));
+  useEffect(() => {
+    if (mismatch) router.refresh();
+  }, [mismatch, ownerId, router]);
+  if (mismatch)
+    return (
+      <>
+        <CheckoutPaymentDialog open={false} />
+        <section role="status" className="p-6 text-center">
+          <p>Updating your checkout details…</p>
+          <button
+            type="button"
+            className="mt-3 underline"
+            onClick={() => router.refresh()}
+          >
+            Refresh checkout
+          </button>
+        </section>
+      </>
+    );
+  return (
+    <OwnerCheckout
+      key={initialData.ownerId === null ? "guest" : "account:" + initialData.ownerId}
+      initialData={initialData}
+      verified={status === "ready"}
+    />
+  );
+}
+
+function OwnerCheckout({
+  initialData,
+  verified,
+}: {
+  initialData: CheckoutPageData;
+  verified: boolean;
+}) {
+  const { items, isReady: cartReady, clearCart } = useCart();
+  const isReady = verified && cartReady;
+  const requireOwner = useCheckoutOwnerAccess(initialData.ownerId);
+  const [hasOpened, setHasOpened] = useState(false);
+  if (isReady && items.length && !hasOpened) setHasOpened(true);
   const [isRedirecting, setIsRedirecting] = useState(false);
   const [email, setEmail] = useState(initialData.customer.email);
   const [fulfillment, setFulfillment] = useState<Fulfillment>("ship");
@@ -196,11 +244,13 @@ export function CheckoutClient({ initialData }: { initialData: CheckoutPageData 
   }
 
   async function quoteWalletShippingDestination(nextAddress: WalletShippingDestination) {
+    await requireOwner();
     const nextQuote = await requestCheckoutQuote({
       items: checkoutItems,
       fulfillment: "ship",
       shippingAddress: nextAddress,
     });
+    await requireOwner();
     if (nextQuote.completeness !== "exact") {
       throw new Error("Unable to calculate shipping for this destination.");
     }
@@ -211,11 +261,13 @@ export function CheckoutClient({ initialData }: { initialData: CheckoutPageData 
     nextAddress: CheckoutPaymentAddress,
     walletEmail?: string,
   ): Promise<WalletCheckoutContext> {
+    await requireOwner();
     const nextQuote = await requestCheckoutQuote({
       items: checkoutItems,
       fulfillment: "ship",
       shippingAddress: nextAddress,
     });
+    await requireOwner();
     if (nextQuote.completeness !== "exact") {
       throw new Error("Unable to calculate an exact total for this address.");
     }
@@ -230,6 +282,7 @@ export function CheckoutClient({ initialData }: { initialData: CheckoutPageData 
     method: PaymentMethod,
     context?: CheckoutPreparationContext,
   ): Promise<PreparedCheckout> {
+    await requireOwner();
     const buyerEmail = (initialData.isGuest ? (context?.buyerEmail ?? email) : email)
       .trim()
       .toLowerCase();
@@ -285,6 +338,7 @@ export function CheckoutClient({ initialData }: { initialData: CheckoutPageData 
       ),
     });
     const data = await response.json().catch(() => null);
+    await requireOwner();
     if (!response.ok) {
       if (
         selectedShippingAddress &&
@@ -336,65 +390,77 @@ export function CheckoutClient({ initialData }: { initialData: CheckoutPageData 
     };
   }
 
-  if (isRedirecting) {
-    return <CheckoutPaymentDialog open />;
+  if (isRedirecting) return <CheckoutPaymentDialog open={verified} />;
+  if ((!isReady && !hasOpened) || (isReady && items.length === 0)) {
+    return (
+      <>
+        <CheckoutPaymentDialog open={false} />
+        {!isReady && <BasketAccessNotice />}
+      </>
+    );
   }
-  if (!isReady) {
-    return <BasketAccessNotice />;
-  }
-  if (items.length === 0) return null;
 
   return (
-    <div data-checkout className="min-h-screen bg-[#f3f3f3]">
-      <CheckoutHeader />
-      <main className="grid min-h-[calc(100vh-7rem)] w-full grid-cols-1 bg-[#f3f3f3] text-zinc-950 lg:grid-cols-[53.4%_46.6%]">
-        <CheckoutOrderSummary
-          className="order-1 lg:order-2"
-          items={items}
-          quoteState={quoteState}
-        />
+    <>
+      {!isReady && <BasketAccessNotice />}
+      <div
+        hidden={!isReady}
+        inert={!isReady}
+        data-checkout
+        className="min-h-screen bg-[#f3f3f3]"
+      >
+        <CheckoutHeader />
+        <main className="grid min-h-[calc(100vh-7rem)] w-full grid-cols-1 bg-[#f3f3f3] text-zinc-950 lg:grid-cols-[53.4%_46.6%]">
+          <CheckoutOrderSummary
+            className="order-1 lg:order-2"
+            items={items}
+            quoteState={quoteState}
+          />
 
-        <section className="order-2 px-5 py-10 sm:px-8 lg:order-1 lg:ml-auto lg:w-full lg:max-w-[36.25rem] lg:px-10 lg:py-16">
-          <h1 className="sr-only">Checkout</h1>
-          <div className="flex flex-col">
-            <SquarePaymentMethods
-              paymentConfig={initialData.paymentConfig}
-              quote={currentQuote}
-              quoteReady={quoteReady}
-              fulfillment={fulfillment}
-              buyerEmail={email}
-              shippingAddress={shippingAddress}
-              pickupContact={
-                fulfillment === "pickup"
-                  ? { name: address.name, phone: address.phone }
-                  : null
-              }
-              isGuest={initialData.isGuest}
-              quoteWalletShippingDestination={quoteWalletShippingDestination}
-              resolveWalletShippingContact={resolveWalletShippingContact}
-              prepare={prepare}
-              clearCart={() => {
-                setIsRedirecting(true);
-                clearIdempotencyKeyFromStorage();
-                void clearCart();
-              }}
-            >
-              <CheckoutContactSection
-                email={email}
-                isGuest={initialData.isGuest}
-                onEmailChange={setEmail}
-              />
-
-              <CheckoutDeliverySection
+          <section className="order-2 px-5 py-10 sm:px-8 lg:order-1 lg:ml-auto lg:w-full lg:max-w-[36.25rem] lg:px-10 lg:py-16">
+            <h1 className="sr-only">Checkout</h1>
+            <div className="flex flex-col">
+              <SquarePaymentMethods
+                accessSuspended={!isReady}
+                requireOwner={requireOwner}
+                paymentConfig={initialData.paymentConfig}
+                quote={currentQuote}
+                quoteReady={quoteReady}
                 fulfillment={fulfillment}
-                address={address}
-                onFulfillmentChange={setFulfillment}
-                onAddressChange={updateAddress}
-              />
-            </SquarePaymentMethods>
-          </div>
-        </section>
-      </main>
-    </div>
+                buyerEmail={email}
+                shippingAddress={shippingAddress}
+                pickupContact={
+                  fulfillment === "pickup"
+                    ? { name: address.name, phone: address.phone }
+                    : null
+                }
+                isGuest={initialData.isGuest}
+                quoteWalletShippingDestination={quoteWalletShippingDestination}
+                resolveWalletShippingContact={resolveWalletShippingContact}
+                prepare={prepare}
+                clearCart={() => {
+                  setIsRedirecting(true);
+                  clearIdempotencyKeyFromStorage();
+                  void clearCart();
+                }}
+              >
+                <CheckoutContactSection
+                  email={email}
+                  isGuest={initialData.isGuest}
+                  onEmailChange={setEmail}
+                />
+
+                <CheckoutDeliverySection
+                  fulfillment={fulfillment}
+                  address={address}
+                  onFulfillmentChange={setFulfillment}
+                  onAddressChange={updateAddress}
+                />
+              </SquarePaymentMethods>
+            </div>
+          </section>
+        </main>
+      </div>
+    </>
   );
 }

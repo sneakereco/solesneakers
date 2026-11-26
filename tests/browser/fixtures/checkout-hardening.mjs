@@ -33,7 +33,7 @@ const framework = {
       push: url => navigate("pushState", url),
       replace: url => navigate("replaceState", url),
       back: () => history.back(),
-      refresh: () => window.dispatchEvent(new PopStateEvent("popstate")),
+      refresh: () => window.dispatchEvent(new Event("fixtureServerRefresh")),
     };
     export const useRouter = () => router;
     export const usePathname = () => new URL(useSyncExternalStore(subscribe, currentURL)).pathname;
@@ -88,6 +88,7 @@ function browserBundle() {
 
         const { initialUser, view } = window.checkoutFixture;
         const initialData = {
+          ownerId:initialUser?.id??null,
           isGuest: !initialUser,
           customer: {
             email: initialUser?.email ?? "",
@@ -96,11 +97,22 @@ function browserBundle() {
           paymentConfig: { applicationId: "fixture-square", locationId: "fixture-location", environment: "sandbox" },
         };
         function CheckoutView() {
+          const [data,setData]=useState(window.fixtureInitialCheckout??initialData);
+          useEffect(()=>{
+            const refresh=()=>{window.fixtureRefreshCount=(window.fixtureRefreshCount??0)+1; if(window.fixtureHoldBootstrap)return;
+              const user=window.testSession?.user;
+              setData({...initialData,ownerId:user?.id??null,isGuest:!user,customer:{...initialData.customer,email:user?.email??""}});
+            };
+            const deliver=e=>setData(e.detail);
+            window.addEventListener("fixtureServerRefresh",refresh);
+            window.addEventListener("fixtureCheckoutBootstrap",deliver);
+            return ()=>{window.removeEventListener("fixtureServerRefresh",refresh);window.removeEventListener("fixtureCheckoutBootstrap",deliver)};
+          },[]);
           const path = usePathname();
           if (path === "/checkout/processing") return <ProcessingPage />;
           if (path === "/checkout/cancel") return <CancelPage />;
           if (path === "/checkout/success" || view === "receipt") return <ReceiptPage />;
-          return <CheckoutClient initialData={initialData} />;
+          return <CheckoutClient initialData={data} />;
         }
 
         function View() {

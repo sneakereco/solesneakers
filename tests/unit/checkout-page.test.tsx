@@ -31,6 +31,7 @@ describe("src/app/checkout/page", () => {
   it("renders fulfillment and payment checkout when checkout is open", async () => {
     jest.mocked(loadCheckoutPageAccess).mockResolvedValue({ open: true });
     const initialData = {
+      ownerId: null,
       isGuest: true,
       customer: {
         email: "",

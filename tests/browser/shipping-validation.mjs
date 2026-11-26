@@ -36,7 +36,7 @@ const bundle = await build({
       afterpayClearpay: async (request) => ({ attach: async () => {}, tokenize: async () => { window.test.afterpayRequest = request.input; return { status: 'OK', token: 'afterpay-test', details: { shipping: { contact: window.test.mismatchedAfterpay ? {...request.input.shippingContact,postalCode:"90210"} : request.input.shippingContact } } }; } }),
       cashAppPay: async (request) => { let listener; return { attach: async (selector) => { const button = document.createElement('button'); button.type = 'button'; button.textContent = 'Cash test'; button.onclick = () => { window.test.cashTotal = request.input.total.amount; listener({ detail: { tokenResult: { status: 'OK', token: 'cash-' + request.input.total.amount } } }); }; document.querySelector(selector).append(button); }, addEventListener(event, callback) { listener = callback; }, destroy: async () => true }; },
     }) };
-    createRoot(document.getElementById('root')).render(<CheckoutPaymentProvider><CheckoutClient initialData={{ isGuest: false, customer: { email: 'buyer@example.com', address: original }, paymentConfig: { applicationId: 'test', locationId: 'test', environment: 'sandbox' } }} /></CheckoutPaymentProvider>);
+    createRoot(document.getElementById('root')).render(<CheckoutPaymentProvider><CheckoutClient initialData={{ ownerId:'fixture-buyer',isGuest: false, customer: { email: 'buyer@example.com', address: original }, paymentConfig: { applicationId: 'test', locationId: 'test', environment: 'sandbox' } }} /></CheckoutPaymentProvider>);
   `,
   },
   bundle: true,
@@ -63,7 +63,7 @@ const bundle = await build({
               : args.path.endsWith("CartProvider")
                 ? "const items = [{productId:'11111111-1111-4111-8111-111111111111',variantId:'22222222-2222-4222-8222-222222222222',titleDisplay:'Test shoes',quantity:1,priceCents:10000}]; export const useCart = () => ({items,itemCount:1,isReady:true,clearCart(){}});"
                 : args.path.endsWith("SessionContext")
-                  ? "export const useSession = () => ({user:null});"
+                  ? "const session={user:{id:'fixture-buyer'},status:'ready',isCurrent:()=>true}; export const useSession=()=>session;"
                   : args.path.endsWith("client-env")
                     ? "export const clientEnv = {};"
                     : "export const log = () => {};",

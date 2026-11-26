@@ -3,16 +3,18 @@ import { z } from "zod";
 import type { BasketRepairReason, CartItem } from "../../Contracts/Basket";
 
 // Separate from checkout request limits and private purchase-proof bounds.
+export const maxSavedLength = 2_000_000;
+export const maxSavedCount = 4096;
 export class SavedBasketLimitError extends Error {
   constructor(readonly reason: Exclude<BasketRepairReason, null>) {
     super(reason);
   }
 }
 export function checkSavedLength(length: number) {
-  if (length > 2_000_000) throw new SavedBasketLimitError("too_large");
+  if (length > maxSavedLength) throw new SavedBasketLimitError("too_large");
 }
 export function checkSavedCount(count: number) {
-  if (count > 4096) throw new SavedBasketLimitError("too_many_rows");
+  if (count > maxSavedCount) throw new SavedBasketLimitError("too_many_rows");
 }
 
 // Older saved lines can lack the optional stock cap or a usable image.

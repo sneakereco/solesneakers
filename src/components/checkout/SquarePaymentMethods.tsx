@@ -428,6 +428,8 @@ export function SquarePaymentMethods({
   quoteWalletShippingDestination,
   resolveWalletShippingContact,
   prepare,
+  accessSuspended = false,
+  requireOwner,
   clearCart,
   children,
 }: {
@@ -450,6 +452,8 @@ export function SquarePaymentMethods({
     method: PaymentMethod,
     context?: CheckoutPreparationContext,
   ): Promise<PreparedCheckout>;
+  accessSuspended?: boolean;
+  requireOwner?: () => Promise<void>;
   clearCart(): void;
   children?: ReactNode;
 }) {
@@ -895,6 +899,7 @@ export function SquarePaymentMethods({
   }, [isGuest]);
 
   async function pay(authorization: { permit: string; sourceId: string }) {
+    await requireOwner?.();
     setLoadingProvider(null);
     setPaymentDialogOpen(true);
     const response = await fetch("/api/checkout/pay", {
@@ -906,6 +911,7 @@ export function SquarePaymentMethods({
     if (!response.ok || typeof data?.statusUrl !== "string") {
       throw new Error(data?.error || "Payment could not be completed");
     }
+    await requireOwner?.();
     clearCart();
     router.replace(data.statusUrl);
   }
@@ -946,6 +952,7 @@ export function SquarePaymentMethods({
     setIsPaying(true);
     setError(null);
     try {
+      await requireOwner?.();
       assertPayable(requireVisibleExactQuote);
       await action();
     } catch (paymentError) {
@@ -1127,8 +1134,10 @@ export function SquarePaymentMethods({
       setPaymentDialogOpen(true);
       const { checkout } = prepared;
       if (prepared.quote.totals.totalCents !== exactQuote?.totals.totalCents) {
+        await requireOwner?.();
         sourceId = await reauthorizeCashApp(prepared.quote);
       }
+      await requireOwner?.();
       await pay(
         await authorizeTokenizedSource({
           permitRequest: permitRequest(checkout, method),
@@ -1283,6 +1292,7 @@ export function SquarePaymentMethods({
         checkoutContext = { ...shippingContext, billingAddress: walletBilling };
       }
       const checkout = await prepare(method, checkoutContext);
+      await requireOwner?.();
       await pay(
         await authorizeTokenizedSource({
           permitRequest: permitRequest(checkout, method),
@@ -1340,11 +1350,13 @@ export function SquarePaymentMethods({
         buyerEmail,
         billingAddress: paymentBilling,
       });
+      await requireOwner?.();
       await pay(
         await authorizeAndTokenize({
           permitRequest: permitRequest(checkout, method),
           paymentMethod: {
             tokenize: async (details) => {
+              await requireOwner?.();
               // Let Square own focus while its verification or wallet UI is open.
               flushSync(() => setProviderActive(true));
               try {
@@ -1437,7 +1449,7 @@ export function SquarePaymentMethods({
   return (
     <>
       <CheckoutPaymentDialog
-        open={paymentDialogOpen}
+        open={!accessSuspended && paymentDialogOpen}
         providerActive={providerActive}
         loadingProvider={loadingProvider}
         walletReview={
@@ -1445,6 +1457,7 @@ export function SquarePaymentMethods({
             <CheckoutWalletDetails
               initial={walletReview}
               onContinue={(details) => {
+                if (accessSuspended) return;
                 const continuation = walletContinuation.current;
                 walletContinuation.current = null;
                 setWalletReview(null);
@@ -1455,6 +1468,7 @@ export function SquarePaymentMethods({
         }
         addressReview={addressReview}
         onAcceptAddress={(address, confirmation, override) => {
+          if (accessSuspended) return;
           const continuation = addressContinuation.current;
           if (!continuation) {
             return;
@@ -1466,6 +1480,7 @@ export function SquarePaymentMethods({
         }}
         totalReview={totalReview}
         onConfirmTotal={() => {
+          if (accessSuspended) return;
           const continuation = totalContinuation.current;
           totalContinuation.current = null;
           setTotalReview(null);
@@ -1473,7 +1488,7 @@ export function SquarePaymentMethods({
         }}
         cashAppReapproval={cashAppReapproval}
         error={error}
-        onDismiss={dismissPaymentDialog}
+        onDismiss={accessSuspended ? undefined : dismissPaymentDialog}
       />
       <ExpressCheckoutMethods
         applePayReady={Boolean(applePay)}

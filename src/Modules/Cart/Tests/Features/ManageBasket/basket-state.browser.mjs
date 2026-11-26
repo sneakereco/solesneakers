@@ -1053,3 +1053,464 @@ test("unavailable identity offers account retry and masks the signed-out navigat
   });
   await expect(page.getByRole("link", { name: "Login", exact: true })).toHaveCount(0);
 });
+
+function accountCheckoutData(id) {
+  return {
+    ownerId: id,
+    isGuest: !id,
+    customer: {
+      email: id ? id + "@fixture.invalid" : "",
+      address: {
+        name: id ? "Shopper " + id : "",
+        phone: id ? "3025550100" : "",
+        line1: id ? "10 " + id + " St" : "",
+        line2: "",
+        city: id ? "Wilmington" : "",
+        state: id ? "DE" : "",
+        postalCode: id ? "19801" : "",
+        country: "US",
+      },
+    },
+    paymentConfig: {
+      applicationId: "fixture-square",
+      locationId: "fixture-location",
+      environment: "sandbox",
+    },
+  };
+}
+async function checkoutOwnershipFixture(t, { reviewAddress = false } = {}) {
+  let sessionUser = { id: "a", email: "a@fixture.invalid" };
+  let sessionAvailable = true;
+  let holdSession,
+    holdPrepare,
+    holdPay,
+    permitOk = false;
+  const requests = { quotes: [], prepares: [], permits: 0, pays: 0 };
+  const totals = { subtotalCents: 1100, shippingCents: 0, taxCents: 0, totalCents: 1100 };
+  const mounted = await mountCheckoutBrowser({
+    view: "checkout",
+    initialUser: sessionUser,
+    accountItems: { a: [line("a")], b: [line("b")] },
+    guestItems: [line("guest")],
+    documentData: accountCheckoutData("a"),
+    setupDocument: (data) => {
+      window.fixtureInitialCheckout = data;
+      window.fixtureHoldBootstrap = true;
+      const nativeFetch = window.fetch.bind(window);
+      window.fetch = async (input, init) => {
+        const response = await nativeFetch(input, init);
+        if (input === "/api/checkout/prepare" || input === "/api/checkout/pay") {
+          const json = response.json.bind(response);
+          response.json = async () => {
+            const body = await json();
+            if (input.endsWith("/prepare")) window.prepareRead = true;
+            else window.payRead = true;
+            return body;
+          };
+        }
+        return response;
+      };
+      const payments = window.Square.payments();
+      window.Square.payments = () => ({
+        ...payments,
+        afterpayClearpay: async () => ({
+          attach: async () => {},
+          tokenize: async () => ({ status: "CANCEL" }),
+          destroy: async () => {},
+        }),
+      });
+    },
+    sessionRoute: async (route) => {
+      if (!sessionAvailable) return route.fulfill({ status: 503, json: {} });
+      const user = sessionUser;
+      if (holdSession) await holdSession;
+      return route.fulfill({ json: { user, role: user ? "customer" : null } });
+    },
+    route: async (route, url) => {
+      if (url.pathname === "/api/cart/validate")
+        return route.fulfill({ status: 503, json: {} });
+      if (url.pathname === "/api/checkout/quote") {
+        requests.quotes.push(route.request().postDataJSON());
+        return route.fulfill({
+          json: { completeness: "exact", quoteFingerprint: "a".repeat(64), totals },
+        });
+      }
+      if (url.pathname === "/api/checkout/prepare") {
+        requests.prepares.push(route.request().postDataJSON());
+        if (holdPrepare) await holdPrepare;
+        if (reviewAddress && requests.prepares.length === 1)
+          return route.fulfill({
+            status: 409,
+            json: {
+              code: "SHIPPING_ADDRESS_SUGGESTION",
+              error: "Review address",
+              suggestedAddress: {
+                ...accountCheckoutData("a").customer.address,
+                line1: "20 Suggested St",
+                line2: null,
+              },
+              shippingConfirmation: "fixture-confirmation",
+            },
+          });
+        return route.fulfill({ json: { orderId: "fixture-order", totals } });
+      }
+      if (url.pathname === "/api/checkout/payment-permit") {
+        requests.permits++;
+        return permitOk
+          ? route.fulfill({ json: { permit: "fixture-only" } })
+          : route.fulfill({ status: 503, json: { error: "Fixture payment paused" } });
+      }
+      if (url.pathname === "/api/checkout/pay") {
+        requests.pays++;
+        if (holdPay) await holdPay;
+        return route.fulfill({
+          json: { statusUrl: "/checkout/processing?orderId=fixture-only" },
+        });
+      }
+      if (url.pathname === "/api/orders/fixture-only")
+        return route.fulfill({ json: { status: "pending" } });
+      throw Error("Unexpected fixture path " + url.pathname);
+    },
+  });
+  t.after(mounted.close);
+  return {
+    ...mounted,
+    requests,
+    setSessionAvailable(value) {
+      sessionAvailable = value;
+    },
+    changeOwner(id) {
+      sessionUser = id ? { id, email: id + "@fixture.invalid" } : null;
+    },
+    deferSession() {
+      let release;
+      holdSession = new Promise((resolve) => (release = resolve));
+      return () => {
+        holdSession = undefined;
+        release();
+      };
+    },
+    deferPay() {
+      permitOk = true;
+      let release;
+      holdPay = new Promise((resolve) => (release = resolve));
+      return () => {
+        holdPay = undefined;
+        release();
+      };
+    },
+    deferPrepare() {
+      let release;
+      holdPrepare = new Promise((resolve) => (release = resolve));
+      return () => {
+        holdPrepare = undefined;
+        release();
+      };
+    },
+  };
+}
+for (const id of ["b", null])
+  test(
+    "checkout owner change to " +
+      (id ?? "guest") +
+      " requires matching customer bootstrap",
+    async (t) => {
+      const f = await checkoutOwnershipFixture(t),
+        { page } = f;
+      await expect(page.getByRole("textbox", { name: "Email", exact: true })).toHaveValue(
+        "a@fixture.invalid",
+      );
+      await expect.poll(() => f.requests.quotes.length).toBe(1);
+      f.changeOwner(id);
+      await page.evaluate(() => window.dispatchEvent(new Event("sessionUpdate")));
+      await visible(page, [line(id ?? "guest")]);
+      await expect(page.getByRole("textbox", { name: "Email", exact: true })).toHaveCount(
+        0,
+      );
+      await expect
+        .poll(() => page.evaluate(() => window.fixtureRefreshCount ?? 0))
+        .toBeGreaterThan(0);
+      for (const stale of [
+        accountCheckoutData("wrong"),
+        { ...accountCheckoutData(id), ownerId: undefined },
+      ]) {
+        await page.evaluate(
+          (data) =>
+            window.dispatchEvent(
+              new CustomEvent("fixtureCheckoutBootstrap", { detail: data }),
+            ),
+          stale,
+        );
+        await expect(
+          page.getByRole("textbox", { name: "Email", exact: true }),
+        ).toHaveCount(0);
+      }
+      await expect(page.getByRole("textbox", { name: "Email", exact: true })).toHaveCount(
+        0,
+      );
+      assert.equal(f.requests.prepares.length, 0);
+      await page.evaluate(
+        (data) =>
+          window.dispatchEvent(
+            new CustomEvent("fixtureCheckoutBootstrap", { detail: data }),
+          ),
+        accountCheckoutData(id),
+      );
+      const email = page.getByRole("textbox", { name: "Email", exact: true });
+      await expect(email).toHaveValue(id ? id + "@fixture.invalid" : "");
+      await expect(page.locator('[autocomplete="shipping street-address"]')).toHaveValue(
+        id ? "10 " + id + " St" : "",
+      );
+      if (id) {
+        await expect(email).toBeDisabled();
+        await expect(page.getByRole("link", { name: "Sign in" })).toHaveCount(0);
+      } else {
+        await expect(email).toBeEnabled();
+        await expect(page.getByRole("link", { name: "Sign in" })).toBeVisible();
+      }
+      await expect.poll(() => f.requests.quotes.length).toBeGreaterThan(1);
+      const fresh = f.requests.quotes.filter((q) =>
+        q.items.some((row) => row.productId === (id ?? "guest")),
+      );
+      assert.ok(fresh.length);
+      assert.ok(
+        fresh.every((q) => q.shippingAddress?.line1 === (id ? "10 b St" : undefined)),
+      );
+      if (id) {
+        await page.getByLabel("Name on card", { exact: true }).fill("Buyer B");
+        await page.getByRole("button", { name: /Pay .* now/i }).click();
+        await expect.poll(() => f.requests.prepares.length).toBe(1);
+        const payload = f.requests.prepares[0];
+        assert.equal(payload.buyerEmail, "b@fixture.invalid");
+        assert.equal(payload.shippingAddress.line1, "10 b St");
+        assert.deepEqual(payload.items, [
+          { productId: "b", variantId: "b-v", quantity: 1 },
+        ]);
+      }
+    },
+  );
+test("same-owner visibility preserves active checkout method, billing and a single pending preparation", async (t) => {
+  const f = await checkoutOwnershipFixture(t),
+    { page } = f;
+  await expect.poll(() => f.requests.quotes.length).toBe(1);
+  await page.getByText("Use a different billing address", { exact: true }).click();
+  for (const [name, value] of [
+    ["Billing first name", "Bill"],
+    ["Billing last name", "Buyer"],
+    ["Billing address", "40 Billing St"],
+    ["Billing city", "Wilmington"],
+    ["Billing ZIP code", "19801"],
+  ])
+    await page.getByLabel(name, { exact: true }).fill(value);
+  await page.getByLabel("Billing state", { exact: true }).selectOption("DE");
+  await page.getByRole("radio", { name: "Afterpay", exact: true }).click();
+  const releasePrepare = f.deferPrepare(),
+    releaseSession = f.deferSession();
+  try {
+    await page
+      .getByRole("button", { name: "Continue with Afterpay", exact: true })
+      .click();
+    await expect.poll(() => f.requests.prepares.length).toBe(1);
+    await page.evaluate(() => {
+      window.originalBilling = document.querySelector(
+        '[aria-label="Billing first name"]',
+      );
+      document.dispatchEvent(new Event("visibilitychange"));
+    });
+    await expect.poll(() => page.evaluate(() => window.testCart.access)).toBe("checking");
+    const stillMounted = await page.evaluate(() => window.originalBilling.isConnected);
+    assert.equal(stillMounted, true);
+    await expect(page.getByRole("radio", { name: "Afterpay", exact: true })).toHaveCount(
+      0,
+    );
+    releasePrepare();
+    await page.waitForFunction(() => window.prepareRead && window.testSession.isLoading);
+    assert.equal(f.requests.permits, 0);
+    releaseSession();
+    await expect.poll(() => f.requests.permits).toBe(1);
+    await expect(page.getByText("Fixture payment paused", { exact: true })).toBeVisible();
+    assert.ok(
+      await page.evaluate(
+        () =>
+          window.originalBilling.isConnected && window.originalBilling.value === "Bill",
+      ),
+    );
+    assert.equal(f.requests.prepares.length, 1);
+    assert.equal(
+      await page
+        .locator('[role="radio"]')
+        .filter({ hasText: "Afterpay" })
+        .first()
+        .getAttribute("aria-checked"),
+      "true",
+    );
+  } finally {
+    releasePrepare();
+    releaseSession();
+  }
+});
+for (const kind of ["count", "length"])
+  test("outgoing " + kind + " overflow leaves readable cart editable", async (t) => {
+    const existing =
+      kind === "count"
+        ? Array.from({ length: 4096 }, (_, i) => line("line" + i))
+        : [line("long")];
+    if (kind === "length") {
+      const s = JSON.stringify(existing);
+      existing[0].name += "x".repeat(2_000_000 - s.length);
+    }
+    const raw = JSON.stringify(existing),
+      { page } = await open(t, "a", { detail: true, savedRaw: raw });
+    const result = await page.evaluate(
+      (item) => window.testCart.addItem(item),
+      line("next"),
+    );
+    assert.deepEqual(result, { status: "unavailable" });
+    assert.deepEqual(
+      await page.evaluate(() => ({
+        ready: window.testCart.isReady,
+        reason: window.testCart.repairReason,
+        count: window.testCart.items.length,
+      })),
+      { ready: true, reason: null, count: existing.length },
+    );
+    assert.equal(
+      await page.evaluate((raw) => localStorage.getItem("rdk_cart_user_a") === raw, raw),
+      true,
+    );
+    assert.deepEqual(
+      await page.evaluate(
+        ({ productId, variantId }) => window.testCart.removeItem(productId, variantId),
+        existing[0],
+      ),
+      { status: "saved" },
+    );
+    await expect
+      .poll(() => page.evaluate(() => window.testCart.items.length))
+      .toBe(existing.length - 1);
+  });
+
+for (const stage of ["preparation", "dispatched payment"])
+  test("confirmed owner change retires old " + stage + " continuation", async (t) => {
+    const f = await checkoutOwnershipFixture(t),
+      { page } = f;
+    await expect.poll(() => f.requests.quotes.length).toBe(1);
+    const release = stage === "preparation" ? f.deferPrepare() : f.deferPay();
+    try {
+      await page.getByLabel("Name on card", { exact: true }).fill("Shopper A");
+      await page.getByRole("button", { name: /Pay .* now/i }).click();
+      await expect
+        .poll(() =>
+          stage === "preparation" ? f.requests.prepares.length : f.requests.pays,
+        )
+        .toBe(1);
+      f.changeOwner("b");
+      await page.evaluate(() => window.dispatchEvent(new Event("sessionUpdate")));
+      await visible(page, [line("b")]);
+      await page.evaluate(
+        (data) =>
+          window.dispatchEvent(
+            new CustomEvent("fixtureCheckoutBootstrap", { detail: data }),
+          ),
+        accountCheckoutData("b"),
+      );
+      await expect(page.getByRole("textbox", { name: "Email", exact: true })).toHaveValue(
+        "b@fixture.invalid",
+      );
+      release();
+      await page.waitForFunction(
+        (stage) => (stage === "preparation" ? window.prepareRead : window.payRead),
+        stage,
+      );
+      await page.evaluate(
+        () =>
+          new Promise((resolve) =>
+            requestAnimationFrame(() => requestAnimationFrame(resolve)),
+          ),
+      );
+      assert.equal(f.requests.prepares.length, 1);
+      assert.equal(f.requests.permits, stage === "preparation" ? 0 : 1);
+      assert.equal(f.requests.pays, stage === "preparation" ? 0 : 1);
+      assert.equal(new URL(page.url()).pathname, "/checkout");
+      assert.deepEqual(await stored(page, account("b")), [line("b")]);
+    } finally {
+      release();
+    }
+  });
+
+for (const nextOwner of ["a", "b"])
+  test(
+    "layout-hosted address review stays inaccessible until confirmed " + nextOwner,
+    async (t) => {
+      const f = await checkoutOwnershipFixture(t, { reviewAddress: true }),
+        { page } = f;
+      await expect.poll(() => f.requests.quotes.length).toBe(1);
+      await page.getByLabel("Name on card", { exact: true }).fill("Shopper A");
+      await page.getByRole("button", { name: /Pay .* now/i }).click();
+      const dialog = page.getByRole("dialog", { name: "Review your shipping address" });
+      await expect(dialog).toBeVisible();
+      const accept = dialog.getByRole("button", { name: "Accept suggested address" });
+      await accept.evaluate((button) => {
+        window.oldConfirmation = button;
+      });
+      const release = f.deferSession();
+      f.changeOwner(nextOwner);
+      try {
+        await page.evaluate(() => document.dispatchEvent(new Event("visibilitychange")));
+        await expect
+          .poll(() => page.evaluate(() => window.testSession.isLoading))
+          .toBe(true);
+        await expect(dialog).toHaveCount(0);
+        await expect(page.getByText("20 Suggested St", { exact: true })).toBeHidden();
+        // Deliver an already queued click to the original control while the host is masked.
+        await page.evaluate(() => window.oldConfirmation.click());
+      } finally {
+        release();
+      }
+      if (nextOwner === "a") {
+        await expect(dialog).toBeVisible();
+        assert.equal(f.requests.prepares.length, 1);
+        await accept.click();
+        await expect.poll(() => f.requests.prepares.length).toBe(2);
+        assert.equal(f.requests.prepares[1].shippingAddress.line1, "20 Suggested St");
+      } else {
+        await visible(page, [line("b")]);
+        await expect(
+          page.getByRole("button", { name: "Refresh checkout" }),
+        ).toBeVisible();
+        await expect(page.getByText("20 Suggested St", { exact: true })).toHaveCount(0);
+        assert.equal(f.requests.prepares.length, 1);
+        assert.equal(f.requests.permits, 0);
+      }
+    },
+  );
+
+test("accepted payment resumes once after unavailable session is verified", async (t) => {
+  const f = await checkoutOwnershipFixture(t),
+    { page } = f;
+  const release = f.deferPay();
+  try {
+    await expect.poll(() => f.requests.quotes.length).toBe(1);
+    await page.getByLabel("Name on card", { exact: true }).fill("Shopper A");
+    await page.getByRole("button", { name: /Pay .* now/i }).click();
+    await expect.poll(() => f.requests.pays).toBe(1);
+    f.setSessionAvailable(false);
+    await page.evaluate(() => window.dispatchEvent(new Event("sessionUpdate")));
+    const retry = page.getByRole("button", { name: "Retry cart access" }).first();
+    await expect(retry).toBeVisible();
+    release();
+    await page.waitForFunction(() => window.payRead);
+    assert.equal(new URL(page.url()).pathname, "/checkout");
+    f.setSessionAvailable(true);
+    await retry.click();
+    await expect
+      .poll(() => new URL(page.url()).pathname, { timeout: 3000 })
+      .toBe("/checkout/processing");
+    assert.equal(new URL(page.url()).searchParams.get("orderId"), "fixture-only");
+    assert.equal(f.requests.prepares.length, 1);
+    assert.equal(f.requests.permits, 1);
+    assert.equal(f.requests.pays, 1);
+  } finally {
+    release();
+  }
+});

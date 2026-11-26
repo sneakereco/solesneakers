@@ -1,8 +1,8 @@
 "use client";
 
 import {
-  checkSavedCount,
-  checkSavedLength,
+  maxSavedCount,
+  maxSavedLength,
   decodeSavedBasket,
   SavedBasketLimitError,
 } from "./decode-saved-basket";
@@ -182,9 +182,9 @@ export class BasketStorage {
   private save(items: CartItem[]) {
     if (!this.connection || this.connection.signal.aborted || !this.observed())
       return false;
-    checkSavedCount(items.length);
+    if (items.length > maxSavedCount) return "unavailable" as const;
     const raw = JSON.stringify(items);
-    checkSavedLength(raw.length);
+    if (raw.length > maxSavedLength) return "unavailable" as const;
     this.persist(raw);
     this.pending = undefined;
     this.listener?.({
@@ -195,9 +195,12 @@ export class BasketStorage {
     });
     return true;
   }
-  private async mutate(operation: () => boolean): Promise<BasketMutationResult> {
+  private async mutate(
+    operation: () => boolean | "unavailable",
+  ): Promise<BasketMutationResult> {
     const saved = await this.atomic(operation);
-    if (saved) return { status: "saved" };
+    if (saved === true) return { status: "saved" };
+    if (saved === "unavailable") return { status: "unavailable" };
     return { status: this.blocked ? "unavailable" : "stale" };
   }
   async setItems(items: CartItem[]) {
@@ -221,7 +224,8 @@ export class BasketStorage {
       line.maxStock = item.maxStock ?? line.maxStock;
       line.quantity = Math.min(before + 1, line.maxStock ?? Infinity);
       if (line.quantity === before && line.maxStock === previousLimit) return false;
-      return this.save(items) && line.quantity > before;
+      const result = this.save(items);
+      return result === true ? line.quantity > before : result;
     });
   }
   async removeItem(productId: string, variantId: string) {

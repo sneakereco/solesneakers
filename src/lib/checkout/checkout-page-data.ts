@@ -1,5 +1,5 @@
 import { env } from "@/config/env";
-import { getServerSession } from "@/lib/auth/session";
+import { observeServerSession } from "@/lib/auth/session";
 import { createSupabaseServerClient } from "@/lib/supabase/server";
 import { getSquareConfig } from "@/lib/square/config";
 import type { SquareEnvironment } from "@/lib/square/web-payments";
@@ -35,6 +35,7 @@ export type CheckoutAddressForm = {
 };
 
 export type CheckoutPageData = {
+  ownerId: string | null;
   isGuest: boolean;
   customer: { email: string; address: CheckoutAddressForm };
   paymentConfig: {
@@ -62,7 +63,7 @@ const EMPTY_ADDRESS: CheckoutAddressForm = {
 };
 
 const defaultDependencies: CheckoutPageDataDependencies = {
-  getSession: getServerSession,
+  getSession: observeServerSession,
   getShippingProfile: async (userId) => {
     const supabase = await createSupabaseServerClient();
     return new ShippingService(supabase).getProfile(userId);
@@ -87,6 +88,7 @@ export async function loadCheckoutPageData(
   const profile = session ? await deps.getShippingProfile(session.user.id) : null;
 
   return {
+    ownerId: session?.user.id ?? null,
     isGuest: !session,
     customer: {
       email: session?.user.email ?? "",

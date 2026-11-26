@@ -80,7 +80,8 @@ const bundle = await build({
         }],
       };
       const initialData = {
-        isGuest: true,
+        ownerId:null,
+      isGuest: true,
         customer: {
           email: "",
           address: {
