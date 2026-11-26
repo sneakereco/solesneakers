@@ -72,6 +72,15 @@ export function qualifyReport(report) {
     reasons.push("valid_business_outcomes_missing");
   return reasons;
 }
+export function classifyQualification(report) {
+  const passed = report.failureReasons.length === 0;
+  return {
+    passed,
+    siteCapacityPassed:
+      passed && report.mode === "real-next-development-http-postgrest-postgresql-redis",
+    awardEnginePassed: passed && report.mode === "direct-postgrest-award-engine",
+  };
+}
 export function sendLoadRequest(
   origin,
   path,
@@ -80,6 +89,7 @@ export function sendLoadRequest(
     cookie,
     payload,
     ip = "198.51.100.25",
+    headers = {},
     timeout = 30000,
     onDispatch = () => {},
   } = {},
@@ -108,6 +118,7 @@ export function sendLoadRequest(
                 "Content-Length": Buffer.byteLength(data),
               }
             : {}),
+          ...headers,
         },
       },
       (response) => {
@@ -217,7 +228,59 @@ const percentile = (values, p) =>
   0;
 export async function runSpecialtyBurst(manifest, options = {}) {
   const { actors, app } = await privateLoadState(manifest);
-  const agents = await prepareHttpActors(manifest.origin, actors.length);
+  const engine = manifest.mode === "award-rpc",
+    origin = engine ? app.services.origin : manifest.origin;
+  const agents = await prepareHttpActors(origin, actors.length);
+  const invoke = async (actor, recovery, options = {}) => {
+    if (!engine)
+      return request(
+        origin,
+        recovery ? "/api/specialty/claims/result" : "/api/specialty/claims",
+        {
+          agent: agents[actor.index],
+          cookie: actor.cookie,
+          ip: actor.ip,
+          payload: recovery
+            ? {
+                attemptId: actor.payload.attemptId,
+                recoverySecret: actor.payload.recoverySecret,
+              }
+            : actor.payload,
+          ...options,
+        },
+      );
+    const proof = JSON.parse(
+      Buffer.from(actor.payload.validationToken.split(".")[0], "base64url").toString(),
+    ).value;
+    const command = {
+      attemptId: actor.payload.attemptId,
+      recoveryHash: app.helpers.hashRecoverySecret(actor.payload.recoverySecret),
+      inputHash: app.helpers.fingerprintInput(actor.payload, app.secret),
+      payloadHash: app.helpers.fingerprintSubmission(actor.payload.productId, proof),
+      eligibility: proof,
+    };
+    const response = await request(
+      origin,
+      "/rest/v1/rpc/" +
+        (recovery ? "read_specialty_claim_result" : "accept_specialty_claim"),
+      {
+        agent: agents[actor.index],
+        headers: {
+          Authorization: "Bearer " + app.services.serviceKey,
+          apikey: app.services.serviceKey,
+        },
+        payload: recovery
+          ? { p_attempt_id: command.attemptId, p_recovery_hash: command.recoveryHash }
+          : { p_command: command },
+        ...options,
+      },
+    );
+    if (response.status >= 400 && ["55P03", "57014"].includes(response.body?.code))
+      return { ...response, rawStatus: response.status, status: 503 };
+    if (recovery && response.status === 200 && !response.body)
+      return { ...response, status: 202 };
+    return response;
+  };
   let lock;
   try {
     // TCP is ready before the barrier; preparation does not issue HTTP work.
@@ -249,13 +312,8 @@ export async function runSpecialtyBurst(manifest, options = {}) {
     const burst = await dispatchBurst(
       actors.map((actor, index) => ({ ...actor, index })),
       async (actor) => {
-        const start = performance.now(),
-          agent = agents[actor.index];
-        let response = await request(manifest.origin, "/api/specialty/claims", {
-          agent,
-          cookie: actor.cookie,
-          ip: actor.ip,
-          payload: actor.payload,
+        const start = performance.now();
+        let response = await invoke(actor, false, {
           onDispatch: () => {
             dispatches.push(performance.now());
             networkMax = Math.max(networkMax, ++networkInFlight);
@@ -263,7 +321,8 @@ export async function runSpecialtyBurst(manifest, options = {}) {
         });
         networkInFlight--;
         latencies.push(performance.now() - start);
-        initialCodes[response.status] = (initialCodes[response.status] ?? 0) + 1;
+        const initialStatus = response.rawStatus ?? response.status;
+        initialCodes[initialStatus] = (initialCodes[initialStatus] ?? 0) + 1;
         if (
           manifest.scenario === "lost-response" &&
           response.body?.result?.status === "won"
@@ -271,10 +330,6 @@ export async function runSpecialtyBurst(manifest, options = {}) {
           response = { status: 0 };
           lostResponses++;
         }
-        const credentials = {
-          attemptId: actor.payload.attemptId,
-          recoverySecret: actor.payload.recoverySecret,
-        };
         let result = response.body?.result;
         if (!result && response.status && ![202, 429, 503].includes(response.status)) {
           outcomes.unexpectedErrors++;
@@ -284,20 +339,12 @@ export async function runSpecialtyBurst(manifest, options = {}) {
         while (!result && performance.now() - start < 29000) {
           retryCount++;
           await delay(500 + Math.random() * 500);
-          response = await request(manifest.origin, "/api/specialty/claims/result", {
-            agent,
-            cookie: actor.cookie,
-            ip: actor.ip,
-            payload: credentials,
+          response = await invoke(actor, true, {
             timeout: Math.max(1, 30000 - (performance.now() - start)),
           });
           result = response.body?.result;
           if (!result && response.status === 202 && performance.now() - start < 28000) {
-            response = await request(manifest.origin, "/api/specialty/claims", {
-              agent,
-              cookie: actor.cookie,
-              ip: actor.ip,
-              payload: actor.payload,
+            response = await invoke(actor, false, {
               timeout: Math.max(1, 30000 - (performance.now() - start)),
             });
             result = response.body?.result;
@@ -320,7 +367,9 @@ export async function runSpecialtyBurst(manifest, options = {}) {
     const sha = execFileSync("git", ["rev-parse", "HEAD"], { encoding: "utf8" }).trim();
     const report = {
       target: manifest.target,
-      mode: "real-next-development-http-postgrest-postgresql-redis",
+      mode: engine
+        ? "direct-postgrest-award-engine"
+        : "real-next-development-http-postgrest-postgresql-redis",
       sourceSha: sha,
       dirty: !!execFileSync("git", ["status", "--porcelain"], {
         encoding: "utf8",
@@ -355,6 +404,11 @@ export async function runSpecialtyBurst(manifest, options = {}) {
         remainingStock: manifest.initialStock - manifest.expectedWinners,
       },
       differences: [
+        ...(engine
+          ? [
+              "Award engine isolation only: protected Next API, browser validation, BotID and Redis quotas are not part of this measured path; site capacity remains a separate gate",
+            ]
+          : []),
         "Next development server; local shared machine and Docker",
         "Prepared signed eligibility; Shippo cold validation not measured",
         "BotID supported development HUMAN verdict; no hosted WAF/bot evidence",
@@ -364,11 +418,10 @@ export async function runSpecialtyBurst(manifest, options = {}) {
       ],
     };
     report.failureReasons = qualifyReport(report);
-    report.passed = report.failureReasons.length === 0;
     if (manifest.scenario === "lost-response" && lostResponses !== 1) {
       report.failureReasons.push("committed_response_loss_not_exercised");
-      report.passed = false;
     }
+    Object.assign(report, classifyQualification(report));
     return report;
   } finally {
     for (const agent of agents) agent.destroy();
@@ -376,12 +429,11 @@ export async function runSpecialtyBurst(manifest, options = {}) {
       await lock.query("rollback").catch(() => {});
       await lock.end();
     }
-    void app;
     void options;
   }
 }
 async function nextTimings(privateDir) {
-  const log = await readFile(resolve(privateDir, "next.log"), "utf8");
+  const log = await readFile(resolve(privateDir, "next.log"), "utf8").catch(() => "");
   const requests = log
     .split("\n")
     .filter((line) => line.includes("POST /api/specialty/claims "));
@@ -408,13 +460,17 @@ if (process.argv[1] && resolve(process.argv[1]) === fileURLToPath(import.meta.ur
     manifest = await prepareSpecialtyLoadRun({
       target: args.target ?? "local",
       scenario: args.scenario ?? "hot-one",
+      mode: args.mode ?? "protected",
       concurrency: Number(args.concurrency ?? 1000),
       origin: args["base-url"] ?? "http://localhost:3000",
     });
     const report = await runSpecialtyBurst(manifest);
     await mkdir("test-results/specialty/load", { recursive: true });
     await writeFile(
-      "test-results/specialty/load/" + manifest.scenario + ".json",
+      "test-results/specialty/load/" +
+        manifest.scenario +
+        (manifest.mode === "award-rpc" ? "-award-rpc" : "") +
+        ".json",
       JSON.stringify(report, null, 2),
     );
     console.log(JSON.stringify(report, null, 2));

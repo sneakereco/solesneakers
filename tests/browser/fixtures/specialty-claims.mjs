@@ -60,7 +60,10 @@ async function removePrivateDirectory(path, runId) {
   );
   await rm(target, { recursive: true, force: true });
 }
-export async function startBrowserTestApp(origin, { beforeStart } = {}) {
+export async function startBrowserTestApp(
+  origin,
+  { beforeStart, startNext = true } = {},
+) {
   assert.equal(active, null, "A browser fixture app is already running.");
   const databaseUrl = String(testUrl());
   assertBrowserTestTarget(origin, databaseUrl);
@@ -103,7 +106,7 @@ export async function startBrowserTestApp(origin, { beforeStart } = {}) {
       stdin: {
         resolveDir: repoRoot,
         contents: `
-      export {getIdentityKeyFingerprint,deriveEligibilityKeys,normalizeInstagramHandle,canonicalAddressIdentity} from "./src/Modules/SpecialtyProducts/Source/Features/Claim/normalize-identity";
+      export {getIdentityKeyFingerprint,deriveEligibilityKeys,normalizeInstagramHandle,canonicalAddressIdentity,fingerprintInput,fingerprintSubmission,hashRecoverySecret} from "./src/Modules/SpecialtyProducts/Source/Features/Claim/normalize-identity";
       export {signBrowserCookie} from "./src/Modules/SpecialtyProducts/Source/Features/RequestProtection/claim-protection";
       export {validateEligibilityHandler} from "./src/Modules/SpecialtyProducts/Source/Features/ValidateEligibility/validate-eligibility-handler";
       export {issueEligibilityToken} from "./src/Modules/SpecialtyProducts/Source/Features/Claim/validation-token";
@@ -169,6 +172,7 @@ export async function startBrowserTestApp(origin, { beforeStart } = {}) {
     assert.equal((await limitProbe.limit("probe")).success, false);
     await seedOrdinaryCatalog(state);
     state.probe = await seedBrowserPrize(runId, 1);
+    if (!startNext) return state;
     const childEnv = {
       ...process.env,
       NODE_ENV: "development",

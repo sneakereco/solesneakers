@@ -12,6 +12,7 @@ import {
   qualifyReport,
   prepareHttpActors,
   sendLoadRequest,
+  classifyQualification,
 } from "../../scripts/load/specialty-claims.mjs";
 const local = {
   target: "local",
@@ -186,4 +187,20 @@ test("1000 preconnected HTTP actors reach a real server before any response is r
     server.closeAllConnections();
     await new Promise((resolve) => server.close(resolve));
   }
+});
+test("award-engine isolation cannot be reported as protected website capacity", () => {
+  const engine = classifyQualification({
+    mode: "direct-postgrest-award-engine",
+    failureReasons: [],
+  });
+  assert.equal(engine.passed, true);
+  assert.equal(engine.siteCapacityPassed, false);
+  assert.equal(engine.awardEnginePassed, true);
+  assert.equal(
+    classifyQualification({
+      mode: "real-next-development-http-postgrest-postgresql-redis",
+      failureReasons: ["too_slow"],
+    }).siteCapacityPassed,
+    false,
+  );
 });

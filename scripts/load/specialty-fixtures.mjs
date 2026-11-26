@@ -70,7 +70,13 @@ export async function prepareSpecialtyLoadRun(options) {
   await assertLoadTarget(settings);
   assert.ok(scenarios.has(settings.scenario));
   assert.equal(settings.concurrency, 1000, "Qualification requires 1000 submissions.");
-  const app = await startBrowserTestApp(settings.origin);
+  assert.ok(
+    ["protected", "award-rpc"].includes(settings.mode ?? "protected"),
+    "Unknown qualification mode.",
+  );
+  const app = await startBrowserTestApp(settings.origin, {
+    startNext: settings.mode !== "award-rpc",
+  });
   try {
     const multi = ["multi-product", "duplicate-address", "duplicate-instagram"].includes(
       settings.scenario,
@@ -97,6 +103,7 @@ export async function prepareSpecialtyLoadRun(options) {
       marker: "sole-specialty-load-v1",
       privateCredentialFile: join(app.privateDir, "actors.json"),
       scenario: settings.scenario,
+      mode: settings.mode ?? "protected",
       requestCount: 1000,
       actorCount: settings.scenario === "replayed-attempt" ? 1 : 1000,
       initialStock: prizes.length * quantity,
