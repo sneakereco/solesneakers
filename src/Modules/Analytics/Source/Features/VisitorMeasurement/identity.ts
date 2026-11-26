@@ -11,7 +11,7 @@ export async function resolveConsentedIdentity(): Promise<{ buyerKey: string } |
   if (!config) return null;
   const { user, profile } = await new AuthService(
     await createSupabaseServerClient(),
-  ).getCurrentUserProfile();
+  ).getCurrentUserProfile({ requireAvailable: true });
   if (!user?.email_confirmed_at || !user.email || profile?.role !== "customer")
     return null;
   return {

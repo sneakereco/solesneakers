@@ -1,6 +1,7 @@
 // src/services/auth-service.ts
 import type { TypedSupabaseClient } from "@/lib/supabase/server";
 import { createSupabaseAdminClient } from "@/lib/supabase/service-role";
+import { requireAuthLookupAvailable } from "@/lib/auth/lookup-availability";
 import { ProfileRepository } from "@/repositories/profile-repo";
 
 export type VerificationFlow = "signup" | "signin";
@@ -183,10 +184,12 @@ export class AuthService {
     return { user, profile };
   }
 
-  async getCurrentUserProfile() {
+  async getCurrentUserProfile({ requireAvailable = false } = {}) {
     const {
       data: { user },
+      error,
     } = await this.supabase.auth.getUser();
+    if (requireAvailable) requireAuthLookupAvailable(error);
     if (!user) {
       return { user: null, profile: null };
     }

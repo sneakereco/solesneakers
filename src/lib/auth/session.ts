@@ -6,6 +6,7 @@ import { createSupabaseServerClient } from "@/lib/supabase/server";
 import { ProfileRepository } from "@/repositories/profile-repo";
 import type { ProfileRole } from "@/config/constants/roles";
 import { isAdminRole, isProfileRole } from "@/config/constants/roles";
+import { requireAuthLookupAvailable } from "@/lib/auth/lookup-availability";
 import { logError } from "@/lib/utils/log";
 
 export interface ServerSession {
@@ -31,7 +32,9 @@ export class AuthError extends Error {
   }
 }
 
-async function getServerSessionUncached(): Promise<ServerSession | null> {
+async function getServerSessionUncached({
+  requireAvailable = false,
+} = {}): Promise<ServerSession | null> {
   try {
     const supabase = await createSupabaseServerClient();
 
@@ -41,6 +44,7 @@ async function getServerSessionUncached(): Promise<ServerSession | null> {
       error,
     } = await supabase.auth.getUser();
 
+    if (requireAvailable) requireAuthLookupAvailable(error);
     if (error || !user) {
       return null;
     }
@@ -67,6 +71,7 @@ async function getServerSessionUncached(): Promise<ServerSession | null> {
       role: profile?.role ?? "customer",
     };
   } catch (error) {
+    if (requireAvailable) throw error;
     if (isDynamicServerError(error)) {
       return null;
     }

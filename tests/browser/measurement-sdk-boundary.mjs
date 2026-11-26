@@ -17,7 +17,8 @@ const bundle = await build({
     loader: "tsx",
     contents: `
       import React from "react";
-      import {SessionProvider} from "./src/contexts/SessionContext";
+      import {SessionProvider,useSession as useRootSession} from "./src/contexts/SessionContext";
+      function SessionProbe(){const session=useRootSession();return <output data-session-user={session.user?.id??"guest"} data-session-available={String(session.sessionAvailable)} />;}
       import {MeasurementProvider} from "./src/Modules/Analytics/Source/Features/VisitorMeasurement/MeasurementProvider";
       import {ClientShell} from "./src/components/shell/ClientShell";
       import { createRoot } from "react-dom/client";
@@ -95,9 +96,11 @@ const bundle = await build({
           if(window.fixtureMode==="lifecycle"){
             const user=window.initialAccount?{id:window.initialAccount,email:""}:null;
             window.observe=()=>capture({event:"public_page_viewed"});
-            root.render(<SessionProvider initialUser={user} initialRole={user?"customer":null}><MeasurementProvider>
-              {window.location.pathname==="/checkout" ? <CartProvider userId={user?.id}><CheckoutClient initialData={initialData}/></CartProvider> : <div>Store</div>}
+            const renderLifecycle=(showCheckout)=>root.render(<SessionProvider initialUser={user} initialRole={user?"customer":null}><MeasurementProvider><SessionProbe/>
+              {showCheckout ? <CartProvider userId={user?.id}><CheckoutClient initialData={initialData}/></CartProvider> : <div>Store</div>}
             </MeasurementProvider></SessionProvider>);
+            window.leaveCheckout=()=>renderLifecycle(false);
+            renderLifecycle(window.location.pathname==="/checkout");
             test.complete=true;return;
           }
           window.renderProvider=()=>root.render(<MeasurementProvider><ClientShell><div>Fixture storefront</div></ClientShell></MeasurementProvider>);

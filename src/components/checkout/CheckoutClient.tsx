@@ -43,11 +43,8 @@ import type {
 } from "@/lib/checkout/checkout-page-data";
 import { ShippingAddressValidationError } from "@/lib/checkout/shipping-address-validation";
 import { clearIdempotencyKeyFromStorage } from "@/lib/checkout/idempotency";
-import { useCheckoutMeasurement } from "@/Modules/Analytics/Source/Features/VisitorMeasurement/view-grant";
-import {
-  captureCheckoutStarted,
-  hasUsableCheckout,
-} from "@/Modules/Analytics/Source/Features/VisitorMeasurement/triggers";
+import { useCheckoutStart } from "@/Modules/Analytics/Source/Features/VisitorMeasurement/use-checkout-start";
+import { hasUsableCheckout } from "@/Modules/Analytics/Source/Features/VisitorMeasurement/triggers";
 
 type Fulfillment = "ship" | "pickup";
 
@@ -109,21 +106,6 @@ export function CheckoutClient({ initialData }: { initialData: CheckoutPageData 
   const [resolvedQuoteKey, setResolvedQuoteKey] = useState<string | null>(null);
   const [quoteRevision, setQuoteRevision] = useState(0);
   const requestSequence = useRef(0);
-  const checkoutMeasurement = useCheckoutMeasurement();
-  const didCaptureCheckoutStart = useRef(false);
-
-  useEffect(() => {
-    if (
-      checkoutMeasurement === "hydrating" ||
-      didCaptureCheckoutStart.current ||
-      !hasUsableCheckout({ cartReady: isReady, itemCount: items.length, isRedirecting })
-    ) {
-      return;
-    }
-    didCaptureCheckoutStart.current = true;
-    if (checkoutMeasurement === "ready") captureCheckoutStarted();
-  }, [checkoutMeasurement, isReady, items.length, isRedirecting]);
-
   const checkoutItems = useMemo(
     () =>
       items.map((item) => ({
@@ -132,6 +114,10 @@ export function CheckoutClient({ initialData }: { initialData: CheckoutPageData 
         quantity: item.quantity,
       })),
     [items],
+  );
+  useCheckoutStart(
+    hasUsableCheckout({ cartReady: isReady, itemCount: items.length, isRedirecting }),
+    JSON.stringify(checkoutItems),
   );
   const shippingAddress = useMemo(
     () => (fulfillment === "ship" ? normalizedAddress(address) : null),

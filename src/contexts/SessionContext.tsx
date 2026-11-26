@@ -57,8 +57,6 @@ export function SessionProvider({
       if (revision !== latest.current) return;
       if (!response.ok) {
         setSessionAvailable(false);
-        setUser(null);
-        setRole(null);
         return;
       }
       const data = await response.json();

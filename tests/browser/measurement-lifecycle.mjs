@@ -23,9 +23,16 @@ async function exercise(browser, bundle, scenario) {
   const preference = gate(),
     identity = gate(),
     auth = gate();
-  let account = ["identity", "recovery", "peer"].includes(scenario) ? "a" : null,
-    choice = scenario === "fresh" ? "unknown" : "accepted",
-    unavailable = scenario === "recovery";
+  let account = ["identity", "recovery", "scheduled", "session-outage", "peer"].includes(
+      scenario,
+    )
+      ? "a"
+      : null,
+    choice = ["fresh", "fresh-peer"].includes(scenario) ? "unknown" : "accepted",
+    unavailable = ["recovery", "scheduled"].includes(scenario);
+  const initialCheckoutRead = gate();
+  let sessionDown = false;
+  let checkoutReads = 0;
   let authHold = false,
     identityReads = 0;
   const wire = [];
@@ -45,13 +52,31 @@ async function exercise(browser, bundle, scenario) {
       if (url.pathname === "/api/analytics/preferences") {
         if (route.request().method() === "POST")
           choice = route.request().postDataJSON().choice;
+        const snapshot = choice;
+        if (
+          scenario === "fresh-peer" &&
+          new URL(route.request().frame().url()).pathname === "/checkout" &&
+          snapshot === "unknown"
+        ) {
+          initialCheckoutRead.resolve();
+          await preference.promise;
+        }
+        if (scenario === "changed-cart" || scenario === "unmounted") {
+          if (++checkoutReads === 2) initialCheckoutRead.resolve();
+          await preference.promise;
+        }
         if (scenario === "preferences") await preference.promise;
         return route.fulfill({
-          json: choice === "accepted" ? { choice, receiptId } : { choice },
+          json:
+            snapshot === "accepted"
+              ? { choice: snapshot, receiptId }
+              : { choice: snapshot },
         });
       }
       if (url.pathname === "/api/auth/session") {
         if (authHold) await auth.promise;
+        if (sessionDown)
+          return route.fulfill({ status: 503, json: { error: "Session unavailable" } });
         return route.fulfill({
           json: {
             user: account ? { id: account, email: "" } : null,
@@ -102,7 +127,82 @@ async function exercise(browser, bundle, scenario) {
       await tab.addScriptTag({ content: bundle });
       return tab;
     }
-    if (["preferences", "identity", "fresh"].includes(scenario)) {
+    if (scenario === "fresh-peer") {
+      const checkout = await open("/checkout");
+      await checkout.locator("[data-summary]").waitFor({ state: "attached" });
+      await initialCheckoutRead.promise;
+      const peer = await open("/store");
+      await peer.getByRole("button", { name: "Allow analytics" }).click();
+      await peer.waitForFunction(() => !!window.actions.context());
+      await checkout.evaluate(() => window.dispatchEvent(new Event("focus")));
+      await checkout.waitForFunction(() => !!window.actions.context());
+      preference.resolve();
+      await checkout.waitForTimeout(250);
+      assert.equal(
+        wire.filter((e) => e.event === "checkout_started").length,
+        0,
+        "fresh peer grant replayed the already usable checkout",
+      );
+    } else if (scenario === "changed-cart" || scenario === "unmounted") {
+      const tab = await open("/checkout");
+      await tab.locator("[data-summary]").waitFor({ state: "attached" });
+      // Both the provider's read and the first usable cart's read are outstanding.
+      await Promise.race([
+        initialCheckoutRead.promise,
+        new Promise((_, reject) =>
+          setTimeout(() => reject(new Error("Missing checkout receipt request")), 4500),
+        ),
+      ]);
+      if (scenario === "changed-cart") {
+        await tab.evaluate(
+          (item) =>
+            window.dispatchEvent(
+              new CustomEvent("cartUpdated", {
+                detail: { count: 2, items: [{ ...item, quantity: 2 }] },
+              }),
+            ),
+          cartItem,
+        );
+      } else {
+        await tab.evaluate(() => window.leaveCheckout());
+      }
+      preference.resolve();
+      await tab.waitForFunction(() => !!window.actions.context());
+      await tab.waitForTimeout(180);
+      assert.equal(
+        wire.filter((e) => e.event === "checkout_started").length,
+        0,
+        scenario,
+      );
+    } else if (scenario === "session-outage") {
+      const tab = await open("/store");
+      await tab.waitForFunction(
+        (key) => window.actions.context()?.visitorId === key,
+        buyer("a"),
+      );
+      const before = await tab.evaluate(() => window.actions.context());
+      sessionDown = true;
+      await tab.evaluate(() => window.dispatchEvent(new Event("focus")));
+      await tab
+        .locator('[data-session-available="false"]')
+        .waitFor({ state: "attached" });
+      assert.equal(await tab.locator("output").getAttribute("data-session-user"), "a");
+      assert.equal(await tab.evaluate(() => window.actions.context()), null);
+      const since = wire.length;
+      await tab.evaluate(() => window.observe());
+      await tab.waitForTimeout(100);
+      assert.equal(
+        wire.slice(since).filter((e) => e.event === "public_page_viewed").length,
+        0,
+      );
+      sessionDown = false;
+      await tab.evaluate(() => window.dispatchEvent(new Event("online")));
+      await tab.waitForFunction(
+        (key) => window.actions.context()?.visitorId === key,
+        buyer("a"),
+      );
+      assert.deepEqual(await tab.evaluate(() => window.actions.context()), before);
+    } else if (["preferences", "identity", "fresh"].includes(scenario)) {
       const tab = await open("/checkout");
       await tab.locator("[data-summary]").waitFor({ state: "attached" });
       assert.equal(wire.filter((e) => e.event === "checkout_started").length, 0);
@@ -117,7 +217,7 @@ async function exercise(browser, bundle, scenario) {
         scenario === "fresh" ? 0 : 1,
         scenario + " checkout starts",
       );
-    } else if (scenario === "recovery") {
+    } else if (["recovery", "scheduled"].includes(scenario)) {
       const tab = await open("/store");
       await tab.getByRole("button", { name: "Privacy choices" }).waitFor();
       await tab.waitForTimeout(180);
@@ -129,8 +229,11 @@ async function exercise(browser, bundle, scenario) {
       }));
       unavailable = false;
       const initial = identityReads;
-      await tab.evaluate(() => window.dispatchEvent(new Event("online")));
-      await tab.waitForFunction(() => !!window.actions.context());
+      if (scenario === "recovery")
+        await tab.evaluate(() => window.dispatchEvent(new Event("online")));
+      await tab.waitForFunction(() => !!window.actions.context(), null, {
+        timeout: 8500,
+      });
       assert.equal(
         (await tab.evaluate(() => window.actions.context())).visitorId,
         buyer("a"),
@@ -189,7 +292,18 @@ async function exercise(browser, bundle, scenario) {
   }
 }
 export async function checkMeasurementLifecycle(browser, bundle) {
-  const names = ["preferences", "identity", "fresh", "recovery", "peer"];
+  const names = [
+    "preferences",
+    "identity",
+    "fresh",
+    "fresh-peer",
+    "changed-cart",
+    "unmounted",
+    "recovery",
+    "scheduled",
+    "session-outage",
+    "peer",
+  ];
   const outcomes = await Promise.allSettled(
     names.map((name) => exercise(browser, bundle, name)),
   );

@@ -3,9 +3,13 @@ import { isUuid, type ConsentState } from "./contract";
 import { revokeMeasurement } from "./client";
 import { markWithdrawal, withdrawalPending } from "./preference-marker";
 
-async function requestChoice(choice?: "accepted" | "declined"): Promise<ConsentState> {
+async function requestChoice(
+  choice?: "accepted" | "declined",
+  signal?: AbortSignal,
+): Promise<ConsentState> {
   const response = await fetch("/api/analytics/preferences", {
     cache: "no-store",
+    ...(signal ? { signal } : {}),
     credentials: "same-origin",
     ...(choice
       ? {
@@ -27,6 +31,15 @@ async function requestChoice(choice?: "accepted" | "declined"): Promise<ConsentS
     return { choice: "declined" };
   if (!choice && data?.choice === "unknown") return { choice: "unknown" };
   throw new Error("Invalid preference response");
+}
+export async function readCheckoutReceipt(signal: AbortSignal): Promise<string | null> {
+  if (withdrawalPending()) return null;
+  try {
+    const state = await requestChoice(undefined, signal);
+    return state.choice === "accepted" && !withdrawalPending() ? state.receiptId : null;
+  } catch {
+    return null;
+  }
 }
 async function writeChoice(choice: "accepted" | "declined"): Promise<ConsentState> {
   const write = (): Promise<ConsentState> =>
