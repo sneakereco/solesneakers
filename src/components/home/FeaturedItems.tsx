@@ -178,7 +178,7 @@ export function FeaturedItems({ category }: { category?: "clothing" } = {}) {
                 <Link
                   key={product.id}
                   href={`/store/${product.id}`}
-                  className="group w-[78%] shrink-0 snap-start text-center sm:w-[calc((100%-1.5rem)/2)] md:w-[calc((100%-3rem)/3)] lg:w-[calc((100%-6rem)/4)]"
+                  className={`group shrink-0 text-center sm:w-[calc((100%-1.5rem)/2)] sm:snap-start md:w-[calc((100%-3rem)/3)] lg:w-[calc((100%-6rem)/4)] ${isClothing ? "w-full snap-center" : "w-[78%] snap-start"}`}
                 >
                   <div className="relative h-48 w-full sm:h-52 md:h-56">
                     {product.primaryImage ? (
@@ -186,7 +186,7 @@ export function FeaturedItems({ category }: { category?: "clothing" } = {}) {
                         src={product.primaryImage}
                         alt=""
                         fill
-                        sizes="(min-width: 1024px) 25vw, (min-width: 768px) 33vw, (min-width: 640px) 50vw, 78vw"
+                        sizes={`(min-width: 1024px) 25vw, (min-width: 768px) 33vw, (min-width: 640px) 50vw, ${isClothing ? "100vw" : "78vw"}`}
                         className="object-contain transition-transform duration-300 group-hover:scale-[1.03]"
                         quality={75}
                       />

@@ -1,7 +1,7 @@
 # Shop headings and mobile clothing alignment
 
 Date: 2026-11-26
-Status: Barlow font choice confirmed; overall design awaiting approval.
+Status: Approved by the user and implemented locally on 2026-11-26.
 Size: Small change.
 
 ## Intent

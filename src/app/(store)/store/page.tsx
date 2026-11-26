@@ -1,5 +1,6 @@
 import Link from "next/link";
 import type { Metadata } from "next";
+import localFont from "next/font/local";
 
 import { ProductGrid } from "@/components/store/ProductGrid";
 import { StoreControls } from "@/components/store/StoreControls";
@@ -10,6 +11,13 @@ import type { ProductFilters } from "@/repositories/product-repo";
 import { TagTaxonomyRepository } from "@/repositories/tag-taxonomy-repo";
 import { StorefrontService } from "@/services/storefront-service";
 import { pageMetadata } from "@/lib/metadata";
+
+const collectionHeadingFont = localFont({
+  src: "../../../components/store/fonts/BarlowCondensed-ExtraBold.ttf",
+  weight: "800",
+  style: "normal",
+  display: "swap",
+});
 
 export const revalidate = 60;
 
@@ -227,10 +235,12 @@ export default async function StorePage({
             Shop
           </Link>
           <span>/</span>
-          <span>{browseLabel}</span>
+          <span className="min-w-0 [overflow-wrap:anywhere]">{browseLabel}</span>
         </nav>
         <div className="flex justify-center px-4 pb-12 pt-9 text-center">
-          <h1 className="text-3xl font-bold uppercase tracking-[0.025em] text-zinc-950 sm:text-[2rem]">
+          <h1
+            className={`${collectionHeadingFont.className} min-w-0 max-w-full text-3xl font-extrabold uppercase leading-[1.12] tracking-[0.015em] text-zinc-950 [overflow-wrap:anywhere] sm:text-[2rem]`}
+          >
             {browseLabel}
           </h1>
         </div>
