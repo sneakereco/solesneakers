@@ -1,5 +1,6 @@
 // src/components/account/AccountProfile.tsx
 "use client";
+import { signOutAndNotify } from "@/contexts/session-change";
 
 import { useState, useEffect } from "react";
 import { useRouter } from "next/navigation";
@@ -384,7 +385,7 @@ export function AccountProfile({ userEmail }: { userEmail: string }) {
   const handleLogout = async () => {
     setIsSigningOut(true);
     try {
-      await fetch("/api/auth/logout", { method: "POST" });
+      await signOutAndNotify();
       router.replace("/");
       router.refresh();
     } catch {

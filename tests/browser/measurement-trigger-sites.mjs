@@ -287,7 +287,7 @@ const bundle = await build({
           ["@/lib/utils/log", "export const logError = () => {};"],
           [
             "@/contexts/SessionContext",
-            "export const useSession = () => ({ user: null });",
+            "const verified = { user:null, status:'ready', isCurrent:()=>true, refreshSession:async()=>{} }; export const useSession=()=>verified;",
           ],
           [
             "@/components/checkout/CheckoutContactSection",

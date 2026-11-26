@@ -7,7 +7,16 @@ import { registry } from "playwright-core/lib/server/registry/index";
 
 const root = fileURLToPath(new URL("../../../", import.meta.url));
 const origin = "https://checkout-fixture.invalid";
-const viewPaths = { cart: "/cart", checkout: "/checkout", receipt: "/checkout/success" };
+const viewPaths = {
+  product: "/product",
+  password: "/password",
+  otp: "/otp",
+  profile: "/account",
+  navbar: "/navbar",
+  cart: "/cart",
+  checkout: "/checkout",
+  receipt: "/checkout/success",
+};
 const framework = {
   "next/navigation": `
     import { useSyncExternalStore } from "react";
@@ -33,10 +42,11 @@ const framework = {
   "next/link": "export default props => <a {...props} />;",
   "next/image": `
     export default ({ src, fill, priority, unoptimized, loader, ...props }) =>
-      <img {...props} src="data:image/gif;base64,R0lGODlhAQABAAD/ACwAAAAAAQABAAACADs=" />;
+      <img {...props} data-image-src={src} src="data:image/gif;base64,R0lGODlhAQABAAD/ACwAAAAAAQABAAACADs=" />;
   `,
   "@/lib/measurement/client": `
-    export const captureProductAddedToCart = () => {};
+    export const captureProductAddedToCart = () => {window.fixtureAdded=(window.fixtureAdded??0)+1};
+    export const captureProductViewed = () => {};
     export const captureCheckoutStarted = () => {};
   `,
 };
@@ -61,6 +71,11 @@ function browserBundle() {
         import ProcessingPage from "./src/app/checkout/processing/page";
         import ReceiptPage from "./src/app/checkout/success/page";
 
+        import {ProductDetail} from "./src/components/store/ProductDetail";
+        import {PasswordLoginForm} from "./src/components/auth/login/PasswordLoginForm";
+        import {OtpLoginForm} from "./src/components/auth/login/OtpLoginForm";
+        import {AccountProfile} from "./src/components/account/AccountProfile";
+        import {Navbar} from "./src/components/shell/Navbar";
         function Probe() {
           const cart = useCart();
           const session = useSession();
@@ -90,6 +105,11 @@ function browserBundle() {
 
         function View() {
           const [open, setOpen] = useState(true);
+          if(location.pathname==="/password")return <PasswordLoginForm onRequiresEmailVerification={()=>{}} onSwitchToOtp={()=>{}} onForgotPassword={()=>{}}/>;
+          if(location.pathname==="/otp")return <OtpLoginForm onRequiresEmailVerification={()=>{}}/>;
+          if(view==="profile")return <AccountProfile userEmail={initialUser?.email??""}/>;
+          if(view==="navbar" || location.pathname==="/navbar")return <Navbar/>;
+          if(view==="product")return <ProductDetail product={{id:"shoe",name:"Missing photo",condition:"new",brand:{label:"Sole"},images:[],variants:[{id:"shoe-v",size:{id:"size",label:"10"},stock:7,sale_price_cents:1100}]}}/>;
           return view === "cart"
             ? <CartDrawer isOpen={open} onClose={() => setOpen(false)} />
             : <CheckoutLayout><CheckoutView /></CheckoutLayout>;
@@ -97,7 +117,7 @@ function browserBundle() {
 
         createRoot(document.getElementById("root")).render(
           <SessionProvider initialUser={initialUser} initialRole={initialUser ? "customer" : null}>
-            <CartProvider>
+            <CartProvider userId={initialUser?.id}>
               <Probe />
               <View />
             </CartProvider>
@@ -179,6 +199,10 @@ export async function mountCheckoutBrowser({
   path,
   view = "cart",
   route,
+  sessionRoute,
+  setupDocument,
+  documentData,
+  waitReady = true,
 } = {}) {
   assert.ok(Object.hasOwn(viewPaths, view), "Unknown checkout fixture view");
   const target = new URL(path ?? viewPaths[view], origin);
@@ -244,14 +268,25 @@ export async function mountCheckoutBrowser({
               ")(" +
               config +
               ")</script>" +
+              (setupDocument
+                ? "<script>(" +
+                  setupDocument.toString() +
+                  ")(" +
+                  JSON.stringify(documentData ?? {}).replaceAll("<", "\\u003c") +
+                  ")</script>"
+                : "") +
               '<script defer src="' +
               bundlePath +
               '"></script></html>',
           });
         } else if (url.pathname === bundlePath && request.resourceType() === "script") {
           await intercepted.fulfill({ contentType: "text/javascript", body: script });
-        } else if (route) {
-          await route(
+        } else if (url.pathname === "/api/auth/session" && !sessionRoute) {
+          await intercepted.fulfill({
+            json: { user: initialUser, role: initialUser ? "customer" : null },
+          });
+        } else if (route || (url.pathname === "/api/auth/session" && sessionRoute)) {
+          await (url.pathname === "/api/auth/session" ? sessionRoute : route)(
             Object.freeze({
               request: () => request,
               fulfill: (options) => intercepted.fulfill(options),
@@ -268,7 +303,11 @@ export async function mountCheckoutBrowser({
       }
     });
     await page.goto(target.href);
-    await page.waitForFunction(() => window.testCart?.isReady && window.testSession);
+    await page.waitForFunction(
+      (ready) =>
+        window.testCart && (!ready || window.testCart.isReady) && window.testSession,
+      waitReady,
+    );
     return { page, context, close };
   } catch (error) {
     await close();

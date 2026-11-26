@@ -1,4 +1,5 @@
 "use client";
+import { BasketAccessNotice, BasketRepairNotice } from "@/Modules/Cart/Source/Client";
 
 import { useEffect } from "react";
 import Image from "next/image";
@@ -22,7 +23,15 @@ const formatPrice = (priceCents: number) =>
   }).format(priceCents / 100);
 
 export function CartDrawer({ isOpen, onClose }: CartDrawerProps) {
-  const { items, itemCount, removeItem, updateQuantity, total } = useCart();
+  const {
+    items,
+    itemCount,
+    removeItem,
+    updateQuantity,
+    total,
+    access,
+    hasUnreadableItems,
+  } = useCart();
 
   useEffect(() => {
     if (!isOpen) {
@@ -83,7 +92,10 @@ export function CartDrawer({ isOpen, onClose }: CartDrawerProps) {
           </button>
         </header>
 
-        {items.length === 0 ? (
+        {hasUnreadableItems && <BasketRepairNotice />}
+        {access !== "ready" ? (
+          <BasketAccessNotice />
+        ) : items.length === 0 ? (
           <div className="flex flex-1 flex-col items-center justify-center px-6 pb-16 text-center">
             <ShoppingBag className="h-8 w-8" strokeWidth={1.7} />
             <p className="mt-4 text-base">Your cart is empty</p>
@@ -154,11 +166,9 @@ export function CartDrawer({ isOpen, onClose }: CartDrawerProps) {
                           <button
                             type="button"
                             onClick={() =>
-                              updateQuantity(
-                                item.productId,
-                                item.variantId,
-                                item.quantity - 1,
-                              )
+                              void updateQuantity(item.productId, item.variantId, {
+                                adjustBy: -1,
+                              })
                             }
                             className="flex h-9 w-9 cursor-pointer items-center justify-center transition-colors hover:bg-zinc-100"
                             aria-label={`Decrease quantity for ${item.titleDisplay}`}
@@ -171,11 +181,9 @@ export function CartDrawer({ isOpen, onClose }: CartDrawerProps) {
                           <button
                             type="button"
                             onClick={() =>
-                              updateQuantity(
-                                item.productId,
-                                item.variantId,
-                                item.quantity + 1,
-                              )
+                              void updateQuantity(item.productId, item.variantId, {
+                                adjustBy: 1,
+                              })
                             }
                             disabled={!canIncrease}
                             className="flex h-9 w-9 cursor-pointer items-center justify-center transition-colors hover:bg-zinc-100 disabled:cursor-not-allowed disabled:text-zinc-300"
@@ -187,7 +195,7 @@ export function CartDrawer({ isOpen, onClose }: CartDrawerProps) {
 
                         <button
                           type="button"
-                          onClick={() => removeItem(item.productId, item.variantId)}
+                          onClick={() => void removeItem(item.productId, item.variantId)}
                           className="cursor-pointer p-2 text-zinc-500 transition-colors hover:text-black"
                           aria-label={`Remove ${item.titleDisplay} from cart`}
                         >

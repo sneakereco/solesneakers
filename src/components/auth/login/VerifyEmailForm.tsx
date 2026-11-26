@@ -1,5 +1,6 @@
 // src/components/auth/login/VerifyEmailForm.tsx
 "use client";
+import { publishSessionChange } from "@/contexts/session-change";
 
 import { useRouter, useSearchParams } from "next/navigation";
 
@@ -39,7 +40,7 @@ export function VerifyEmailForm({
     });
 
     const json = await res.json();
-    if (!json.ok) {
+    if (!res.ok || json.ok !== true) {
       throw new Error(json.error ?? "Could not resend verification email.");
     }
   }
@@ -57,10 +58,11 @@ export function VerifyEmailForm({
 
     const json = await res.json();
 
-    if (!json.ok) {
+    if (!res.ok || json.ok !== true) {
       throw new Error(json.error ?? "Could not verify code.");
     }
 
+    publishSessionChange();
     // After successful verification, redirect to where they came from
     const destination = json.nextPath || nextUrl;
     if (onVerified) {

@@ -9,6 +9,7 @@ jest.mock("next/image", () => ({
 }));
 jest.mock("@/components/cart/CartProvider", () => ({
   useCart: () => ({
+    access: "ready",
     items: [
       {
         productId: "product-1",

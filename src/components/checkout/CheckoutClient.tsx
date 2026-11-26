@@ -1,7 +1,7 @@
 "use client";
+import { BasketAccessNotice } from "@/Modules/Cart/Source/Client";
 
 import { useEffect, useMemo, useRef, useState } from "react";
-import { Loader2 } from "lucide-react";
 
 import { useCart } from "@/components/cart/CartProvider";
 import { CheckoutContactSection } from "@/components/checkout/CheckoutContactSection";
@@ -340,15 +340,9 @@ export function CheckoutClient({ initialData }: { initialData: CheckoutPageData 
     return <CheckoutPaymentDialog open />;
   }
   if (!isReady) {
-    return (
-      <div className="flex min-h-48 items-center justify-center">
-        <Loader2 className="h-8 w-8 animate-spin" aria-label="Loading cart" />
-      </div>
-    );
+    return <BasketAccessNotice />;
   }
-  if (items.length === 0) {
-    return null;
-  }
+  if (items.length === 0) return null;
 
   return (
     <div data-checkout className="min-h-screen bg-[#f3f3f3]">
@@ -382,7 +376,7 @@ export function CheckoutClient({ initialData }: { initialData: CheckoutPageData 
               clearCart={() => {
                 setIsRedirecting(true);
                 clearIdempotencyKeyFromStorage();
-                clearCart();
+                void clearCart();
               }}
             >
               <CheckoutContactSection

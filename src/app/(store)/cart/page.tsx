@@ -1,4 +1,5 @@
 "use client";
+import { BasketAccessNotice, BasketRepairNotice } from "@/Modules/Cart/Source/Client";
 
 import Image from "next/image";
 import Link from "next/link";
@@ -16,15 +17,26 @@ const formatPrice = (priceCents: number) =>
   }).format(priceCents / 100);
 
 export default function CartPage() {
-  const { items, itemCount, removeItem, updateQuantity, total } = useCart();
+  const {
+    items,
+    itemCount,
+    removeItem,
+    updateQuantity,
+    total,
+    access,
+    hasUnreadableItems,
+  } = useCart();
 
+  if (access !== "ready") return <BasketAccessNotice />;
   if (items.length === 0) {
     return (
       <div className="flex min-h-[36rem] flex-col items-center justify-center bg-[var(--storefront-surface)] px-5 pb-24 text-center text-black">
+        {hasUnreadableItems && <BasketRepairNotice />}
         <ShoppingBag className="h-10 w-10" strokeWidth={1.5} />
         <h1 className="mt-5 text-3xl font-normal uppercase tracking-[0.02em]">
           Your cart is empty
         </h1>
+        {hasUnreadableItems && <BasketRepairNotice />}
         <p className="mt-3 text-sm text-zinc-600">Add an item to begin your order.</p>
         <Link
           href="/store"
@@ -92,11 +104,9 @@ export default function CartPage() {
                       <button
                         type="button"
                         onClick={() =>
-                          updateQuantity(
-                            item.productId,
-                            item.variantId,
-                            item.quantity - 1,
-                          )
+                          void updateQuantity(item.productId, item.variantId, {
+                            adjustBy: -1,
+                          })
                         }
                         className="flex h-10 w-10 cursor-pointer items-center justify-center hover:bg-white"
                         aria-label={`Decrease quantity for ${item.titleDisplay}`}
@@ -109,11 +119,9 @@ export default function CartPage() {
                       <button
                         type="button"
                         onClick={() =>
-                          updateQuantity(
-                            item.productId,
-                            item.variantId,
-                            item.quantity + 1,
-                          )
+                          void updateQuantity(item.productId, item.variantId, {
+                            adjustBy: 1,
+                          })
                         }
                         disabled={!canIncrease}
                         className="flex h-10 w-10 cursor-pointer items-center justify-center hover:bg-white disabled:cursor-not-allowed disabled:text-zinc-300"
@@ -125,7 +133,7 @@ export default function CartPage() {
 
                     <button
                       type="button"
-                      onClick={() => removeItem(item.productId, item.variantId)}
+                      onClick={() => void removeItem(item.productId, item.variantId)}
                       className="cursor-pointer p-2 text-zinc-500 transition-colors hover:text-black"
                       aria-label={`Remove ${item.titleDisplay} from cart`}
                     >

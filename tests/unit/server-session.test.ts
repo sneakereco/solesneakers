@@ -90,3 +90,21 @@ describe("getServerSession", () => {
     });
   });
 });
+
+describe("session observation route", () => {
+  it.each([
+    [{ name: "AuthSessionMissingError", status: 400 }, 200],
+    [{ code: "session_expired", status: 401 }, 200],
+    [{ name: "AuthRetryableFetchError", status: 503 }, 503],
+    [{ message: "transport failed" }, 503],
+  ])("distinguishes signed out from upstream errors %j", async (error, status) => {
+    mockCreateSupabaseServerClient.mockResolvedValue({
+      auth: { getUser: jest.fn().mockResolvedValue({ data: { user: null }, error }) },
+    } as never);
+    const { GET } = await import("@/app/api/auth/session/route");
+    const response = await GET(new Request("https://fixture.invalid/api/auth/session"));
+    expect(response.status).toBe(status);
+    if (status === 200) expect(await response.json()).toEqual({ user: null, role: null });
+    else expect(await response.text()).not.toContain("transport failed");
+  });
+});

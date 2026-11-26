@@ -1,5 +1,6 @@
 // src/components/auth/login/ForgotPasswordForm.tsx
 "use client";
+import { publishSessionChange } from "@/contexts/session-change";
 
 import { useEffect, useReducer } from "react";
 import { useRouter } from "next/navigation";
@@ -225,6 +226,7 @@ export function ForgotPasswordForm({ onBackToLogin }: ForgotPasswordFormProps) {
         throw new Error(verifyJson.error ?? "Invalid or expired code.");
       }
 
+      publishSessionChange();
       if (verifyJson.requiresTwoFASetup) {
         router.push("/auth/2fa/setup");
         return;

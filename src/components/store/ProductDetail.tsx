@@ -1,4 +1,5 @@
 "use client";
+import { BasketAccessNotice } from "@/Modules/Cart/Source/Client";
 
 import { useEffect, useRef, useState } from "react";
 import Image from "next/image";
@@ -31,7 +32,7 @@ const getConditionLabel = (condition: string) => {
 };
 
 export function ProductDetail({ product }: ProductDetailProps) {
-  const { addItem, items } = useCart();
+  const { addItem, items, isReady } = useCart();
   const viewedProductId = useRef<string | null>(null);
   const initialVariant =
     product.variants.find((variant) => variant.stock > 0) ?? product.variants[0];
@@ -94,7 +95,7 @@ export function ProductDetail({ product }: ProductDetailProps) {
     }
   }, [product.variants, selectedVariantId]);
 
-  const handleAddToCart = () => {
+  const handleAddToCart = async () => {
     if (!selectedVariant) {
       return;
     }
@@ -107,7 +108,7 @@ export function ProductDetail({ product }: ProductDetailProps) {
       return;
     }
 
-    addItem({
+    const result = await addItem({
       productId: product.id,
       variantId: selectedVariant.id,
       sizeLabel: selectedVariant.size.label,
@@ -115,11 +116,15 @@ export function ProductDetail({ product }: ProductDetailProps) {
       name: product.name,
       titleDisplay: product.name,
       priceCents: selectedVariant.sale_price_cents,
-      imageUrl: primaryImage?.url || "/placeholder.png",
+      imageUrl: primaryImage?.url || "/images/logo.png",
       maxStock: selectedVariant.stock,
     });
 
-    setToast({ message: "Added to cart.", tone: "success" });
+    setToast(
+      result.status === "saved"
+        ? { message: "Added to cart.", tone: "success" }
+        : { message: "This item could not be added. Please try again.", tone: "error" },
+    );
   };
 
   return (
@@ -164,7 +169,7 @@ export function ProductDetail({ product }: ProductDetailProps) {
 
           <div className="relative order-1 aspect-square min-w-0 flex-1 lg:order-2 lg:aspect-auto lg:min-h-[39rem]">
             <Image
-              src={selectedImage?.url || "/placeholder.png"}
+              src={selectedImage?.url || "/images/logo.png"}
               alt={product.name}
               fill
               sizes="(min-width: 1280px) 58vw, (min-width: 1024px) 55vw, 100vw"
@@ -227,10 +232,13 @@ export function ProductDetail({ product }: ProductDetailProps) {
             </div>
           </div>
 
+          {!isReady && <BasketAccessNotice />}
           <button
             type="button"
-            onClick={handleAddToCart}
-            disabled={!selectedVariant || selectedVariant.stock <= 0 || !canAddMore}
+            onClick={() => void handleAddToCart()}
+            disabled={
+              !isReady || !selectedVariant || selectedVariant.stock <= 0 || !canAddMore
+            }
             className="mt-7 w-full cursor-pointer bg-zinc-900 px-6 py-4 text-sm font-medium uppercase text-white transition-colors hover:bg-black disabled:cursor-not-allowed disabled:bg-zinc-400"
           >
             {!selectedVariant || selectedVariant.stock <= 0

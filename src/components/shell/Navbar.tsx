@@ -1,4 +1,5 @@
 "use client";
+import { signOutAndNotify } from "@/contexts/session-change";
 
 import { useMemo, useState } from "react";
 import Image from "next/image";
@@ -27,19 +28,14 @@ interface NavbarProps {
   showAnnouncement?: boolean;
 }
 
-export function Navbar({
-  isAuthenticated = false,
-  userEmail,
-  cartCount = 0,
-  role = null,
-  showAnnouncement = true,
-}: NavbarProps) {
+export function Navbar({ cartCount = 0, showAnnouncement = true }: NavbarProps) {
   const pathname = usePathname();
   const {
     user,
     role: sessionRole,
     isAuthenticated: sessionIsAuthenticated,
-    isLoading,
+    status,
+    refreshSession,
   } = useSession();
   const [isMenuOpen, setIsMenuOpen] = useState(false);
 
@@ -53,24 +49,30 @@ export function Navbar({
   const handleSearchClick = () => window.dispatchEvent(new CustomEvent("openSearch"));
   const handleCartClick = () => window.dispatchEvent(new CustomEvent("openCart"));
 
+  const [logoutError, setLogoutError] = useState(false);
   const handleLogout = async () => {
-    await fetch("/api/auth/logout", { method: "POST" });
-    window.dispatchEvent(new CustomEvent("sessionUpdate"));
-    window.location.href = "/";
+    setLogoutError(false);
+    try {
+      await signOutAndNotify();
+      window.location.href = "/";
+    } catch {
+      setLogoutError(true);
+    }
   };
 
-  const effectiveIsAuthenticated = sessionIsAuthenticated || isAuthenticated;
-  const effectiveUserEmail = user?.email ?? userEmail;
-  const effectiveRole = sessionRole ?? role;
+  const effectiveIsAuthenticated = sessionIsAuthenticated;
+  const effectiveUserEmail = user?.email;
+  const effectiveRole = sessionRole;
   const showAdminDashboardLink =
     typeof effectiveRole === "string" && isAdminRole(effectiveRole);
-  const showAuthButtons = !isLoading && !effectiveIsAuthenticated;
+  const showAuthButtons = status === "ready" && !effectiveIsAuthenticated;
 
   const actionClassName =
     "inline-flex whitespace-nowrap text-xs font-semibold uppercase text-zinc-700 transition-all duration-150 hover:text-black hover:font-bold";
 
   return (
     <nav className="w-full bg-[var(--storefront-surface)] text-black">
+      {logoutError && <p role="alert">Failed to log out. Please try again.</p>}
       <div
         data-announcement-shell
         className={`storefront-marquee bg-black text-white ${
@@ -180,6 +182,14 @@ export function Navbar({
               >
                 Login
               </Link>
+            ) : status === "unavailable" || status === "denied" ? (
+              <button
+                type="button"
+                onClick={() => void refreshSession()}
+                className={actionClassName}
+              >
+                Retry account access
+              </button>
             ) : (
               <div
                 className="h-4 w-16 animate-pulse bg-zinc-200"

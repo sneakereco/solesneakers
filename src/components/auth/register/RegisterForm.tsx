@@ -1,5 +1,6 @@
 // src/components/auth/register/RegisterForm.tsx
 "use client";
+import { publishSessionChange } from "@/contexts/session-change";
 
 import { useReducer } from "react";
 import { useRouter, useSearchParams } from "next/navigation";
@@ -96,11 +97,12 @@ export function RegisterForm() {
       });
 
       const json = await res.json();
-      if (!json.ok) {
+      if (!res.ok || json.ok !== true) {
         dispatch({ type: "ERROR", error: json.error ?? "Sign up failed" });
         return;
       }
 
+      publishSessionChange();
       const verifyUrl = `/auth/login?flow=verify-email&verifyFlow=signup&email=${encodeURIComponent(email)}${nextUrl !== "/" ? `&next=${encodeURIComponent(nextUrl)}` : ""}`;
       router.push(verifyUrl);
     } catch (err: unknown) {

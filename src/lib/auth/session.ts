@@ -31,7 +31,7 @@ export class AuthError extends Error {
   }
 }
 
-async function getServerSessionUncached(): Promise<ServerSession | null> {
+async function getServerSessionUncached(strict = false): Promise<ServerSession | null> {
   try {
     const supabase = await createSupabaseServerClient();
 
@@ -42,8 +42,21 @@ async function getServerSessionUncached(): Promise<ServerSession | null> {
     } = await supabase.auth.getUser();
 
     if (error || !user) {
+      if (
+        strict &&
+        !(
+          error?.name === "AuthSessionMissingError" ||
+          error?.code === "session_expired" ||
+          error?.code === "session_not_found" ||
+          error?.code === "refresh_token_not_found"
+        )
+      ) {
+        throw new Error("Session lookup unavailable");
+      }
       return null;
     }
+    if (strict && (typeof user.id !== "string" || !user.id.trim()))
+      throw new Error("Session identity unavailable");
 
     const profileRepo = new ProfileRepository(supabase);
     const row = await profileRepo.getByUserId(user.id);
@@ -67,6 +80,7 @@ async function getServerSessionUncached(): Promise<ServerSession | null> {
       role: profile?.role ?? "customer",
     };
   } catch (error) {
+    if (strict) throw new Error("Session lookup unavailable");
     if (isDynamicServerError(error)) {
       return null;
     }
@@ -80,7 +94,8 @@ async function getServerSessionUncached(): Promise<ServerSession | null> {
   }
 }
 
-export const getServerSession = getServerSessionUncached;
+export const getServerSession = () => getServerSessionUncached();
+export const observeServerSession = () => getServerSessionUncached(true);
 
 /**
  * PAGE GUARDS (Server Components / Pages)

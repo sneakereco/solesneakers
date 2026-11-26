@@ -62,7 +62,7 @@ function SuccessContent() {
 
     if (!hasClearedRef.current) {
       hasClearedRef.current = true;
-      clearCart();
+      void clearCart();
     }
   }, [orderId, router, clearCart]);
 

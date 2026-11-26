@@ -1,5 +1,6 @@
 // src/components/auth/login/PasswordLoginForm.tsx
 "use client";
+import { publishSessionChange } from "@/contexts/session-change";
 
 import { useReducer } from "react";
 import { useRouter, useSearchParams } from "next/navigation";
@@ -81,11 +82,12 @@ export function PasswordLoginForm({
         return;
       }
 
-      if (!json.ok) {
+      if (!res.ok || json.ok !== true) {
         dispatch({ type: "ERROR", error: json.error ?? "Login failed" });
         return;
       }
 
+      publishSessionChange();
       if (json.isAdmin && json.requiresTwoFASetup) {
         return router.push("/auth/2fa/setup");
       }
