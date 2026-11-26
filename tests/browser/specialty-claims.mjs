@@ -43,6 +43,7 @@ const paths = [];
 const publicResponses = [],
   pages = [],
   publicErrors = [];
+const privateStatuses = [];
 async function customerPage(role = "guest", viewport = { width: 390, height: 844 }) {
   const context = await browser.newContext({
     viewport,
@@ -50,12 +51,23 @@ async function customerPage(role = "guest", viewport = { width: 390, height: 844
   });
   const browserId = await addFixtureBrowserCookies(context, role);
   const page = await context.newPage();
+  // Synthetic fixture images have no external image service to wait for.
+  await context.route("https://example.invalid/**", (route) => route.abort());
   pages.push(page);
   page.on("pageerror", (error) => {
     if (!enteredPrivateFields) publicErrors.push(String(error.message).split("\n")[0]);
   });
   page.on("response", async (response) => {
     const path = new URL(response.url()).pathname;
+    if (
+      [
+        "/api/specialty/eligibility",
+        "/api/specialty/claims",
+        "/api/specialty/claims/result",
+        "/api/admin/specialty/campaign",
+      ].includes(path)
+    )
+      privateStatuses.push({ path, status: response.status() });
     if (!["/api/featured-items", "/api/specialty/discovery"].includes(path)) return;
     const record = { path, status: response.status() };
     publicResponses.push(record);
@@ -186,7 +198,7 @@ try {
   assert.equal(anonymousAdmin.status(), 401);
   assert.match(anonymousAdmin.headers()["cache-control"] ?? "", /no-store/);
 
-  stage = "claim form";
+  stage = "claim form: open";
   const loser = await customerPage();
   await loser.page.goto(origin + "/store/" + app.probe.productId); // Keep a legitimately stale card alive before the win.
   await openPrize(guest.page, app.probe.productId);
@@ -243,6 +255,7 @@ try {
     await route.abort("failed"); // The transaction is already committed. Only its browser response is lost.
   });
   await fill(guest.page);
+  stage = "claim form: submit and recover winning receipt";
   await guest.page.getByRole("button", { name: "Submit claim", exact: true }).click();
   await expect(guest.page.getByRole("heading", { name: "You claimed it!" })).toBeVisible({
     timeout: 30000,
@@ -321,11 +334,26 @@ try {
       )
       .toBe(1);
     stage = "staff: close campaign";
-    await admin.page.getByRole("switch", { name: "Giveaway claims enabled" }).click();
+    const [closedResponse] = await Promise.all([
+      admin.page.waitForResponse(
+        (response) =>
+          new URL(response.url()).pathname === "/api/admin/specialty/campaign" &&
+          response.request().method() === "PATCH",
+      ),
+      admin.page.getByRole("switch", { name: "Giveaway claims enabled" }).click(),
+    ]);
+    assert.equal(closedResponse.status(), 200);
+    assert.equal((await closedResponse.json()).enabled, false);
+    stage = "staff: closed switch presentation";
     await expect(admin.page.getByRole("switch")).toHaveAttribute("aria-checked", "false");
     stage = "recovery after campaign close";
-    await guest.page.keyboard.press("Escape");
-    await expect(guest.page.getByRole("dialog")).toHaveCount(0);
+    await guest.page.bringToFront();
+    // Next dev refreshes other open pages when the staff mutation revalidates tags.
+    // A fresh navigation also proves recovery after reopening a disappeared prize.
+    await guest.page.goto(origin + "/store");
+    await guest.page
+      .getByText("Check your giveaway claim results", { exact: true })
+      .click();
     await guest.page
       .getByRole("button", { name: "Check claim result", exact: true })
       .click();
@@ -404,6 +432,18 @@ try {
     stage = "ordinary cart and forged specialty line";
     const ordinary = await customerPage();
     await ordinary.page.goto(origin + "/store/" + app.ordinary[0].productId);
+    // The existing ordinary detail SSR button predates a hydration guard. Wait for
+    // a harmless detail interaction before exercising its cart behavior.
+    const shippingDetails = ordinary.page.getByRole("button", {
+      name: "Shipping & Returns",
+      exact: true,
+    });
+    await expect(async () => {
+      if ((await shippingDetails.getAttribute("aria-expanded")) === "false")
+        await shippingDetails.click();
+      await expect(shippingDetails).toHaveAttribute("aria-expanded", "true");
+    }).toPass({ timeout: 30000 });
+    stage = "ordinary cart: add";
     await ordinary.page.getByRole("button", { name: /add to (?:cart|bag)/i }).click();
     await expect
       .poll(async () =>
@@ -412,6 +452,7 @@ try {
         ),
       )
       .toBe(1);
+    stage = "ordinary cart: forged specialty validation";
     const cartCheck = await ordinary.context.request.post(origin + "/api/cart/validate", {
       headers: { Origin: origin },
       data: {
@@ -454,6 +495,22 @@ try {
       stage +
       " — " +
       String(error.message).split("\n")[0],
+  );
+  console.error(
+    JSON.stringify({
+      privateStatuses,
+      state: app ? await readBrowserRunState(app.runId).catch(() => null) : null,
+      campaign: app
+        ? (
+            await app.db
+              .query(
+                "select enabled,revision from public.specialty_campaigns where id=$1",
+                [app.campaignId],
+              )
+              .catch(() => ({ rows: [] }))
+          ).rows[0]
+        : null,
+    }),
   );
   if (!enteredPrivateFields && pages[0] && app) {
     console.error(String(error.message).split("\n").slice(0, 12).join("\n"));

@@ -60,7 +60,7 @@ async function removePrivateDirectory(path, runId) {
   );
   await rm(target, { recursive: true, force: true });
 }
-export async function startBrowserTestApp(origin) {
+export async function startBrowserTestApp(origin, { beforeStart } = {}) {
   assert.equal(active, null, "A browser fixture app is already running.");
   const databaseUrl = String(testUrl());
   assertBrowserTestTarget(origin, databaseUrl);
@@ -201,6 +201,7 @@ export async function startBrowserTestApp(origin) {
     // Optional empty public settings fail validation; omit them entirely in this isolated app.
     delete childEnv.NEXT_PUBLIC_TURNSTILE_SITE_KEY;
     delete childEnv.NEXT_PUBLIC_CLOUDFLARE_WEB_ANALYTICS_TOKEN;
+    await beforeStart?.(childEnv);
     const output = createWriteStream(join(privateDir, "next.log"), { mode: 0o600 });
     state.output = output;
     state.child = spawn(
@@ -460,10 +461,9 @@ export async function fixtureEligibilityResponse(input, browserId) {
     },
   );
 }
-export async function stopBrowserTestApp() {
+export async function stopBrowserTestTransports() {
   const state = active;
-  if (!state || state.stopped) return;
-  state.stopped = true;
+  if (!state || state.transportsStopped) return;
   if (state.child?.pid && state.child.exitCode === null) {
     if (process.platform === "win32")
       await execute("taskkill", ["/PID", String(state.child.pid), "/T", "/F"], {
@@ -473,6 +473,13 @@ export async function stopBrowserTestApp() {
   }
   state.output?.end();
   await state.services?.stop();
+  state.transportsStopped = true;
+}
+export async function stopBrowserTestApp() {
+  const state = active;
+  if (!state || state.stopped) return;
+  state.stopped = true;
+  await stopBrowserTestTransports();
   if (state.db) {
     try {
       const ids = [...state.runs.values()].flat().map((prize) => prize.productId);
