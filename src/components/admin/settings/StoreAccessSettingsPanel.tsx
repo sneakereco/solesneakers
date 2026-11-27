@@ -1,6 +1,12 @@
 "use client";
+import { adminCommand } from "@/components/admin/admin-command";
 
-import { useEffect, useState } from "react";
+import { useState, useId } from "react";
+import { useAdminRead } from "@/components/admin/useAdminRead";
+import { AdminReadStatus } from "@/components/admin/AdminSkeletons";
+import { fetchJsonWithDeadline } from "@/lib/http/request-deadline";
+import { useAsyncAction } from "@/components/ui/useAsyncAction";
+import { ActionButton } from "@/components/ui/ActionButton";
 
 import { logError } from "@/lib/utils/log";
 import { DEFAULT_CHECKOUT_LOCK_MESSAGE } from "@/repositories/store-access-settings-repo";
@@ -19,56 +25,54 @@ function toDateTimeLocalValue(value: string | null): string {
   return local.toISOString().slice(0, 16);
 }
 
+type Settings = {
+  siteLockEnabled: boolean;
+  siteUnlockAt: string | null;
+  checkoutLockEnabled: boolean;
+  checkoutLockMessage: string | null;
+};
+const load = async (signal: AbortSignal) => {
+  const data = await fetchJsonWithDeadline<{ settings: Settings }>(
+    "/api/admin/store-access",
+    "Settings unavailable",
+    signal,
+  );
+  if (!data.settings) throw new Error("Settings unavailable");
+  return data.settings;
+};
 export function StoreAccessSettingsPanel() {
-  const [isLoading, setIsLoading] = useState(true);
-  const [isSaving, setIsSaving] = useState(false);
-  const [siteLockEnabled, setSiteLockEnabled] = useState(false);
-  const [siteUnlockAt, setSiteUnlockAt] = useState("");
-  const [checkoutLockEnabled, setCheckoutLockEnabled] = useState(false);
+  const read = useAdminRead(load, "store access settings");
+  return read.data ? (
+    <AccessForm settings={read.data} />
+  ) : (
+    <AdminReadStatus read={read} label="Loading store access settings" shape="form" />
+  );
+}
+function AccessForm({ settings }: { settings: Settings }) {
+  const id = useId();
+  const action = useAsyncAction();
+
+  const isSaving = action.pending;
+  const [siteLockEnabled, setSiteLockEnabled] = useState(settings.siteLockEnabled);
+  const [siteUnlockAt, setSiteUnlockAt] = useState(
+    toDateTimeLocalValue(settings.siteUnlockAt),
+  );
+  const [checkoutLockEnabled, setCheckoutLockEnabled] = useState(
+    settings.checkoutLockEnabled,
+  );
   const [checkoutLockMessage, setCheckoutLockMessage] = useState(
-    DEFAULT_CHECKOUT_LOCK_MESSAGE,
+    settings.checkoutLockMessage ?? DEFAULT_CHECKOUT_LOCK_MESSAGE,
   );
   const [message, setMessage] = useState("");
 
-  useEffect(() => {
-    const load = async () => {
-      try {
-        const response = await fetch("/api/admin/store-access", { cache: "no-store" });
-        const data = await response.json();
-
-        if (!response.ok) {
-          throw new Error(data.error ?? "Failed to load store access settings.");
-        }
-
-        if (data.settings) {
-          setSiteLockEnabled(Boolean(data.settings.siteLockEnabled));
-          setSiteUnlockAt(toDateTimeLocalValue(data.settings.siteUnlockAt ?? null));
-          setCheckoutLockEnabled(Boolean(data.settings.checkoutLockEnabled));
-          setCheckoutLockMessage(
-            data.settings.checkoutLockMessage ?? DEFAULT_CHECKOUT_LOCK_MESSAGE,
-          );
-        }
-      } catch (error) {
-        logError(error, { layer: "frontend", event: "admin_store_access_load" });
-        setMessage(
-          error instanceof Error
-            ? error.message
-            : "Failed to load store access settings.",
-        );
-      } finally {
-        setIsLoading(false);
-      }
-    };
-
-    void load();
-  }, []);
-
   const save = async () => {
-    setIsSaving(true);
     setMessage("");
 
     try {
-      const response = await fetch("/api/admin/store-access", {
+      const { response, data } = await adminCommand<{
+        error?: string;
+        settings?: Settings;
+      }>("/api/admin/store-access", {
         method: "POST",
         headers: { "Content-Type": "application/json" },
         body: JSON.stringify({
@@ -78,14 +82,13 @@ export function StoreAccessSettingsPanel() {
           checkoutLockMessage,
         }),
       });
-      const data = await response.json();
 
       if (!response.ok) {
-        throw new Error(data.error ?? "Failed to save store access settings.");
+        throw new Error(data?.error ?? "Failed to save store access settings.");
       }
 
       setMessage("Store access settings updated.");
-      if (data.settings) {
+      if (data?.settings) {
         setSiteLockEnabled(Boolean(data.settings.siteLockEnabled));
         setSiteUnlockAt(toDateTimeLocalValue(data.settings.siteUnlockAt ?? null));
         setCheckoutLockEnabled(Boolean(data.settings.checkoutLockEnabled));
@@ -98,14 +101,8 @@ export function StoreAccessSettingsPanel() {
       setMessage(
         error instanceof Error ? error.message : "Failed to save store access settings.",
       );
-    } finally {
-      setIsSaving(false);
     }
   };
-
-  if (isLoading) {
-    return <div className="text-sm text-zinc-400">Loading store access settings...</div>;
-  }
 
   return (
     <div className="grid gap-4 lg:grid-cols-2">
@@ -119,6 +116,7 @@ export function StoreAccessSettingsPanel() {
 
         <label className="flex items-center gap-3 text-sm text-white">
           <input
+            disabled={isSaving}
             type="checkbox"
             checked={siteLockEnabled}
             onChange={(event) => setSiteLockEnabled(event.target.checked)}
@@ -128,10 +126,15 @@ export function StoreAccessSettingsPanel() {
         </label>
 
         <div>
-          <label className="mb-2 block text-xs uppercase tracking-wide text-zinc-500">
+          <label
+            htmlFor={`${id}-siteUnlockAt`}
+            className="mb-2 block text-xs uppercase tracking-wide text-zinc-500"
+          >
             Unlock At
           </label>
           <input
+            id={`${id}-siteUnlockAt`}
+            disabled={isSaving}
             type="datetime-local"
             value={siteUnlockAt}
             onChange={(event) => setSiteUnlockAt(event.target.value)}
@@ -150,6 +153,7 @@ export function StoreAccessSettingsPanel() {
 
         <label className="flex items-center gap-3 text-sm text-white">
           <input
+            disabled={isSaving}
             type="checkbox"
             checked={checkoutLockEnabled}
             onChange={(event) => setCheckoutLockEnabled(event.target.checked)}
@@ -159,10 +163,15 @@ export function StoreAccessSettingsPanel() {
         </label>
 
         <div>
-          <label className="mb-2 block text-xs uppercase tracking-wide text-zinc-500">
+          <label
+            htmlFor={`${id}-checkoutLockMessage`}
+            className="mb-2 block text-xs uppercase tracking-wide text-zinc-500"
+          >
             Checkout Message
           </label>
           <textarea
+            id={`${id}-checkoutLockMessage`}
+            disabled={isSaving}
             value={checkoutLockMessage}
             onChange={(event) => setCheckoutLockMessage(event.target.value)}
             rows={5}
@@ -172,17 +181,21 @@ export function StoreAccessSettingsPanel() {
       </section>
 
       <div className="flex items-center justify-between gap-3 lg:col-span-2">
-        <span className="text-sm text-zinc-400">{message}</span>
-        <button
+        <span role="status" className="text-sm text-zinc-400">
+          {message}
+        </span>
+        <ActionButton
+          pending={isSaving}
+          pendingLabel="Saving…"
           type="button"
           onClick={() => {
-            void save();
+            void action.run(save);
           }}
           disabled={isSaving}
           className="rounded bg-red-600 px-4 py-2 text-sm font-semibold text-white disabled:bg-zinc-700"
         >
-          {isSaving ? "Saving..." : "Save store access settings"}
-        </button>
+          Save store access settings
+        </ActionButton>
       </div>
     </div>
   );

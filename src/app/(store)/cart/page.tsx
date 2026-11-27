@@ -1,10 +1,13 @@
 "use client";
 
+import { ActionButton } from "@/components/ui/ActionButton";
 import Image from "next/image";
-import Link from "next/link";
+import { FeedbackLink, DocumentFeedbackLink } from "@/components/ui/FeedbackLink";
 import { Minus, Plus, ShoppingBag, Trash2 } from "lucide-react";
 
 import { useCart } from "@/components/cart/CartProvider";
+import { CartFeedback } from "@/components/cart/CartFeedback";
+import { CartSkeleton } from "@/components/cart/CartSkeleton";
 import { ShippingEstimate } from "@/components/cart/ShippingEstimate";
 
 const formatPrice = (priceCents: number) =>
@@ -16,7 +19,29 @@ const formatPrice = (priceCents: number) =>
   }).format(priceCents / 100);
 
 export default function CartPage() {
-  const { items, itemCount, removeItem, updateQuantity, total } = useCart();
+  return (
+    <>
+      <CartFeedback />
+      <CartContent />
+    </>
+  );
+}
+
+function CartContent() {
+  const {
+    items,
+    itemCount,
+    removeItem,
+    updateQuantity,
+    total,
+    isReady,
+    hasCartView,
+    validationStatus,
+    writePending,
+  } = useCart();
+
+  if (!isReady && !hasCartView)
+    return validationStatus === "error" ? null : <CartSkeleton />;
 
   if (items.length === 0) {
     return (
@@ -26,12 +51,12 @@ export default function CartPage() {
           Your cart is empty
         </h1>
         <p className="mt-3 text-sm text-zinc-600">Add an item to begin your order.</p>
-        <Link
+        <FeedbackLink
           href="/store"
           className="mt-8 bg-zinc-900 px-10 py-4 text-sm font-medium uppercase text-white transition-colors hover:bg-black"
         >
           Shop Now
-        </Link>
+        </FeedbackLink>
       </div>
     );
   }
@@ -53,7 +78,7 @@ export default function CartPage() {
                 key={`${item.productId}-${item.variantId}`}
                 className="grid grid-cols-[7rem_minmax(0,1fr)] gap-5 border-b border-zinc-300 py-7 sm:grid-cols-[10rem_minmax(0,1fr)] sm:gap-8"
               >
-                <Link
+                <FeedbackLink
                   href={`/store/${item.productId}`}
                   className="relative h-32 w-28 bg-[var(--storefront-surface)] sm:h-44 sm:w-40"
                 >
@@ -64,11 +89,11 @@ export default function CartPage() {
                     sizes="(min-width: 640px) 160px, 112px"
                     className="object-contain p-2 mix-blend-multiply"
                   />
-                </Link>
+                </FeedbackLink>
 
                 <div className="flex min-w-0 flex-col">
                   <div className="flex items-start justify-between gap-4">
-                    <Link href={`/store/${item.productId}`} className="min-w-0">
+                    <FeedbackLink href={`/store/${item.productId}`} className="min-w-0">
                       <h2 className="text-sm font-medium uppercase leading-5 sm:text-base sm:leading-6">
                         {item.titleDisplay}
                       </h2>
@@ -77,7 +102,7 @@ export default function CartPage() {
                           {item.brand}
                         </p>
                       )}
-                    </Link>
+                    </FeedbackLink>
                     <p className="shrink-0 text-sm font-medium sm:text-base">
                       {formatPrice(item.priceCents * item.quantity)}
                     </p>
@@ -87,50 +112,52 @@ export default function CartPage() {
                     Size: {item.sizeLabel === "N/A" ? "One size" : item.sizeLabel}
                   </p>
 
-                  <div className="mt-auto flex items-end justify-between gap-4 pt-5">
+                  <div className="mt-auto flex flex-wrap items-end justify-between gap-x-3 gap-y-2 pt-5">
                     <div className="inline-grid grid-cols-3 border border-zinc-300">
-                      <button
+                      <ActionButton
                         type="button"
                         onClick={() =>
-                          updateQuantity(
+                          void updateQuantity(
                             item.productId,
                             item.variantId,
                             item.quantity - 1,
                           )
                         }
                         className="flex h-10 w-10 cursor-pointer items-center justify-center hover:bg-white"
+                        disabled={!isReady || writePending}
                         aria-label={`Decrease quantity for ${item.titleDisplay}`}
                       >
                         <Minus className="h-4 w-4" />
-                      </button>
+                      </ActionButton>
                       <span className="flex h-10 min-w-10 items-center justify-center border-x border-zinc-300 text-sm">
                         {item.quantity}
                       </span>
-                      <button
+                      <ActionButton
                         type="button"
                         onClick={() =>
-                          updateQuantity(
+                          void updateQuantity(
                             item.productId,
                             item.variantId,
                             item.quantity + 1,
                           )
                         }
-                        disabled={!canIncrease}
+                        disabled={!isReady || writePending || !canIncrease}
                         className="flex h-10 w-10 cursor-pointer items-center justify-center hover:bg-white disabled:cursor-not-allowed disabled:text-zinc-300"
                         aria-label={`Increase quantity for ${item.titleDisplay}`}
                       >
                         <Plus className="h-4 w-4" />
-                      </button>
+                      </ActionButton>
                     </div>
 
-                    <button
+                    <ActionButton
                       type="button"
-                      onClick={() => removeItem(item.productId, item.variantId)}
+                      disabled={!isReady || writePending}
+                      onClick={() => void removeItem(item.productId, item.variantId)}
                       className="cursor-pointer p-2 text-zinc-500 transition-colors hover:text-black"
                       aria-label={`Remove ${item.titleDisplay} from cart`}
                     >
                       <Trash2 className="h-5 w-5" strokeWidth={1.6} />
-                    </button>
+                    </ActionButton>
                   </div>
                 </div>
               </article>
@@ -150,18 +177,20 @@ export default function CartPage() {
           <p className="mt-4 text-xs leading-5 text-zinc-500">
             Shipping and taxes are calculated at checkout.
           </p>
-          <a
-            href="/checkout"
+          <DocumentFeedbackLink
+            href={!isReady || writePending ? undefined : "/checkout"}
+            aria-disabled={!isReady || writePending || undefined}
+            data-checkout-link
             className="mt-6 block w-full bg-zinc-950 px-6 py-4 text-center text-sm font-medium uppercase text-white transition-colors hover:bg-black"
           >
             Checkout
-          </a>
-          <Link
+          </DocumentFeedbackLink>
+          <FeedbackLink
             href="/store"
             className="mt-5 block text-center text-sm underline underline-offset-4"
           >
             Continue shopping
-          </Link>
+          </FeedbackLink>
         </aside>
       </div>
     </div>

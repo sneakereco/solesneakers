@@ -1,7 +1,8 @@
 "use client";
 
-import { useEffect, useRef, useState, useTransition } from "react";
-import { useRouter, useSearchParams } from "next/navigation";
+import { ActionButton } from "@/components/ui/ActionButton";
+import { useEffect, useRef, useState } from "react";
+import { useStoreNavigation } from "./StoreNavigation";
 import { ChevronDown, X } from "lucide-react";
 
 type FilterOption = {
@@ -73,11 +74,9 @@ export function StorefrontFilterBar({
   priceMin,
   priceMax,
 }: StorefrontFilterBarProps) {
-  const router = useRouter();
-  const searchParams = useSearchParams();
+  const { updateQuery } = useStoreNavigation();
   const containerRef = useRef<HTMLDivElement>(null);
   const [openFacet, setOpenFacet] = useState<string | null>(null);
-  const [isPending, startTransition] = useTransition();
 
   useEffect(() => {
     if (!openFacet) {
@@ -103,39 +102,35 @@ export function StorefrontFilterBar({
     };
   }, [openFacet]);
 
-  const pushParams = (params: URLSearchParams) => {
-    params.set("page", "1");
-    startTransition(() => router.push(`/store?${params.toString()}`));
+  const updateFilters = (update: (params: URLSearchParams) => void) => {
+    updateQuery((params) => {
+      update(params);
+      params.set("page", "1");
+    });
   };
 
   const toggleOption = (option: FilterOption) => {
-    const params = new URLSearchParams(searchParams.toString());
-    const current = params.getAll(option.param);
-    const next = current.includes(option.value)
-      ? current.filter((value) => value !== option.value)
-      : [...current, option.value];
-    params.delete(option.param);
-    next.forEach((value) => params.append(option.param, value));
-    pushParams(params);
+    updateFilters((params) => {
+      const current = params.getAll(option.param);
+      const next = current.includes(option.value)
+        ? current.filter((value) => value !== option.value)
+        : [...current, option.value];
+      params.delete(option.param);
+      next.forEach((value) => params.append(option.param, value));
+    });
   };
 
   const selectPrice = (preset: PricePreset | null) => {
-    const params = new URLSearchParams(searchParams.toString());
-    params.delete("priceMin");
-    params.delete("priceMax");
-    if (typeof preset?.min === "number") {
-      params.set("priceMin", String(preset.min));
-    }
-    if (typeof preset?.max === "number") {
-      params.set("priceMax", String(preset.max));
-    }
-    pushParams(params);
+    updateFilters((params) => {
+      params.delete("priceMin");
+      params.delete("priceMax");
+      if (typeof preset?.min === "number") params.set("priceMin", String(preset.min));
+      if (typeof preset?.max === "number") params.set("priceMax", String(preset.max));
+    });
   };
 
   const clearFilters = () => {
-    const params = new URLSearchParams(searchParams.toString());
-    FILTER_QUERY_KEYS.forEach((key) => params.delete(key));
-    pushParams(params);
+    updateFilters((params) => FILTER_QUERY_KEYS.forEach((key) => params.delete(key)));
   };
 
   const brandOptions: FilterOption[] = [...brands]
@@ -200,7 +195,7 @@ export function StorefrontFilterBar({
   return (
     <div
       ref={containerRef}
-      className={`relative z-30 border-b border-zinc-300 bg-[var(--storefront-surface)] px-5 transition-opacity sm:px-8 lg:px-12 ${isPending ? "opacity-60" : ""}`}
+      className="relative z-30 border-b border-zinc-300 bg-[var(--storefront-surface)] px-5 sm:px-8 lg:px-12"
     >
       <div className="flex min-h-[72px] flex-wrap items-center gap-x-8 gap-y-2">
         {facets.map((facet) => {
@@ -211,13 +206,13 @@ export function StorefrontFilterBar({
                 : 0
               : (selectedByFacet[facet.key]?.length ?? 0);
           return (
-            <div key={facet.key} className="relative">
-              <button
+            <div key={facet.key} className="md:relative">
+              <ActionButton
                 type="button"
                 onClick={() =>
                   setOpenFacet((current) => (current === facet.key ? null : facet.key))
                 }
-                className="inline-flex h-10 items-center gap-2 text-[0.78rem] font-medium uppercase tracking-[0.01em] text-zinc-800"
+                className="inline-flex min-h-11 items-center gap-2 text-[0.78rem] font-medium uppercase tracking-[0.01em] text-zinc-800"
                 aria-expanded={openFacet === facet.key}
               >
                 <span>
@@ -228,10 +223,16 @@ export function StorefrontFilterBar({
                   className={`h-3.5 w-3.5 transition-transform ${openFacet === facet.key ? "rotate-180" : ""}`}
                   fill="currentColor"
                 />
-              </button>
+              </ActionButton>
 
               {openFacet === facet.key && (
-                <div className="absolute left-0 top-full z-50 max-h-[19rem] w-[17rem] overflow-y-auto border border-zinc-300 bg-white p-4 shadow-lg">
+                <div
+                  className={`absolute inset-x-5 top-full z-50 max-h-[19rem] overflow-y-auto border border-zinc-300 bg-white p-4 shadow-lg md:inset-x-auto md:w-[17rem] ${
+                    facet.key === "category" || facet.key === "size"
+                      ? "md:right-0"
+                      : "md:left-0"
+                  }`}
+                >
                   {facet.key === "price" ? (
                     <div className="space-y-1">
                       {PRICE_PRESETS.map((preset) => {
@@ -240,7 +241,7 @@ export function StorefrontFilterBar({
                         return (
                           <label
                             key={preset.label}
-                            className="flex cursor-pointer items-center gap-3 py-2 text-sm text-zinc-700"
+                            className="flex min-h-11 cursor-pointer items-center gap-3 py-2 text-sm text-zinc-700 active:bg-zinc-100"
                           >
                             <input
                               type="radio"
@@ -254,13 +255,13 @@ export function StorefrontFilterBar({
                         );
                       })}
                       {(typeof priceMin === "number" || typeof priceMax === "number") && (
-                        <button
+                        <ActionButton
                           type="button"
                           onClick={() => selectPrice(null)}
                           className="mt-2 text-xs uppercase text-zinc-500 underline underline-offset-4"
                         >
                           Clear price
-                        </button>
+                        </ActionButton>
                       )}
                     </div>
                   ) : facet.options.length > 0 ? (
@@ -275,7 +276,7 @@ export function StorefrontFilterBar({
                                 {option.group}
                               </div>
                             )}
-                            <label className="flex cursor-pointer items-center gap-3 py-2 text-sm text-zinc-700">
+                            <label className="flex min-h-11 cursor-pointer items-center gap-3 py-2 text-sm text-zinc-700 active:bg-zinc-100">
                               <input
                                 type="checkbox"
                                 checked={selectedByFacet[facet.key]?.includes(
@@ -307,14 +308,14 @@ export function StorefrontFilterBar({
         })}
 
         {activeFilterCount > 0 && (
-          <button
+          <ActionButton
             type="button"
             onClick={clearFilters}
-            className="ml-auto inline-flex items-center gap-1.5 text-[0.7rem] uppercase text-zinc-500 hover:text-black"
+            className="ml-auto inline-flex min-h-11 items-center gap-1.5 text-[0.7rem] uppercase text-zinc-500 hover:text-black"
           >
             <X className="h-3.5 w-3.5" />
             Clear all
-          </button>
+          </ActionButton>
         )}
       </div>
     </div>

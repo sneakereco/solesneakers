@@ -1,16 +1,17 @@
 "use client";
 
 import Link from "next/link";
+import { RouteRetryButton } from "@/components/ui/RouteRetryButton";
 import { useEffect } from "react";
 
 import { logError } from "@/lib/utils/log";
 
 export default function Error({
   error,
-  reset,
+  retry,
 }: {
   error: Error & { digest?: string };
-  reset: () => void;
+  retry: () => void;
 }) {
   useEffect(() => {
     logError(error, {
@@ -27,13 +28,10 @@ export default function Error({
         We hit an issue loading the admin console. Try again or return to the dashboard.
       </p>
       <div className="flex flex-col items-center justify-center gap-3 sm:flex-row">
-        <button
-          type="button"
-          onClick={() => reset()}
+        <RouteRetryButton
+          retry={retry}
           className="rounded bg-red-600 px-6 py-3 font-semibold text-white hover:bg-red-700"
-        >
-          Try again
-        </button>
+        />
         <Link
           href="/admin/dashboard"
           className="rounded border border-zinc-800 bg-zinc-900 px-6 py-3 text-zinc-200 hover:text-white"

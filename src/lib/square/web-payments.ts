@@ -1,3 +1,5 @@
+import { withRequestDeadline } from "@/lib/http/request-deadline";
+
 export type SquareEnvironment = "sandbox" | "production";
 
 type SquareWalletContact = {
@@ -110,30 +112,33 @@ export function squareWebPaymentsScriptUrl(environment: SquareEnvironment): stri
 }
 
 function loadScript(src: string): Promise<void> {
-  if (window.Square) {
-    return Promise.resolve();
-  }
+  if (window.Square) return Promise.resolve();
   const existing = document.querySelector<HTMLScriptElement>(`script[src="${src}"]`);
-  if (existing) {
-    return new Promise((resolve, reject) => {
-      existing.addEventListener("load", () => resolve(), { once: true });
-      existing.addEventListener(
-        "error",
-        () => reject(new Error("square_sdk_unavailable")),
-        {
-          once: true,
-        },
-      );
-    });
-  }
-
+  const script = existing ?? document.createElement("script");
   return new Promise((resolve, reject) => {
-    const script = document.createElement("script");
-    script.src = src;
-    script.async = true;
-    script.onload = () => resolve();
-    script.onerror = () => reject(new Error("square_sdk_unavailable"));
-    document.head.appendChild(script);
+    const timer = window.setTimeout(failed, 15_000);
+    function cleanup() {
+      window.clearTimeout(timer);
+      script.removeEventListener("load", loaded);
+      script.removeEventListener("error", failed);
+    }
+    function failed() {
+      cleanup();
+      script.remove();
+      reject(new Error("square_sdk_unavailable"));
+    }
+    function loaded() {
+      if (!window.Square) return failed();
+      cleanup();
+      resolve();
+    }
+    script.addEventListener("load", loaded);
+    script.addEventListener("error", failed);
+    if (!existing) {
+      script.src = src;
+      script.async = true;
+      document.head.appendChild(script);
+    }
   });
 }
 
@@ -166,17 +171,36 @@ export async function authorizeAndTokenize(input: {
   return { permit, sourceId: token.token };
 }
 
+// The deadline covers response headers and body. Callers perform all subsequent
+// steps only after this operation has completed within its deadline.
+export function postCheckoutJson(
+  url: string,
+  body: unknown,
+  fetchImpl: typeof fetch = fetch,
+) {
+  return withRequestDeadline(async (signal) => {
+    const response = await fetchImpl(url, {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify(body),
+      signal,
+    });
+    const data = await response.json().catch(() => null);
+    return { response, data };
+  });
+}
+
 async function requestPermit(
   permitRequest: Record<string, unknown>,
   fetchImplementation: typeof fetch | undefined,
 ): Promise<string> {
-  const fetchImpl = fetchImplementation ?? fetch;
-  const permitResponse = await fetchImpl("/api/checkout/payment-permit", {
-    method: "POST",
-    headers: { "Content-Type": "application/json" },
-    body: JSON.stringify(permitRequest),
+  const { response: permitResponse, data: permitData } = await postCheckoutJson(
+    "/api/checkout/payment-permit",
+    permitRequest,
+    fetchImplementation,
+  ).catch(() => {
+    throw new Error("Payment authorization is unavailable. Please try again.");
   });
-  const permitData = await permitResponse.json().catch(() => null);
   if (!permitResponse.ok || typeof permitData?.permit !== "string") {
     throw new Error(permitData?.error || "Unable to authorize payment");
   }

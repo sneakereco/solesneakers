@@ -44,15 +44,24 @@ it.each([null, "customer"] as const)(
   },
 );
 it.each(["admin", "super_admin", "dev"] as const)(
-  "keeps %s access available without requiring a lock settings read",
+  "keeps %s access available while the storefront is locked",
   async (role) => {
+    jest.mocked(getStoreAccessSettings).mockResolvedValue({
+      isSiteLocked: true,
+      tenantId: "store-1",
+      settings: {
+        siteLockEnabled: true,
+        siteUnlockAt: null,
+        checkoutLockEnabled: false,
+        checkoutLockMessage: "Paused",
+      },
+    });
     jest.mocked(getServerSession).mockResolvedValue({
       role,
       user: { id: "staff-1", email: "staff@example.com" },
       profile: null,
     });
     await expect(StoreLayout({ children: "staff preview" })).resolves.toBeTruthy();
-    expect(getStoreAccessSettings).not.toHaveBeenCalled();
   },
 );
 it("admits ordinary visitors when the effective lock is off", async () => {
@@ -68,6 +77,7 @@ it("admits ordinary visitors when the effective lock is off", async () => {
     },
   });
   await expect(StoreLayout({ children: "open storefront" })).resolves.toBeTruthy();
+  expect(getServerSession).not.toHaveBeenCalled();
 });
 it("fails closed when the store configuration is missing", async () => {
   jest.mocked(getServerSession).mockResolvedValue(null);

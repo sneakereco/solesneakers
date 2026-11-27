@@ -1,3 +1,4 @@
+import { isDynamicServerError } from "next/dist/client/components/hooks-server-context";
 import { CheckoutClient } from "@/components/checkout/CheckoutClient";
 import { CheckoutLockedNotice } from "@/components/checkout/CheckoutLockedNotice";
 import { CheckoutUnavailable } from "@/components/checkout/CheckoutUnavailable";
@@ -12,6 +13,7 @@ export default async function CheckoutPage() {
     try {
       initialData = await loadCheckoutPageData();
     } catch (error) {
+      if (isDynamicServerError(error)) throw error;
       logError(error, { layer: "frontend", route: "/checkout" });
       return <CheckoutUnavailable />;
     }

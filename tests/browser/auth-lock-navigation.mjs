@@ -36,7 +36,7 @@ const bundle = await build({
           contents:
             args.path === "next/navigation"
               ? `export const useSearchParams=()=>new URLSearchParams();export const useRouter=()=>({push(path){history.pushState({},'',path);document.body.innerHTML='<h1>Cached unlocked storefront</h1>';}});`
-              : `import React from 'react';export default ({href,children,...props})=>React.createElement('a',{href,...props},children);`,
+              : `import React from 'react';export const useLinkStatus=()=>({pending:false});export default ({href,children,...props})=>React.createElement('a',{href,...props},children);`,
         }));
       },
     },

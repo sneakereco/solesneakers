@@ -46,9 +46,9 @@ const bundle = await build({
         },
       };
 
-      let addItem;
+      let cart;
       function CartProbe() {
-        addItem = useCart().addItem;
+        cart = useCart();
         return null;
       }
 
@@ -121,8 +121,9 @@ const bundle = await build({
         let root = createRoot(rootElement);
         history.replaceState(null, "", "/store/" + productId);
         root.render(<CartProvider><CartProbe /></CartProvider>);
-        await pause();
-        addItem({
+        for (let attempt=0;attempt<50 && !cart?.isReady;attempt+=1) await pause();
+        if (!cart?.isReady) throw new Error("Fixture cart did not hydrate");
+        const saved = await cart.addItem({
           productId,
           variantId,
           sizeLabel: "10",
@@ -133,7 +134,7 @@ const bundle = await build({
           imageUrl: "/shoe.png",
           maxStock: 1,
         });
-        await pause();
+        if (!saved) throw new Error("Fixture cart write did not complete");
         test.persistedCart = JSON.parse(sessionStorage.getItem("rdk_cart_session") || "[]");
 
         root.unmount();
@@ -182,13 +183,17 @@ const bundle = await build({
       setup(builder) {
         const mocks = new Map([
           [
+            "next/link",
+            "export const useLinkStatus=()=>({pending:false}); export default function Link({children,...props}){return <a {...props}>{children}</a>}",
+          ],
+          [
             "next/navigation",
             "export const useRouter = () => ({ push() {} }); export const usePathname = () => window.location.pathname;",
           ],
           ["@/components/ui/Toast", "export const Toast = () => null;"],
           [
             "@/contexts/SessionContext",
-            "export const useSession = () => ({ user: null });",
+            "const session={user:null,isIdentityCurrent:owner=>owner===null}; export const useSession=()=>session;",
           ],
           [
             "@/components/checkout/CheckoutContactSection",
@@ -212,14 +217,14 @@ const bundle = await build({
           ],
           [
             "@/components/checkout/SquarePaymentMethods",
-            "export const SquarePaymentMethods = ({ children }) => <div data-payment>{children}</div>;",
+            "export class CheckoutCartUnavailable extends Error {}; export const SquarePaymentMethods = ({ children }) => <div data-payment>{children}</div>;",
           ],
           [
             "@/lib/checkout/client-session",
             `
               export const getOrCreateCheckoutDeviceSessionId = () => "device";
               export const getOrCreateCheckoutIdempotencyKey = () => "idempotency";
-              export const storeGuestOrderAccess = () => {};
+              export const rememberPendingCheckoutAttempt = () => {}; export const clearCheckoutAttempt = () => {}; export const storeGuestOrderAccess = () => {};
             `,
           ],
           [
@@ -312,12 +317,12 @@ try {
       status: 200,
       contentType: "application/json",
       body: JSON.stringify({
-        completeness: "estimate",
-        quoteFingerprint: "a".repeat(64),
+        completeness: "preliminary",
+        quoteFingerprint: null,
         totals: {
           subtotalCents: 10000,
           shippingCents: 0,
-          taxCents: 0,
+          taxCents: null,
           totalCents: 10000,
         },
       }),

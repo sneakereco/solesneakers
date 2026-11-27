@@ -39,9 +39,13 @@ export async function proxy(request: NextRequest): Promise<NextResponse> {
       "/api/specialty/claims",
       "/api/specialty/claims/result",
     ].includes(pathname);
-  const sessionResponse = specialtyPost
-    ? NextResponse.next()
-    : await refreshSession(request);
+  const logoutPost = pathname === "/api/auth/logout" && request.method === "POST";
+  const sessionResponse =
+    specialtyPost || logoutPost
+      ? NextResponse.next({ request })
+      : await refreshSession(request);
+  if (!sessionResponse.ok)
+    return finalizeProxyResponse(sessionResponse, requestId, pathname);
 
   // Create forwarded headers with request ID for downstream handlers
   const forwardedHeaders = new Headers(request.headers);

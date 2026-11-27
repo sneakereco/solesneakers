@@ -1,7 +1,7 @@
 // app/api/auth/session/route.ts
 import { NextResponse } from "next/server";
 
-import { getServerSession } from "@/lib/auth/session";
+import { readServerSession } from "@/lib/auth/session";
 import { getRequestIdFromHeaders } from "@/lib/http/request-id";
 import { logError } from "@/lib/utils/log";
 
@@ -9,7 +9,7 @@ export async function GET(request: Request) {
   const requestId = getRequestIdFromHeaders(request.headers);
 
   try {
-    const session = await getServerSession();
+    const session = await readServerSession();
 
     if (!session) {
       return NextResponse.json(
@@ -37,7 +37,7 @@ export async function GET(request: Request) {
 
     return NextResponse.json(
       { error: "Failed to fetch session", requestId },
-      { status: 500, headers: { "Cache-Control": "no-store" } },
+      { status: 503, headers: { "Cache-Control": "no-store" } },
     );
   }
 }

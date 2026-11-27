@@ -3,10 +3,21 @@
 import { createServerClient } from "@supabase/ssr";
 import { NextResponse, type NextRequest } from "next/server";
 
+import { temporaryUnavailableResponse } from "@/lib/http/temporary-unavailable";
+import { withRequestDeadline } from "@/lib/http/request-deadline";
 import { env } from "@/config/env";
 import type { Database } from "@/types/db/database.types";
 
 export async function refreshSession(request: NextRequest) {
+  try {
+    return await withRequestDeadline((signal) => refreshWithinDeadline(request, signal));
+  } catch (error) {
+    if (!(error instanceof DOMException) || error.name !== "TimeoutError") throw error;
+    return temporaryUnavailableResponse(request);
+  }
+}
+
+async function refreshWithinDeadline(request: NextRequest, signal: AbortSignal) {
   let supabaseResponse = NextResponse.next({
     request,
   });
@@ -20,6 +31,7 @@ export async function refreshSession(request: NextRequest) {
           return request.cookies.getAll();
         },
         setAll(cookiesToSet) {
+          if (signal.aborted) return;
           cookiesToSet.forEach(({ name, value }) => request.cookies.set(name, value));
           supabaseResponse = NextResponse.next({
             request,

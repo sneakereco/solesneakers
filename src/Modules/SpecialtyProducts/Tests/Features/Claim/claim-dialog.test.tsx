@@ -2,8 +2,28 @@ import { renderToStaticMarkup } from "react-dom/server";
 import { ClaimDialog } from "@/Modules/SpecialtyProducts/Source/Features/Claim/ClaimDialog";
 import { ClaimButton } from "@/Modules/SpecialtyProducts/Source/Features/Claim/ClaimButton";
 jest.mock("@/components/ui/ModalPortal", () => ({
-  ModalPortal: ({ open, children }: { open: boolean; children: React.ReactNode }) =>
-    open ? children : null,
+  ModalPortal: ({
+    open,
+    children,
+    labelledBy,
+    describedBy,
+  }: {
+    open: boolean;
+    children: React.ReactNode;
+    labelledBy?: string;
+    describedBy?: string;
+  }) =>
+    open ? (
+      <dialog
+        open
+        role="dialog"
+        aria-modal="true"
+        aria-labelledby={labelledBy}
+        aria-describedby={describedBy}
+      >
+        {children}
+      </dialog>
+    ) : null,
 }));
 const product = {
   id: "11111111-1111-4111-8111-111111111111",

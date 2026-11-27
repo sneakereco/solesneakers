@@ -1,0 +1,33 @@
+{
+  "reviewBase": "a24ae2d2f7d72651c79f10dc25f6c63f5b46b1e6",
+  "runtime": "Local Next.js 16.3.3 and Supabase",
+  "productRoute": {
+    "initialData": "exact product lookup returns controlled 400",
+    "oldResetAdditionalReads": 0,
+    "retryIssuedNewRead": true,
+    "pending": "product detail loading skeleton",
+    "resumedDatabaseResult": "confirmed absent",
+    "retainedUrlAndDocument": true
+  },
+  "authorizedInventoryRoutes": [
+    "/admin/inventory",
+    "/admin/inventory/create",
+    "/admin/inventory/[id]/edit"
+  ],
+  "authorization": "Disposable staff account with local TOTP",
+  "staffReadDeadlineMs": 15000,
+  "separateRetryWhileOriginalHeld": true,
+  "fixtures": {
+    "backend": "http://127.0.0.1:64331",
+    "productId": "cc3ee1ce-fe71-47fb-b15d-aca1e06834c4",
+    "userIds": [
+      "45690558-2f34-4266-899e-34fc30531b95",
+      "8a067079-56f8-4ae1-99fc-33ab98442a66"
+    ],
+    "productsRemaining": 0,
+    "variantsRemainingForProduct": 0,
+    "profilesRemainingForUsers": 0,
+    "accountsRemaining": 0,
+    "ownedNextAndBrowserClosed": true
+  }
+}

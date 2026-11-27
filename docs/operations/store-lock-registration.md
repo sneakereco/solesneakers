@@ -7,8 +7,9 @@ Supabase Auth instead of the website endpoint. This follows Supabase's documente
 
 Existing users can still authenticate. The server storefront layout checks the
 current account role and fresh lock state before rendering customer content;
-staff retain their preview access. Missing/unreadable access settings fail closed
-for registration and non-staff storefront rendering.
+staff retain their preview access. A missing tenant or unreadable access settings
+fail closed for registration and non-staff storefront rendering. An existing
+tenant without a settings row retains the established open-store default.
 
 Successful signup, verification, password login, and OTP login use a same-origin
 document navigation. This starts a fresh Next.js client rather than reusing a
@@ -26,7 +27,7 @@ The trigger blocks **all new Auth user records** during an effective lock,
 including administrative creation/invitations. It does not change existing users
 or block their sign-in updates. Provision new staff before enabling a lock, or
 after its scheduled opening. An unconfigured database without a tenant retains
-the bootstrap behavior; the website itself fails closed without store settings.
+the bootstrap behavior; the website itself fails closed without a tenant.
 
 Existing date semantics are preserved: a disabled lock or an elapsed unlock time
 allows registration; an enabled lock without a deadline remains closed.

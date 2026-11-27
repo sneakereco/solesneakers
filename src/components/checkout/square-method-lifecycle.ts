@@ -1,52 +1,55 @@
 import type { SquarePaymentRequest } from "@/lib/square/web-payments";
 
-// Square destroys DOM it owns. Serialize cleanup with attachment so an old
-// instance cannot empty the container belonging to its replacement.
+import { withRequestDeadline } from "@/lib/http/request-deadline";
+
+// Attach each generation to its own host. An abandoned SDK call may still
+// allocate resources when it eventually settles.
 export function createSquareMethodLifecycle<
   T extends { destroy?(): Promise<boolean> },
 >() {
-  let generation = 0;
-  let current: T | null = null;
-  let pending = Promise.resolve();
-
-  async function destroy() {
-    if (current) {
-      await current.destroy?.();
-      current = null;
-    }
-  }
-
-  function replace(create: () => Promise<T>, attach: (method: T) => Promise<void>) {
-    const next = ++generation;
-    const operation = pending.then(async () => {
-      await destroy();
-      if (generation !== next) {
-        return;
-      }
-      current = await create();
-      try {
-        if (generation === next) {
-          await attach(current);
-        }
-      } catch (error) {
-        await destroy();
-        throw error;
-      }
-      if (generation !== next) {
-        await destroy();
-      }
-    });
-    pending = operation.catch(() => undefined);
-    return operation;
-  }
+  let release: (() => Promise<void>) | undefined;
 
   function dispose() {
-    ++generation;
-    const operation = pending.then(destroy);
-    pending = operation.catch(() => undefined);
-    return operation;
+    const retire = release;
+    release = undefined;
+    return retire?.() ?? Promise.resolve();
   }
 
+  async function replace(
+    create: () => Promise<T>,
+    attach: (method: T, current: () => boolean) => Promise<void>,
+  ) {
+    const previous = dispose();
+    const controller = new AbortController();
+    let method: T | undefined;
+    const retire = async () => {
+      controller.abort();
+      await method?.destroy?.();
+    };
+    release = retire;
+    // Cleanup of a retired generation must not block the new host.
+    void previous.catch(() => undefined);
+    try {
+      await withRequestDeadline(async (signal) => {
+        const current = () => !signal.aborted && !controller.signal.aborted;
+        const instance = await create();
+        method = instance;
+        if (!current()) {
+          await instance.destroy?.();
+          return;
+        }
+        try {
+          await attach(instance, current);
+        } finally {
+          if (!current()) await instance.destroy?.();
+        }
+      }, controller.signal);
+    } catch (error) {
+      if (controller.signal.aborted) return;
+      if (release === retire) void dispose().catch(() => undefined);
+      throw error;
+    }
+  }
   return { replace, dispose };
 }
 

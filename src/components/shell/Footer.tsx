@@ -1,4 +1,4 @@
-import Link from "next/link";
+import { FeedbackLink } from "@/components/ui/FeedbackLink";
 
 import { SUPPORT_EMAIL } from "@/config/constants/mail";
 import { INSTAGRAM_HANDLE, INSTAGRAM_URL } from "@/config/constants/contact";
@@ -68,9 +68,9 @@ export function Footer() {
             <ul className="mt-7 space-y-4">
               {TERMS_LINKS.map((link) => (
                 <li key={link.href}>
-                  <Link href={link.href} className={footerLinkClassName}>
+                  <FeedbackLink href={link.href} className={footerLinkClassName}>
                     {link.label}
-                  </Link>
+                  </FeedbackLink>
                 </li>
               ))}
             </ul>
@@ -86,9 +86,9 @@ export function Footer() {
             <ul className="mt-7 space-y-4">
               {CUSTOMER_RESOURCE_LINKS.map((link) => (
                 <li key={link.href}>
-                  <Link href={link.href} className={footerLinkClassName}>
+                  <FeedbackLink href={link.href} className={footerLinkClassName}>
                     {link.label}
-                  </Link>
+                  </FeedbackLink>
                 </li>
               ))}
             </ul>

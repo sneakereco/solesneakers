@@ -1,4 +1,4 @@
-import Link from "next/link";
+import { FeedbackLink as Link } from "@/components/ui/FeedbackLink";
 import { ArrowLeft } from "lucide-react";
 
 type AdminPageProps = {

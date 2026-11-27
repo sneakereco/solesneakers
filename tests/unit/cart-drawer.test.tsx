@@ -21,10 +21,9 @@ jest.mock("@/components/cart/ShippingEstimate", () => ({
 }));
 
 describe("CartDrawer", () => {
-  it("makes the closed drawer inert without aria-hiding a focused descendant", () => {
+  it("omits the closed drawer from server markup", () => {
     const html = renderToStaticMarkup(<CartDrawer isOpen={false} onClose={jest.fn()} />);
 
-    expect(html).toMatch(/^<div[^>]*inert=""/);
-    expect(html).not.toMatch(/^<div[^>]*aria-hidden=/);
+    expect(html).toBe("");
   });
 });

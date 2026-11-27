@@ -64,10 +64,10 @@ const bundle = await build({
               : args.path === "next/image"
                 ? "export default function Image({priority,unoptimized,...props}) { return <img {...props} />; }"
                 : args.path === "next/link"
-                  ? "export default function Link(props) { return <a {...props} />; }"
+                  ? "export default function Link(props) { return <a {...props} />; } export function useLinkStatus() { return {pending:false}; }"
                   : args.path === "./StoreMenuDrawer"
                     ? "export function StoreMenuDrawer() { return null; }"
-                    : 'export function useSession() { const signedIn = location.search.includes("signed-in"); return {user: signedIn ? {email: "fixture-long-customer-address-123456789@example.invalid"} : null, role: signedIn ? "customer" : null, isAuthenticated: signedIn, isLoading: false}; }',
+                    : 'export function useSession() { const signedIn = location.search.includes("signed-in"); return {user: signedIn ? {email: "fixture-long-customer-address-123456789@example.invalid"} : null, role: signedIn ? "customer" : null, isAuthenticated: signedIn, isLoading: false, isSessionUnavailable: false, hasRefreshed: true, refreshSession: async () => {}}; }',
         }));
       },
     },

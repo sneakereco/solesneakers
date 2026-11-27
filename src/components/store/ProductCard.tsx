@@ -1,5 +1,5 @@
-import Image from "next/image";
-import Link from "next/link";
+import { ProductImage } from "./ProductImage";
+import { FeedbackLink } from "@/components/ui/FeedbackLink";
 
 import type { ProductWithDetails } from "@/types/domain/product";
 
@@ -40,7 +40,7 @@ export function ProductCard({
 
   if (view === "list") {
     return (
-      <Link
+      <FeedbackLink
         href={productHref}
         className="group grid min-h-[14rem] grid-cols-[8rem_1fr] items-center gap-6 px-2 py-8 sm:min-h-[17rem] sm:grid-cols-[18rem_1fr] sm:gap-10 sm:px-6 lg:min-h-[19rem] lg:grid-cols-[19rem_1fr] lg:gap-12 lg:px-10"
         data-testid="product-card"
@@ -49,14 +49,14 @@ export function ProductCard({
       >
         <div className="relative h-36 w-full bg-[var(--storefront-surface)] sm:h-56 lg:h-64">
           {primaryImage && (
-            <Image
+            <ProductImage
               src={primaryImage.url}
               alt={product.name}
               fill
               sizes="(min-width: 1024px) 304px, (min-width: 640px) 288px, 128px"
               loading={priority ? "eager" : "lazy"}
               priority={priority}
-              className="object-contain transition-transform duration-300 group-hover:scale-[1.03]"
+              className="object-contain motion-safe:transition-transform motion-safe:duration-300 motion-safe:group-hover:scale-[1.03]"
               quality={85}
             />
           )}
@@ -68,12 +68,12 @@ export function ProductCard({
           <p className="mt-2 text-sm text-zinc-700 sm:text-base">{product.brand.label}</p>
           <p className="mt-5 text-sm text-zinc-700 sm:text-base">{priceDisplay}</p>
         </div>
-      </Link>
+      </FeedbackLink>
     );
   }
 
   return (
-    <Link
+    <FeedbackLink
       href={productHref}
       className="group block min-w-0"
       data-testid="product-card"
@@ -83,14 +83,14 @@ export function ProductCard({
       <article>
         <div className="relative aspect-[1/1.02] bg-[var(--storefront-surface)]">
           {primaryImage && (
-            <Image
+            <ProductImage
               src={primaryImage.url}
               alt={product.name}
               fill
               sizes="(min-width: 1024px) 25vw, (min-width: 640px) 33vw, 50vw"
               loading={priority ? "eager" : "lazy"}
               priority={priority}
-              className="object-contain px-3 transition-transform duration-300 group-hover:scale-[1.03] sm:px-5"
+              className="object-contain px-3 motion-safe:transition-transform motion-safe:duration-300 motion-safe:group-hover:scale-[1.03] sm:px-5"
               quality={85}
             />
           )}
@@ -102,6 +102,6 @@ export function ProductCard({
           <p className="mt-1 text-xs text-zinc-600">{priceDisplay}</p>
         </div>
       </article>
-    </Link>
+    </FeedbackLink>
   );
 }

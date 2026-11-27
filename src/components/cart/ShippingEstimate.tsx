@@ -3,6 +3,8 @@
 import { useEffect, useState } from "react";
 import { Truck } from "lucide-react";
 
+import { LoadingState, Skeleton } from "@/components/ui/Skeleton";
+
 const SHIPPING_TIME_ZONE = "America/New_York";
 const SHIPPING_CUTOFF_HOUR = 15;
 
@@ -100,7 +102,6 @@ export function ShippingEstimate({ className = "" }: { className?: string }) {
     <section
       data-shipping-estimate
       className={`flex min-h-[4.5rem] items-center gap-3 bg-zinc-50 px-5 py-4 ${className}`.trim()}
-      aria-live="polite"
     >
       <Truck className="h-5 w-5 shrink-0" strokeWidth={1.6} aria-hidden="true" />
       {estimate ? (
@@ -109,10 +110,10 @@ export function ShippingEstimate({ className = "" }: { className?: string }) {
           <p className="mt-0.5 text-xs text-zinc-500">{estimate.supportingText}</p>
         </div>
       ) : (
-        <div className="w-full" aria-label="Calculating shipping date">
-          <div className="h-4 w-44 animate-pulse bg-zinc-200" />
-          <div className="mt-2 h-3 w-56 animate-pulse bg-zinc-200" />
-        </div>
+        <LoadingState label="Calculating shipping date" className="w-full min-w-0">
+          <Skeleton className="h-4 w-full max-w-44" />
+          <Skeleton className="mt-2 h-3 w-full max-w-56" />
+        </LoadingState>
       )}
     </section>
   );

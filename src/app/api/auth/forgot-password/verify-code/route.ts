@@ -31,15 +31,19 @@ export async function POST(req: NextRequest) {
     const adminAuthService = new AdminAuthService(supabase);
 
     // This establishes a recovery session
-    await authService.verifyPasswordResetCode(email, code);
+    const verified = await authService.verifyPasswordResetCode(email, code);
 
     // Now check if user is admin and needs 2FA
     const { user, profile } = await authService.getCurrentUserProfile();
 
-    if (!user) {
+    if (!verified.user || verified.user.id !== user?.id) {
       return NextResponse.json(
-        { ok: false, error: "Session error", requestId },
-        { status: 400, headers: { "Cache-Control": "no-store" } },
+        {
+          ok: false,
+          error: "Your recovery session changed. Request a new reset code.",
+          requestId,
+        },
+        { status: 409, headers: { "Cache-Control": "no-store" } },
       );
     }
 
@@ -75,7 +79,10 @@ export async function POST(req: NextRequest) {
       }
     }
 
-    return NextResponse.json({ ok: true }, { headers: { "Cache-Control": "no-store" } });
+    return NextResponse.json(
+      { ok: true, recoveryOwnerId: verified.user.id },
+      { headers: { "Cache-Control": "no-store" } },
+    );
   } catch (error: unknown) {
     logError(error, {
       layer: "auth",

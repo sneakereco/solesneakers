@@ -1,11 +1,15 @@
 "use client";
 
-import { useEffect, useEffectEvent, useRef, useState } from "react";
-import { useHydrated } from "@/components/ui/useHydrated";
-import { createPortal } from "react-dom";
-import Link from "next/link";
+import { ActionButton } from "@/components/ui/ActionButton";
+import { useEffect, useLayoutEffect, useRef, useState, type Ref } from "react";
+import { StoreOverlayLink as FeedbackLink } from "@/components/shell/StoreOverlayLink";
 import { ChevronLeft, ChevronRight, Minus, Plus, X } from "lucide-react";
 
+import { RequestError } from "@/components/ui/RequestError";
+import { LoadingState, Skeleton } from "@/components/ui/Skeleton";
+import { fetchJsonWithDeadline } from "@/lib/http/request-deadline";
+import { logError } from "@/lib/utils/log";
+import { ModalPortal, useOverlayTransition } from "@/components/ui/ModalPortal";
 import { TOP_BRAND_SHORTCUTS } from "@/config/constants/storefront";
 
 type MenuPanel = "brand" | "size" | "category";
@@ -13,6 +17,7 @@ type MenuPanel = "brand" | "size" | "category";
 type StoreMenuDrawerProps = {
   isOpen: boolean;
   onClose: () => void;
+  invoker?: HTMLElement | null;
 };
 
 type SizeOption = {
@@ -22,6 +27,7 @@ type SizeOption = {
 };
 
 type BrandOption = { id: string; label: string };
+type MenuTaxonomy = { brands: BrandOption[]; sizes: SizeOption[] };
 
 const DRAWER_TRANSITION_MS = 460;
 const PANEL_TRANSITION_MS = 380;
@@ -53,17 +59,17 @@ function DrawerLink({
   variant?: "nested" | "row";
 }) {
   return (
-    <Link
+    <FeedbackLink
       href={href}
-      onClick={onNavigate}
+      onNavigate={onNavigate}
       className={
         variant === "row"
           ? "flex min-h-[61px] items-center border-b border-zinc-200 text-[13px] font-normal uppercase tracking-[0.02em] text-zinc-800 transition-colors hover:text-black"
-          : "block py-3 text-[0.9rem] text-zinc-700 transition-colors hover:text-black"
+          : "flex min-h-11 items-center py-3 text-[0.9rem] text-zinc-700 transition-colors hover:text-black"
       }
     >
       {children}
-    </Link>
+    </FeedbackLink>
   );
 }
 
@@ -76,7 +82,8 @@ function CollapsibleContent({
 }) {
   return (
     <div
-      className="grid transition-[grid-template-rows,opacity]"
+      inert={!isOpen}
+      className="grid transition-[grid-template-rows,opacity] motion-reduce:transition-none"
       style={{
         gridTemplateRows: isOpen ? "1fr" : "0fr",
         opacity: isOpen ? 1 : 0,
@@ -85,7 +92,7 @@ function CollapsibleContent({
       }}
     >
       <div
-        className="min-h-0 overflow-hidden transition-transform"
+        className="min-h-0 overflow-hidden transition-transform motion-reduce:transition-none"
         style={{
           transform: isOpen ? "none" : "translateY(-0.75rem)",
           transitionDuration: `${COLLAPSIBLE_TRANSITION_MS}ms`,
@@ -115,7 +122,7 @@ function SizeGroup({
 }) {
   return (
     <section className="border-b border-zinc-200">
-      <button
+      <ActionButton
         type="button"
         onClick={onToggle}
         className="flex min-h-[61px] w-full items-center justify-between py-4 text-left text-[13px] font-normal uppercase tracking-[0.02em] text-zinc-800"
@@ -123,10 +130,13 @@ function SizeGroup({
       >
         <span>{label}</span>
         {isOpen ? <Minus className="h-4 w-4" /> : <Plus className="h-4 w-4" />}
-      </button>
+      </ActionButton>
 
       <CollapsibleContent isOpen={isOpen}>
         <div className="mb-5 ml-2 border-l border-zinc-200 pl-6 pt-1">
+          {options.length === 0 && (
+            <p className="py-3 text-sm text-zinc-600">No sizes currently available.</p>
+          )}
           {options.map((option) => (
             <DrawerLink
               key={`${label}-${option.id}`}
@@ -142,17 +152,26 @@ function SizeGroup({
   );
 }
 
-function PanelHeader({ title, onBack }: { title: string; onBack: () => void }) {
+function PanelHeader({
+  title,
+  onBack,
+  backRef,
+}: {
+  title: string;
+  onBack: () => void;
+  backRef: Ref<HTMLButtonElement>;
+}) {
   return (
     <div className="flex h-20 items-center gap-4 border-b border-zinc-200 px-7 md:border-b-0 md:px-8">
-      <button
+      <ActionButton
+        ref={backRef}
         type="button"
         onClick={onBack}
-        className="inline-flex h-10 w-10 items-center justify-center text-zinc-700 md:hidden"
+        className="inline-flex h-11 w-11 items-center justify-center text-zinc-700 md:hidden"
         aria-label="Back to main menu"
       >
         <ChevronLeft className="h-5 w-5" />
-      </button>
+      </ActionButton>
       <h2 className="text-xs font-medium uppercase tracking-[0.04em] md:hidden">
         {title}
       </h2>
@@ -160,108 +179,116 @@ function PanelHeader({ title, onBack }: { title: string; onBack: () => void }) {
   );
 }
 
-export function StoreMenuDrawer({ isOpen, onClose }: StoreMenuDrawerProps) {
-  const isMounted = useHydrated();
-  const [previousOpen, setPreviousOpen] = useState(isOpen);
-  const [shouldRender, setShouldRender] = useState(isOpen);
-  const [isVisible, setIsVisible] = useState(false);
+function MenuOptionsSkeleton({ label, lines }: { label: string; lines: number }) {
+  return (
+    <LoadingState label={label}>
+      {Array.from({ length: lines }, (_, index) => (
+        <div
+          key={index}
+          className="flex min-h-[61px] items-center border-b border-zinc-200"
+        >
+          <Skeleton className="h-4 w-32" />
+        </div>
+      ))}
+    </LoadingState>
+  );
+}
+
+export function StoreMenuDrawer({ isOpen, onClose, invoker }: StoreMenuDrawerProps) {
+  const { present, visible } = useOverlayTransition(isOpen, DRAWER_TRANSITION_MS);
+  const [isNarrow, setIsNarrow] = useState(false);
   const [activePanel, setActivePanel] = useState<MenuPanel | null>(null);
   const [isPanelVisible, setIsPanelVisible] = useState(false);
   const [expandedSizes, setExpandedSizes] = useState<Record<string, boolean>>({});
   const [expandedBrandSections, setExpandedBrandSections] = useState<
     Record<string, boolean>
   >({});
-  const [brands, setBrands] = useState<BrandOption[]>([]);
-  const [sizes, setSizes] = useState<SizeOption[]>([]);
-  const drawerRef = useRef<HTMLElement>(null);
+  const [taxonomy, setTaxonomy] = useState<MenuTaxonomy | null>(null);
+  const [loadFailed, setLoadFailed] = useState(false);
+  const [attempt, setAttempt] = useState(0);
+  const panelTriggerRef = useRef<HTMLButtonElement | null>(null);
+  const panelBackRef = useRef<HTMLButtonElement>(null);
   const panelTimeoutRef = useRef<number | null>(null);
-  const closeFromEffect = useEffectEvent(onClose);
+  const panelFrameRef = useRef<number | null>(null);
+
+  useLayoutEffect(() => {
+    if (!present) return;
+    const desktop = window.matchMedia("(min-width: 768px)");
+    const updateViewport = () => setIsNarrow(!desktop.matches);
+    updateViewport();
+    desktop.addEventListener("change", updateViewport);
+    return () => desktop.removeEventListener("change", updateViewport);
+  }, [present]);
+
+  useLayoutEffect(() => {
+    if (!isOpen || !isNarrow) return;
+    if (isPanelVisible) panelBackRef.current?.focus({ preventScroll: true });
+    else panelTriggerRef.current?.focus({ preventScroll: true });
+  }, [isNarrow, isOpen, isPanelVisible]);
 
   useEffect(() => {
+    if (!present) return;
     return () => {
       if (panelTimeoutRef.current !== null) {
         window.clearTimeout(panelTimeoutRef.current);
+        panelTimeoutRef.current = null;
       }
-    };
-  }, []);
-
-  if (previousOpen !== isOpen) {
-    setPreviousOpen(isOpen);
-    if (isOpen) setShouldRender(true);
-    else setIsVisible(false);
-  }
-
-  useEffect(() => {
-    if (isOpen) {
-      let secondFrame = 0;
-      const firstFrame = window.requestAnimationFrame(() => {
-        secondFrame = window.requestAnimationFrame(() => setIsVisible(true));
-      });
-      return () => {
-        window.cancelAnimationFrame(firstFrame);
-        window.cancelAnimationFrame(secondFrame);
-      };
-    }
-
-    const timeout = window.setTimeout(() => {
-      setShouldRender(false);
-      setActivePanel(null);
-      setIsPanelVisible(false);
-    }, DRAWER_TRANSITION_MS);
-    return () => window.clearTimeout(timeout);
-  }, [isOpen]);
-
-  useEffect(() => {
-    if (!shouldRender) {
-      return;
-    }
-
-    const previousOverflow = document.body.style.overflow;
-    document.body.style.overflow = "hidden";
-    drawerRef.current?.focus({ preventScroll: true });
-
-    const handleKeyDown = (event: KeyboardEvent) => {
-      if (event.key === "Escape") {
-        closeFromEffect();
+      if (panelFrameRef.current !== null) {
+        window.cancelAnimationFrame(panelFrameRef.current);
+        panelFrameRef.current = null;
       }
+      panelTriggerRef.current = null;
     };
-
-    window.addEventListener("keydown", handleKeyDown);
-    return () => {
-      document.body.style.overflow = previousOverflow;
-      window.removeEventListener("keydown", handleKeyDown);
-    };
-  }, [shouldRender]);
+  }, [present]);
 
   useEffect(() => {
-    if (!isOpen || (brands.length > 0 && sizes.length > 0)) {
-      return;
-    }
+    if (!isOpen || taxonomy) return;
     const controller = new AbortController();
-    void fetch("/api/store/taxonomy", { signal: controller.signal })
-      .then((response) => (response.ok ? response.json() : Promise.reject(response)))
-      .then((data) => {
-        setBrands(data.brands ?? []);
-        setSizes(data.sizes ?? []);
-      })
-      .catch((error) => {
-        if ((error as { name?: string })?.name !== "AbortError") {
-          setBrands([]);
-          setSizes([]);
-        }
-      });
-    return () => controller.abort();
-  }, [brands.length, isOpen, sizes.length]);
 
-  if (!isMounted || !shouldRender) {
-    return null;
+    const loadTaxonomy = async () => {
+      setLoadFailed(false);
+      try {
+        const data = await fetchJsonWithDeadline<MenuTaxonomy | null>(
+          "/api/store/taxonomy",
+          "Could not load menu options",
+          controller.signal,
+        );
+        if (controller.signal.aborted) return;
+        if (
+          !Array.isArray(data?.brands) ||
+          !Array.isArray(data.sizes) ||
+          data.brands.some(
+            (brand) =>
+              !brand || typeof brand.id !== "string" || typeof brand.label !== "string",
+          ) ||
+          data.sizes.some(
+            (size) =>
+              !size || typeof size.id !== "string" || typeof size.label !== "string",
+          )
+        ) {
+          throw new Error("Invalid menu options");
+        }
+        setTaxonomy(data);
+      } catch (error) {
+        if (controller.signal.aborted) return;
+        setLoadFailed(true);
+        logError(error, { layer: "frontend", event: "load_store_menu_taxonomy" });
+      }
+    };
+
+    void loadTaxonomy();
+    return () => controller.abort();
+  }, [attempt, isOpen, taxonomy]);
+
+  if (!present && activePanel) {
+    setActivePanel(null);
+    setIsPanelVisible(false);
   }
 
-  const closeMenu = () => {
-    onClose();
-  };
+  if (!present) return null;
 
-  const openPanel = (panel: MenuPanel) => {
+  const openPanel = (panel: MenuPanel, trigger: HTMLButtonElement) => {
+    panelTriggerRef.current = trigger;
     if (panelTimeoutRef.current !== null) {
       window.clearTimeout(panelTimeoutRef.current);
       panelTimeoutRef.current = null;
@@ -274,7 +301,12 @@ export function StoreMenuDrawer({ isOpen, onClose }: StoreMenuDrawerProps) {
     }
 
     setActivePanel(panel);
-    window.requestAnimationFrame(() => setIsPanelVisible(true));
+    if (panelFrameRef.current === null) {
+      panelFrameRef.current = window.requestAnimationFrame(() => {
+        setIsPanelVisible(true);
+        panelFrameRef.current = null;
+      });
+    }
   };
 
   const closePanel = () => {
@@ -282,10 +314,14 @@ export function StoreMenuDrawer({ isOpen, onClose }: StoreMenuDrawerProps) {
     if (panelTimeoutRef.current !== null) {
       window.clearTimeout(panelTimeoutRef.current);
     }
-    panelTimeoutRef.current = window.setTimeout(() => {
-      setActivePanel(null);
-      panelTimeoutRef.current = null;
-    }, PANEL_TRANSITION_MS);
+    const reducedMotion = window.matchMedia("(prefers-reduced-motion: reduce)").matches;
+    panelTimeoutRef.current = window.setTimeout(
+      () => {
+        setActivePanel(null);
+        panelTimeoutRef.current = null;
+      },
+      reducedMotion ? 0 : PANEL_TRANSITION_MS,
+    );
   };
 
   const toggleSize = (key: string) => {
@@ -301,6 +337,12 @@ export function StoreMenuDrawer({ isOpen, onClose }: StoreMenuDrawerProps) {
       : activePanel === "size"
         ? "Shop by Size"
         : "Shop by Category";
+  const brands = taxonomy?.brands ?? [];
+  const sizes = taxonomy?.sizes ?? [];
+  const retryTaxonomy = () => {
+    setLoadFailed(false);
+    setAttempt((value) => value + 1);
+  };
   const clothingOptions = sizes.filter(
     (size) => size.sizeType === "clothing" && !/^\d+$/.test(size.label),
   );
@@ -331,46 +373,45 @@ export function StoreMenuDrawer({ isOpen, onClose }: StoreMenuDrawerProps) {
     };
   });
 
-  const drawer = (
-    <div
-      className="fixed inset-0 z-[9999] transition-opacity"
-      style={{
-        backgroundColor: "rgba(0,0,0,0.46)",
-        opacity: isVisible ? 1 : 0,
-        transitionDuration: `${DRAWER_TRANSITION_MS}ms`,
-        transitionTimingFunction: MENU_EASING,
+  return (
+    <ModalPortal
+      open={present}
+      invoker={invoker}
+      onClose={() => {
+        if (isOpen) onClose();
       }}
-      onMouseDown={(event) => {
-        if (event.target === event.currentTarget) {
-          closeMenu();
-        }
-      }}
+      label="Store menu"
+      placement="left"
+      focusDialog
+      contentClassName="contents"
+      backdropClassName={`bg-black/[0.46] transition-opacity duration-[460ms] ease-[cubic-bezier(0.76,0,0.24,1)] motion-reduce:transition-none ${
+        visible ? "opacity-100" : "opacity-0"
+      }`}
     >
       <aside
-        ref={drawerRef}
-        tabIndex={-1}
-        className="relative flex h-[100dvh] w-full overflow-hidden bg-white text-black shadow-2xl transition-[max-width,transform]"
+        inert={!isOpen}
+        className="relative flex h-[100dvh] w-full overflow-hidden bg-white text-black shadow-2xl transition-[max-width,opacity,transform] motion-reduce:transition-none"
         style={{
-          outline: "none",
           maxWidth: isPanelVisible ? "784px" : "392px",
-          transform: isVisible ? "none" : "translate3d(-100%,0,0)",
+          opacity: visible ? 1 : 0,
+          transform: visible ? "none" : "translate3d(-100%,0,0)",
           transitionDuration: `${DRAWER_TRANSITION_MS}ms`,
           transitionTimingFunction: MENU_EASING,
         }}
-        role="dialog"
-        aria-modal="true"
-        aria-label="Store menu"
       >
-        <div className="h-full w-full shrink-0 overflow-y-auto overscroll-contain bg-white md:w-[392px] md:border-r md:border-zinc-200">
+        <div
+          inert={isNarrow && isPanelVisible}
+          className="h-full w-full shrink-0 overflow-y-auto overscroll-contain bg-white md:w-[392px] md:border-r md:border-zinc-200"
+        >
           <div className="flex h-20 items-center px-6 md:px-8">
-            <button
+            <ActionButton
               type="button"
-              onClick={closeMenu}
-              className="inline-flex h-10 w-10 items-center justify-start text-zinc-800 transition-colors hover:text-black"
+              onClick={onClose}
+              className="inline-flex h-11 w-11 items-center justify-start text-zinc-800 transition-colors hover:text-black"
               aria-label="Close menu"
             >
               <X className="h-6 w-6" strokeWidth={1.5} />
-            </button>
+            </ActionButton>
           </div>
 
           <nav
@@ -384,49 +425,51 @@ export function StoreMenuDrawer({ isOpen, onClose }: StoreMenuDrawerProps) {
                 ["category", "Shop by Category"],
               ] as const
             ).map(([panel, label]) => (
-              <button
+              <ActionButton
                 key={panel}
                 type="button"
-                onClick={() => openPanel(panel)}
+                onClick={(event) => openPanel(panel, event.currentTarget)}
                 className="flex min-h-[61px] w-full items-center justify-between border-b border-zinc-200 text-left text-[13px] font-normal uppercase tracking-[0.02em] text-zinc-800 transition-colors hover:text-black"
                 aria-expanded={activePanel === panel && isPanelVisible}
               >
                 <span>{label}</span>
                 <ChevronRight className="h-4 w-4" strokeWidth={1.5} />
-              </button>
+              </ActionButton>
             ))}
 
-            <Link
+            <FeedbackLink
               href="/store"
-              onClick={closeMenu}
+              onNavigate={onClose}
               className="flex min-h-[61px] items-center border-b border-zinc-200 text-[13px] font-normal uppercase tracking-[0.02em] text-zinc-800 transition-colors hover:text-black"
             >
               Shop All
-            </Link>
+            </FeedbackLink>
           </nav>
         </div>
 
         <section
-          className="absolute inset-0 z-10 h-full w-full bg-white md:static md:w-[392px] md:shrink-0"
+          inert={!isPanelVisible}
+          className="absolute inset-0 z-10 h-full w-full bg-white transition-[opacity,transform] motion-reduce:transition-none md:static md:w-[392px] md:shrink-0"
           style={{
             opacity: isPanelVisible ? 1 : 0,
             transform: isPanelVisible ? "none" : "translate3d(2rem,0,0)",
             pointerEvents: isPanelVisible ? "auto" : "none",
-            transitionProperty: "opacity, transform",
             transitionDuration: `${PANEL_TRANSITION_MS}ms`,
             transitionTimingFunction: MENU_EASING,
           }}
         >
-          {activePanel && <PanelHeader title={panelTitle} onBack={closePanel} />}
+          {activePanel && (
+            <PanelHeader title={panelTitle} onBack={closePanel} backRef={panelBackRef} />
+          )}
 
           <div className="h-[calc(100dvh-5rem)] overflow-y-auto overscroll-contain px-7 pb-10 md:px-8">
             {activePanel === "brand" ? (
               <div key="brand" className="store-menu-content">
-                <DrawerLink href="/brands" onNavigate={closeMenu} variant="row">
+                <DrawerLink href="/brands" onNavigate={onClose} variant="row">
                   All Brands
                 </DrawerLink>
                 <section className="border-b border-zinc-200">
-                  <button
+                  <ActionButton
                     type="button"
                     onClick={() => toggleBrandSection("topBrands")}
                     className="flex min-h-[61px] w-full items-center justify-between text-left text-[13px] font-normal uppercase tracking-[0.02em] text-zinc-800"
@@ -438,19 +481,34 @@ export function StoreMenuDrawer({ isOpen, onClose }: StoreMenuDrawerProps) {
                     ) : (
                       <Plus className="h-4 w-4" />
                     )}
-                  </button>
+                  </ActionButton>
 
                   <CollapsibleContent isOpen={!!expandedBrandSections.topBrands}>
                     <div className="mb-5 ml-2 border-l border-zinc-200 pl-6 pt-1">
-                      {topBrandLinks.map((brand) => (
-                        <DrawerLink
-                          key={brand.label}
-                          href={brand.href}
-                          onNavigate={closeMenu}
-                        >
-                          {brand.label}
-                        </DrawerLink>
-                      ))}
+                      {loadFailed && (
+                        <div className="py-4">
+                          <RequestError
+                            message="Could not load brand collections. Search links are available below."
+                            onRetry={retryTaxonomy}
+                          />
+                        </div>
+                      )}
+                      {!taxonomy && !loadFailed && expandedBrandSections.topBrands ? (
+                        <MenuOptionsSkeleton
+                          label="Loading brand collections"
+                          lines={TOP_BRAND_SHORTCUTS.length}
+                        />
+                      ) : (
+                        topBrandLinks.map((brand) => (
+                          <DrawerLink
+                            key={brand.label}
+                            href={brand.href}
+                            onNavigate={onClose}
+                          >
+                            {brand.label}
+                          </DrawerLink>
+                        ))
+                      )}
                     </div>
                   </CollapsibleContent>
                 </section>
@@ -461,13 +519,21 @@ export function StoreMenuDrawer({ isOpen, onClose }: StoreMenuDrawerProps) {
                   <DrawerLink
                     key={category.value}
                     href={buildStoreHref({ category: category.value })}
-                    onNavigate={closeMenu}
+                    onNavigate={onClose}
                     variant="row"
                   >
                     {category.label}
                   </DrawerLink>
                 ))}
               </div>
+            ) : activePanel === "size" && !taxonomy ? (
+              loadFailed ? (
+                <div className="py-4">
+                  <RequestError message="Could not load sizes." onRetry={retryTaxonomy} />
+                </div>
+              ) : (
+                <MenuOptionsSkeleton label="Loading sizes" lines={6} />
+              )
             ) : activePanel === "size" ? (
               <div key="size" className="store-menu-content">
                 <SizeGroup
@@ -476,7 +542,7 @@ export function StoreMenuDrawer({ isOpen, onClose }: StoreMenuDrawerProps) {
                   options={clothingOptions}
                   isOpen={!!expandedSizes.clothing}
                   onToggle={() => toggleSize("clothing")}
-                  onNavigate={closeMenu}
+                  onNavigate={onClose}
                 />
                 <SizeGroup
                   label="Jeans"
@@ -484,7 +550,7 @@ export function StoreMenuDrawer({ isOpen, onClose }: StoreMenuDrawerProps) {
                   options={jeanOptions}
                   isOpen={!!expandedSizes.jeans}
                   onToggle={() => toggleSize("jeans")}
-                  onNavigate={closeMenu}
+                  onNavigate={onClose}
                 />
                 <SizeGroup
                   label="Men's"
@@ -492,7 +558,7 @@ export function StoreMenuDrawer({ isOpen, onClose }: StoreMenuDrawerProps) {
                   options={mensOptions}
                   isOpen={!!expandedSizes.mens}
                   onToggle={() => toggleSize("mens")}
-                  onNavigate={closeMenu}
+                  onNavigate={onClose}
                 />
                 <SizeGroup
                   label="Women's"
@@ -500,7 +566,7 @@ export function StoreMenuDrawer({ isOpen, onClose }: StoreMenuDrawerProps) {
                   options={womensOptions}
                   isOpen={!!expandedSizes.womens}
                   onToggle={() => toggleSize("womens")}
-                  onNavigate={closeMenu}
+                  onNavigate={onClose}
                 />
                 <SizeGroup
                   label="Youth"
@@ -508,7 +574,7 @@ export function StoreMenuDrawer({ isOpen, onClose }: StoreMenuDrawerProps) {
                   options={youthOptions}
                   isOpen={!!expandedSizes.youth}
                   onToggle={() => toggleSize("youth")}
-                  onNavigate={closeMenu}
+                  onNavigate={onClose}
                 />
                 <SizeGroup
                   label="European"
@@ -516,15 +582,13 @@ export function StoreMenuDrawer({ isOpen, onClose }: StoreMenuDrawerProps) {
                   options={euOptions}
                   isOpen={!!expandedSizes.eu}
                   onToggle={() => toggleSize("eu")}
-                  onNavigate={closeMenu}
+                  onNavigate={onClose}
                 />
               </div>
             ) : null}
           </div>
         </section>
       </aside>
-    </div>
+    </ModalPortal>
   );
-
-  return createPortal(drawer, document.body);
 }

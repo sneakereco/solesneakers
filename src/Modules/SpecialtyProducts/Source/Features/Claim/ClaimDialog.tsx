@@ -114,8 +114,6 @@ export function ClaimDialog({
   useEffect(() => {
     if (!open) return;
     active.current = true;
-    const previousFocus =
-      document.activeElement instanceof HTMLElement ? document.activeElement : null;
     const saved = readAttempt(product.id);
     attempt.current = saved;
     const frame = requestAnimationFrame(() => {
@@ -126,47 +124,10 @@ export function ClaimDialog({
       // Recover once the portal is visible, and cancel this work if it closes before paint.
       if (saved) void showResult(saved, null);
     });
-    const keydown = (event: KeyboardEvent) => {
-      if (event.key === "Escape") {
-        event.preventDefault();
-        onClose();
-      }
-      if (event.key !== "Tab" || !dialog.current) return;
-      const elements = Array.from(
-        dialog.current.querySelectorAll<HTMLElement>(
-          'button:not(:disabled), input:not(:disabled), textarea:not(:disabled), select:not(:disabled), a[href], [tabindex="0"]',
-        ),
-      );
-      const first = elements[0],
-        last = elements[elements.length - 1];
-      if (!first) {
-        event.preventDefault();
-        dialog.current.focus();
-        return;
-      }
-      if (
-        event.shiftKey &&
-        (document.activeElement === first ||
-          !dialog.current.contains(document.activeElement))
-      ) {
-        event.preventDefault();
-        last.focus();
-      } else if (
-        !event.shiftKey &&
-        (document.activeElement === last ||
-          !dialog.current.contains(document.activeElement))
-      ) {
-        event.preventDefault();
-        first.focus();
-      }
-    };
-    document.addEventListener("keydown", keydown);
     return () => {
       active.current = false;
       operation.current?.abort();
       cancelAnimationFrame(frame);
-      document.removeEventListener("keydown", keydown);
-      previousFocus?.focus();
     };
   }, [open, product.id, onClose, showResult]);
   const editAddress = (
@@ -255,14 +216,14 @@ export function ClaimDialog({
     "mt-1 w-full rounded border border-zinc-300 bg-white px-3 py-2 text-base text-zinc-950 focus:outline focus:outline-2 focus:outline-zinc-900";
   const checking = phase === "checking" || phase === "validating";
   return (
-    <ModalPortal open={open} onClose={onClose}>
+    <ModalPortal
+      open={open}
+      onClose={onClose}
+      labelledBy={headingId}
+      describedBy={phase === "form" ? noteId : undefined}
+    >
       <div
         ref={dialog}
-        role="dialog"
-        aria-modal="true"
-        aria-labelledby={headingId}
-        aria-describedby={phase === "form" ? noteId : undefined}
-        tabIndex={-1}
         data-specialty-claim-dialog
         className="ph-no-capture ph-no-record max-h-[calc(100dvh-2rem)] w-[calc(100vw-2rem)] max-w-lg overflow-y-auto overscroll-contain rounded-xl bg-white p-5 text-zinc-950 shadow-xl sm:p-7"
       >

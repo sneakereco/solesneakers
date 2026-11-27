@@ -12,7 +12,7 @@ jest.mock("@/lib/utils/log", () => ({
 
 import { DynamicServerError } from "next/dist/client/components/hooks-server-context";
 
-import { getServerSession } from "@/lib/auth/session";
+import { readServerSession, getServerSession } from "@/lib/auth/session";
 import { createSupabaseServerClient } from "@/lib/supabase/server";
 import { logError } from "@/lib/utils/log";
 import { ProfileRepository } from "@/repositories/profile-repo";
@@ -25,6 +25,38 @@ describe("getServerSession", () => {
   beforeEach(() => {
     jest.clearAllMocks();
   });
+
+  it.each(["auth", "profile"])(
+    "ends a held %s lookup as unavailable",
+    async (boundary) => {
+      jest.useFakeTimers();
+      try {
+        const held = new Promise<never>(() => {});
+        const identity = { data: { user: { id: "fixture" } }, error: null };
+        mockCreateSupabaseServerClient.mockResolvedValue({
+          auth: {
+            getUser: () => (boundary === "auth" ? held : Promise.resolve(identity)),
+          },
+        } as never);
+        mockProfileRepository.mockImplementation(
+          () => ({ getByUserId: () => held }) as never,
+        );
+        let result = "pending";
+        void readServerSession().then(
+          () => {
+            result = "resolved";
+          },
+          (error) => {
+            result = error.name;
+          },
+        );
+        await jest.advanceTimersByTimeAsync(15_000);
+        expect(result).toBe("TimeoutError");
+      } finally {
+        jest.useRealTimers();
+      }
+    },
+  );
 
   it("returns null when supabase auth lookup throws", async () => {
     mockCreateSupabaseServerClient.mockRejectedValue(new Error("supabase unavailable"));

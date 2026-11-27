@@ -3,6 +3,9 @@ import type { SupabaseClient } from "@supabase/supabase-js";
 import type { NextRequest } from "next/server";
 import { NextResponse } from "next/server";
 
+import { isRejectedSessionError } from "@/lib/auth/rejected-session";
+import { withRequestDeadline } from "@/lib/http/request-deadline";
+import { temporaryUnavailableResponse } from "@/lib/http/temporary-unavailable";
 import { ProfileRepository } from "@/repositories/profile-repo";
 import { isAdminRole, isProfileRole } from "@/config/constants/roles";
 import { verifyAdminSessionToken } from "@/lib/http/admin-session";
@@ -13,6 +16,23 @@ export async function protectAdminRoute(
   request: NextRequest,
   requestId: string,
   supabase: SupabaseClient,
+): Promise<NextResponse | null> {
+  try {
+    return await withRequestDeadline((signal) =>
+      checkAdmin(request, requestId, supabase, signal),
+    );
+  } catch (error) {
+    if (error instanceof DOMException && error.name === "TimeoutError")
+      return temporaryUnavailableResponse(request);
+    throw error;
+  }
+}
+
+async function checkAdmin(
+  request: NextRequest,
+  requestId: string,
+  supabase: SupabaseClient,
+  signal: AbortSignal,
 ): Promise<NextResponse | null> {
   const { pathname } = request.nextUrl;
 
@@ -36,6 +56,7 @@ export async function protectAdminRoute(
   const signOutAndClearAdminCookie = async (
     response: NextResponse,
   ): Promise<NextResponse> => {
+    if (signal.aborted) return response;
     try {
       await supabase.auth.signOut();
     } catch (signOutError) {
@@ -58,6 +79,9 @@ export async function protectAdminRoute(
 
   const { data: userData, error: userError } = await supabase.auth.getUser();
 
+  if (signal.aborted) throw signal.reason;
+  if (userError && !isRejectedSessionError(userError))
+    return temporaryUnavailableResponse(request);
   if (userError || !userData?.user) {
     log({
       level: "warn",
@@ -98,13 +122,10 @@ export async function protectAdminRoute(
       error: profileError instanceof Error ? profileError.message : String(profileError),
     });
 
-    return respond(
-      security.proxy.admin.errorStatus,
-      "Profile lookup failed",
-      security.proxy.admin.loginPath,
-    );
+    return temporaryUnavailableResponse(request);
   }
 
+  if (signal.aborted) throw signal.reason;
   if (!profile) {
     log({
       level: "warn",
@@ -243,11 +264,7 @@ export async function protectAdminRoute(
       error: aalError?.message,
     });
 
-    return respond(
-      security.proxy.admin.errorStatus,
-      "MFA state error",
-      security.proxy.admin.loginPath,
-    );
+    return temporaryUnavailableResponse(request);
   }
 
   const mfaRequired = aalData.nextLevel === "aal2";
