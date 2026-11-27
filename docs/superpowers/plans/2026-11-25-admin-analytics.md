@@ -56,7 +56,7 @@
 | Reporting            | `.../Reporting/{posthog-query,report-service,report-cache,csv-export,query-contract}.ts`, `queries/{financial,commerce-health,visitors,acquisition,products}.ts`: allowlisted provider calculations and typed responses                                                                                       |
 | Dashboard            | `.../Dashboard/{AnalyticsPageClient,CalendarRangeFilter,ReportFilters,MetricCard,DataCoverage,ReportSkeleton}.tsx`, `charts/{TimeSeriesChart,ComparisonCharts,FunnelChart,CohortHeatmap}.tsx`, `reports/{Overview,Sales,Customers,Acquisition,Products,Payments,CheckoutHealth}Report.tsx`: presentation only |
 | Next.js entry points | `/admin/analytics` page/loading/error files; `/api/admin/analytics/[report]`, `/api/admin/analytics/[report]/export`, `/api/analytics/preferences`, `/api/analytics/identity`, `/api/cron/analytics`: thin route adapters with appropriate auth                                                               |
-| Database             | New `20261125180000_admin_analytics_fact_ledger.sql` and `20261125180100_admin_analytics_source_hooks.sql`; `20261125180200_admin_analytics_reporting_views.sql` if retention requires the native warehouse fallback; generated `src/types/db/database.types.ts`                                              |
+| Database             | New `20261127021000_admin_analytics_fact_ledger.sql` and `20261127022000_admin_analytics_source_hooks.sql`; `20261127023000_admin_analytics_reporting_views.sql` if retention requires the native warehouse fallback; generated `src/types/db/database.types.ts`                                              |
 | Proof and operations | Module-local unit tests, real local DB runner, `tests/browser/admin-analytics.mjs`, updated measurement browser checks, `scripts/{verify-posthog-analytics,activate-admin-analytics}.mjs`, and `docs/operations/admin-analytics.md`                                                                           |
 
 `...` in this table means the exact prefix `src/Modules/Analytics/Source/Features`; task file lists use that convention. Test prefixes mirror it under `src/Modules/Analytics/Tests/Features`. Do not create empty scaffolding in advance of a task.
@@ -113,7 +113,7 @@ Also produce `createBuyerKey(identity:{normalizedEmail:string},secret:string):st
 
 ## Task 3: Add the private durable fact ledger and leased publication queue
 
-**Files:** Create `CommerceFacts/{contract,repository}.ts`, `EventDelivery/delivery-repository.ts`, migration `supabase/migrations/20261125180000_admin_analytics_fact_ledger.sql`, `scripts/test-admin-analytics-db.mjs`; modify generated database types. Create `Tests/Features/CommerceFacts/contract.test.ts` and repository tests.
+**Files:** Create `CommerceFacts/{contract,repository}.ts`, `EventDelivery/delivery-repository.ts`, migration `supabase/migrations/20261127021000_admin_analytics_fact_ledger.sql`, `scripts/test-admin-analytics-db.mjs`; modify generated database types. Create `Tests/Features/CommerceFacts/contract.test.ts` and repository tests.
 
 **Red/green commands:** `npm run test:jest:unit -- --runInBand --testPathPatterns='src/Modules/Analytics/Tests/Features/(CommerceFacts|EventDelivery/delivery-repository)'`; `node scripts/test-admin-analytics-db.mjs` on the explicitly isolated local instance.
 
@@ -145,7 +145,7 @@ Expose `captureStorefrontViewed():void`, `captureProductViewed(productId:string)
 
 ## Task 5: Capture authoritative commerce snapshots, attempts, costs, and fulfillment
 
-**Files:** Create `CommerceFacts/{source-context,operational-outcome}.ts`, migration `supabase/migrations/20261125180100_admin_analytics_source_hooks.sql`, and matching tests. Modify `src/lib/checkout/{checkout-request,prepare-checkout,prepare-checkout-dependencies,checkout-cart-resolver,create-direct-payment,create-direct-payment-dependencies}.ts`, `src/repositories/checkout-reservation-repo.ts`, `src/components/checkout/CheckoutClient.tsx`, `src/lib/square/{payment-event,payment-details}.ts`, `src/app/api/admin/shipping/labels/route.ts` only at the actual source boundaries. Extend the real DB runner and existing focused checkout/payment tests.
+**Files:** Create `CommerceFacts/{source-context,operational-outcome}.ts`, migration `supabase/migrations/20261127022000_admin_analytics_source_hooks.sql`, and matching tests. Modify `src/lib/checkout/{checkout-request,prepare-checkout,prepare-checkout-dependencies,checkout-cart-resolver,create-direct-payment,create-direct-payment-dependencies}.ts`, `src/repositories/checkout-reservation-repo.ts`, `src/components/checkout/CheckoutClient.tsx`, `src/lib/square/{payment-event,payment-details}.ts`, `src/app/api/admin/shipping/labels/route.ts` only at the actual source boundaries. Extend the real DB runner and existing focused checkout/payment tests.
 
 **Red/green commands:** `npm run test:jest:unit -- --runInBand --testPathPatterns='src/Modules/Analytics/Tests/Features/CommerceFacts|tests/unit/(prepare-checkout|create-direct-payment|checkout-reservation-repo|square-payment-event|square-payment-details)'`; `node scripts/test-admin-analytics-db.mjs` on the isolated local instance.
 
@@ -160,7 +160,7 @@ Expose `captureStorefrontViewed():void`, `captureProductViewed(productId:string)
 
 ## Task 6: Deliver, reconcile, and retain PostHog facts without blocking commerce
 
-**Files:** Create `EventDelivery/{delivery-worker,reconcile}.ts`, `src/app/api/cron/analytics/route.ts`, and matching tests; modify `vercel.json`, `src/app/api/webhooks/square/route.ts`, and `src/app/api/cron/expire-checkouts/route.ts` for bounded post-response scheduling. Create `scripts/verify-posthog-analytics.mjs` initial transport/reconciliation modes. If retention requires it, add `supabase/migrations/20261125180200_admin_analytics_reporting_views.sql` and `EventDelivery/history-source.ts` for the curated native warehouse/archive adapter.
+**Files:** Create `EventDelivery/{delivery-worker,reconcile}.ts`, `src/app/api/cron/analytics/route.ts`, and matching tests; modify `vercel.json`, `src/app/api/webhooks/square/route.ts`, and `src/app/api/cron/expire-checkouts/route.ts` for bounded post-response scheduling. Create `scripts/verify-posthog-analytics.mjs` initial transport/reconciliation modes. If retention requires it, add `supabase/migrations/20261127023000_admin_analytics_reporting_views.sql` and `EventDelivery/history-source.ts` for the curated native warehouse/archive adapter.
 
 **Red/green commands:** `npm run test:jest:unit -- --runInBand --testPathPatterns=src/Modules/Analytics/Tests/Features/EventDelivery`; `node scripts/test-admin-analytics-db.mjs`; `node scripts/verify-posthog-analytics.mjs --mode reconcile --environment staging` when owner credentials are configured.
 

@@ -163,9 +163,7 @@ if (process.argv[1] && pathToFileURL(resolve(process.argv[1])).href === import.m
   const files = readdirSync(migrations)
     .sort()
     .filter((file) =>
-      /^(20260918180000|20260919090000|20261123120000|2026112512|2026112518|20261127)/.test(
-        file,
-      ),
+      /^(20260918180000|20260919090000|20261123120000|2026112512|20261127)/.test(file),
     );
   for (const file of files) {
     if (file.startsWith("20261127030000"))
@@ -175,7 +173,7 @@ if (process.argv[1] && pathToFileURL(resolve(process.argv[1])).href === import.m
     const migration = new URL(file, migrations);
     if (
       database === replay &&
-      file === "20261125180200_admin_analytics_reporting_views.sql"
+      file === "20261127023000_admin_analytics_reporting_views.sql"
     )
       replayReportingMigration(fixture, migration);
     else load(migration);
