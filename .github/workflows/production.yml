@@ -153,7 +153,7 @@ jobs:
           DEPLOYMENT_URL: ${{ needs.deploy.outputs.deployment_url }}
         run: |
           for attempt in 1 2 3 4 5 6; do
-            if curl --fail --silent --show-error --max-time 10 "$DEPLOYMENT_URL/api/readyz"; then
+            if curl --user-agent "Solesneakers-Readiness/1.0" --fail --silent --show-error --max-time 10 "$DEPLOYMENT_URL/api/readyz"; then
               exit 0
             fi
             if [ "$attempt" -lt 6 ]; then
