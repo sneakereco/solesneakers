@@ -15,6 +15,7 @@ const credential: PairKeys = {
 };
 const DEVICE_SESSION_KEY = "rdk_checkout_device_session_id";
 const RECOVERY = "checkout_original_recovery_v1";
+const ISSUED_CONTEXT = "checkout_issued_context_v1";
 function changedFinancialPair() {
   if (typeof window !== "undefined" && typeof window.dispatchEvent === "function")
     window.dispatchEvent(new Event("checkout-financial-pair"));
@@ -306,11 +307,34 @@ export function resolveCheckoutAttempt(
     },
     interruptedSwitch: () => mode === "resume" && current() && interrupted(),
 
-    commit() {
+    issuedTo(ownerId?: string | null) {
+      if (
+        !ownerId ||
+        !issuedDevice ||
+        !current() ||
+        storage.getItem(DEVICE_SESSION_KEY) !== issuedDevice
+      )
+        return false;
+      return (
+        storage.getItem(ISSUED_CONTEXT) ===
+        JSON.stringify({ ownerId, deviceId: issuedDevice, pair: original })
+      );
+    },
+    commit(ownerId?: string | null) {
       if (!equal(previous, readPair(storage, financial))) return false;
       const protectedSwitch = mode === "new" ? storage.getItem(SWITCH) : null;
       publish(storage, financial, original);
       if (!equal(previous, original)) changedFinancialPair();
+      if (mode === "new" && ownerId && issuedDevice && current()) {
+        try {
+          storage.setItem(
+            ISSUED_CONTEXT,
+            JSON.stringify({ ownerId, deviceId: issuedDevice, pair: original }),
+          );
+        } catch {
+          /* The original tab can continue with its capture. */
+        }
+      }
       forget(protectedSwitch ?? undefined);
       return true;
     },
@@ -378,6 +402,7 @@ export function finishCheckoutAttempt(
       try {
         storage.removeItem(SWITCH);
         storage.removeItem(HOUSEKEEPING);
+        storage.removeItem(ISSUED_CONTEXT);
         const recovery = JSON.parse(storage.getItem(RECOVERY) ?? "null");
         if (
           recovery &&
@@ -404,6 +429,15 @@ export function getOrCreateCheckoutDeviceSessionId(
     return existing;
   }
 
+  const issued = storage?.getItem(ISSUED_CONTEXT);
+  if (storage && issued) {
+    const active = readPair(storage, financial);
+    if (active && equal(active, requirePair(JSON.parse(issued).pair))) {
+      throw Error(
+        "The original checkout device is unavailable. Check your original order before paying.",
+      );
+    }
+  }
   const id = createId();
   storage?.setItem(DEVICE_SESSION_KEY, id);
   return id;

@@ -42,6 +42,7 @@ export type ProofFailure = {
 };
 export type CaptureResult =
   | ProofFailure
+  | { status: "stale"; reason: "different_context" | "retired_capture" }
   | {
       status: "captured";
       captureId: string;
@@ -59,6 +60,7 @@ export interface CartPurchaseActions {
     captureId: string,
     orderId: string,
     signal?: AbortSignal,
+    requireOriginalUnits?: true,
   ): Promise<boolean>;
   consumeConfirmedPurchase(
     orderId: string,

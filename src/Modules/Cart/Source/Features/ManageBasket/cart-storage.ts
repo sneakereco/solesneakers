@@ -381,9 +381,9 @@ export class BasketStorage {
             generation,
             signal,
           )) ?? unavailablePurchase(signal),
-        bindPreparedOrder: async (captureId, orderId, signal) =>
+        bindPreparedOrder: async (captureId, orderId, signal, requireOriginalUnits) =>
           (await this.atomic(
-            () => this.bind(captureId, orderId, eligible(signal)),
+            () => this.bind(captureId, orderId, eligible(signal), requireOriginalUnits),
             generation,
             signal,
           )) ?? false,
@@ -807,8 +807,15 @@ export class BasketStorage {
     if (!canAssociate()) return { status: "stale" };
     const existing = ledger.records.find((r) => r.attemptKey === attemptKey);
     if (!existing && mode === "resume") return { status: "missing" };
-    if (existing && (existing.origin !== origin || existing.stage !== "pending"))
+    if (existing && (existing.origin !== origin || existing.stage !== "pending")) {
+      if (mode === "resume" && this.userId) {
+        if (existing.stage === "retired")
+          return { status: "stale", reason: "retired_capture" };
+        if (existing.stage === "pending" && sameProjection(existing.lines, expected))
+          return { status: "stale", reason: "different_context" };
+      }
       return { status: "stale" };
+    }
     if (current.rows.some((r) => !r.units) && ledger.records.length)
       return { status: "corrupt" };
     // Capture can initialize unit lineage. A prepare conflict must target that exact
@@ -869,14 +876,26 @@ export class BasketStorage {
       return { status: "unavailable" };
     return captured(captureId, projection(lines)!);
   }
-  private bind(captureId: string, orderId: string, eligible: () => boolean) {
+  private bind(
+    captureId: string,
+    orderId: string,
+    eligible: () => boolean,
+    requireOriginalUnits?: true,
+  ) {
     if (!eligible() || !validId(captureId) || !validId(orderId)) return false;
     const origin = contextOrigin();
     if (!origin) return false;
-    this.read(); // Also fence an oversized basket changed since the last observation.
+    const current = this.read();
     const ledger = this.proofs(origin, eligible);
     const record = ledger?.records.find((r) => r.captureId === captureId);
     if (!ledger || !record || record.stage !== "pending" || record.origin !== origin)
+      return false;
+    if (
+      requireOriginalUnits &&
+      (!current.complete ||
+        !sameProjection(current.items, record.lines) ||
+        subtractRows(current.rows, record, record.lines)?.length !== 0)
+    )
       return false;
     if (!eligible()) return false;
     if (record.orderId) return record.orderId === orderId;

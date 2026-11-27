@@ -1677,6 +1677,16 @@ for (const scenario of [
       releaseSession();
       if (scenario === "failed prepare") {
         await expect(page.getByText("Fixture preparation was unavailable")).toBeVisible();
+      } else if (scenario === "replacement") {
+        await expect
+          .poll(() => new URL(page.url()).pathname)
+          .toBe("/checkout/processing");
+        assert.equal(new URL(page.url()).searchParams.get("orderId"), preparedOrderId);
+        assert.equal(await page.evaluate(() => window.testCart.items[0]?.quantity), 1);
+        assert.equal(
+          f.requests.validations.some((v) => v.order?.orderId === preparedOrderId),
+          false,
+        );
       } else {
         await expect
           .poll(() =>
@@ -1685,7 +1695,7 @@ for (const scenario of [
           .toBe(true);
         assert.equal(f.requests.permits, 0);
         releaseScoped();
-        if (["replacement", "no own hold", "price change"].includes(scenario)) {
+        if (["no own hold", "price change"].includes(scenario)) {
           await expect(
             page.getByText(/Your cart changed. Review your items before paying/),
           ).toBeVisible();

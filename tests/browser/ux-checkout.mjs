@@ -171,6 +171,11 @@ async function fixture(browser) {
     if (path === "/api/checkout/prepare") {
       const n = f.prepareCalls.push(route.request().postDataJSON());
       if (n === 1 && f.prepareHold) await f.prepareHold.promise;
+      if (f.missingOriginal && f.prepareCalls[n - 1].recoveryOnly)
+        return route.fulfill({
+          status: 409,
+          json: { code: "CHECKOUT_RECOVERY_REQUIRED" },
+        });
       return route.fulfill({
         status: f.suggestion ? 422 : (f.prepareStatus ?? 200),
         json: f.suggestion
@@ -332,6 +337,75 @@ function installHeldWallet(name, phase) {
     return payments;
   };
 }
+async function copiedCheckout(f, missingOriginal) {
+  f.missingOriginal = missingOriginal;
+  f.prepareHold = gate();
+  const a = await f.open();
+  await pay(a);
+  await expect.poll(() => f.prepareCalls.length).toBe(1);
+  await expect(a.getByRole("heading", { name: "Preparing your order" })).toBeVisible();
+  await a.evaluate(() => document.querySelector("form").requestSubmit());
+  assert.equal(f.prepareCalls.length, 1);
+  const cloned = await a.evaluate(() => ({ ...sessionStorage }));
+  const b = await f.ctx.newPage();
+  await b.addInitScript((values) => {
+    for (const [k, v] of Object.entries(values)) sessionStorage.setItem(k, v);
+  }, cloned);
+  await openUxHarness(b, bundle, "https://ux.test/checkout");
+  await b.waitForFunction(
+    () => window.cart?.isReady && window.cart.validationStatus === "idle",
+  );
+  assert.equal(
+    await b.evaluate(() => window.cart.clearCart().then((r) => r.status)),
+    "saved",
+  );
+  assert.equal(
+    await b.evaluate((x) => window.cart.addItem(x).then((r) => r.status), item),
+    "saved",
+  );
+  await pay(b);
+  await expect
+    .poll(() => f.prepareCalls.length)
+    .toBe(2)
+    .catch(async (error) => {
+      console.error(
+        "Synthetic copied-tab state",
+        (await b.locator("body").innerText()).slice(-2000),
+        { prepare: f.prepareCalls.length, permit: f.permitCalls, pay: f.payCalls },
+      );
+      throw error;
+    });
+  const { recoveryOnly, ...recovered } = f.prepareCalls[1];
+  assert.equal(recoveryOnly, true);
+  const { shippingAddressOverride, ...original } = f.prepareCalls[0];
+  assert.equal(shippingAddressOverride, false);
+  assert.deepEqual(
+    recovered,
+    original,
+    "the lookup reuses the original saved payload, key and device",
+  );
+  assert.equal(f.permitCalls, 0);
+  assert.equal(await b.evaluate(() => window.tokenCalls ?? 0), 0);
+  if (missingOriginal) {
+    await expect(b.getByRole("button", { name: "Check original order" })).toBeVisible();
+    await expect(b.getByRole("link", { name: "Check order status" })).toBeVisible();
+    assert.equal(
+      await b.evaluate(() => sessionStorage.getItem("checkout_idempotency_key")),
+      original.idempotencyKey,
+    );
+  } else {
+    await expect(b.getByRole("heading", { name: "Order Confirmed!" })).toBeVisible();
+  }
+  assert.equal(f.payCalls, 0);
+  assert.equal(await b.evaluate(() => window.cart.itemCount), 1);
+  f.prepareHold.resolve();
+  await expect(a.getByRole("heading", { name: "Order Confirmed!" })).toBeVisible();
+  assert.equal(f.permitCalls, 0);
+  assert.equal(await a.evaluate(() => window.tokenCalls ?? 0), 0);
+  assert.equal(await a.evaluate(() => window.cart.itemCount), 1);
+  assert.equal(f.payCalls, 0);
+}
+
 const cases = {
   async lostPayment(f) {
     for (const mode of ["drop", "headers", "body", "unreadable"]) {
@@ -694,54 +768,8 @@ const cases = {
     assert.equal(f.payCalls, 0);
     assert.equal(f.prepareCalls.length, 0);
   },
-  async duplicate(f) {
-    f.prepareHold = gate();
-    const a = await f.open();
-    await pay(a);
-    await expect.poll(() => f.prepareCalls.length).toBe(1);
-    await expect(a.getByRole("heading", { name: "Preparing your order" })).toBeVisible();
-    await a.evaluate(() => document.querySelector("form").requestSubmit());
-    assert.equal(f.prepareCalls.length, 1);
-    const cloned = await a.evaluate(() => ({ ...sessionStorage }));
-    const b = await f.ctx.newPage();
-    await b.addInitScript((values) => {
-      for (const [k, v] of Object.entries(values)) sessionStorage.setItem(k, v);
-    }, cloned);
-    await openUxHarness(b, bundle, "https://ux.test/checkout");
-    await b.waitForFunction(
-      () => window.cart?.isReady && window.cart.validationStatus === "idle",
-    );
-    assert.equal(
-      await b.evaluate(() => window.cart.clearCart().then((r) => r.status)),
-      "saved",
-    );
-    assert.equal(
-      await b.evaluate((x) => window.cart.addItem(x).then((r) => r.status), item),
-      "saved",
-    );
-    await pay(b);
-    await expect
-      .poll(() => f.prepareCalls.length)
-      .toBe(2)
-      .catch(async (error) => {
-        console.error(
-          "Synthetic copied-tab state",
-          (await b.locator("body").innerText()).slice(-2000),
-          { prepare: f.prepareCalls.length, permit: f.permitCalls, pay: f.payCalls },
-        );
-        throw error;
-      });
-    assert.equal(f.prepareCalls[1].recoveryOnly, true);
-    await expect(b.getByRole("heading", { name: "Order Confirmed!" })).toBeVisible();
-    assert.equal(f.payCalls, 0);
-    assert.equal(await b.evaluate(() => window.cart.itemCount), 1);
-    f.prepareHold.resolve();
-    await expect
-      .poll(() => a.evaluate(() => document.body.innerText))
-      .toMatch(/changed|review|check.*status/i);
-    assert.equal(await a.evaluate(() => window.cart.itemCount), 1);
-    assert.equal(f.payCalls, 0);
-  },
+  duplicate: (f) => copiedCheckout(f, false),
+  duplicateMissing: (f) => copiedCheckout(f, true),
   async fresh(f) {
     f.orderHold = gate();
     const p = await f.open();

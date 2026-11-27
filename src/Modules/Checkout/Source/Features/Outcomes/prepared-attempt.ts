@@ -22,10 +22,17 @@ export async function capturePreparedAttempt(
     signal,
   );
   if (result.status !== "captured") attempt.rejectCapture();
+  const discoverOriginal =
+    attempt.mode === "resume" &&
+    result.status === "stale" &&
+    "reason" in result &&
+    (result.reason === "different_context" || result.reason === "retired_capture") &&
+    attempt.issuedTo(ownerId);
   const resumedWithoutProof =
     attempt.mode === "resume" &&
     isRenderedViewCurrent() &&
-    (result.status === "missing" ||
+    (discoverOriginal ||
+      result.status === "missing" ||
       result.status === "corrupt" ||
       (result.status === "stale" && attempt.interruptedSwitch()));
   const items = result.status === "captured" ? result.items : expected;
@@ -33,7 +40,7 @@ export async function capturePreparedAttempt(
     signal.aborted ||
     (result.status !== "captured" && !resumedWithoutProof) ||
     fingerprint(items) !== original ||
-    !attempt.commit()
+    !attempt.commit(ownerId)
   ) {
     refreshQuote();
     throw Error("Your checkout changed. Review the updated order before paying.");
@@ -46,7 +53,8 @@ export async function capturePreparedAttempt(
     resumed: attempt.mode === "resume",
     requireRecovery: (orderId?: string) => attempt.requireRecovery(ownerId, orderId),
     key: attempt.key,
-    current: attempt.current,
+    current: () => attempt.current() && (!discoverOriginal || attempt.issuedTo(ownerId)),
+    discoverOriginal,
     recoveryOnly: resumedWithoutProof,
     items: [...items],
     reject: () => !signal.aborted && attempt.reject(),

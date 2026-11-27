@@ -486,7 +486,7 @@ function OwnerCheckout({
         ...latestCart.current,
         bindPreparedOrder: async (id, order, signal) => {
           await requireOwner({ waitForQuote: true });
-          return latestCart.current.bindPreparedOrder(id, order, signal);
+          return latestCart.current.bindPreparedOrder(id, order, signal, true);
         },
       },
       checkoutItems,
@@ -505,6 +505,20 @@ function OwnerCheckout({
     if (attempt.recoveryOnly) {
       attempt.requireRecovery();
       setNeedsRecovery(true);
+      if (attempt.discoverOriginal) {
+        const original = await recoverOriginalOrder(
+          initialData.ownerId,
+          requireOwner,
+          lifetime.signal,
+        );
+        if (lifetime.signal.aborted || !attempt.current())
+          throw Error("Your checkout changed. Review your current order.");
+        onProcessing(original.orderId, original.transientGuestAccessToken);
+        router.replace(
+          "/checkout/processing?orderId=" + encodeURIComponent(original.orderId),
+        );
+        throw Error("Checking your original order status.");
+      }
     }
     const { response, data } = await postCheckoutJson(
       "/api/checkout/prepare",

@@ -448,15 +448,27 @@ test("remove/re-add and clear/re-add with identical values protect new line inca
   const { page } = await fixture(t);
   for (const action of ["remove", "clear"]) {
     const { attemptKey, orderId } = await prepared(page);
-    await page.evaluate(
+    const changed = await page.evaluate(
       async ({ action, row }) => {
-        if (action === "clear") await window.testCart.clearCart();
-        else await window.testCart.removeItem(row.productId, row.variantId);
-        await window.testCart.addItem(row);
-        await window.testCart.updateQuantity(row.productId, row.variantId, 3);
+        const removal =
+          action === "clear"
+            ? await window.testCart.clearCart()
+            : await window.testCart.removeItem(row.productId, row.variantId);
+        return [removal.status, (await window.testCart.addItem(row)).status];
       },
       { action, row: item(3) },
     );
+    assert.deepEqual(changed, ["saved", "saved"]);
+    await observed(page, [item(1)]);
+    assert.equal(
+      await page.evaluate(
+        ({ productId, variantId }) =>
+          window.testCart.updateQuantity(productId, variantId, 3).then((r) => r.status),
+        item(3),
+      ),
+      "saved",
+    );
+    await observed(page, [item(3)]);
     const saved = await bytes(page);
     assert.deepEqual(await consume(page, orderId, lines(3)), {
       status: "matched",

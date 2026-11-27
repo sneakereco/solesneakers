@@ -5,6 +5,7 @@ import {
   storeGuestOrderAccess,
   readGuestOrderAccess,
   finishCheckoutAttempt,
+  getOrCreateCheckoutDeviceSessionId,
 } from "../../../Source/Features/Outcomes/client-session";
 import type { CartPurchaseActions, CaptureResult } from "@/Modules/Cart/Source/Client";
 const lines = [{ productId: "p", variantId: "v", quantity: 1 }];
@@ -457,4 +458,67 @@ describe("strict original order discovery", () => {
       );
     },
   );
+});
+
+it.each(["different_context", "retired_capture"] as const)(
+  "restricts a %s capture to discovery of its original account/device pair",
+  async (reason) => {
+    const device = "62222222-2222-4222-8222-222222222222";
+    values.set("rdk_checkout_device_session_id", device);
+    const run = (cart: CartPurchaseActions, ownerId: string, view = () => true) =>
+      capturePreparedAttempt(
+        cart,
+        lines,
+        fingerprint,
+        new AbortController().signal,
+        jest.fn(),
+        view,
+        ownerId,
+      );
+    const issued = await run(actions(captured), "buyer");
+    const stale = actions({ status: "stale", reason });
+    await expect(run(stale, "other")).rejects.toThrow("checkout changed");
+    await expect(run(stale, "buyer", () => false)).rejects.toThrow("checkout changed");
+    values.set("rdk_checkout_device_session_id", "72222222-2222-4222-8222-222222222222");
+    await expect(run(stale, "buyer")).rejects.toThrow("checkout changed");
+    values.set("rdk_checkout_device_session_id", device);
+    const stamp = values.get("checkout_issued_context_v1")!;
+    values.delete("checkout_issued_context_v1");
+    await expect(run(stale, "buyer")).rejects.toThrow("checkout changed");
+    values.set("checkout_issued_context_v1", stamp);
+    const original = await run(stale, "buyer");
+    expect(original).toMatchObject({
+      key: issued.key,
+      recoveryOnly: true,
+      discoverOriginal: true,
+    });
+    expect(stale.bindPreparedOrder).not.toHaveBeenCalled();
+    expect(values.get(attemptKey)).toBe(issued.key);
+  },
+);
+
+it("never mints a replacement device for the issued pair; a superseded marker cannot strand a different pair", async () => {
+  const device = "62222222-2222-4222-8222-222222222222";
+  values.set("rdk_checkout_device_session_id", device);
+  const issued = await capturePreparedAttempt(
+    actions(captured),
+    lines,
+    fingerprint,
+    new AbortController().signal,
+    jest.fn(),
+    () => true,
+    "buyer",
+  );
+  values.delete("rdk_checkout_device_session_id");
+  const create = jest.fn(() => "new-device");
+  expect(() => getOrCreateCheckoutDeviceSessionId(storage as Storage, create)).toThrow(
+    "original checkout device",
+  );
+  expect(create).not.toHaveBeenCalled();
+  expect(values.get(attemptKey)).toBe(issued.key);
+  values.set(attemptKey, legacyKey);
+  expect(getOrCreateCheckoutDeviceSessionId(storage as Storage, create)).toBe(
+    "new-device",
+  );
+  expect(create).toHaveBeenCalledTimes(1);
 });
