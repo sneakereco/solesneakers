@@ -1,7 +1,8 @@
 // src/components/auth/login/VerifyEmailForm.tsx
 "use client";
 
-import { useRouter, useSearchParams } from "next/navigation";
+import { useSearchParams } from "next/navigation";
+import { navigateAfterAuth } from "@/lib/auth/navigate-after-auth";
 
 import { EmailCodeFlow } from "./EmailCodeFlow";
 
@@ -20,7 +21,6 @@ export function VerifyEmailForm({
   onVerified,
   onBackToLogin,
 }: VerifyEmailFormProps) {
-  const router = useRouter();
   const searchParams = useSearchParams();
   const nextUrl = searchParams.get("next") || "/";
 
@@ -66,7 +66,7 @@ export function VerifyEmailForm({
     if (onVerified) {
       onVerified(destination);
     } else {
-      router.push(destination);
+      navigateAfterAuth(destination);
     }
   }
 

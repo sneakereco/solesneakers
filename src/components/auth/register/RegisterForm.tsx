@@ -2,10 +2,11 @@
 "use client";
 
 import { useReducer } from "react";
-import { useRouter, useSearchParams } from "next/navigation";
+import { useSearchParams } from "next/navigation";
 import Link from "next/link";
 
 import { isPasswordValid } from "@/lib/validation/password";
+import { navigateAfterAuth } from "@/lib/auth/navigate-after-auth";
 import { AuthHeader } from "@/components/auth/ui/AuthHeader";
 import { authStyles } from "@/components/auth/ui/authStyles";
 
@@ -51,7 +52,6 @@ function reducer(state: State, action: Action): State {
 }
 
 export function RegisterForm() {
-  const router = useRouter();
   const searchParams = useSearchParams();
 
   const [state, dispatch] = useReducer(reducer, {
@@ -95,6 +95,11 @@ export function RegisterForm() {
         }),
       });
 
+      if (res.status === 423) {
+        navigateAfterAuth("/locked");
+        return;
+      }
+
       const json = await res.json();
       if (!json.ok) {
         dispatch({ type: "ERROR", error: json.error ?? "Sign up failed" });
@@ -102,7 +107,7 @@ export function RegisterForm() {
       }
 
       const verifyUrl = `/auth/login?flow=verify-email&verifyFlow=signup&email=${encodeURIComponent(email)}${nextUrl !== "/" ? `&next=${encodeURIComponent(nextUrl)}` : ""}`;
-      router.push(verifyUrl);
+      navigateAfterAuth(verifyUrl);
     } catch (err: unknown) {
       const message =
         err instanceof Error ? err.message : "Something went wrong. Please try again.";

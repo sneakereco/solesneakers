@@ -2,11 +2,12 @@
 "use client";
 
 import { useReducer } from "react";
-import { useRouter, useSearchParams } from "next/navigation";
+import { useSearchParams } from "next/navigation";
 import Link from "next/link";
 
 import { AuthHeader } from "@/components/auth/ui/AuthHeader";
 import { authStyles } from "@/components/auth/ui/authStyles";
+import { navigateAfterAuth } from "@/lib/auth/navigate-after-auth";
 
 interface PasswordLoginFormProps {
   onRequiresEmailVerification: (email: string) => void;
@@ -46,7 +47,6 @@ export function PasswordLoginForm({
   onSwitchToOtp,
   onForgotPassword,
 }: PasswordLoginFormProps) {
-  const router = useRouter();
   const searchParams = useSearchParams();
   const [state, dispatch] = useReducer(reducer, {
     password: "",
@@ -87,14 +87,14 @@ export function PasswordLoginForm({
       }
 
       if (json.isAdmin && json.requiresTwoFASetup) {
-        return router.push("/auth/2fa/setup");
+        return navigateAfterAuth("/auth/2fa/setup");
       }
       if (json.isAdmin && json.requiresTwoFAChallenge) {
-        return router.push("/auth/2fa/challenge");
+        return navigateAfterAuth("/auth/2fa/challenge");
       }
 
       const destination = json.isAdmin ? "/admin" : nextUrl;
-      router.push(destination);
+      navigateAfterAuth(destination);
     } catch (err: unknown) {
       const message = err instanceof Error ? err.message : "Login failed";
       dispatch({ type: "ERROR", error: message });

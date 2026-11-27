@@ -1,10 +1,11 @@
 // src/components/auth/login/OtpLoginForm.tsx
 "use client";
 
-import { useRouter, useSearchParams } from "next/navigation";
+import { useSearchParams } from "next/navigation";
 import Link from "next/link";
 
 import { authStyles } from "@/components/auth/ui/authStyles";
+import { navigateAfterAuth } from "@/lib/auth/navigate-after-auth";
 
 import { EmailCodeFlow } from "./EmailCodeFlow";
 
@@ -17,7 +18,6 @@ export function OtpLoginForm({
   onRequiresEmailVerification,
   onBackToLogin,
 }: OtpLoginFormProps) {
-  const router = useRouter();
   const searchParams = useSearchParams();
   const nextUrl = searchParams.get("next") || "/";
 
@@ -53,15 +53,15 @@ export function OtpLoginForm({
     }
 
     if (json.isAdmin && json.requiresTwoFASetup) {
-      return router.push("/auth/2fa/setup");
+      return navigateAfterAuth("/auth/2fa/setup");
     }
     if (json.isAdmin && json.requiresTwoFAChallenge) {
-      return router.push("/auth/2fa/challenge");
+      return navigateAfterAuth("/auth/2fa/challenge");
     }
 
     // Redirect to where they came from or admin/home
     const destination = json.isAdmin ? "/admin" : nextUrl;
-    router.push(destination);
+    navigateAfterAuth(destination);
   }
 
   return (
