@@ -200,11 +200,9 @@ export async function startBrowserTestApp(
       SQUARE_LOCATION_ID: "fixture",
       NEXT_PUBLIC_POSTHOG_ENABLED: "false",
       NEXT_PUBLIC_TURNSTILE_SITE_KEY: "",
-      NEXT_PUBLIC_CLOUDFLARE_WEB_ANALYTICS_TOKEN: "",
     };
     // Optional empty public settings fail validation; omit them entirely in this isolated app.
     delete childEnv.NEXT_PUBLIC_TURNSTILE_SITE_KEY;
-    delete childEnv.NEXT_PUBLIC_CLOUDFLARE_WEB_ANALYTICS_TOKEN;
     await beforeStart?.(childEnv);
     if (!startNext) return state;
     const output = createWriteStream(join(privateDir, "next.log"), { mode: 0o600 });

@@ -1,3 +1,4 @@
+import type { SourceContext } from "@/Modules/Analytics/Source/Features/CommerceFacts/source-context";
 import { z } from "zod";
 
 import type { TypedSupabaseClient } from "@/lib/supabase/server";
@@ -15,7 +16,7 @@ import type {
 } from "@/lib/checkout/checkout-request";
 
 type ReserveCheckoutRpcArgs = Omit<
-  Extract<
+  Exclude<
     Database["public"]["Functions"]["reserve_square_checkout_inventory"]["Args"],
     { p_tenant_id: string }
   >,
@@ -42,6 +43,7 @@ export type CheckoutReservationItem = {
 };
 
 export type ReserveCheckoutInput = {
+  analyticsContext?: SourceContext | null;
   tenantId: string;
   userId: string | null;
   guestEmail: string | null;
@@ -421,7 +423,6 @@ export class CheckoutReservationRepository {
     }));
 
     const reservationArgs = {
-      p_tenant_id: input.tenantId,
       p_user_id: input.userId,
       p_guest_email: input.guestEmail,
       p_currency: "USD",
@@ -466,8 +467,8 @@ export class CheckoutReservationRepository {
       p_protection_evidence: input.protectionEvidence,
     } satisfies ReserveCheckoutRpcArgs;
     const { data, error } = await this.supabase.rpc(
-      "reserve_square_checkout_inventory",
-      reservationArgs as never,
+      "reserve_square_checkout_inventory_with_analytics",
+      { p_checkout: reservationArgs, p_analytics: input.analyticsContext ?? null },
     );
 
     if (error) {

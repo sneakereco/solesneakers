@@ -1,5 +1,9 @@
 import { createHash, createHmac } from "node:crypto";
 import { POST } from "../../src/app/api/webhooks/square/route";
+const mockPrompt = jest.fn();
+jest.mock("@/lib/square/financial-inquiry-dependencies", () => ({
+  promptSquareReceipt: (...args: unknown[]) => mockPrompt(...args),
+}));
 const mockRpc = jest.fn();
 jest.mock("@/lib/supabase/service-role", () => ({
   createSupabaseAdminClient: () => ({ rpc: mockRpc }),
@@ -46,13 +50,17 @@ function post(
     }),
   );
 }
-beforeEach(() => mockRpc.mockReset());
+beforeEach(() => {
+  mockRpc.mockReset();
+  mockPrompt.mockReset();
+});
 it.each(["stored", "duplicate"])(
   "acknowledges a signed %s receipt with only bounded provider references",
   async (result) => {
     mockRpc.mockResolvedValue({ data: result, error: null });
     const raw = JSON.stringify(event);
     expect((await post(raw)).status).toBe(200);
+    expect(mockPrompt).toHaveBeenCalledTimes(result === "stored" ? 1 : 0);
     expect(mockRpc).toHaveBeenCalledWith("receive_checkout_square_event", {
       p_event_id: "event-1",
       p_kind: "payment.updated",
@@ -71,6 +79,7 @@ it("returns retryable failure if the receipt cannot be committed", async () => {
   mockRpc.mockResolvedValue({ error: { message: "private fixture" }, data: null });
   const res = await post(JSON.stringify(event));
   expect(res.status).toBe(503);
+  expect(mockPrompt).not.toHaveBeenCalled();
   expect(await res.text()).not.toContain("private");
 });
 it("rejects malformed, oversized, unsigned and foreign supported events before storage", async () => {

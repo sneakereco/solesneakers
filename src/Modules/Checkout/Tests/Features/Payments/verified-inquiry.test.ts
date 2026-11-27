@@ -193,7 +193,7 @@ it.each([
         };
         return q;
       },
-      rpc: (name: string, args: { p_fact?: { kind: string } }) => {
+      rpc: (name: string, args: { p_fact?: { kind: string }; p_source?: unknown }) => {
         commands.push(name);
         if (name === "record_checkout_payment_outcome")
           return {
@@ -211,7 +211,12 @@ it.each([
             },
             error: null,
           };
+        if (name === "apply_checkout_payment_with_analytics") {
+          expect(args.p_fact?.kind).toBe("payment");
+          expect(args.p_source).toEqual(expect.any(Object));
+        }
         if (
+          name === "apply_checkout_payment_with_analytics" ||
           name === "apply_checkout_financial_fact" ||
           name === "record_checkout_terminal_capture"
         ) {

@@ -1,4 +1,5 @@
 import { recordWorkerHeartbeat } from "@/Modules/Checkout/Source/Features/Operations/health-snapshot";
+import { scheduleAnalyticsDrain } from "@/Modules/Analytics/Source/Features/EventDelivery/delivery-runtime";
 import type { NextRequest } from "next/server";
 
 import {
@@ -30,6 +31,7 @@ export async function GET(request: NextRequest): Promise<Response> {
       recoverySettings,
       createCheckoutRecoveryDependencies(db),
     );
+    if (result.done > 0) scheduleAnalyticsDrain();
     await recordWorkerHeartbeat(db, "recovery");
     return Response.json(
       { ...result, requestId },

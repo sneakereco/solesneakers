@@ -7,10 +7,12 @@ import {
   useEffect,
   useLayoutEffect,
   useMemo,
+  useRef,
   useState,
   type ReactNode,
 } from "react";
-import { captureProductAddedToCart } from "@/lib/measurement/client";
+import { captureProductAddedToCart } from "@/Modules/Analytics/Source/Features/VisitorMeasurement/triggers";
+import { useViewGrant } from "@/Modules/Analytics/Source/Features/VisitorMeasurement/view-grant";
 import { needsBasketReview } from "../../Contracts/Basket";
 import type {
   BasketMutationResult,
@@ -38,6 +40,14 @@ export function CartProvider({
 }) {
   const identity = useBasketIdentity();
   const { userId: owner, isCurrent } = identity;
+  const grant = useViewGrant();
+  const currentGrant = useRef(grant);
+  useLayoutEffect(() => {
+    currentGrant.current = grant;
+    return () => {
+      currentGrant.current = null;
+    };
+  }, [grant]);
   const [validation] = useState<OwnerValidationScope>(() => ({}));
   useLayoutEffect(
     () => () => {
@@ -126,12 +136,18 @@ export function CartProvider({
   );
   const addItem = useCallback(
     async (item: Omit<CartItem, "quantity">) => {
+      const startedWith = currentGrant.current;
       const added = await mutate((current) => current.addItem(item));
-      if (added.status === "saved")
+      if (
+        added.status === "saved" &&
+        isCurrent() &&
+        startedWith &&
+        currentGrant.current === startedWith
+      )
         captureProductAddedToCart(item.productId, item.variantId);
       return added;
     },
-    [mutate],
+    [mutate, isCurrent],
   );
   const removeItem = useCallback(
     (productId: string, variantId: string) =>

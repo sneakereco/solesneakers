@@ -8,6 +8,7 @@ import {
   useEffect,
   useLayoutEffect,
 } from "react";
+import { SESSION_REVALIDATING, SESSION_UPDATE } from "@/lib/auth/session-events";
 import { isProfileRole, type ProfileRole } from "@/config/constants/roles";
 import { withRequestDeadline } from "@/lib/http/request-deadline";
 import { readSessionGeneration, sessionGenerationKey } from "./session-change";
@@ -26,6 +27,9 @@ type SessionContextValue = Observation & {
   isLoading: boolean;
   isSessionUnavailable: boolean;
   hasRefreshed: boolean;
+  sessionRevision: number;
+  sessionMutationRevision: number;
+  sessionAvailable: boolean;
   isIdentityCurrent: (expectedOwner: string | null) => boolean;
   refreshSession: () => Promise<void>;
 };
@@ -67,10 +71,14 @@ export function SessionProvider({
     isCurrent: masked.isCurrent,
   });
   const [retryingUnavailable, setRetryingUnavailable] = useState(initialUnavailable);
+  const [sessionRevision, setSessionRevision] = useState(0);
+  const [sessionMutationRevision, setSessionMutationRevision] = useState(0);
   const active = useRef<AbortController | null>(null);
   const generation = useRef<string | null>(null);
   const beginObservation = useCallback(() => {
     active.current?.abort();
+    window.dispatchEvent(new Event(SESSION_REVALIDATING));
+    setSessionRevision((revision) => revision + 1);
     const request = new AbortController();
     active.current = request;
     const atStart = readSessionGeneration();
@@ -79,7 +87,7 @@ export function SessionProvider({
       if (request.signal.aborted) return false;
       if (readSessionGeneration() === atStart) return true;
       // A cooperating tab can publish a change before this renderer receives its storage event.
-      window.dispatchEvent(new Event("sessionUpdate"));
+      window.dispatchEvent(new Event(SESSION_UPDATE));
       return false;
     };
     return { request, isCurrent };
@@ -111,12 +119,16 @@ export function SessionProvider({
     function verify() {
       void refreshSession();
     }
+    function identityChanged() {
+      setSessionMutationRevision((revision) => revision + 1);
+      verify();
+    }
     function onStorage(event: StorageEvent) {
       if (
         (event.key === sessionGenerationKey || event.key === null) &&
         readSessionGeneration() !== generation.current
       )
-        verify();
+        identityChanged();
     }
     function onVisible() {
       if (document.visibilityState === "visible") verify();
@@ -127,19 +139,19 @@ export function SessionProvider({
     let channel: BroadcastChannel | undefined;
     try {
       channel = new BroadcastChannel(sessionGenerationKey);
-      channel.onmessage = verify;
+      channel.onmessage = identityChanged;
     } catch {
       /* Storage events remain available where supported. */
     }
     window.addEventListener("storage", onStorage);
-    window.addEventListener("sessionUpdate", verify);
+    window.addEventListener(SESSION_UPDATE, identityChanged);
     window.addEventListener("pageshow", onPageShow);
     document.addEventListener("visibilitychange", onVisible);
     return () => {
       active.current?.abort();
       channel?.close();
       window.removeEventListener("storage", onStorage);
-      window.removeEventListener("sessionUpdate", verify);
+      window.removeEventListener(SESSION_UPDATE, identityChanged);
       window.removeEventListener("pageshow", onPageShow);
       document.removeEventListener("visibilitychange", onVisible);
     };
@@ -155,12 +167,12 @@ export function SessionProvider({
         active.current?.abort();
       };
     } else {
+      // Apply the verified server observation synchronously before painting this scope.
+      // eslint-disable-next-line react-hooks/set-state-in-effect
       const { isCurrent } = beginObservation();
       const facts = initialUnavailable
         ? undefined
         : parseSession({ user: initialUser, role: initialRole });
-      // Apply the verified server observation before painting this owner scope.
-      // eslint-disable-next-line react-hooks/set-state-in-effect
       setRetryingUnavailable(!facts);
       setObservation(
         facts
@@ -187,6 +199,9 @@ export function SessionProvider({
           retryingUnavailable ||
           observation.status === "denied" ||
           observation.status === "unavailable",
+        sessionAvailable: observation.status === "ready",
+        sessionRevision,
+        sessionMutationRevision,
         hasRefreshed: observation.status === "ready",
         isIdentityCurrent: (expectedOwner) =>
           observation.status === "ready" &&

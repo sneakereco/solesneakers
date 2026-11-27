@@ -1,4 +1,7 @@
-import { enteredStorefront, hasUsableCheckout } from "@/lib/measurement/triggers";
+import {
+  enteredStorefront,
+  hasUsableCheckout,
+} from "@/Modules/Analytics/Source/Features/VisitorMeasurement/triggers";
 
 describe("storefront route entry", () => {
   it("counts direct /store entry and re-entry, not the landing page or same-route updates", () => {

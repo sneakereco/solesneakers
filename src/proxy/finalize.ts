@@ -11,6 +11,12 @@ export function finalizeProxyResponse(
 ): NextResponse {
   response.headers.set(security.proxy.requestIdHeader, requestId);
   if (
+    pathname === "/api/admin/analytics" ||
+    pathname.startsWith("/api/admin/analytics/")
+  ) {
+    response.headers.set("Cache-Control", "private, no-store");
+  }
+  if (
     [
       "/api/specialty/eligibility",
       "/api/specialty/claims",

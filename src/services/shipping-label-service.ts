@@ -244,7 +244,7 @@ export class ShippoService {
 
       // Extract rate information from the transaction
       const rate = txn?.rate?.amount ?? txn?.amount ?? null;
-      const currency = txn?.rate?.currency ?? txn?.currency ?? "USD";
+      const currency = txn?.rate?.currency ?? txn?.currency ?? null;
 
       return {
         status: String(txn?.status ?? "").toUpperCase(),
@@ -252,7 +252,7 @@ export class ShippoService {
         trackingNumber: txn?.trackingNumber ?? txn?.tracking_number ?? null,
         trackingUrl: txn?.trackingUrlProvider ?? txn?.tracking_url_provider ?? null,
         labelUrl: txn?.labelUrl ?? txn?.label_url ?? null,
-        rate: rate ? String(rate) : null,
+        rate: rate !== null && rate !== undefined ? String(rate) : null,
         currency: currency ? String(currency) : null,
         messages: Array.isArray(txn?.messages) ? txn.messages : [],
       };

@@ -1,5 +1,5 @@
 // src/lib/auth/session.ts
-import { isRejectedSessionError } from "./rejected-session";
+import { isDefinitiveAuthRejection } from "./lookup-availability";
 export { isRejectedSessionError } from "./rejected-session";
 import { redirect } from "next/navigation";
 import { isDynamicServerError } from "next/dist/client/components/hooks-server-context";
@@ -47,7 +47,7 @@ async function readVerifiedSession(signal: AbortSignal): Promise<ServerSession |
   } = await supabase.auth.getUser();
 
   if (error) {
-    if (isRejectedSessionError(error)) return null;
+    if (isDefinitiveAuthRejection(error)) return null;
     throw error;
   }
   if (!user || typeof user.id !== "string" || !user.id.trim())
@@ -75,7 +75,10 @@ async function readVerifiedSession(signal: AbortSignal): Promise<ServerSession |
 
 export const observeServerSession = readServerSession;
 
-export async function getServerSession(): Promise<ServerSession | null> {
+export async function getServerSession({
+  requireAvailable = false,
+} = {}): Promise<ServerSession | null> {
+  if (requireAvailable) return readServerSession();
   try {
     return await readServerSession();
   } catch (error) {

@@ -46,10 +46,9 @@ const framework = {
     export default ({ src, fill, priority, unoptimized, loader, ...props }) =>
       <img {...props} data-image-src={src} src={window.checkoutFixture.view==="fullCart" && src==="/images/logo.png"?src:"data:image/gif;base64,R0lGODlhAQABAAD/ACwAAAAAAQABAAACADs="} />;
   `,
-  "@/lib/measurement/client": `
+  "@/Modules/Analytics/Source/Features/VisitorMeasurement/triggers": `
+    export * from "./src/Modules/Analytics/Source/Features/VisitorMeasurement/triggers";
     export const captureProductAddedToCart = (...args) => {window.fixtureAdded=(window.fixtureAdded??0)+1; (window.fixtureAddedArgs??=[]).push(args)};
-    export const captureProductViewed = () => {};
-    export const captureCheckoutStarted = () => {};
   `,
 };
 
@@ -65,6 +64,7 @@ function browserBundle() {
         import { createRoot } from "react-dom/client";
         import { usePathname } from "next/navigation";
         import { CartProvider, useCart } from "./src/components/cart/CartProvider";
+        import { ViewGrant } from "./src/Modules/Analytics/Source/Features/VisitorMeasurement/view-grant";
         import CartPage from "./src/app/(store)/cart/page";
         import { CartDrawer } from "./src/components/cart/CartDrawer";
         import { SessionProvider, useSession } from "./src/contexts/SessionContext";
@@ -133,10 +133,12 @@ function browserBundle() {
 
         createRoot(document.getElementById("root")).render(
           <SessionProvider initialUser={initialUser} initialRole={initialUser ? "customer" : null}>
-            <CartProvider userId={initialUser?.id}>
-              <Probe />
-              <View />
-            </CartProvider>
+            <ViewGrant.Provider value="fixture-verified-receipt">
+              <CartProvider userId={initialUser?.id}>
+                <Probe />
+                <View />
+              </CartProvider>
+            </ViewGrant.Provider>
           </SessionProvider>
         );
       `,
@@ -156,9 +158,10 @@ function browserBundle() {
       {
         name: "checkout-fixture-framework-and-analytics",
         setup(builder) {
-          builder.onResolve(
-            { filter: /^next\/(navigation|link|image)$|^@\/lib\/measurement\/client$/ },
-            ({ path }) => ({ path, namespace: "checkout-fixture" }),
+          builder.onResolve({ filter: /.*/ }, ({ path }) =>
+            Object.hasOwn(framework, path)
+              ? { path, namespace: "checkout-fixture" }
+              : null,
           );
           builder.onLoad({ filter: /.*/, namespace: "checkout-fixture" }, ({ path }) => ({
             loader: "jsx",

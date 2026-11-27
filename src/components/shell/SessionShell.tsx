@@ -1,5 +1,6 @@
 import type { ReactNode } from "react";
 
+import { MeasurementProvider } from "@/Modules/Analytics/Source/Features/VisitorMeasurement/MeasurementProvider";
 import { CartProvider } from "@/components/cart/CartProvider";
 import { SessionProvider } from "@/contexts/SessionContext";
 import { isDynamicServerError } from "next/dist/client/components/hooks-server-context";
@@ -28,7 +29,9 @@ export async function SessionShell({ children }: { children: ReactNode }) {
       initialUnavailable={initial.unavailable}
       serverReadId={crypto.randomUUID()}
     >
-      <CartProvider userId={user?.id ?? null}>{children}</CartProvider>
+      <MeasurementProvider>
+        <CartProvider userId={user?.id ?? null}>{children}</CartProvider>
+      </MeasurementProvider>
     </SessionProvider>
   );
 }

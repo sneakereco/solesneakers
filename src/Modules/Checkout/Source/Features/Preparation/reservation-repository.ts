@@ -1,3 +1,4 @@
+import type { SourceContext } from "@/Modules/Analytics/Source/Features/CommerceFacts/source-context";
 import { z } from "zod";
 import type { TypedSupabaseClient } from "@/lib/supabase/server";
 import type { Json } from "@/types/db/database.types";
@@ -17,7 +18,7 @@ export class CheckoutPreparationRepository {
     input: ReserveCheckoutInput & { ownerBinding: string; otherGuestContexts?: string[] },
   ): Promise<ReservationDecision> {
     // Only the database clock sets hold expiry.
-    const { expiresAt: _requestedExpiry, ...snapshot } = input;
+    const { expiresAt: _requestedExpiry, analyticsContext, ...snapshot } = input;
     const request = {
       ...snapshot,
       version: 2,
@@ -25,7 +26,7 @@ export class CheckoutPreparationRepository {
       currency: "USD",
       pickupContact: input.pickupContact ?? null,
     };
-    return this.decide(request, input.items);
+    return this.decide(request, input.items, analyticsContext ?? null);
   }
   async rejectBeforeAttach(orderId: string, ownerBinding: string): Promise<boolean> {
     const { data, error } = await this.db.rpc("reject_checkout_quote_before_attach", {
@@ -60,10 +61,15 @@ export class CheckoutPreparationRepository {
   private async decide(
     request: Json,
     items: PrepareCheckoutRequestItem[],
+    analyticsContext?: SourceContext | null,
   ): Promise<ReservationDecision> {
-    const { data, error } = await this.db.rpc("reserve_checkout_inventory_v2", {
-      p_request: request,
-    });
+    const { data, error } =
+      analyticsContext === undefined
+        ? await this.db.rpc("reserve_checkout_inventory_v2", { p_request: request })
+        : await this.db.rpc("reserve_checkout_inventory_v2_with_analytics", {
+            p_request: request,
+            p_analytics: analyticsContext,
+          });
     if (!error) return reserved.parse(data);
     if (error.code === "PC410" && error.message === "checkout_recovery_required")
       throw new PreparationRecoveryRequired();

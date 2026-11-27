@@ -1,3 +1,8 @@
+import { randomUUID } from "node:crypto";
+import {
+  paymentAttemptId,
+  type OperationalOutcome,
+} from "@/Modules/Analytics/Source/Features/CommerceFacts/operational-outcome";
 import type { PaymentAttempt } from "@/Modules/Checkout/Source/Features/Payments/attempt-contract";
 import type { NextRequest } from "next/server";
 import { z } from "zod";
@@ -25,6 +30,7 @@ import type {
 import type { PaymentCheckout } from "@/repositories/checkout-reservation-repo";
 
 export type CreateDirectPaymentDependencies = DispatchOperations & {
+  outcome?(value: OperationalOutcome): void;
   validateShippingAddress(address: ShippingAddress): Promise<ShippingValidationResult>;
   consumePermit(token: string): Promise<ConsumedPaymentPermit | null>;
   loadOrder(orderId: string): Promise<PaymentCheckout | null>;
@@ -137,10 +143,39 @@ export async function createDirectPaymentHandler(
 ): Promise<Response> {
   const body = envelope.safeParse(await request.json().catch(() => null));
   if (!body.success) return json({ error: "Invalid payment request" }, 400);
+  const effectiveAt = deps.now().toISOString();
+  const report = (
+    outcome: OperationalOutcome["outcome"],
+    reason: OperationalOutcome["reason"],
+    attempt?: PaymentAttempt,
+  ) => {
+    try {
+      deps.outcome?.({
+        attemptId: attempt
+          ? paymentAttemptId(attempt.squareIdempotencyKey)
+          : randomUUID(),
+        effectiveAt,
+        resolvedAt:
+          outcome === "unknown" || outcome === "pending"
+            ? null
+            : deps.now().toISOString(),
+        orderId: attempt?.orderId ?? null,
+        method: attempt?.method ?? null,
+        stage: attempt ? "payment" : "verification",
+        outcome,
+        reason,
+      });
+    } catch {
+      /* Optional reporting cannot affect payment. */
+    }
+  };
   let observation: Record<string, unknown> | null = null;
   try {
     const permit = await deps.consumePermit(body.data.permit);
-    if (!permit) return json({ error: "Payment authorization expired" }, 403);
+    if (!permit) {
+      report("expired", "expired");
+      return json({ error: "Payment authorization expired" }, 403);
+    }
     const order = await deps.loadOrder(permit.orderId);
     if (
       !order ||
@@ -149,8 +184,10 @@ export async function createDirectPaymentHandler(
       order.deviceSessionId !== permit.deviceSessionId ||
       order.cartHash !== permit.cartHash ||
       order.totalCents !== permit.totalCents
-    )
+    ) {
+      report("failed", "invalid");
       return json({ error: "Checkout details changed; start again" }, 409);
+    }
 
     let ownerBinding: string;
     if (order.userId !== null) {
@@ -214,6 +251,25 @@ export async function createDirectPaymentHandler(
         },
         recordAttemptOutcome: async (input) => {
           const saved = await deps.recordAttemptOutcome(input);
+          if (saved.state === input.state) {
+            switch (saved.state) {
+              case "succeeded":
+                report("succeeded", "none", saved);
+                break;
+              case "pending":
+                report("pending", "none", saved);
+                break;
+              case "declined":
+                report("failed", "declined", saved);
+                break;
+              case "canceled":
+                report("canceled", "canceled", saved);
+                break;
+              case "unknown":
+                report("unknown", "unavailable", saved);
+                break;
+            }
+          }
           if (input.state === "declined" && shopperBinding) {
             // PostgreSQL already committed the financial fact. Admission reads that history.
             await deps
@@ -264,6 +320,11 @@ export async function createDirectPaymentHandler(
     )
       return json(observation, 202);
     if (result.kind === "not_submitted") {
+      const status = result.httpStatus ?? failureStatus;
+      report(
+        "failed",
+        status === 429 ? "blocked" : status === 503 ? "unavailable" : "invalid",
+      );
       const response = json(
         { error: result.message, code: result.code },
         result.httpStatus ?? failureStatus,
@@ -293,6 +354,7 @@ export async function createDirectPaymentHandler(
       202,
     );
   } catch {
+    if (!observation) report("failed", "unavailable");
     deps.reportError(new Error("checkout_payment_unavailable"));
     return observation
       ? json(observation, 202)

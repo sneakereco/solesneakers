@@ -10,18 +10,14 @@ export type AdminSupabaseClient = SupabaseClient<Database>;
 let adminClient: AdminSupabaseClient | null = null;
 
 export function createSupabaseAdminClient(): AdminSupabaseClient {
-  if (!adminClient) {
-    adminClient = createClient<Database>(
-      env.NEXT_PUBLIC_SUPABASE_URL,
-      env.SUPABASE_SECRET_KEY,
-      {
-        auth: {
-          persistSession: false,
-          autoRefreshToken: false,
-        },
-      },
-    );
-  }
+  return (adminClient ??= createScopedSupabaseAdminClient());
+}
 
-  return adminClient;
+export function createScopedSupabaseAdminClient(
+  request?: typeof fetch,
+): AdminSupabaseClient {
+  return createClient<Database>(env.NEXT_PUBLIC_SUPABASE_URL, env.SUPABASE_SECRET_KEY, {
+    auth: { persistSession: false, autoRefreshToken: false },
+    ...(request ? { global: { fetch: request } } : {}),
+  });
 }

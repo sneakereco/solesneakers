@@ -1,3 +1,5 @@
+import type { OperationalOutcome } from "@/Modules/Analytics/Source/Features/CommerceFacts/operational-outcome";
+import type { SourceContext } from "@/Modules/Analytics/Source/Features/CommerceFacts/source-context";
 import { isIP } from "node:net";
 import {
   GuestContextLimit,
@@ -11,7 +13,7 @@ import {
   type ReservationDecision,
 } from "./reservation-contract";
 import { CheckoutCatalogUnavailable } from "@/lib/checkout/checkout-cart-resolver";
-import { timingSafeEqual } from "node:crypto";
+import { randomUUID, timingSafeEqual } from "node:crypto";
 
 import type { NextRequest } from "next/server";
 
@@ -56,6 +58,12 @@ import type {
 type CheckoutSession = { user: { id: string; email: string } } | null;
 
 export type PrepareCheckoutDependencies = {
+  outcome?(value: OperationalOutcome): void;
+  resolveAnalyticsContext?(
+    email: string,
+    totals: CheckoutTotals,
+    tracking: unknown,
+  ): Promise<SourceContext | null>;
   shippingConfirmationSecret(): string;
   validateShippingAddress(address: ShippingAddress): Promise<ShippingValidationResult>;
   findTenantId(): Promise<string | null>;
@@ -185,6 +193,25 @@ export async function prepareCheckoutHandler(
   request: NextRequest,
   deps: PrepareCheckoutDependencies,
 ): Promise<Response> {
+  const effectiveAt = deps.now().toISOString();
+  let stage: OperationalOutcome["stage"] = "checkout";
+  let method: OperationalOutcome["method"] = null;
+  const failure = (reason: OperationalOutcome["reason"]) => {
+    try {
+      deps.outcome?.({
+        attemptId: randomUUID(),
+        effectiveAt,
+        resolvedAt: deps.now().toISOString(),
+        orderId: null,
+        method,
+        stage,
+        outcome: "failed",
+        reason,
+      });
+    } catch {
+      /* Optional reporting cannot affect checkout. */
+    }
+  };
   try {
     const tenantId = await deps.findTenantId();
     if (!tenantId) {
@@ -193,6 +220,8 @@ export async function prepareCheckoutHandler(
     const paymentConfig = deps.getSquareClientConfig();
     const bot = await deps.verifyBrowser();
     if (!bot.allowed) {
+      stage = "verification";
+      failure(bot.reason === "bot" ? "blocked" : "unavailable");
       return json(
         { error: "Checkout verification failed" },
         bot.reason === "bot" ? 403 : 503,
@@ -205,6 +234,7 @@ export async function prepareCheckoutHandler(
     if (!parsed.success) {
       return json({ error: "Invalid checkout request" }, 400);
     }
+    method = parsed.data.paymentMethod;
     const clientIp = deps.getClientIp(request);
     if (!clientIp) {
       return json({ error: "Checkout protection is temporarily unavailable" }, 503);
@@ -335,6 +365,8 @@ export async function prepareCheckoutHandler(
       const validationAttempt =
         await deps.checkAddressValidationAttempt(admissionRequest);
       if (!validationAttempt.allowed) {
+        stage = "verification";
+        failure("blocked");
         return json(
           { error: "Too many address checks; please try again later" },
           429,
@@ -346,6 +378,8 @@ export async function prepareCheckoutHandler(
       const validation = await deps.validateShippingAddress(parsed.data.shippingAddress);
       if (validation.status !== "valid") {
         const unavailable = validation.status === "unavailable";
+        stage = "verification";
+        failure(unavailable ? "unavailable" : "verification");
         return json(
           {
             code: unavailable
@@ -382,6 +416,7 @@ export async function prepareCheckoutHandler(
     if (!existing) {
       const attempt = await deps.checkAttempt(admissionRequest);
       if (!attempt.allowed) {
+        failure("blocked");
         return json(
           { error: "Too many checkout attempts; please try again later" },
           429,
@@ -392,6 +427,7 @@ export async function prepareCheckoutHandler(
       }
     }
 
+    stage = "reservation";
     let cart: ResolvedCheckoutCart;
     let pricing: CheckoutPricingQuote;
     if (existing) {
@@ -414,6 +450,7 @@ export async function prepareCheckoutHandler(
           ownerBinding,
           otherGuestContexts,
         );
+        failure("inventory");
         return json(
           { code: "INVENTORY_CONFLICT", conflicts, paymentState: "not_submitted" },
           409,
@@ -505,7 +542,19 @@ export async function prepareCheckoutHandler(
       );
     }
     const expiresAt = new Date(deps.now().getTime() + 15 * 60 * 1000);
+    const analyticsContext = existing
+      ? null
+      : ((await Promise.resolve()
+          .then(() =>
+            deps.resolveAnalyticsContext?.(
+              buyerEmail,
+              calculatedTotals,
+              parsed.data.trackingContext,
+            ),
+          )
+          .catch(() => null)) ?? null);
     const reservation = await deps.reserve({
+      analyticsContext,
       ownerBinding,
       ...(otherGuestContexts.length ? { otherGuestContexts } : {}),
       pickupContact: parsed.data.pickupContact,
@@ -537,7 +586,8 @@ export async function prepareCheckoutHandler(
       },
       items: cart.items,
     });
-    if (reservation.kind === "conflict")
+    if (reservation.kind === "conflict") {
+      failure("inventory");
       return json(
         {
           code: "INVENTORY_CONFLICT",
@@ -546,6 +596,7 @@ export async function prepareCheckoutHandler(
         },
         409,
       );
+    }
     if (existing?.squareOrderId) {
       if (!reservation.reused || reservation.orderId !== existing.orderId)
         throw new Error("checkout_resume_inconsistent");
@@ -620,6 +671,12 @@ export async function prepareCheckoutHandler(
       return recoveryRequired();
     if (error instanceof PreparationChanged)
       return json({ error: "Checkout changed. Review checkout again." }, 409);
+    const unavailableInventory =
+      error !== null &&
+      typeof error === "object" &&
+      "message" in error &&
+      error.message === "checkout_inventory_unavailable";
+    failure(unavailableInventory ? "inventory" : "unavailable");
     deps.reportError(error);
     return json({ error: "Checkout is temporarily unavailable" }, 503);
   }

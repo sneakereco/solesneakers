@@ -1,10 +1,10 @@
 import { ProductImage } from "./ProductImage";
 import { FeedbackLink } from "@/components/ui/FeedbackLink";
 
-import type { ProductWithDetails } from "@/types/domain/product";
+import type { StorefrontProduct } from "@/types/domain/product";
 
 interface ProductCardProps {
-  product: ProductWithDetails;
+  product: StorefrontProduct;
   storeHref?: string;
   priority?: boolean;
   view?: "grid" | "list";

@@ -8,6 +8,7 @@ import { squareEventReceipt, type SquareEventReceiptInput } from "./webhook-inbo
 import {
   recordSquarePaymentDetails,
   squarePaymentDetails,
+  squareSourceEvidence,
 } from "@/lib/square/payment-details";
 import type { SquarePaymentEventResult } from "@/lib/square/payment-event";
 
@@ -404,7 +405,7 @@ export class SquareFinancialInquiry {
         ).applyFinancialFact(confirmed);
       }
     }
-    const snapshot = await repo.applyFinancialFact(fact);
+    const snapshot = await repo.applyFinancialFact(fact, squareSourceEvidence(payment));
     const details = squarePaymentDetails(payment);
     await recordSquarePaymentDetails(this.db, {
       squareOrderId,

@@ -1,0 +1,322 @@
+[
+  {
+    "name": "resolution time 2026-11-25t18:00:00z",
+    "kind": "payment_attempt",
+    "key": "resolvedAt",
+    "value": "2026-11-25t18:00:00z",
+    "valid": false,
+    "top": false
+  },
+  {
+    "name": "common time 2026-11-25t18:00:00z",
+    "kind": "order",
+    "key": "effectiveAt",
+    "value": "2026-11-25t18:00:00z",
+    "valid": false,
+    "top": true
+  },
+  {
+    "name": "resolution time 2026-11-25T18:00Z",
+    "kind": "payment_attempt",
+    "key": "resolvedAt",
+    "value": "2026-11-25T18:00Z",
+    "valid": false,
+    "top": false
+  },
+  {
+    "name": "common time 2026-11-25T18:00Z",
+    "kind": "order",
+    "key": "effectiveAt",
+    "value": "2026-11-25T18:00Z",
+    "valid": false,
+    "top": true
+  },
+  {
+    "name": "resolution time 2026-11-25T18:00:00.123456Z",
+    "kind": "payment_attempt",
+    "key": "resolvedAt",
+    "value": "2026-11-25T18:00:00.123456Z",
+    "valid": true,
+    "top": false
+  },
+  {
+    "name": "common time 2026-11-25T18:00:00.123456Z",
+    "kind": "order",
+    "key": "effectiveAt",
+    "value": "2026-11-25T18:00:00.123456Z",
+    "valid": true,
+    "top": true
+  },
+  {
+    "name": "resolution time 2026-11-25T18:00:00-05:00",
+    "kind": "payment_attempt",
+    "key": "resolvedAt",
+    "value": "2026-11-25T18:00:00-05:00",
+    "valid": true,
+    "top": false
+  },
+  {
+    "name": "common time 2026-11-25T18:00:00-05:00",
+    "kind": "order",
+    "key": "effectiveAt",
+    "value": "2026-11-25T18:00:00-05:00",
+    "valid": true,
+    "top": true
+  },
+  {
+    "name": "resolution time 2026-02-30T18:00:00Z",
+    "kind": "payment_attempt",
+    "key": "resolvedAt",
+    "value": "2026-02-30T18:00:00Z",
+    "valid": false,
+    "top": false
+  },
+  {
+    "name": "common time 2026-02-30T18:00:00Z",
+    "kind": "order",
+    "key": "effectiveAt",
+    "value": "2026-02-30T18:00:00Z",
+    "valid": false,
+    "top": true
+  },
+  {
+    "name": "resolution time 2026-11-25T18:00:60Z",
+    "kind": "payment_attempt",
+    "key": "resolvedAt",
+    "value": "2026-11-25T18:00:60Z",
+    "valid": false,
+    "top": false
+  },
+  {
+    "name": "common time 2026-11-25T18:00:60Z",
+    "kind": "order",
+    "key": "effectiveAt",
+    "value": "2026-11-25T18:00:60Z",
+    "valid": false,
+    "top": true
+  },
+  {
+    "name": "label missing",
+    "kind": "line",
+    "key": "productName",
+    "value": null,
+    "valid": true,
+    "top": false
+  },
+  {
+    "name": "label en dash",
+    "kind": "line",
+    "key": "productName",
+    "value": "Samba OG – White",
+    "valid": true,
+    "top": false
+  },
+  {
+    "name": "label Japanese and emoji",
+    "kind": "line",
+    "key": "productName",
+    "value": "エア・ジョーダン 👟",
+    "valid": true,
+    "top": false
+  },
+  {
+    "name": "label 160 Unicode code points",
+    "kind": "line",
+    "key": "productName",
+    "value": "👟👟👟👟👟👟👟👟👟👟👟👟👟👟👟👟👟👟👟👟👟👟👟👟👟👟👟👟👟👟👟👟👟👟👟👟👟👟👟👟👟👟👟👟👟👟👟👟👟👟👟👟👟👟👟👟👟👟👟👟👟👟👟👟👟👟👟👟👟👟👟👟👟👟👟👟👟👟👟👟👟👟👟👟👟👟👟👟👟👟👟👟👟👟👟👟👟👟👟👟👟👟👟👟👟👟👟👟👟👟👟👟👟👟👟👟👟👟👟👟👟👟👟👟👟👟👟👟👟👟👟👟👟👟👟👟👟👟👟👟👟👟👟👟👟👟👟👟👟👟👟👟👟👟👟👟👟👟👟👟",
+    "valid": true,
+    "top": false
+  },
+  {
+    "name": "label 161 Unicode code points",
+    "kind": "line",
+    "key": "productName",
+    "value": "👟👟👟👟👟👟👟👟👟👟👟👟👟👟👟👟👟👟👟👟👟👟👟👟👟👟👟👟👟👟👟👟👟👟👟👟👟👟👟👟👟👟👟👟👟👟👟👟👟👟👟👟👟👟👟👟👟👟👟👟👟👟👟👟👟👟👟👟👟👟👟👟👟👟👟👟👟👟👟👟👟👟👟👟👟👟👟👟👟👟👟👟👟👟👟👟👟👟👟👟👟👟👟👟👟👟👟👟👟👟👟👟👟👟👟👟👟👟👟👟👟👟👟👟👟👟👟👟👟👟👟👟👟👟👟👟👟👟👟👟👟👟👟👟👟👟👟👟👟👟👟👟👟👟👟👟👟👟👟👟👟",
+    "valid": false,
+    "top": false
+  },
+  {
+    "name": "label uppercase URL",
+    "kind": "line",
+    "key": "productName",
+    "value": "HTTPS://example.com",
+    "valid": false,
+    "top": false
+  },
+  {
+    "name": "label bare domain",
+    "kind": "line",
+    "key": "productName",
+    "value": "shop.EXAMPLE.com",
+    "valid": false,
+    "top": false
+  },
+  {
+    "name": "label email",
+    "kind": "line",
+    "key": "productName",
+    "value": "mailto:buyer@example.com",
+    "valid": false,
+    "top": false
+  },
+  {
+    "name": "label phone",
+    "kind": "line",
+    "key": "productName",
+    "value": "Shop (212) 555-0123",
+    "valid": false,
+    "top": false
+  },
+  {
+    "name": "label card",
+    "kind": "line",
+    "key": "productName",
+    "value": "4242 4242 4242 4242",
+    "valid": false,
+    "top": false
+  },
+  {
+    "name": "label IPv6",
+    "kind": "line",
+    "key": "productName",
+    "value": "2001:db8::1",
+    "valid": false,
+    "top": false
+  },
+  {
+    "name": "label IPv4",
+    "kind": "line",
+    "key": "productName",
+    "value": "192.0.2.42",
+    "valid": false,
+    "top": false
+  },
+  {
+    "name": "label control",
+    "kind": "line",
+    "key": "productName",
+    "value": "Line\nbreak",
+    "valid": false,
+    "top": false
+  },
+  {
+    "name": "line UUID 00000000-0000-0000-0000-000000000000",
+    "kind": "line",
+    "key": "lineId",
+    "value": "00000000-0000-0000-0000-000000000000",
+    "valid": false,
+    "top": false
+  },
+  {
+    "name": "common UUID 00000000-0000-0000-0000-000000000000",
+    "kind": "order",
+    "key": "orderId",
+    "value": "00000000-0000-0000-0000-000000000000",
+    "valid": false,
+    "top": true
+  },
+  {
+    "name": "line UUID AD27CED8-5B47-4201-9D20-7AF9A41F60A6",
+    "kind": "line",
+    "key": "lineId",
+    "value": "AD27CED8-5B47-4201-9D20-7AF9A41F60A6",
+    "valid": false,
+    "top": false
+  },
+  {
+    "name": "common UUID AD27CED8-5B47-4201-9D20-7AF9A41F60A6",
+    "kind": "order",
+    "key": "orderId",
+    "value": "AD27CED8-5B47-4201-9D20-7AF9A41F60A6",
+    "valid": false,
+    "top": true
+  },
+  {
+    "name": "line UUID ad27ced8-5b47-4201-9d20-7af9a41f60a6",
+    "kind": "line",
+    "key": "lineId",
+    "value": "ad27ced8-5b47-4201-9d20-7af9a41f60a6",
+    "valid": true,
+    "top": false
+  },
+  {
+    "name": "common UUID ad27ced8-5b47-4201-9d20-7af9a41f60a6",
+    "kind": "order",
+    "key": "orderId",
+    "value": "ad27ced8-5b47-4201-9d20-7af9a41f60a6",
+    "valid": true,
+    "top": true
+  },
+  {
+    "name": "refund pending",
+    "kind": "refund",
+    "key": "status",
+    "value": "pending",
+    "valid": false,
+    "top": false
+  },
+  {
+    "name": "refund failed",
+    "kind": "refund",
+    "key": "status",
+    "value": "failed",
+    "valid": false,
+    "top": false
+  },
+  {
+    "name": "refund canceled",
+    "kind": "refund",
+    "key": "status",
+    "value": "canceled",
+    "valid": false,
+    "top": false
+  },
+  {
+    "name": "refund completed",
+    "kind": "refund",
+    "key": "status",
+    "value": "completed",
+    "valid": true,
+    "top": false
+  },
+  {
+    "name": "label fullwidth parentheses phone",
+    "kind": "line",
+    "key": "productName",
+    "value": "（212） 555-0123",
+    "valid": false,
+    "top": false
+  },
+  {
+    "name": "label fully fullwidth phone",
+    "kind": "line",
+    "key": "productName",
+    "value": "０１２－３４５－６７８９",
+    "valid": false,
+    "top": false
+  },
+  {
+    "name": "label mixed compatibility phone in taxonomy",
+    "kind": "line",
+    "key": "brandLabel",
+    "value": "限定 （２１２） 555-0123",
+    "valid": false,
+    "top": false
+  },
+  {
+    "name": "label compatibility URL",
+    "kind": "line",
+    "key": "productName",
+    "value": "ＨＴＴＰＳ：／／ｅｘａｍｐｌｅ．ｃｏｍ",
+    "valid": false,
+    "top": false
+  },
+  {
+    "name": "label safe fullwidth catalog name",
+    "kind": "line",
+    "key": "productName",
+    "value": "Ｆｏｒｕｍ ８４（限定）",
+    "valid": true,
+    "top": false
+  }
+]

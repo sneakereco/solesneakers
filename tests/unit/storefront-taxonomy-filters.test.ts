@@ -5,6 +5,7 @@ const mockListAvailableSizes = jest.fn();
 const mockListAvailableConditions = jest.fn();
 const mockListCanonicalSearchProductIds = jest.fn();
 const mockList = jest.fn();
+const mockGetById = jest.fn();
 
 jest.mock("@/repositories/product-repo", () => ({
   ProductRepository: jest.fn().mockImplementation(() => ({
@@ -13,6 +14,7 @@ jest.mock("@/repositories/product-repo", () => ({
     listAvailableConditions: mockListAvailableConditions,
     listCanonicalSearchProductIds: mockListCanonicalSearchProductIds,
     list: mockList,
+    getById: mockGetById,
   })),
 }));
 
@@ -39,6 +41,29 @@ describe("storefront taxonomy filters", () => {
     mockList.mockResolvedValue({ products: [], total: 0 });
   });
 
+  it("omits cost and its provenance from public list and detail JSON", async () => {
+    const product = {
+      id: "product-1",
+      variants: [
+        {
+          id: "v1",
+          sale_price_cents: 100,
+          stock: 1,
+          unit_cost_cents: 42,
+          unit_cost_recorded: true,
+        },
+      ],
+    };
+    mockList.mockResolvedValue({ products: [product], total: 1 });
+    mockGetById.mockResolvedValue(product);
+    const service = new StorefrontService({} as never);
+    const list = await service.listProducts({});
+    const detail = await service.getProductById(product.id);
+    const expected = { id: "v1", sale_price_cents: 100, stock: 1 };
+    expect(list.products[0].variants[0]).toEqual(expected);
+    expect(detail?.variants[0]).toEqual(expected);
+    expect(product.variants[0].unit_cost_cents).toBe(42);
+  });
   it("exposes IDs as values and labels only for presentation", async () => {
     const service = new StorefrontService({} as never);
     const result = await service.listFilters({

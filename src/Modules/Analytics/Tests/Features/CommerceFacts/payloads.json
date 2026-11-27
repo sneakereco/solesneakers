@@ -1,0 +1,79 @@
+{
+  "order": {
+    "grossMerchandiseCents": 2000,
+    "discountCents": 0,
+    "merchandiseCents": 2000,
+    "shippingCents": null,
+    "taxCents": 100,
+    "totalCollectedCents": 2100,
+    "paymentMethod": "card",
+    "fulfillment": "ship",
+    "status": "paid"
+  },
+  "line": {
+    "lineId": "ad27ced8-5b47-4201-9d20-7af9a41f60a6",
+    "productId": "ad27ced8-5b47-4201-9d20-7af9a41f60a6",
+    "variantId": null,
+    "productName": "Air Jordan 1",
+    "brandId": null,
+    "brandLabel": null,
+    "categoryId": null,
+    "categoryLabel": null,
+    "sizeId": null,
+    "sizeLabel": null,
+    "quantity": 2,
+    "unitGrossCents": 1000,
+    "discountCents": 0,
+    "merchandiseCents": 2000,
+    "unitCostCents": null
+  },
+  "refund": {
+    "refundId": "ad27ced8-5b47-4201-9d20-7af9a41f60a6",
+    "status": "completed",
+    "totalCents": 100,
+    "merchandiseCents": null,
+    "shippingCents": null,
+    "taxCents": null,
+    "unallocatedCents": 100
+  },
+  "refund_line": {
+    "refundId": "ad27ced8-5b47-4201-9d20-7af9a41f60a6",
+    "lineId": "ad27ced8-5b47-4201-9d20-7af9a41f60a6",
+    "merchandiseCents": 100,
+    "quantity": 1,
+    "restockedQuantity": null
+  },
+  "payment_attempt": {
+    "attemptId": "ad27ced8-5b47-4201-9d20-7af9a41f60a6",
+    "stage": "payment",
+    "outcome": "failed",
+    "method": "card",
+    "reason": "declined",
+    "resolvedAt": "2026-11-25T18:00:00Z"
+  },
+  "shipping_cost": {
+    "adjustment": "credit",
+    "amountCents": 100
+  },
+  "fee": {
+    "adjustment": "charge",
+    "amountCents": 10
+  },
+  "fulfillment": {
+    "method": "ship",
+    "state": "shipped",
+    "paidAt": "2026-11-25T18:00:00Z",
+    "fulfilledAt": "2026-11-25T18:00:00Z"
+  },
+  "inventory": {
+    "productId": "ad27ced8-5b47-4201-9d20-7af9a41f60a6",
+    "variantId": "ad27ced8-5b47-4201-9d20-7af9a41f60a6",
+    "availableUnits": 0
+  },
+  "customer_summary": {
+    "firstPurchaseAt": "2026-11-25T18:00:00Z",
+    "lastPurchaseAt": "2026-11-25T18:00:00Z",
+    "confirmedOrders": 1,
+    "observedSpendCents": 0
+  }
+}

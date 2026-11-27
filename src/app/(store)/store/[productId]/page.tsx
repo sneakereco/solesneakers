@@ -9,7 +9,7 @@ import type { Metadata } from "next";
 import { pageMetadata } from "@/lib/metadata";
 
 import { createSupabasePublicClient } from "@/lib/supabase/public";
-import { ProductRepository } from "@/repositories/product-repo";
+import { StorefrontService } from "@/services/storefront-service";
 import { ProductDetail } from "@/components/store/ProductDetail";
 import { SpecialtyProductPage } from "@/Modules/SpecialtyProducts/Source/Features/Discovery/SpecialtyProductPage";
 import { getSpecialtyProductPage } from "@/Modules/SpecialtyProducts/Source/Features/Discovery/discovery";
@@ -24,12 +24,11 @@ const getCachedProduct = (productId: string, parentSignal: AbortSignal) =>
       unstable_cache(
         async () => {
           const supabase = createSupabasePublicClient();
-          const repo = new ProductRepository(supabase);
-          const product = await repo.getById(productId);
+          const product = await new StorefrontService(supabase).getProductById(productId);
           signal.throwIfAborted();
           return product;
         },
-        ["storefront", "product", productId],
+        ["storefront", "public-product-v2", productId],
         { revalidate: PRODUCT_REVALIDATE_SECONDS, tags: [`product:${productId}`] },
       )(),
     parentSignal,

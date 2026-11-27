@@ -14,7 +14,7 @@ const {
 const {
   CheckoutPreparationRepository,
 } = require("../../../Source/Features/Preparation/reservation-repository.ts");
-import { randomUUID } from "node:crypto";
+import { createHash, randomUUID } from "node:crypto";
 import {
   completedValues,
   raceAtRowLock,
@@ -825,6 +825,215 @@ test("atomic checkout allocation across independent sessions", async (t) => {
           ])
             await assert.rejects(reserve(a, { ...r, ...bad }), { code: "22023" });
           assert.deepEqual(await stock(x), { stock: 1, holds: 0 });
+        },
+      );
+
+      await t.test(
+        "analytics follows only the guarded reservation and verified payment",
+        async () => {
+          const first = await item();
+          const second = await item();
+          const account = "sole-buyer:v1:" + "a".repeat(64);
+          const receiptId = randomUUID();
+          const sessionId = randomUUID();
+          const buyerId = randomUUID();
+          await admin.query(
+            "insert into public.analytics_datasets(dataset_id,environment,activated_at,schema_version) values ('sole-staging','staging',clock_timestamp()-interval '1 minute',2)",
+          );
+          await admin.query(
+            "insert into public.analytics_consent_receipts(dataset_id,receipt_id,granted_at) values ('sole-staging',$1,clock_timestamp())",
+            [receiptId],
+          );
+          const context = {
+            datasetId: "sole-staging",
+            buyerKey: account,
+            // Browser/reporting fields cannot rewrite money or inventory.
+            totals: { totalCents: 1, taxCents: 1 },
+            tracking: { receiptId, visitorId: buyerId, sessionId, device: "desktop" },
+          };
+          const reserveTracked = async (client, request, analytics) =>
+            (
+              await client.query(
+                "select public.reserve_checkout_inventory_v2_with_analytics($1,$2) decision",
+                [request, analytics],
+              )
+            ).rows[0].decision;
+          const request = req([first]);
+          await assert.rejects(reserveTracked(await connect("anon"), request, context), {
+            code: "42501",
+          });
+          await assert.rejects(
+            reserveTracked(a, { ...request, totalCents: 1 }, context),
+            { code: "22023" },
+          );
+          const { orderId, reused } = await reserveTracked(a, request, context);
+          assert.equal(reused, false);
+          assert.deepEqual(await stock(first), { stock: 0, holds: 1 });
+          const {
+            rows: [saved],
+          } = await admin.query(
+            "select buyer_key,receipt_id,visitor_id,session_id,order_snapshot from public.analytics_order_context where order_id=$1",
+            [orderId],
+          );
+          assert.equal(saved.buyer_key, account);
+          assert.equal(saved.receipt_id, receiptId);
+          assert.equal(saved.visitor_id, buyerId);
+          assert.equal(saved.session_id, sessionId);
+          assert.equal(saved.order_snapshot.totalCollectedCents, 1080);
+          assert.equal(saved.order_snapshot.taxCents, 80);
+          assert.equal(
+            (await reserveTracked(a, request, { ...context, buyerKey: "invalid" }))
+              .orderId,
+            orderId,
+          );
+          await admin.query(
+            "update public.analytics_consent_receipts set revoked_at=clock_timestamp() where receipt_id=$1",
+            [receiptId],
+          );
+          const untracked = await reserveTracked(a, req([second]), context);
+          const {
+            rows: [withoutConsent],
+          } = await admin.query(
+            "select buyer_key,receipt_id,visitor_id,session_id from public.analytics_order_context where order_id=$1",
+            [untracked.orderId],
+          );
+          assert.deepEqual(withoutConsent, {
+            buyer_key: account,
+            receipt_id: null,
+            visitor_id: null,
+            session_id: null,
+          });
+          const analyticsFailure = await item();
+          const accepted = await reserveTracked(a, req([analyticsFailure]), {
+            ...context,
+            buyerKey: "invalid",
+          });
+          assert.equal(accepted.kind, "reserved");
+          assert.deepEqual(await stock(analyticsFailure), { stock: 0, holds: 1 });
+
+          const squareOrderId = "square-analytics-" + orderId;
+          const paymentId = "payment-analytics-" + orderId;
+          const at = new Date().toISOString();
+          await a.query(
+            "select attach_square_checkout_order($1,$2,1,0,80,1080,'square:fixture:v1')",
+            [orderId, squareOrderId],
+          );
+          const {
+            rows: [{ attempt }],
+          } = await a.query(
+            "select get_or_create_checkout_payment_attempt($1,'card',$2) attempt",
+            [orderId, request.ownerBinding],
+          );
+          await a.query("select begin_checkout_payment_dispatch($1,$2,$3,$4)", [
+            attempt.id,
+            request.ownerBinding,
+            "1".repeat(64),
+            "2".repeat(64),
+          ]);
+          await a.query("select record_checkout_payment_outcome($1,$2,'succeeded',$3)", [
+            attempt.id,
+            paymentId,
+            {
+              kind: "square_payment",
+              orderId,
+              squareOrderId,
+              paymentId,
+              status: "COMPLETED",
+              amountCents: 1080,
+              currency: "USD",
+            },
+          ]);
+          const fact = {
+            kind: "payment",
+            providerId: paymentId,
+            paymentId,
+            orderId,
+            providerVersion: "v1",
+            status: "COMPLETED",
+            amountCents: 1080,
+            currency: "USD",
+            expectedTotalCents: 1080,
+            fulfillmentStatus: "unfulfilled",
+          };
+          const projection = (client, source) =>
+            client.query(
+              "select apply_checkout_payment_with_analytics($1,$2,$3) snapshot",
+              [fact, at, source],
+            );
+          await assert.rejects(projection(await connect("authenticated"), {}), {
+            code: "42501",
+          });
+          const {
+            rows: [{ snapshot }],
+          } = await projection(a, { fees: "invalid-analytics-only" });
+          assert.equal(snapshot.financialState, "paid");
+          assert.equal(snapshot.reviewReason, null);
+          assert.equal(
+            (
+              await admin.query(
+                "select status from public.inventory_reservations where order_id=$1",
+                [orderId],
+              )
+            ).rows[0].status,
+            "consumed",
+          );
+          const source = {
+            capturedAt: at,
+            resolvedAt: at,
+            fees: [
+              { effectiveAt: at, type: "INITIAL", adjustment: "charge", amountCents: 30 },
+            ],
+          };
+          await projection(a, source);
+          await projection(a, source);
+          await a.query("select apply_checkout_payment_with_analytics($1,$2,$3)", [
+            { ...fact, providerVersion: "older-negative-observation", status: "FAILED" },
+            at,
+            {},
+          ]);
+          const attemptHash = createHash("sha256")
+            .update("sole-payment-attempt:" + attempt.squareIdempotencyKey)
+            .digest("hex");
+          const analyticsAttempt =
+            attemptHash.slice(0, 8) +
+            "-" +
+            attemptHash.slice(8, 12) +
+            "-8" +
+            attemptHash.slice(13, 16) +
+            "-8" +
+            attemptHash.slice(17, 20) +
+            "-" +
+            attemptHash.slice(20, 32);
+          await a.query("select analytics_record_operational_outcome($1,$2)", [
+            "sole-staging",
+            {
+              attemptId: analyticsAttempt,
+              orderId,
+              method: "card",
+              stage: "payment",
+              outcome: "failed",
+              reason: "declined",
+              effectiveAt: at,
+              resolvedAt: at,
+            },
+          ]);
+          const { rows: facts } = await admin.query(
+            "select kind,fact->'payload' payload from public.analytics_fact_versions where fact->>'orderId'=$1",
+            [orderId],
+          );
+          assert.equal(facts.filter((f) => f.kind === "order").length, 1);
+          assert.equal(
+            facts.find((f) => f.kind === "order").payload.totalCollectedCents,
+            1080,
+          );
+          assert.equal(facts.filter((f) => f.kind === "payment_attempt").length, 1);
+          assert.equal(
+            facts.find((f) => f.kind === "payment_attempt").payload.outcome,
+            "succeeded",
+          );
+          assert.equal(facts.filter((f) => f.kind === "line").length, 1);
+          assert.equal(facts.filter((f) => f.kind === "fee").length, 1);
+          assert.equal(facts.find((f) => f.kind === "fee").payload.amountCents, 30);
         },
       );
     },

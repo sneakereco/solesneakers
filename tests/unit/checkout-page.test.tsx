@@ -10,7 +10,7 @@ jest.mock("@/lib/checkout/checkout-page-data", () => ({
 jest.mock("@/lib/utils/log", () => ({
   logError: jest.fn(),
 }));
-jest.mock("@/lib/measurement/client", () => ({
+jest.mock("@/Modules/Analytics/Source/Features/VisitorMeasurement/triggers", () => ({
   captureCheckoutStarted: jest.fn(),
 }));
 
@@ -20,7 +20,7 @@ import { CheckoutLockedNotice } from "@/components/checkout/CheckoutLockedNotice
 import { CheckoutUnavailable } from "@/components/checkout/CheckoutUnavailable";
 import { loadCheckoutPageAccess } from "@/lib/checkout/checkout-page-access";
 import { loadCheckoutPageData } from "@/lib/checkout/checkout-page-data";
-import { captureCheckoutStarted } from "@/lib/measurement/client";
+import { captureCheckoutStarted } from "@/Modules/Analytics/Source/Features/VisitorMeasurement/triggers";
 
 import CheckoutPage from "../../src/app/checkout/page";
 

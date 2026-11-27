@@ -3,10 +3,8 @@
 import { Suspense } from "react";
 import type { Metadata, Viewport } from "next";
 
-import { CloudflareWebAnalytics } from "@/components/analytics/CloudflareWebAnalytics";
 import { RootLoadingShell } from "@/components/shell/RootLoadingShell";
 import { SessionShell } from "@/components/shell/SessionShell";
-import { env } from "@/config/env";
 import { pageMetadata } from "@/lib/metadata";
 import "@/styles/site.css";
 
@@ -37,7 +35,6 @@ export default function RootLayout({ children }: { children: React.ReactNode }) 
         <Suspense fallback={<RootLoadingShell />}>
           <SessionShell>{children}</SessionShell>
         </Suspense>
-        <CloudflareWebAnalytics token={env.NEXT_PUBLIC_CLOUDFLARE_WEB_ANALYTICS_TOKEN} />
       </body>
     </html>
   );

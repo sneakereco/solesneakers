@@ -6,6 +6,9 @@ import type { Tables, TablesUpdate } from "@/types/db/database.types";
 type OrderRow = Tables<"orders">;
 type OrderUpdate = TablesUpdate<"orders">;
 
+const safeLineFields =
+  "id, order_id, variant_id, product_id, product_name, variant_sku, size_label, brand, model, category, condition, quantity, unit_price, line_total, refund_amount, refunded_at, created_at";
+
 export class OrdersRepository {
   constructor(private readonly supabase: TypedSupabaseClient) {}
 
@@ -94,7 +97,7 @@ export class OrdersRepository {
     let query = this.supabase
       .from("orders")
       .select(
-        "*, profiles!user_id(email), items:order_items(*, product:products(id, name, category, created_at, description, images:product_images(url, is_primary, sort_order)), variant:product_variants(id, sku, sale_price_cents, unit_cost_cents)), shipping:order_shipping(*)",
+        `*, profiles!user_id(email), items:order_items(${safeLineFields}, product:products(id, name, category, created_at, description, images:product_images(url, is_primary, sort_order)), variant:product_variants(id, sku, sale_price_cents)), shipping:order_shipping(*)`,
       )
       .order("created_at", { ascending: false });
 
@@ -132,7 +135,7 @@ export class OrdersRepository {
     let query = this.supabase
       .from("orders")
       .select(
-        "*, profiles!user_id(email), items:order_items(*, product:products(id, name, category, created_at, description, images:product_images(url, is_primary, sort_order)), variant:product_variants(id, sku, sale_price_cents, unit_cost_cents)), shipping:order_shipping(*), billing:order_billing(name, phone), payment:payment_transactions(payment_method, square_payment_id, card_type, card_last4)",
+        `*, profiles!user_id(email), items:order_items(${safeLineFields}, product:products(id, name, category, created_at, description, images:product_images(url, is_primary, sort_order)), variant:product_variants(id, sku, sale_price_cents)), shipping:order_shipping(*), billing:order_billing(name, phone), payment:payment_transactions(payment_method, square_payment_id, card_type, card_last4)`,
         { count: "exact" },
       )
       .order("created_at", { ascending: false });
@@ -171,7 +174,7 @@ export class OrdersRepository {
     const { data, error } = await this.supabase
       .from("orders")
       .select(
-        "*, items:order_items(*, product:products(id, name), variant:product_variants(id, sku, sale_price_cents))",
+        `*, items:order_items(${safeLineFields}, product:products(id, name), variant:product_variants(id, sku, sale_price_cents))`,
       )
       .eq("user_id", userId)
       .order("created_at", { ascending: false });

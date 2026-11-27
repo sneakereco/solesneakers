@@ -123,16 +123,16 @@ The real shared-network scenario completed 20 original paid receipts with 20 ine
 
 ## Current-release migration order
 
-Pinned shipping main `6161af04` contains 113 published migrations through `20261127020000`. The following six unpublished hardening versions moved together. The mail-authority fence follows at `20261127030000`.
+Analytics main `20b8d09d` contains 122 migrations through `20261127034000`. The seven unpublished checkout migrations retain their relative order and follow that prefix. The analytics integration follows at `20261127047000`.
 
 | Earlier unpublished file                    | Current file                                |
 | ------------------------------------------- | ------------------------------------------- |
-| 20261125160000_checkout_authority.sql       | 20261127021000_checkout_authority.sql       |
-| 20261125161000_checkout_recovery.sql        | 20261127022000_checkout_recovery.sql        |
-| 20261125162000_checkout_attempts.sql        | 20261127023000_checkout_attempts.sql        |
-| 20261125163000_checkout_financial_facts.sql | 20261127024000_checkout_financial_facts.sql |
-| 20261125164000_checkout_reservations.sql    | 20261127025000_checkout_reservations.sql    |
-| 20261125165000_checkout_operations.sql      | 20261127026000_checkout_operations.sql      |
+| 20261125160000_checkout_authority.sql       | 20261127040000_checkout_authority.sql       |
+| 20261125161000_checkout_recovery.sql        | 20261127041000_checkout_recovery.sql        |
+| 20261125162000_checkout_attempts.sql        | 20261127042000_checkout_attempts.sql        |
+| 20261125163000_checkout_financial_facts.sql | 20261127043000_checkout_financial_facts.sql |
+| 20261125164000_checkout_reservations.sql    | 20261127044000_checkout_reservations.sql    |
+| 20261125165000_checkout_operations.sql      | 20261127045000_checkout_operations.sql      |
 
 ### Integrated evidence and remaining release gates
 

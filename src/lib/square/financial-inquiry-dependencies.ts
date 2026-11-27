@@ -3,6 +3,7 @@ import {
   withDependency,
 } from "@/Modules/Checkout/Source/Features/Recovery/recovery-worker";
 import { after } from "next/server";
+import { scheduleAnalyticsDrain } from "@/Modules/Analytics/Source/Features/EventDelivery/delivery-runtime";
 import { CheckoutDependencyLeaseRepository } from "@/Modules/Checkout/Source/Features/Recovery/dependency-lease";
 import { SquareFinancialInquiry } from "@/Modules/Checkout/Source/Features/Payments/square-financial-inquiry";
 import type { AdminSupabaseClient } from "@/lib/supabase/service-role";
@@ -48,6 +49,7 @@ export function promptSquareReceipt(db: AdminSupabaseClient, eventId: string) {
         await withDependency(leases, "square", Date.now() + 10000, (signal) =>
           createSquareFinancialInquiry(db, signal).processStoredSquareEvent(eventId),
         );
+        scheduleAnalyticsDrain();
       } catch {
         /* Durable receipt remains pending. */
       }

@@ -903,7 +903,7 @@ async function replay(client, { migrations }, lease) {
     const before = await populatedRows(client, catalog, order);
     const remaining = migrations.slice(prefix.length);
     // Rehearse the already-shipping schema before applying this branch's unpublished migrations.
-    const shippingThrough = "20261127020000";
+    const shippingThrough = "20261127034000";
     const shippingPrefix = migrations.filter(({ version }) => version <= shippingThrough);
     await applyMigrations(
       client,
@@ -915,7 +915,7 @@ async function replay(client, { migrations }, lease) {
         "select version from supabase_migrations.schema_migrations order by version",
       )
     ).rows.map(({ version }) => version);
-    assert.equal(recorded.length, 113);
+    assert.equal(recorded.length, 122);
     assert.deepEqual(
       validatePrefix(
         migrations.map(({ version }) => version),

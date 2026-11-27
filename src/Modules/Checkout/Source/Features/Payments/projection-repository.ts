@@ -1,3 +1,4 @@
+import type { squareSourceEvidence } from "@/lib/square/payment-details";
 import type { AdminSupabaseClient } from "@/lib/supabase/service-role";
 import {
   financialFact,
@@ -33,13 +34,22 @@ export class FinancialProjectionRepository {
     return financialSnapshot.parse(data);
   }
 
-  async applyFinancialFact(value: VerifiedFinancialFact) {
+  async applyFinancialFact(
+    value: VerifiedFinancialFact,
+    source?: ReturnType<typeof squareSourceEvidence>,
+  ) {
     const fact = financialFact.parse(value);
-    const { data, error } = await this.client.rpc("apply_checkout_financial_fact", {
+    const args = {
       p_fact: fact,
       p_provider_time: this.observedAt,
       ...(this.reviewReason ? { p_review: this.reviewReason } : {}),
-    });
+    };
+    const { data, error } = source
+      ? await this.client.rpc("apply_checkout_payment_with_analytics", {
+          ...args,
+          p_source: source,
+        })
+      : await this.client.rpc("apply_checkout_financial_fact", args);
     if (error) throw error;
     return financialSnapshot.parse(data);
   }

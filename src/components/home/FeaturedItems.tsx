@@ -13,7 +13,7 @@ import {
 } from "@/components/store/StoreSkeletons";
 import { fetchJsonWithDeadline } from "@/lib/http/request-deadline";
 import { logError } from "@/lib/utils/log";
-import type { ProductWithDetails } from "@/types/domain/product";
+import type { StorefrontProduct } from "@/types/domain/product";
 
 import { DiscoveryInsertion } from "@/Modules/SpecialtyProducts/Source/Features/Discovery/DiscoveryInsertion";
 
@@ -57,14 +57,14 @@ export function FeaturedItems({
           ? "/api/store/products?category=clothing&sort=newest&limit=12"
           : "/api/featured-items";
         const data = await fetchJsonWithDeadline<{
-          products?: ProductWithDetails[];
+          products?: StorefrontProduct[];
           featured?: FeaturedProduct[];
         } | null>(endpoint, "Unable to load homepage products", controller.signal);
         if (controller.signal.aborted) return;
         if (isClothing) {
           if (!Array.isArray(data?.products))
             throw new Error("Invalid clothing products");
-          const products: ProductWithDetails[] = data.products;
+          const products: StorefrontProduct[] = data.products;
           setFeatured(
             products.flatMap((product) => {
               const prices = product.variants

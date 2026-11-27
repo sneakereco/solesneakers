@@ -63,8 +63,9 @@ import type {
 } from "@/lib/checkout/checkout-page-data";
 import { ShippingAddressValidationError } from "@/lib/checkout/shipping-address-validation";
 import { z } from "zod";
-import { captureCheckoutStarted } from "@/lib/measurement/client";
-import { hasUsableCheckout } from "@/lib/measurement/triggers";
+import { getCheckoutTrackingContext } from "@/Modules/Analytics/Source/Features/VisitorMeasurement/client";
+import { useCheckoutStart } from "@/Modules/Analytics/Source/Features/VisitorMeasurement/use-checkout-start";
+import { hasUsableCheckout } from "@/Modules/Analytics/Source/Features/VisitorMeasurement/triggers";
 
 type Fulfillment = "ship" | "pickup";
 type OriginalRetry = NonNullable<Awaited<ReturnType<typeof lookupOriginalPaymentRetry>>>;
@@ -143,6 +144,7 @@ type CheckoutPreparePayload = {
   recoveryOnly?: true;
   idempotencyKey: string;
   deviceSessionId: string;
+  trackingContext?: ReturnType<typeof getCheckoutTrackingContext>;
 };
 
 export function buildCheckoutPreparePayload(
@@ -250,23 +252,6 @@ function OwnerCheckout({
   const lastQuote = useRef<{ current: () => boolean; fingerprint: string | null } | null>(
     null,
   );
-  const didCaptureCheckoutStart = useRef(false);
-
-  useEffect(() => {
-    if (
-      didCaptureCheckoutStart.current ||
-      !hasUsableCheckout({
-        cartReady: isReady,
-        itemCount: items.length,
-        isRedirecting,
-      })
-    ) {
-      return;
-    }
-    didCaptureCheckoutStart.current = true;
-    captureCheckoutStarted();
-  }, [isReady, items.length, isRedirecting]);
-
   const [needsRecovery, setNeedsRecovery] = useState(() =>
     needsOriginalRecovery(initialData.ownerId),
   );
@@ -306,6 +291,15 @@ function OwnerCheckout({
         quantity: item.quantity,
       })),
     [items],
+  );
+  useCheckoutStart(
+    hasUsableCheckout({
+      cartReady: isReady,
+      itemCount: items.length,
+      isRedirecting: isRedirecting || needsRecovery || stockBlocked,
+    }),
+    cart.hasCartView ? JSON.stringify(checkoutItems) : null,
+    isCurrent,
   );
   const shippingAddress = useMemo(
     () => (fulfillment === "ship" ? normalizedAddress(address) : null),
@@ -790,6 +784,9 @@ function OwnerCheckout({
         ...(attempt.recoveryOnly ? { recoveryOnly: true as const } : {}),
         idempotencyKey: attemptKey,
         deviceSessionId,
+        ...(!attempt.recoveryOnly && isCurrent()
+          ? { trackingContext: getCheckoutTrackingContext() }
+          : {}),
       }),
     );
     await requireOwner();

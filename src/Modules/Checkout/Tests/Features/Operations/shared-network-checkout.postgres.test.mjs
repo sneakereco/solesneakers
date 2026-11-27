@@ -5,10 +5,10 @@ import { createRequire } from "node:module";
 import { createInterface } from "node:readline";
 import test from "node:test";
 import { atRequestBarrier } from "./request-barrier.mjs";
+import "../../../../../../scripts/analytics-operator-runtime.mjs";
 import { withCheckoutDatabase } from "../../../../../../tests/database/fixtures/checkout-hardening.mjs";
 
 const require = createRequire(import.meta.url);
-require("tsx/cjs");
 const site = "https://fixture.invalid";
 const ip = "203.0.113.20";
 const budgets = {

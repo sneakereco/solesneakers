@@ -29,7 +29,6 @@ jobs:
       ADMIN_SESSION_SECRET: ci-admin-session-secret
       CHECKOUT_IDENTITY_HMAC_SECRET: ci-identity-hmac-secret-at-least-32-characters
       CRON_SECRET: ci-cron-secret-at-least-32-characters
-      NEXT_PUBLIC_CLOUDFLARE_WEB_ANALYTICS_TOKEN: ci-analytics-token
       NEXT_PUBLIC_TURNSTILE_SITE_KEY: ci-turnstile-key
       ORDER_ACCESS_TOKEN_SECRET: ci-order-access-token
       SES_SMTP_HOST: ci-ses-host
@@ -106,6 +105,9 @@ jobs:
 
       - name: Measurement browser suites
         run: '"$RUNNER_TEMP/checkout-check" measurement npm run test:measurement:browser'
+
+      - name: Analytics browser suites
+        run: npm run test:analytics:browser
 
       - name: Build without deployment credentials
         run: '"$RUNNER_TEMP/checkout-check" fixture-build ./node_modules/.bin/next build'

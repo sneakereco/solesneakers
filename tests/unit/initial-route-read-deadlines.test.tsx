@@ -127,7 +127,17 @@ it("cold product detail exits on expiry and distinguishes recovery from confirme
   expect(await atDeadline(() => ProductPage({ params }))).toMatchObject({
     error: { name: "TimeoutError" },
   });
-  expect((await ProductPage({ params })).props.product).toBe(item);
+  const privateVariant = {
+    ...item.variants[0],
+    unit_cost_cents: 3200,
+    unit_cost_recorded: true,
+  };
+  mockProduct.mockResolvedValueOnce({ ...item, variants: [privateVariant] });
+  expect((await ProductPage({ params })).props.product).toStrictEqual(item);
+  expect(privateVariant).toMatchObject({
+    unit_cost_cents: 3200,
+    unit_cost_recorded: true,
+  });
   mockProduct.mockResolvedValueOnce(null);
   await expect(ProductPage({ params })).rejects.toMatchObject({
     digest: "NEXT_HTTP_ERROR_FALLBACK;404",

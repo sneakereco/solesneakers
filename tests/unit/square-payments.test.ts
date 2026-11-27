@@ -94,6 +94,30 @@ describe("SquarePaymentsGateway", () => {
     expect(create.mock.calls[0]?.[0]).not.toHaveProperty("customerId");
   });
 
+  it("replays the same provider command and preserves the guarded attempt reference", async () => {
+    const create = jest.fn().mockRejectedValue(new Error("timeout"));
+    const gateway = new SquarePaymentsGateway(
+      { create, get: jest.fn() },
+      "fixture-location",
+    );
+    await expect(gateway.create(input)).rejects.toThrow("timeout");
+    await expect(gateway.create(input)).rejects.toThrow("timeout");
+    const first = create.mock.calls[0][0];
+    expect(create.mock.calls[1][0]).toEqual(first);
+    expect(first.referenceId).toBe(input.attemptId);
+    expect(first.note).toBe("Sole Sneakers order " + input.localOrderId);
+    expect(first.note).not.toContain(input.idempotencyKey);
+    await expect(
+      gateway.create({
+        ...input,
+        idempotencyKey: "55555555-5555-4555-8555-555555555555",
+      }),
+    ).rejects.toThrow();
+    expect(create.mock.calls[2][0]).toEqual({
+      ...first,
+      idempotencyKey: "55555555-5555-4555-8555-555555555555",
+    });
+  });
   it("rejects a mismatched payment response", async () => {
     const gateway = new SquarePaymentsGateway(
       {
