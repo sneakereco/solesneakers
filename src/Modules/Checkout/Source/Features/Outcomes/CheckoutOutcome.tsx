@@ -76,7 +76,14 @@ function Observation({ entry }: { entry: Entry }) {
   const orderId = query.get("orderId");
   const queryToken = query.get("token") || null;
   const access = useOutcomeAccess();
-  const stored = useSyncExternalStore(
+  const readToken = useCallback(
+    () =>
+      queryToken ??
+      access.credential.read(orderId) ??
+      (orderId ? readGuestOrderAccess(orderId) : null),
+    [queryToken, access, orderId],
+  );
+  const token = useSyncExternalStore(
     useCallback(
       (notify: () => void) =>
         subscribe(() => {
@@ -85,10 +92,9 @@ function Observation({ entry }: { entry: Entry }) {
         }),
       [access, orderId],
     ),
-    useCallback(() => (orderId ? readGuestOrderAccess(orderId) : null), [orderId]),
+    readToken,
     () => null,
   );
-  const token = queryToken ?? access.credential.read(orderId) ?? stored ?? null;
   const ownClear = useRef<{
     access: typeof access;
     orderId: string | null;
@@ -133,7 +139,7 @@ function Observation({ entry }: { entry: Entry }) {
   useLayoutEffect(() => {
     // A transient grant is scoped to this order and the stored credential it replaced.
     access.credential.retain(orderId);
-  }, [access, orderId, stored]);
+  }, [access, orderId, token]);
   useLayoutEffect(() => {
     if (!orderId || !access.current()) {
       access.handoff.clear();
@@ -161,11 +167,7 @@ function Observation({ entry }: { entry: Entry }) {
       identityGeneration: access.current,
       signal: lifetime.signal,
       onState: ({ state, order }) => {
-        const activeToken =
-          queryToken ??
-          access.credential.read(orderId) ??
-          readGuestOrderAccess(orderId) ??
-          null;
+        const activeToken = readToken();
         if (activeToken !== token || currentPair() !== observedPair) {
           setRetry((n) => n + 1);
           return;
@@ -198,7 +200,17 @@ function Observation({ entry }: { entry: Entry }) {
       stop();
       if (!transferred) lifetime.abort();
     };
-  }, [access, currentPair, entry, observation, orderId, queryToken, router, token]);
+  }, [
+    access,
+    currentPair,
+    entry,
+    observation,
+    orderId,
+    queryToken,
+    readToken,
+    router,
+    token,
+  ]);
   const visible = result?.observation === observation ? result.value : waiting;
   const { isReady, consumeConfirmedPurchase } = useCart();
   useLayoutEffect(() => {
@@ -210,10 +222,7 @@ function Observation({ entry }: { entry: Entry }) {
       pair !== null &&
       access.current() &&
       currentPair() === pair &&
-      (queryToken ??
-        access.credential.read(order.id) ??
-        readGuestOrderAccess(order.id) ??
-        null) === token;
+      readToken() === token;
     void consumeConfirmedPurchase(
       order.id,
       order.purchasedLines,
@@ -221,7 +230,7 @@ function Observation({ entry }: { entry: Entry }) {
       isCurrent,
     )
       .then((consumption) => {
-        if (current && currentPair() !== pair) {
+        if (current && (currentPair() !== pair || readToken() !== token)) {
           setRetry((n) => n + 1);
           return;
         }
@@ -240,7 +249,7 @@ function Observation({ entry }: { entry: Entry }) {
     orderId,
     token,
     pair,
-    queryToken,
+    readToken,
     isReady,
     visible,
     consumeConfirmedPurchase,

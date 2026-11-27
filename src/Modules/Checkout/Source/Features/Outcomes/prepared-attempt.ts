@@ -1,5 +1,5 @@
 import type { CartPurchaseActions, PurchaseLine } from "@/Modules/Cart/Source/Client";
-import { resolveCheckoutAttempt } from "./client-session";
+import { observeStoredGuestAccess, resolveCheckoutAttempt } from "./client-session";
 
 export async function capturePreparedAttempt(
   cart: CartPurchaseActions,
@@ -38,11 +38,13 @@ export async function capturePreparedAttempt(
     refreshQuote();
     throw Error("Your checkout changed. Review the updated order before paying.");
   }
+  let credentialCurrent = () => false;
   return {
+    credentialCurrent: () => credentialCurrent(),
     applyStockConflicts:
       result.status === "captured" ? result.applyStockConflicts : undefined,
     resumed: attempt.mode === "resume",
-    requireRecovery: () => attempt.requireRecovery(ownerId),
+    requireRecovery: (orderId?: string) => attempt.requireRecovery(ownerId, orderId),
     key: attempt.key,
     current: attempt.current,
     recoveryOnly: resumedWithoutProof,
@@ -59,6 +61,7 @@ export async function capturePreparedAttempt(
           .catch(() => false));
       if (signal.aborted || !attempt.prepared(orderId, token, bound, ownerId))
         throw Error("Your checkout changed. Review your current order.");
+      credentialCurrent = observeStoredGuestAccess();
       return bound;
     },
   };

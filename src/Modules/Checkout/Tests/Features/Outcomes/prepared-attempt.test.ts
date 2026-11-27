@@ -1,3 +1,4 @@
+import { recoverOriginalOrder } from "../../../Source/Features/Outcomes/original-order-recovery";
 import { capturePreparedAttempt } from "../../../Source/Features/Outcomes/prepared-attempt";
 import {
   resolveCheckoutAttempt,
@@ -356,4 +357,104 @@ it("recovers an interrupted empty state before creating a new key", () => {
     "read-only",
   );
   expect(create).not.toHaveBeenCalled();
+});
+
+describe("strict original order discovery", () => {
+  const saved = {
+    items: [
+      {
+        productId: "10000000-0000-4000-8000-000000000001",
+        variantId: "20000000-0000-4000-8000-000000000001",
+        quantity: 1,
+      },
+    ],
+    fulfillment: "pickup",
+    pickupContact: { name: "Buyer", phone: "2025550100" },
+    buyerEmail: "buyer@example.test",
+    paymentMethod: "card",
+    shippingAddress: null,
+    billingAddress: {
+      givenName: "Test",
+      familyName: "Buyer",
+      line1: "1 Market St",
+      city: "Washington",
+      state: "DC",
+      postalCode: "20001",
+      country: "US",
+    },
+    quoteFingerprint: "a".repeat(64),
+  };
+  const device = "30000000-0000-4000-8000-000000000001";
+  const orderId = "40000000-0000-4000-8000-000000000001";
+  const originalFetch = global.fetch;
+  afterEach(() => {
+    global.fetch = originalFetch;
+  });
+  function issued(originalFingerprint = JSON.stringify(saved)) {
+    values.set("rdk_checkout_device_session_id", device);
+    const attempt = resolveCheckoutAttempt(originalFingerprint);
+    attempt.commit();
+    attempt.requireRecovery("buyer");
+    return attempt;
+  }
+  it.each([
+    "foreign owner",
+    "changed pair",
+    "changed device",
+    "malformed",
+    "oversized",
+    "unexpected field",
+  ])("refuses %s before any prepare", async (kind) => {
+    issued(
+      kind === "malformed"
+        ? "{"
+        : kind === "oversized"
+          ? "a".repeat(33000)
+          : kind === "unexpected field"
+            ? JSON.stringify({ ...saved, unrecognized: true })
+            : undefined,
+    );
+    if (kind === "changed pair") values.set(cartKey, "replaced");
+    if (kind === "changed device") values.set("rdk_checkout_device_session_id", orderId);
+    global.fetch = jest.fn();
+    await expect(
+      recoverOriginalOrder(
+        kind === "foreign owner" ? "other" : "buyer",
+        jest.fn(),
+        new AbortController().signal,
+      ),
+    ).rejects.toThrow();
+    expect(global.fetch).not.toHaveBeenCalled();
+  });
+  it.each(["owner", "pair", "device", "unmount"])(
+    "a delayed discovery response cannot publish after %s replacement",
+    async (kind) => {
+      const attempt = issued();
+      const lifetime = new AbortController();
+      let read!: () => void, complete!: (data: unknown) => void;
+      const reading = new Promise<void>((r) => (read = r));
+      const body = new Promise((r) => (complete = r));
+      global.fetch = jest.fn().mockResolvedValue({
+        ok: true,
+        json: () => {
+          read();
+          return body;
+        },
+      });
+      const owner = jest.fn().mockResolvedValue(undefined);
+      const pending = recoverOriginalOrder("buyer", owner, lifetime.signal);
+      await reading;
+      if (kind === "owner") owner.mockRejectedValueOnce(Error("access changed"));
+      if (kind === "pair") values.set(attemptKey, orderId);
+      if (kind === "device") values.set("rdk_checkout_device_session_id", orderId);
+      if (kind === "unmount") lifetime.abort();
+      complete({ code: "CHECKOUT_RECOVERY_REQUIRED", orderId });
+      await expect(pending).rejects.toThrow();
+      expect(global.fetch).toHaveBeenCalledTimes(1);
+      expect(values.get(attemptKey)).toBe(kind === "pair" ? orderId : attempt.key);
+      expect(JSON.parse(values.get("checkout_original_recovery_v1")!)).not.toHaveProperty(
+        "orderId",
+      );
+    },
+  );
 });

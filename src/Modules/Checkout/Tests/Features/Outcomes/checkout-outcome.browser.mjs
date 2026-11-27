@@ -147,6 +147,7 @@ async function fixture(
         postalCode: "20001",
         countryCode: "US",
       };
+      window.fixtureCardTokens = 0;
       const approved = async () => ({
         status: "OK",
         token: "fixture-wallet",
@@ -172,7 +173,10 @@ async function fixture(
           }),
           card: async () => ({
             attach: async () => {},
-            tokenize: async () => ({ status: "OK", token: "fixture" }),
+            tokenize: async () => {
+              window.fixtureCardTokens++;
+              return { status: "OK", token: "fixture" };
+            },
           }),
           paymentRequest: () => ({
             addEventListener() {},
@@ -1497,5 +1501,186 @@ for (const missing of [false, true])
         [1, 1, 0, 0],
       );
       assert.deepEqual((await state(page)).items, [2]);
+    },
+  );
+
+async function denyFreshGuestGrant(page) {
+  await page.evaluate(() => {
+    sessionStorage.setItem("rdk_guest_order_id", "order-b");
+    sessionStorage.setItem("rdk_guest_order_token", "grant-b");
+    const original = Storage.prototype.setItem;
+    Storage.prototype.setItem = function (key, value) {
+      if (key === "rdk_guest_order_token" && value === "from-prepare")
+        throw new DOMException("denied", "QuotaExceededError");
+      return original.call(this, key, value);
+    };
+  });
+}
+async function supersedeUnrelatedGrant(page, change) {
+  await page.evaluate((change) => {
+    if (change === "replace" || change === "ABA") {
+      sessionStorage.setItem("rdk_guest_order_id", "order-c");
+      sessionStorage.setItem("rdk_guest_order_token", "grant-c");
+    } else {
+      sessionStorage.removeItem("rdk_guest_order_id");
+      sessionStorage.removeItem("rdk_guest_order_token");
+    }
+    window.dispatchEvent(
+      new StorageEvent("storage", {
+        key: "rdk_guest_order_token",
+        storageArea: sessionStorage,
+      }),
+    );
+    if (change === "ABA") {
+      sessionStorage.setItem("rdk_guest_order_id", "order-b");
+      sessionStorage.setItem("rdk_guest_order_token", "grant-b");
+      window.dispatchEvent(new Event("checkout-guest-access"));
+    }
+    window.releaseErrorBody?.();
+    window.releaseGuestConsume?.();
+  }, change);
+}
+for (const change of ["replace", "withdraw", "ABA"]) {
+  test(
+    "delayed transient guest financial error retires on unrelated grant " + change,
+    async (t) => {
+      const { open, flow } = await fixture(t, { owner: null, pay: "decline" });
+      const page = await open();
+      await denyFreshGuestGrant(page);
+      await page.evaluate(() => {
+        const get = window.fetch.bind(window);
+        window.fetch = async (...args) => {
+          const response = await get(...args);
+          if (args[0] === "/api/checkout/pay") {
+            const json = response.json.bind(response);
+            response.json = async () => {
+              await new Promise((r) => (window.releaseErrorBody = r));
+              return json();
+            };
+          }
+          return response;
+        };
+      });
+      await submit(page);
+      await page.waitForFunction(() => !!window.releaseErrorBody);
+      assert.equal((await state(page)).token, "grant-b");
+      await supersedeUnrelatedGrant(page, change);
+      await page.getByText(/Your checkout changed/).waitFor();
+      assert.equal(await page.getByText("Payment declined by provider").count(), 0);
+      assert.deepEqual([flow.pays, flow.gets.length], [1, 0]);
+    },
+  );
+  test(
+    "confirmed transient receipt and deferred guest consumption retire on unrelated grant " +
+      change,
+    async (t) => {
+      const { open, flow } = await fixture(t, {
+        owner: null,
+        initialStatus: (url) =>
+          url.searchParams.get("token") === "from-prepare" ? receipt : 403,
+      });
+      flow.holdStatus = true;
+      const page = await open();
+      await denyFreshGuestGrant(page);
+      await submit(page);
+      await expect.poll(() => !!flow.releaseStatus).toBe(true);
+      const prior = await page.evaluate(() => {
+        const consume = window.cart.consumeConfirmedPurchase;
+        window.cart.consumeConfirmedPurchase = async (...args) => {
+          await new Promise((resolve) => (window.releaseGuestConsume = resolve));
+          return consume(...args);
+        };
+        return sessionStorage.getItem("rdk_cart_session:purchase-v1");
+      });
+      flow.holdStatus = false;
+      flow.releaseStatus();
+      await page.getByText("Order Confirmed!").waitFor();
+      await page.waitForFunction(() => !!window.releaseGuestConsume);
+      await supersedeUnrelatedGrant(page, change);
+      await page.getByText("Order details unavailable").waitFor();
+      assert.deepEqual((await state(page)).items, [2]);
+      assert.equal(
+        await page.evaluate(() => sessionStorage.getItem("rdk_cart_session:purchase-v1")),
+        prior,
+      );
+      assert.equal(await page.getByText("Order Confirmed!").count(), 0);
+      assert.deepEqual(
+        flow.gets.map((q) => new URLSearchParams(q).get("token")),
+        ["from-prepare", null],
+      );
+    },
+  );
+}
+for (const reload of [false, true])
+  test(
+    "lost recovery-only response retries strictly same original guest lookup reload=" +
+      reload,
+    async (t) => {
+      const { open, flow } = await fixture(t, {
+        owner: null,
+        initialStatus: (url) =>
+          url.searchParams.get("token") === "from-prepare" ? receipt : 403,
+      });
+      const page = await open();
+      flow.dropPrepare = true;
+      await submit(page);
+      await page.getByText("Return to checkout").waitFor();
+      const issued = (await state(page)).key;
+      await page.evaluate(() =>
+        sessionStorage.removeItem("rdk_cart_session:purchase-v1"),
+      );
+      await page.reload();
+      flow.dropPrepare = true;
+      await submit(page);
+      await page.getByText("Return to checkout").waitFor();
+      if (reload) {
+        await page.evaluate(() =>
+          sessionStorage.setItem("fixtureEmail", "changed@example.test"),
+        );
+        await page.reload();
+      } else await page.getByText("Return to checkout").click();
+      assert.equal((await state(page)).token, null);
+      await expect(
+        page.getByRole("button", { name: /^Pay(?: .*?)? now$/ }),
+      ).toBeDisabled();
+      const check = page.getByRole("button", { name: "Check original order" });
+      await expect(check).toBeVisible();
+      await expect(check).toBeEnabled();
+      const cardTokens = await page.evaluate(() => window.fixtureCardTokens);
+      if (reload) {
+        flow.prepareFailure = 409;
+        await check.press("Enter");
+        await page.getByText(/We could not find your original order/).waitFor();
+        flow.prepareFailure = null;
+      }
+      flow.terminalOriginal = true;
+      await page.evaluate(() => {
+        window.cart.captureForCheckout = () => {
+          throw Error("recovery re-entered capture");
+        };
+      });
+      await check.press("Enter");
+      await page.getByText("Order Confirmed!").waitFor();
+      assert.equal(await page.evaluate(() => window.fixtureCardTokens), cardTokens);
+      assert.equal(flow.prepares[0].shippingAddressOverride, false);
+      assert.equal(flow.prepares.length, reload ? 4 : 3);
+      assert.equal(flow.prepares[0].idempotencyKey, issued);
+      assert.equal(flow.prepares[1].recoveryOnly, true);
+      for (const input of flow.prepares.slice(2))
+        assert.deepEqual(input, flow.prepares[1]);
+      assert.deepEqual(
+        [flow.reservations.size, flow.permits, flow.pays, flow.gets.length],
+        [1, 0, 0, 1],
+      );
+      assert.equal((await state(page)).key, issued);
+      assert.deepEqual((await state(page)).items, [2]);
+      const count = flow.prepares.length;
+      await page.goto(origin + "/checkout");
+      await check.press("Enter");
+      await page.getByText("Order Confirmed!").waitFor();
+      assert.deepEqual(
+        [flow.prepares.length, flow.gets.length, flow.pays],
+        [count, 2, 0],
+      );
     },
   );

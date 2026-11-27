@@ -555,3 +555,61 @@ test("guarded completed refund object without matching verified facts cannot est
   expect(result.data.financial.source).toBe("unavailable");
   expect(result.data.purchasedLines).toBeNull();
 });
+
+test.each([
+  ["FAILED", "REJECTED"],
+  ["REJECTED", "FAILED"],
+  ["COMPLETED", "FAILED"],
+  ["FAILED", "PENDING"],
+])(
+  "guarded refund fact %s and contradictory retained object %s cannot confirm",
+  async (factStatus, objectStatus) => {
+    const result = await observe({
+      evidence: {
+        ...ledger,
+        facts: [
+          capture,
+          {
+            ...capture,
+            kind: "refund",
+            provider_id: "refund",
+            amount_cents: 500,
+            status: factStatus,
+          },
+        ],
+        factCount: [{ count: 2 }],
+        refunds: [{ ...refund, status: objectStatus }],
+        refundCount: [{ count: 1 }],
+      },
+    });
+    expect(result.status).toBe(200);
+    expect(result.data.purchasedLines).toBeNull();
+    expect(result.reads).not.toContain("session.order_items");
+    expect(
+      result.data.financial.source === "unavailable" ||
+        result.data.financial.snapshot.reviewReason !== null,
+    ).toBe(true);
+  },
+);
+test("guarded matching failed refund revisions preserve the verified capture", async () => {
+  const f = { ...capture, kind: "refund", provider_id: "refund", amount_cents: 500 };
+  const result = await observe({
+    status: "paid",
+    evidence: {
+      ...ledger,
+      facts: [
+        capture,
+        { ...f, status: "FAILED" },
+        { ...f, provider_version: "older-unordered", status: "PENDING" },
+      ],
+      factCount: [{ count: 3 }],
+      refunds: [{ ...refund, status: "FAILED" }],
+      refundCount: [{ count: 1 }],
+    },
+  });
+  expect(result.data.financial.snapshot).toMatchObject({
+    financialState: "paid",
+    reviewReason: null,
+  });
+  expect(result.data.purchasedLines).toHaveLength(1);
+});

@@ -1,5 +1,6 @@
 import {
   getOrCreateCheckoutDeviceSessionId,
+  observeStoredGuestAccess,
   resolveCheckoutAttempt,
   readGuestOrderAccess,
   readPreparedScope,
@@ -79,4 +80,16 @@ test("a damaged prepared record without an originating issued pair cannot restor
     }),
   );
   expect(readPreparedScope("account-a", storage)).toBeNull();
+});
+
+it("retains the exact committed guest pair on equivalent publication and permanently retires it after another grant", () => {
+  const storage = memoryStorage();
+  storeGuestOrderAccess("B", "token-B", storage);
+  const current = observeStoredGuestAccess(storage);
+  storeGuestOrderAccess("B", "token-B", storage);
+  expect(current()).toBe(true);
+  storeGuestOrderAccess("C", "token-C", storage);
+  storeGuestOrderAccess("B", "token-B", storage);
+  expect(current()).toBe(false);
+  expect(observeStoredGuestAccess(storage)()).toBe(true);
 });

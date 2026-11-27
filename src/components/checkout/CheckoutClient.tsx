@@ -31,6 +31,7 @@ import {
   capturePreparedAttempt,
   readGuestOrderAccess,
   needsOriginalRecovery,
+  recoverOriginalOrder,
   useCheckoutRegistration,
   useProcessingCredential,
 } from "@/Modules/Checkout/Source/Client";
@@ -207,6 +208,11 @@ function OwnerCheckout({
   const [needsRecovery, setNeedsRecovery] = useState(() =>
     needsOriginalRecovery(initialData.ownerId),
   );
+  const [recoveryLookup, setRecoveryLookup] = useState<"idle" | "checking" | "failed">(
+    "idle",
+  );
+  const lookupFlight = useRef<AbortController | null>(null);
+  useLayoutEffect(() => () => lookupFlight.current?.abort(), []);
   const stockBlocked = items.some(needsBasketReview);
   const basketKey = JSON.stringify(
     items.map((i) => [
@@ -447,7 +453,10 @@ function OwnerCheckout({
     assertCurrentBasket();
     if (!attempt.current() || lifetime.signal.aborted)
       throw Error("Your checkout changed. Review your current order.");
-    if (attempt.recoveryOnly) attempt.requireRecovery();
+    if (attempt.recoveryOnly) {
+      attempt.requireRecovery();
+      setNeedsRecovery(true);
+    }
     const response = await fetch("/api/checkout/prepare", {
       method: "POST",
       headers: { "Content-Type": "application/json" },
@@ -461,8 +470,12 @@ function OwnerCheckout({
           billingAddress: selectedBillingAddress,
           pickupContact: selectedPickupContact,
           quoteFingerprint: selectedQuote.quoteFingerprint,
-          shippingConfirmation: context?.shippingConfirmation,
-          shippingAddressOverride: context?.shippingAddressOverride,
+          shippingConfirmation: attempt.recoveryOnly
+            ? undefined
+            : context?.shippingConfirmation,
+          shippingAddressOverride: attempt.recoveryOnly
+            ? undefined
+            : context?.shippingAddressOverride,
           ...(attempt.recoveryOnly ? { recoveryOnly: true as const } : {}),
           idempotencyKey: attemptKey,
           deviceSessionId,
@@ -592,15 +605,20 @@ function OwnerCheckout({
       initialData.isGuest && typeof data.guestAccessToken === "string"
         ? data.guestAccessToken
         : undefined;
-    if (observeOnly) attempt.requireRecovery();
+    if (observeOnly) attempt.requireRecovery(data.orderId);
     const bound = await attempt.prepared(data.orderId, token, observeOnly);
     await requireOwner();
-    if (lifetime.signal.aborted || !attempt.current())
+    if (
+      lifetime.signal.aborted ||
+      !attempt.current() ||
+      (initialData.isGuest && !attempt.credentialCurrent())
+    )
       throw Error("Your checkout changed. Review your current order.");
     const stored = initialData.isGuest ? readGuestOrderAccess(data.orderId) : null;
     const guestAccessToken = token || stored || undefined;
     const transientGuestAccessToken = token && token !== stored ? token : undefined;
     if (!bound) {
+      attempt.requireRecovery(data.orderId);
       onProcessing(data.orderId, transientGuestAccessToken);
       router.replace("/checkout/processing?orderId=" + encodeURIComponent(data.orderId));
       throw Error("Checking your original order status.");
@@ -614,7 +632,7 @@ function OwnerCheckout({
       if (
         lifetime.signal.aborted ||
         !attempt.current() ||
-        (initialData.isGuest && readGuestOrderAccess(data.orderId) !== stored)
+        (initialData.isGuest && !attempt.credentialCurrent())
       )
         throw Error("Your checkout changed. Review your current order.");
     };
@@ -632,13 +650,35 @@ function OwnerCheckout({
     };
   }
 
+  async function checkOriginalOrder() {
+    if (lookupFlight.current) return;
+    const controller = new AbortController();
+    lookupFlight.current = controller;
+    setRecoveryLookup("checking");
+    try {
+      const reference = await recoverOriginalOrder(
+        initialData.ownerId,
+        requireOwner,
+        controller.signal,
+      );
+      if (controller.signal.aborted) return;
+      onProcessing(reference.orderId, reference.transientGuestAccessToken);
+      router.replace(
+        "/checkout/processing?orderId=" + encodeURIComponent(reference.orderId),
+      );
+    } catch {
+      if (!controller.signal.aborted) setRecoveryLookup("failed");
+    } finally {
+      if (lookupFlight.current === controller) lookupFlight.current = null;
+    }
+  }
   function onProcessing(orderId: string, token?: string) {
     credential.current?.(orderId, token);
     setIsRedirecting(true);
   }
 
   if (isRedirecting) return <CheckoutPaymentDialog open={verified} />;
-  if ((!isReady && !hasOpened) || (isReady && items.length === 0)) {
+  if ((!isReady && !hasOpened) || (isReady && items.length === 0 && !needsRecovery)) {
     return (
       <>
         <CheckoutPaymentDialog open={false} />
@@ -674,6 +714,24 @@ function OwnerCheckout({
                       ? "Check your order status before trying another payment."
                       : "Review the items in your cart before paying."}
                   </p>
+                  {needsRecovery && needsOriginalRecovery(initialData.ownerId) && (
+                    <button
+                      type="button"
+                      disabled={recoveryLookup === "checking"}
+                      className="mr-3 underline"
+                      onClick={() => void checkOriginalOrder()}
+                    >
+                      {recoveryLookup === "checking"
+                        ? "Checking original order…"
+                        : "Check original order"}
+                    </button>
+                  )}
+                  {needsRecovery && recoveryLookup === "failed" && (
+                    <p>
+                      We could not find your original order. Try checking again or open
+                      your secure order link.
+                    </p>
+                  )}
                   {needsRecovery && (
                     <a className="mr-3 underline" href="/account">
                       Check order status

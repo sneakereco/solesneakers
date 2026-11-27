@@ -201,6 +201,15 @@ function project(order: Order): ReceiptFinancialEvidence {
       return unavailable;
     const binding = objectBindings.get("refund:" + r.square_refund_id);
     if (binding && binding.payment !== r.square_payment_id) return unavailable;
+    if (order.checkout_attempt_guarded && !binding) return unavailable;
+    const terminalFact = terminal.get("refund:" + r.square_refund_id);
+    if (
+      (terminalFact && terminalFact !== r.status) ||
+      (order.checkout_attempt_guarded &&
+        !terminalFact &&
+        ["FAILED", "REJECTED"].includes(r.status))
+    )
+      review ??= "square_status_conflict";
     if (binding && binding.amount !== r.amount_cents) review ??= "square_amount_conflict";
     if (r.checkout_status_conflict) review ??= "square_status_conflict";
     if (

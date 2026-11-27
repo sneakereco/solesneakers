@@ -19,21 +19,108 @@ function changedFinancialPair() {
   if (typeof window !== "undefined" && typeof window.dispatchEvent === "function")
     window.dispatchEvent(new Event("checkout-financial-pair"));
 }
+const MAX_FINGERPRINT_LENGTH = 32768;
+function recoveryRecord(ownerId: string | null, storage: Storage) {
+  const raw = storage.getItem(RECOVERY);
+  if (!raw) return null;
+  if (raw.length > MAX_FINGERPRINT_LENGTH * 2 + 1024)
+    throw Error("Original checkout recovery data is incomplete.");
+  const record = JSON.parse(raw);
+  if (record.ownerId !== ownerId) return null;
+  const pair = requirePair(record.pair);
+  if (!pair || !equal(pair, readPair(storage, financial))) return null;
+  if (
+    !z.uuid().safeParse(pair[0]).success ||
+    pair[1].length > MAX_FINGERPRINT_LENGTH ||
+    (record.orderId !== undefined && !z.uuid().safeParse(record.orderId).success)
+  )
+    throw Error("Original checkout recovery data is incomplete.");
+  return {
+    pair,
+    deviceId: record.deviceId,
+    orderId: typeof record.orderId === "string" ? record.orderId : null,
+  };
+}
 export function needsOriginalRecovery(
   ownerId: string | null,
   storage = getSessionStorage(),
 ) {
   try {
-    if (!storage) return false;
-    const record = JSON.parse(storage.getItem(RECOVERY) ?? "null");
-    return (
-      !!record &&
-      record.ownerId === ownerId &&
-      equal(requirePair(record.pair), readPair(storage, financial))
-    );
+    return !!storage && recoveryRecord(ownerId, storage) !== null;
   } catch {
     return true;
   }
+}
+function markRecovery(
+  storage: Storage,
+  ownerId: string | null | undefined,
+  pair: StoragePair,
+  orderId?: string,
+  deviceId?: string | null,
+) {
+  try {
+    if (!pair || !equal(pair, readPair(storage, financial))) return;
+    const existing = ownerId === undefined ? null : recoveryRecord(ownerId, storage);
+    if (existing?.orderId && orderId && existing.orderId !== orderId) return;
+    storage.setItem(
+      RECOVERY,
+      JSON.stringify({
+        ownerId,
+        pair,
+        deviceId: existing?.deviceId ?? deviceId ?? undefined,
+        orderId: existing?.orderId ?? orderId,
+      }),
+    );
+  } catch {
+    /* The original pair and any in-memory reference survive an optional marker write failure. */
+  }
+}
+export function originalRecoveryContext(
+  ownerId: string | null,
+  storage = getSessionStorage(),
+) {
+  if (!storage) return null;
+  const original = recoveryRecord(ownerId, storage);
+  if (!original) return null;
+  const device = original.deviceId ?? storage.getItem(DEVICE_SESSION_KEY);
+  const observedGuest = observeStoredGuestAccess(storage);
+  const current = () => {
+    try {
+      const active = recoveryRecord(ownerId, storage);
+      return (
+        !!active &&
+        equal(active.pair, original.pair) &&
+        device === storage.getItem(DEVICE_SESSION_KEY) &&
+        (original.orderId === null || active.orderId === original.orderId)
+      );
+    } catch {
+      return false;
+    }
+  };
+  return {
+    key: original.pair[0],
+    fingerprint: original.pair[1],
+    device,
+    orderId: original.orderId ?? readPreparedScope(ownerId, storage)?.orderId ?? null,
+    current,
+    accept(orderId: string, token?: string) {
+      const active = recoveryRecord(ownerId, storage);
+      if (
+        !current() ||
+        (active?.orderId && active.orderId !== orderId) ||
+        (ownerId === null && !observedGuest())
+      )
+        throw Error("Your checkout changed. Review your current order.");
+      markRecovery(storage, ownerId, original.pair, orderId, device);
+      if (!token) return { orderId };
+      try {
+        storeGuestOrderAccess(orderId, token, storage);
+        return { orderId };
+      } catch {
+        return { orderId, transientGuestAccessToken: token };
+      }
+    },
+  };
 }
 const SWITCH = "checkout_replacing_attempt_v1";
 const HOUSEKEEPING = "checkout_prepared_housekeeping_v1";
@@ -106,6 +193,61 @@ function guestPair(storage: Storage) {
   }
 }
 
+// Only committed pairs advance the observation. Repeated publication of B preserves B;
+// observing B → C → B retires observers of the first B, including delayed payment callbacks.
+type GuestObservation = { pair: StoragePair | undefined };
+const guestObservations = new WeakMap<Storage, GuestObservation>();
+function noteGuestPublication(storage: Storage | null) {
+  if (!storage) return;
+  const previous = guestObservations.get(storage);
+  if (!previous) return;
+  const next = guestPair(storage);
+  if (
+    previous.pair === undefined || next === undefined
+      ? previous.pair !== next
+      : !equal(previous.pair, next)
+  )
+    guestObservations.set(storage, { pair: next });
+}
+let listening: Window | undefined;
+function listenForGuestPublication() {
+  if (
+    typeof window === "undefined" ||
+    typeof window.addEventListener !== "function" ||
+    window === listening
+  )
+    return;
+  listening = window;
+  window.addEventListener("checkout-guest-access", () =>
+    noteGuestPublication(getSessionStorage()),
+  );
+  window.addEventListener("storage", (event) => {
+    if (
+      event.key !== null &&
+      event.key !== credential.first &&
+      event.key !== credential.second &&
+      event.key !== credential.journal
+    )
+      return;
+    const storage = getSessionStorage();
+    if (event.storageArea === null || event.storageArea === storage)
+      noteGuestPublication(storage);
+  });
+}
+export function observeStoredGuestAccess(storage = getSessionStorage()) {
+  if (!storage) return () => false;
+  listenForGuestPublication();
+  noteGuestPublication(storage);
+  const original = guestObservations.get(storage) ?? { pair: guestPair(storage) };
+  guestObservations.set(storage, original);
+  return () => {
+    if (original.pair === undefined || original !== guestObservations.get(storage))
+      return false;
+    const next = guestPair(storage);
+    return next !== undefined && equal(original.pair, next);
+  };
+}
+
 export function resolveCheckoutAttempt(
   fingerprint: string,
   storage = getSessionStorage(),
@@ -113,6 +255,7 @@ export function resolveCheckoutAttempt(
 ) {
   if (!storage)
     throw Error("Checkout storage is unavailable. Reopen checkout to continue.");
+  const issuedDevice = storage.getItem(DEVICE_SESSION_KEY);
   const previous = readPair(storage, financial);
   if (previous && !z.uuid().safeParse(previous[0]).success)
     throw Error(
@@ -161,13 +304,8 @@ export function resolveCheckoutAttempt(
       started = JSON.stringify({ source: previous, targetFingerprint: fingerprint });
       storage.setItem(SWITCH, started);
     },
-    requireRecovery(ownerId?: string | null) {
-      try {
-        if (current())
-          storage.setItem(RECOVERY, JSON.stringify({ ownerId, pair: original }));
-      } catch {
-        /* Preserve the issued key. A denied optional marker cannot block an authorized GET. */
-      }
+    requireRecovery(ownerId?: string | null, orderId?: string) {
+      if (current()) markRecovery(storage, ownerId, original, orderId, issuedDevice);
     },
     rejectCapture() {
       forget(started);
@@ -289,7 +427,9 @@ export function storeGuestOrderAccess(
   storage: Storage | null = getSessionStorage(),
 ): void {
   if (!storage) return;
+  noteGuestPublication(storage);
   publish(storage, credential, [orderId, token]);
+  noteGuestPublication(storage);
   if (typeof window !== "undefined")
     window.dispatchEvent(new Event("checkout-guest-access"));
 }

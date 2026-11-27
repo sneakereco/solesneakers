@@ -1,4 +1,5 @@
 "use client";
+export { recoverOriginalOrder } from "./Features/Outcomes/original-order-recovery";
 export { capturePreparedAttempt } from "./Features/Outcomes/prepared-attempt";
 export {
   getOrCreateCheckoutDeviceSessionId,
