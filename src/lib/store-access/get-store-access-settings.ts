@@ -1,26 +1,49 @@
 import { withRequestDeadline } from "@/lib/http/request-deadline";
 import { createSupabaseAdminClient } from "@/lib/supabase/service-role";
-import { TenantRepository } from "@/repositories/tenant-repo";
+import { StoreAccessSettingsRepository } from "@/repositories/store-access-settings-repo";
 import { StoreAccessSettingsService } from "@/services/store-access-settings-service";
 
-export async function getStoreAccessSettings() {
-  return withRequestDeadline(async (signal) => {
-    const supabase = createSupabaseAdminClient();
-    const tenantRepo = new TenantRepository(supabase);
-    const tenantId = await tenantRepo.getFirstTenantId();
+type Snapshot = Awaited<
+  ReturnType<StoreAccessSettingsRepository["getFirstTenantSettings"]>
+>;
+// Only public presentation uses this short snapshot. Checkout and claim writes
+// keep their fresh access checks. Never serve an expired snapshot after failure.
+const SNAPSHOT_TTL_MS = 2000;
+let snapshot: { value: Snapshot; expiresAt: number } | undefined;
+let pending: Promise<Snapshot> | undefined;
 
-    signal.throwIfAborted();
-    if (!tenantId) {
-      return null;
-    }
+function readFreshSnapshot() {
+  return withRequestDeadline((signal) =>
+    new StoreAccessSettingsRepository(createSupabaseAdminClient()).getFirstTenantSettings(
+      signal,
+    ),
+  );
+}
 
-    const service = new StoreAccessSettingsService(supabase);
-    const settings = await service.getSettings(tenantId);
+async function readSnapshot(): Promise<Snapshot> {
+  if (snapshot && Date.now() < snapshot.expiresAt) return snapshot.value;
+  if (!pending) {
+    pending = readFreshSnapshot()
+      .then((value) => {
+        snapshot = { value, expiresAt: Date.now() + SNAPSHOT_TTL_MS };
+        return value;
+      })
+      .finally(() => {
+        pending = undefined;
+      });
+  }
+  return pending;
+}
 
-    return {
-      tenantId,
-      settings,
-      isSiteLocked: service.isSiteLocked(settings),
-    };
-  });
+export async function getStoreAccessSettings({ fresh = true } = {}) {
+  const access = await (fresh ? readFreshSnapshot() : readSnapshot());
+  if (!access) return null;
+
+  const service = new StoreAccessSettingsService(createSupabaseAdminClient());
+  return {
+    ...access,
+    // Reevaluate time even while the raw configuration is cached, so an opening
+    // happens at the scheduled second rather than at the next cache refresh.
+    isSiteLocked: service.isSiteLocked(access.settings),
+  };
 }

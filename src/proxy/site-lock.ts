@@ -7,11 +7,9 @@ import { isAdminRole, isProfileRole } from "@/config/constants/roles";
 import { security, startsWithAny } from "@/config/security";
 import { verifyAdminSessionToken } from "@/lib/http/admin-session";
 import { createSupabaseProxyClient } from "@/lib/supabase/proxy";
-import { createSupabaseAdminClient } from "@/lib/supabase/service-role";
+import { getStoreAccessSettings } from "@/lib/store-access/get-store-access-settings";
 import { logError } from "@/lib/utils/log";
 import { ProfileRepository } from "@/repositories/profile-repo";
-import { TenantRepository } from "@/repositories/tenant-repo";
-import { StoreAccessSettingsService } from "@/services/store-access-settings-service";
 
 function isApiPath(pathname: string) {
   return pathname.startsWith("/api");
@@ -23,22 +21,6 @@ async function awaitMaybeVerify(token: string) {
   } catch {
     return null;
   }
-}
-
-async function getLockSettings(signal: AbortSignal) {
-  const supabase = createSupabaseAdminClient();
-  const tenantRepo = new TenantRepository(supabase);
-  const tenantId = await tenantRepo.getFirstTenantId();
-
-  if (signal.aborted) throw signal.reason;
-  if (!tenantId) {
-    return null;
-  }
-
-  const service = new StoreAccessSettingsService(supabase);
-  const settings = await service.getSettings(tenantId);
-
-  return { service, settings };
 }
 
 async function isSignedInAdmin(
@@ -109,10 +91,10 @@ async function checkSettingsAndBypass(
   signal: AbortSignal,
 ) {
   const { pathname } = request.nextUrl;
-  let lockSettings: Awaited<ReturnType<typeof getLockSettings>>;
+  let lockSettings: Awaited<ReturnType<typeof getStoreAccessSettings>>;
 
   try {
-    lockSettings = await getLockSettings(signal);
+    lockSettings = await getStoreAccessSettings({ fresh: false });
   } catch (error) {
     logError(error, {
       layer: "proxy",
@@ -128,9 +110,9 @@ async function checkSettingsAndBypass(
     return null;
   }
 
-  const { service, settings } = lockSettings;
+  const { settings, isSiteLocked } = lockSettings;
 
-  if (!service.isSiteLocked(settings)) {
+  if (!isSiteLocked) {
     return null;
   }
 

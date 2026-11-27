@@ -12,7 +12,7 @@ import { requireAdmin } from "@/lib/auth/session";
 const mockBrands = jest.fn();
 const mockProduct = jest.fn();
 const mockSpecialty = jest.fn();
-const mockSettings = jest.fn();
+const mockStoreAccess = jest.fn();
 const mockTenant = jest.fn();
 const mockProducts = jest.fn();
 const mockSizes = jest.fn();
@@ -47,7 +47,12 @@ jest.mock("@/repositories/tenant-repo", () => ({
 jest.mock("@/services/store-access-settings-service", () => ({
   StoreAccessSettingsService: jest
     .fn()
-    .mockImplementation(() => ({ getSettings: mockSettings, isSiteLocked: () => true })),
+    .mockImplementation(() => ({ isSiteLocked: () => true })),
+}));
+jest.mock("@/repositories/store-access-settings-repo", () => ({
+  StoreAccessSettingsRepository: jest
+    .fn()
+    .mockImplementation(() => ({ getFirstTenantSettings: mockStoreAccess })),
 }));
 jest.mock("@/services/product-service", () => ({
   ProductService: jest.fn().mockImplementation(() => ({
@@ -90,7 +95,15 @@ beforeEach(() => {
   mockSize.mockResolvedValue({ id: "s", canonical_label: "Small", size_type: "shoe" });
   mockProducts.mockResolvedValue({ products: [item], total: 1 });
   mockTenant.mockResolvedValue("tenant");
-  mockSettings.mockResolvedValue({ siteUnlockAt: "2030-01-01T00:00:00Z" });
+  mockStoreAccess.mockResolvedValue({
+    tenantId: "tenant",
+    settings: {
+      siteLockEnabled: true,
+      siteUnlockAt: "2030-01-01T00:00:00Z",
+      checkoutLockEnabled: false,
+      checkoutLockMessage: "Paused",
+    },
+  });
 });
 afterEach(() => jest.useRealTimers());
 
@@ -143,8 +156,8 @@ it("cold product detail exits on expiry and distinguishes recovery from confirme
     digest: "NEXT_HTTP_ERROR_FALLBACK;404",
   });
 });
-it("lock display times out its tenant/settings chain and offers retry without opening the store", async () => {
-  mockSettings.mockReturnValueOnce(held());
+it("lock display times out its joined access read and offers retry without opening the store", async () => {
+  mockStoreAccess.mockReturnValueOnce(held());
   const result = await atDeadline(() => LockedPage({}));
   if (!("value" in result)) throw Error("Missing locked recovery view");
   expect(renderToStaticMarkup(result.value)).toMatch(/Retry/i);
@@ -152,8 +165,8 @@ it("lock display times out its tenant/settings chain and offers retry without op
     "Storefront temporarily closed",
   );
 });
-it("auth layout admits the login form after a held tenant lookup and restores the locked layout on recovery", async () => {
-  mockTenant.mockReturnValueOnce(held());
+it("auth layout admits the login form after a held access lookup and restores the locked layout on recovery", async () => {
+  mockStoreAccess.mockReturnValueOnce(held());
   expect(await atDeadline(() => AuthLayout({ children: "login" }))).toMatchObject({
     value: { props: { children: "login", isSiteLocked: false } },
   });
@@ -177,18 +190,18 @@ it.each([
     expect(requireAdmin).toHaveBeenCalledTimes(2);
   },
 );
-it("shares one deadline across tenant and then lock settings reads", async () => {
-  mockTenant.mockImplementationOnce(
-    () => new Promise((resolve) => setTimeout(() => resolve("tenant"), 9000)),
-  );
-  mockSettings.mockImplementationOnce(
-    () =>
-      new Promise((resolve) => setTimeout(() => resolve({ siteUnlockAt: null }), 9000)),
+it("bounds the joined store-access read and recovers after expiry", async () => {
+  mockStoreAccess.mockImplementationOnce(
+    () => new Promise((resolve) => setTimeout(() => resolve(null), 16000)),
   );
   const result = await atDeadline(() => LockedPage({}));
   if (!("value" in result)) throw Error("Missing lock recovery view");
-  expect(mockSettings).toHaveBeenCalledTimes(1);
+  expect(mockStoreAccess).toHaveBeenCalledTimes(1);
   expect(renderToStaticMarkup(result.value)).toContain("Store access unavailable");
+  await jest.advanceTimersByTimeAsync(1000);
+  expect(renderToStaticMarkup(await LockedPage({}))).toContain(
+    "Storefront temporarily closed",
+  );
 });
 
 it("shares one post-authorization deadline across the staff product and follow-on lookup", async () => {
