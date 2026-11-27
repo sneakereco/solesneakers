@@ -1,78 +1,84 @@
+# Keep browser runners on Ubuntu 24.04 for the locked Playwright runtime.
 name: Pull Request CI
-
-on:
+"on":
   pull_request:
     branches:
       - main
   workflow_dispatch:
-
 permissions:
   contents: read
-
 concurrency:
   group: ci-${{ github.event.pull_request.number || github.ref }}
   cancel-in-progress: true
 
-jobs:
-  validate:
-    # Playwright 1.56.1 supports Ubuntu 24.04 browser dependencies.
-    runs-on: ubuntu-24.04
-    timeout-minutes: 90
-    env:
-      NEXT_PUBLIC_SITE_URL: http://localhost:3000
-      NEXT_PUBLIC_SUPABASE_URL: http://127.0.0.1:54321
-      NEXT_TELEMETRY_DISABLED: "1"
-      NEXT_PUBLIC_SUPABASE_PUBLISHABLE_KEY: ci-public-key
-      SUPABASE_SECRET_KEY: ci-secret-key
-      SUPABASE_DB_URL: postgresql://postgres:postgres@127.0.0.1:5432/ci
-      UPSTASH_REDIS_REST_URL: https://example.invalid
-      UPSTASH_REDIS_REST_TOKEN: ci-redis-token
-      ADMIN_SESSION_SECRET: ci-admin-session-secret
-      CHECKOUT_IDENTITY_HMAC_SECRET: ci-identity-hmac-secret-at-least-32-characters
-      CRON_SECRET: ci-cron-secret-at-least-32-characters
-      NEXT_PUBLIC_TURNSTILE_SITE_KEY: ci-turnstile-key
-      ORDER_ACCESS_TOKEN_SECRET: ci-order-access-token
-      SES_SMTP_HOST: ci-ses-host
-      SES_SMTP_PASS: ci-ses-pass
-      SES_SMTP_USER: ci-ses-user
-      SHIPPO_API_TOKEN: ci-shippo-api-token
-      SHIPPO_WEBHOOK_TOKEN: ci-shippo-webhook-token
-      SQUARE_ACCESS_TOKEN: ci-square-access-token
-      SQUARE_APPLICATION_ID: ci-square-app-id
-      SQUARE_ENVIRONMENT: sandbox
-      SQUARE_LOCATION_ID: ci-square-location-id
-      SQUARE_WEBHOOK_NOTIFICATION_URL: https://example.invalid/api/webhooks/square
-      SQUARE_WEBHOOK_SIGNATURE_KEY: ci-square-webhook-signature
-      TURNSTILE_SECRET_KEY: ci-tunrstil-secret
+env:
+  NEXT_PUBLIC_SITE_URL: http://localhost:3000
+  NEXT_PUBLIC_SUPABASE_URL: http://127.0.0.1:54321
+  NEXT_TELEMETRY_DISABLED: "1"
+  NEXT_PUBLIC_SUPABASE_PUBLISHABLE_KEY: ci-public-key
+  SUPABASE_SECRET_KEY: ci-secret-key
+  SUPABASE_DB_URL: postgresql://postgres:postgres@127.0.0.1:5432/ci
+  UPSTASH_REDIS_REST_URL: https://example.invalid
+  UPSTASH_REDIS_REST_TOKEN: ci-redis-token
+  ADMIN_SESSION_SECRET: ci-admin-session-secret
+  CHECKOUT_IDENTITY_HMAC_SECRET: ci-identity-hmac-secret-at-least-32-characters
+  CRON_SECRET: ci-cron-secret-at-least-32-characters
+  NEXT_PUBLIC_TURNSTILE_SITE_KEY: ci-turnstile-key
+  ORDER_ACCESS_TOKEN_SECRET: ci-order-access-token
+  SES_SMTP_HOST: ci-ses-host
+  SES_SMTP_PASS: ci-ses-pass
+  SES_SMTP_USER: ci-ses-user
+  SHIPPO_API_TOKEN: ci-shippo-api-token
+  SHIPPO_WEBHOOK_TOKEN: ci-shippo-webhook-token
+  SQUARE_ACCESS_TOKEN: ci-square-access-token
+  SQUARE_APPLICATION_ID: ci-square-app-id
+  SQUARE_ENVIRONMENT: sandbox
+  SQUARE_LOCATION_ID: ci-square-location-id
+  SQUARE_WEBHOOK_NOTIFICATION_URL: https://example.invalid/api/webhooks/square
+  SQUARE_WEBHOOK_SIGNATURE_KEY: ci-square-webhook-signature
+  TURNSTILE_SECRET_KEY: ci-tunrstil-secret
 
+jobs:
+  scope:
+    runs-on: ubuntu-24.04
+    timeout-minutes: 5
+    outputs:
+      database: ${{ steps.checkout_scope.outputs.database }}
+      chromium: ${{ steps.checkout_scope.outputs.chromium }}
     steps:
       - name: Checkout
         uses: actions/checkout@11d5960a326750d5838078e36cf38b85af677262 # v4
         with:
           fetch-depth: 0
+      - name: Setup Node
+        uses: actions/setup-node@49933ea5288caeca8642d1e84afbd3f7d6820020 # v4
+        with:
+          node-version: 24.14.1
+      - name: Determine checkout validation scope
+        id: checkout_scope
+        run: node scripts/checkout-validation-scope.mjs
 
+  checks:
+    runs-on: ubuntu-24.04
+    timeout-minutes: 90
+    steps:
+      - name: Checkout
+        uses: actions/checkout@11d5960a326750d5838078e36cf38b85af677262 # v4
+        with:
+          fetch-depth: 0
       - name: Setup Node
         uses: actions/setup-node@49933ea5288caeca8642d1e84afbd3f7d6820020 # v4
         with:
           node-version: 24.14.1
           cache: npm
-
-      - name: Determine checkout validation scope
-        id: checkout_scope
-        run: node scripts/checkout-validation-scope.mjs
-
       - name: Install dependencies
         run: npm ci
-
       - name: Check formatting
         run: npm run format:check
-
       - name: Lint
         run: npm run lint
-
       - name: Typecheck
         run: npm run typecheck
-
       - name: Prepare private run diagnostics
         run: |
           umask 077
@@ -89,40 +95,111 @@ jobs:
           exit "$status"
           CHECK
           chmod 700 "$RUNNER_TEMP/checkout-check"
-
       - name: Unit tests
         run: '"$RUNNER_TEMP/checkout-check" unit npm run test:jest:unit -- --runInBand'
-
       - name: Integration tests
         run: '"$RUNNER_TEMP/checkout-check" integration npm run test:jest:integration -- --runInBand'
-
       - name: Release reconciliation operation gates
-        run: node --test tests/database/migration-reconciliation.test.mjs tests/operations/migration-deployment.test.mjs tests/operations/admin-analytics-warehouse-bindings.test.mjs tests/operations/admin-analytics-runtime-sync.test.mjs tests/operations/admin-analytics-observers.test.mjs tests/operations/admin-analytics-observer-clock.test.mjs tests/operations/checkout-validation-scope.test.mjs tests/fixtures/checkout-gate.test.mjs
+        run: >-
+          node --test tests/database/migration-reconciliation.test.mjs tests/operations/migration-deployment.test.mjs
+          tests/operations/admin-analytics-warehouse-bindings.test.mjs
+          tests/operations/admin-analytics-runtime-sync.test.mjs tests/operations/admin-analytics-observers.test.mjs
+          tests/operations/admin-analytics-observer-clock.test.mjs tests/operations/checkout-validation-scope.test.mjs
+          tests/fixtures/checkout-gate.test.mjs tests/operations/ci-parallel-validation.test.mjs
+          tests/operations/checkout-browser-runner.test.mjs
+      - name: Build without deployment credentials
+        run: '"$RUNNER_TEMP/checkout-check" fixture-build ./node_modules/.bin/next build'
 
-      - name: Install the locked Playwright Chromium runtime
-        run: ./node_modules/.bin/playwright install --with-deps chromium
-
+  database:
+    needs: scope
+    runs-on: ubuntu-24.04
+    timeout-minutes: 90
+    steps:
+      - name: Checkout
+        uses: actions/checkout@11d5960a326750d5838078e36cf38b85af677262 # v4
+        with:
+          fetch-depth: 0
+      - name: Setup Node
+        uses: actions/setup-node@49933ea5288caeca8642d1e84afbd3f7d6820020 # v4
+        with:
+          node-version: 24.14.1
+          cache: npm
+      - name: Install dependencies
+        run: npm ci
       - name: Cache exact fixture images on the ephemeral runner
         run: |
           docker pull redis@sha256:7f7d30b7fdd09467bac58198a1f166dd69789d348d4fe859cccb20e0cf287fbe
           docker pull postgrest/postgrest@sha256:e9490aa503a5fb07d8e8c80da46e5c0c193894e583b59ed9077e74c4101ffae2
-
+        if: needs.scope.outputs.database == 'true'
       - name: Isolated checkout database gates
-        if: steps.checkout_scope.outputs.database == 'true'
+        if: needs.scope.outputs.database == 'true'
         run: npm run test:checkout:db
-
       - name: Rehearse hosted bootstrap and checkout migration ordering
         run: node --test --test-concurrency=1 tests/database/checkout-migration-order.test.mjs
 
+  browser:
+    needs: scope
+    runs-on: ubuntu-24.04
+    timeout-minutes: 90
+    steps:
+      - name: Checkout
+        uses: actions/checkout@11d5960a326750d5838078e36cf38b85af677262 # v4
+        with:
+          fetch-depth: 0
+      - name: Setup Node
+        uses: actions/setup-node@49933ea5288caeca8642d1e84afbd3f7d6820020 # v4
+        with:
+          node-version: 24.14.1
+          cache: npm
+      - name: Install dependencies
+        run: npm ci
+      - name: Install the locked Playwright Chromium runtime
+        run: ./node_modules/.bin/playwright install --with-deps chromium
+      - name: Prepare private run diagnostics
+        run: |
+          umask 077
+          cat > "$RUNNER_TEMP/checkout-check" <<'CHECK'
+          #!/usr/bin/env bash
+          set -u
+          umask 077
+          name="$1"
+          shift
+          log="$(mktemp "$RUNNER_TEMP/$name.XXXXXXXX")"
+          "$@" >"$log" 2>&1
+          status=$?
+          printf '%s exit=%d sha256=%s\n' "$name" "$status" "$(sha256sum "$log" | cut -d' ' -f1)"
+          exit "$status"
+          CHECK
+          chmod 700 "$RUNNER_TEMP/checkout-check"
       - name: Checkout Chromium gates
-        if: steps.checkout_scope.outputs.chromium == 'true'
+        if: needs.scope.outputs.chromium == 'true'
         run: npm run test:checkout:browser
-
       - name: Measurement browser suites
         run: '"$RUNNER_TEMP/checkout-check" measurement npm run test:measurement:browser'
-
       - name: Analytics browser suites
         run: npm run test:analytics:browser
 
-      - name: Build without deployment credentials
-        run: '"$RUNNER_TEMP/checkout-check" fixture-build ./node_modules/.bin/next build'
+  validate:
+    needs:
+      - scope
+      - checks
+      - database
+      - browser
+    if: ${{ always() }}
+    runs-on: ubuntu-24.04
+    timeout-minutes: 5
+    steps:
+      - name: Require every CI lane
+        env:
+          CI_JOB_RESULTS: ${{ toJSON(needs) }}
+        run: |
+          node --input-type=module -e '
+            const required = ["scope", "checks", "database", "browser"];
+            const results = JSON.parse(process.env.CI_JOB_RESULTS);
+            const failed = required.filter(name => results?.[name]?.result !== "success");
+            if (failed.length) {
+              console.error("Unsuccessful CI jobs: " + failed.join(", "));
+              process.exit(1);
+            }
+            console.log("All CI lanes passed");
+          '
