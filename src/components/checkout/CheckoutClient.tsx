@@ -677,19 +677,62 @@ function OwnerCheckout({
     setIsRedirecting(true);
   }
 
+  const canCheckOriginalOrder =
+    verified && needsRecovery && needsOriginalRecovery(initialData.ownerId);
+  const checkoutNotice = (
+    <div role="status">
+      <p>
+        {needsRecovery
+          ? "Check your order status before trying another payment."
+          : "Review the items in your cart before paying."}
+      </p>
+      {canCheckOriginalOrder && (
+        <button
+          type="button"
+          disabled={recoveryLookup === "checking"}
+          className="mr-3 underline"
+          onClick={() => void checkOriginalOrder()}
+        >
+          {recoveryLookup === "checking"
+            ? "Checking original order…"
+            : "Check original order"}
+        </button>
+      )}
+      {needsRecovery && recoveryLookup === "failed" && (
+        <p>
+          We could not find your original order. Try checking again or open your secure
+          order link.
+        </p>
+      )}
+      {needsRecovery && (
+        <a className="mr-3 underline" href="/account">
+          Check order status
+        </a>
+      )}
+      <a className="underline" href="/cart">
+        Review cart
+      </a>
+    </div>
+  );
+  const unavailableNotice = !isReady && (
+    <>
+      <BasketAccessNotice />
+      {canCheckOriginalOrder && checkoutNotice}
+    </>
+  );
   if (isRedirecting) return <CheckoutPaymentDialog open={verified} />;
   if ((!isReady && !hasOpened) || (isReady && items.length === 0 && !needsRecovery)) {
     return (
       <>
         <CheckoutPaymentDialog open={false} />
-        {!isReady && <BasketAccessNotice />}
+        {unavailableNotice}
       </>
     );
   }
 
   return (
     <>
-      {!isReady && <BasketAccessNotice />}
+      {unavailableNotice}
       <div
         hidden={!isReady}
         inert={!isReady}
@@ -707,41 +750,7 @@ function OwnerCheckout({
           <section className="order-2 px-5 py-10 sm:px-8 lg:order-1 lg:ml-auto lg:w-full lg:max-w-[36.25rem] lg:px-10 lg:py-16">
             <h1 className="sr-only">Checkout</h1>
             <div className="flex flex-col">
-              {(stockBlocked || needsRecovery) && (
-                <div role="status">
-                  <p>
-                    {needsRecovery
-                      ? "Check your order status before trying another payment."
-                      : "Review the items in your cart before paying."}
-                  </p>
-                  {needsRecovery && needsOriginalRecovery(initialData.ownerId) && (
-                    <button
-                      type="button"
-                      disabled={recoveryLookup === "checking"}
-                      className="mr-3 underline"
-                      onClick={() => void checkOriginalOrder()}
-                    >
-                      {recoveryLookup === "checking"
-                        ? "Checking original order…"
-                        : "Check original order"}
-                    </button>
-                  )}
-                  {needsRecovery && recoveryLookup === "failed" && (
-                    <p>
-                      We could not find your original order. Try checking again or open
-                      your secure order link.
-                    </p>
-                  )}
-                  {needsRecovery && (
-                    <a className="mr-3 underline" href="/account">
-                      Check order status
-                    </a>
-                  )}
-                  <a className="underline" href="/cart">
-                    Review cart
-                  </a>
-                </div>
-              )}
+              {isReady && (stockBlocked || needsRecovery) && checkoutNotice}
               <SquarePaymentMethods
                 accessSuspended={!isReady}
                 recoveryRequired={needsRecovery}

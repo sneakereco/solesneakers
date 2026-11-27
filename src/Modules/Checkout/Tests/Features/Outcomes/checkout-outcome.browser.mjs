@@ -52,14 +52,17 @@ before(async () => {
  import {createRoot} from "react-dom/client";
  import {useLayoutEffect,useSyncExternalStore} from "react";
  import {CartProvider,useCart} from "@/Modules/Cart/Source/Client";
- import {SessionProvider} from "@/contexts/SessionContext";
+ import {SessionProvider,useSession} from "@/contexts/SessionContext";
  import {CheckoutClient} from "@/components/checkout/CheckoutClient";
  import Layout from "./src/app/checkout/layout";
+ import {observeStoredGuestAccess} from "@/Modules/Checkout/Source/Features/Outcomes/client-session";
+ import {useOutcomeAccess} from "@/Modules/Checkout/Source/Features/Outcomes/CheckoutOutcomeProvider";
+ function ObserveGrant(){const session=useSession();useLayoutEffect(()=>{window.fixtureSessionStatus=session.status;},[session.status]);const {credential}=useOutcomeAccess();useLayoutEffect(()=>{window.fixtureGuestCredential=credential;window.fixtureGuestObservation=observeStoredGuestAccess;},[credential]);return null;}
  import Processing from "./src/app/checkout/processing/page";
  import Receipt from "./src/app/checkout/success/page";
  import Cancel from "./src/app/checkout/cancel/page";
  import {usePathname} from "next/navigation";
- function App(){const path=usePathname();const cart=useCart();useLayoutEffect(()=>{window.cart=cart});return <Layout>{path.endsWith("processing")?<Processing/>:path.endsWith("success")?<Receipt/>:path.endsWith("cancel")?<Cancel/>:<CheckoutClient initialData={{ownerId:window.fixtureOwner??null,isGuest:!window.fixtureOwner,customer:{email:sessionStorage.getItem("fixtureEmail")??"buyer@example.test",address:${JSON.stringify(address)}},paymentConfig:{applicationId:"test",locationId:"test",environment:"sandbox"}}}/>}</Layout>}
+ function App(){const path=usePathname();const cart=useCart();useLayoutEffect(()=>{window.cart=cart});return <Layout><ObserveGrant/>{path.endsWith("processing")?<Processing/>:path.endsWith("success")?<Receipt/>:path.endsWith("cancel")?<Cancel/>:<CheckoutClient initialData={{ownerId:window.fixtureOwner??null,isGuest:!window.fixtureOwner,customer:{email:sessionStorage.getItem("fixtureEmail")??"buyer@example.test",address:${JSON.stringify(address)}},paymentConfig:{applicationId:"test",locationId:"test",environment:"sandbox"}}}/>}</Layout>}
  const user=window.fixtureOwner?{id:window.fixtureOwner,email:"buyer@example.test"}:null;
  createRoot(document.getElementById("root")).render(<SessionProvider initialUser={user} initialRole={user?"customer":null}><CartProvider userId={user?.id}><App/></CartProvider></SessionProvider>);
  `,
@@ -116,6 +119,7 @@ async function fixture(
     reservations: new Map(),
     pays: 0,
     permits: 0,
+    quotes: 0,
     gets: [],
     user: owner,
     unexpected: [],
@@ -153,38 +157,44 @@ async function fixture(
         token: "fixture-wallet",
         details: { billing: walletContact, shipping: { contact: walletContact } },
       });
+      window.fixtureSdkStarts = 0;
       window.Square = {
-        payments: () => ({
-          applePay: async () => ({ tokenize: approved, destroy: async () => true }),
-          afterpayClearpay: async () => ({
-            attach: async () => {},
-            tokenize: approved,
-            destroy: async () => true,
-          }),
-          cashAppPay: async (_r, options) => ({
-            attach: async () => {},
-            destroy: async () => true,
-            addEventListener(_e, cb) {
-              window.payCash = () => {
-                if (!options.shouldTokenize()) throw Error("Cash App unavailable");
-                cb({ detail: { tokenResult: { status: "OK", token: "fixture-cash" } } });
-              };
-            },
-          }),
-          card: async () => ({
-            attach: async () => {},
-            tokenize: async () => {
-              window.fixtureCardTokens++;
-              return { status: "OK", token: "fixture" };
-            },
-          }),
-          paymentRequest: () => ({
-            addEventListener() {},
-            update() {
-              return true;
-            },
-          }),
-        }),
+        payments: () => {
+          window.fixtureSdkStarts++;
+          return {
+            applePay: async () => ({ tokenize: approved, destroy: async () => true }),
+            afterpayClearpay: async () => ({
+              attach: async () => {},
+              tokenize: approved,
+              destroy: async () => true,
+            }),
+            cashAppPay: async (_r, options) => ({
+              attach: async () => {},
+              destroy: async () => true,
+              addEventListener(_e, cb) {
+                window.payCash = () => {
+                  if (!options.shouldTokenize()) throw Error("Cash App unavailable");
+                  cb({
+                    detail: { tokenResult: { status: "OK", token: "fixture-cash" } },
+                  });
+                };
+              },
+            }),
+            card: async () => ({
+              attach: async () => {},
+              tokenize: async () => {
+                window.fixtureCardTokens++;
+                return { status: "OK", token: "fixture" };
+              },
+            }),
+            paymentRequest: () => ({
+              addEventListener() {},
+              update() {
+                return true;
+              },
+            }),
+          };
+        },
       };
     },
     { owner, shoe },
@@ -202,6 +212,8 @@ async function fixture(
         contentType: "text/html",
         body: '<div id="root"></div><script src="/app.js"></script>',
       });
+    if (url.pathname === "/api/auth/session" && flow.sessionFailure)
+      return route.fulfill({ status: 503, json: {} });
     if (url.pathname === "/api/auth/session")
       return route.fulfill({
         json: {
@@ -249,10 +261,12 @@ async function fixture(
       url.pathname === "/_next/image"
     )
       return route.abort();
-    if (url.pathname === "/api/checkout/quote")
+    if (url.pathname === "/api/checkout/quote") {
+      flow.quotes++;
       return route.fulfill({
         json: { completeness: "exact", quoteFingerprint: "a".repeat(64), totals },
       });
+    }
     if (url.pathname === "/api/checkout/prepare") {
       flow.prepares.push(route.request().postDataJSON());
       if (flow.holdPrepare) await new Promise((r) => (flow.releasePrepare = r));
@@ -1517,6 +1531,43 @@ async function denyFreshGuestGrant(page) {
   });
 }
 async function supersedeUnrelatedGrant(page, change) {
+  if (change === "read ABA") {
+    const checks = await page.evaluate((id) => {
+      const observer = window.fixtureGuestObservation();
+      const originalGuest = window.fixtureGuestCredential.read(id);
+      const before = observer();
+      sessionStorage.setItem("rdk_guest_order_id", "order-c");
+      sessionStorage.setItem("rdk_guest_order_token", "grant-c");
+      const during = observer();
+      const duringGuest = window.fixtureGuestCredential.read(id);
+      sessionStorage.setItem("rdk_guest_order_id", "order-b");
+      sessionStorage.setItem("rdk_guest_order_token", "grant-b");
+      const afterGuest = window.fixtureGuestCredential.read(id);
+      window.fixtureGuestCredential.retain(id);
+      window.releaseErrorBody?.();
+      window.releaseGuestConsume?.();
+      return {
+        before,
+        during,
+        after: observer(),
+        expectedInitialGrant:
+          originalGuest === (window.releaseGuestConsume ? "from-prepare" : null),
+        grantRevived: afterGuest !== null,
+        withheld: duringGuest === null,
+        retired: window.fixtureGuestCredential.read(id) === null,
+      };
+    }, order);
+    assert.deepEqual(checks, {
+      before: true,
+      during: false,
+      after: false,
+      expectedInitialGrant: true,
+      grantRevived: false,
+      withheld: true,
+      retired: true,
+    });
+    return;
+  }
   await page.evaluate((change) => {
     if (change === "replace" || change === "ABA") {
       sessionStorage.setItem("rdk_guest_order_id", "order-c");
@@ -1540,7 +1591,7 @@ async function supersedeUnrelatedGrant(page, change) {
     window.releaseGuestConsume?.();
   }, change);
 }
-for (const change of ["replace", "withdraw", "ABA"]) {
+for (const change of ["replace", "withdraw", "ABA", "read ABA"]) {
   test(
     "delayed transient guest financial error retires on unrelated grant " + change,
     async (t) => {
@@ -1682,5 +1733,129 @@ for (const reload of [false, true])
         [flow.prepares.length, flow.gets.length, flow.pays],
         [count, 2, 0],
       );
+    },
+  );
+
+for (const known of [false, true])
+  test(
+    "verified account recovers with unwritable Cart after reload, known reference=" +
+      known,
+    async (t) => {
+      const { open, flow } = await fixture(t);
+      const page = await open();
+      flow.dropPrepare = true;
+      await submit(page);
+      await page.getByText("Return to checkout").waitFor();
+      const key = (await state(page)).key;
+      await page.evaluate(() =>
+        localStorage.removeItem("rdk_cart_user_buyer:purchase-v1"),
+      );
+      await page.reload();
+      flow.terminalOriginal = known;
+      flow.dropPrepare = !known;
+      await submit(page);
+      if (known) await page.getByText("Order Confirmed!").waitFor();
+      else await page.getByText("Return to checkout").waitFor();
+      const seen = {
+        prepares: flow.prepares.length,
+        gets: flow.gets.length,
+        quotes: flow.quotes,
+      };
+      const basket = await page.evaluate(() => {
+        const raw = localStorage.getItem("rdk_cart_user_buyer");
+        localStorage.setItem("rdk_cart", raw);
+        return raw;
+      });
+      // The real connect path tries to remove migrated legacy bytes. Deny only Cart writes;
+      // account session verification and the tab's original financial pair remain available.
+      await page.addInitScript(() => {
+        const remove = Storage.prototype.removeItem,
+          set = Storage.prototype.setItem;
+        window.fixtureDeniedWrites = 0;
+        Storage.prototype.removeItem = function (k) {
+          if (this === localStorage && k.startsWith("rdk_cart")) {
+            window.fixtureDeniedWrites++;
+            throw new DOMException("denied", "QuotaExceededError");
+          }
+          return remove.call(this, k);
+        };
+        Storage.prototype.setItem = function (k, v) {
+          if (this === localStorage && k.startsWith("rdk_cart")) {
+            window.fixtureDeniedWrites++;
+            throw new DOMException("denied", "QuotaExceededError");
+          }
+          return set.call(this, k, v);
+        };
+      });
+      await page.goto(origin + "/checkout");
+      await expect
+        .poll(() =>
+          page.evaluate(() => [
+            window.cart?.access,
+            window.cart?.isReady,
+            window.fixtureDeniedWrites > 0,
+          ]),
+        )
+        .toEqual(["unavailable", false, true]);
+      flow.terminalOriginal = true;
+      const check = page.getByRole("button", { name: "Check original order" });
+      await expect(check).toBeVisible();
+      await expect(page.getByRole("button", { name: /^Pay(?: .*?)? now$/ })).toHaveCount(
+        0,
+      );
+      if (known) {
+        flow.user = "other";
+        await page.evaluate(() => window.dispatchEvent(new Event("sessionUpdate")));
+        await page.getByText("Updating your checkout details…").waitFor();
+        await expect(check).toHaveCount(0);
+        flow.user = "buyer";
+        await page.evaluate(() => window.dispatchEvent(new Event("sessionUpdate")));
+      } else {
+        flow.sessionFailure = true;
+        await page.evaluate(() => window.dispatchEvent(new Event("sessionUpdate")));
+        await page.waitForFunction(() => window.fixtureSessionStatus === "unavailable");
+        await expect(check).toHaveCount(0);
+        flow.sessionFailure = false;
+        await page.getByRole("button", { name: "Retry cart access" }).press("Enter");
+      }
+      await expect(check).toBeVisible();
+      await page.waitForFunction(
+        () =>
+          window.cart.access === "unavailable" && window.fixtureSessionStatus === "ready",
+      );
+      await page.evaluate(() => {
+        window.fixtureCaptureCalls = 0;
+        window.cart.captureForCheckout = () => {
+          window.fixtureCaptureCalls++;
+          throw Error("recovery invoked capture");
+        };
+      });
+      await check.press("Enter");
+      await page.getByText("Order Confirmed!").waitFor();
+      assert.equal(flow.quotes, seen.quotes);
+      assert.equal(await page.evaluate(() => window.fixtureCaptureCalls), 0);
+      assert.deepEqual(
+        [
+          flow.prepares.length,
+          flow.gets.length,
+          flow.reservations.size,
+          flow.permits,
+          flow.pays,
+        ],
+        [seen.prepares + (known ? 0 : 1), seen.gets + 1, 1, 0, 0],
+      );
+      if (!known) assert.deepEqual(flow.prepares.at(-1), flow.prepares[1]);
+      assert.deepEqual(
+        await page.evaluate(() => ({
+          sdk: window.fixtureSdkStarts,
+          tokens: window.fixtureCardTokens,
+          ready: window.cart.isReady,
+          raw: localStorage.getItem("rdk_cart_user_buyer"),
+          legacy: localStorage.getItem("rdk_cart"),
+          proof: localStorage.getItem("rdk_cart_user_buyer:purchase-v1"),
+        })),
+        { sdk: 0, tokens: 0, ready: false, raw: basket, legacy: basket, proof: null },
+      );
+      assert.equal((await state(page)).key, key);
     },
   );

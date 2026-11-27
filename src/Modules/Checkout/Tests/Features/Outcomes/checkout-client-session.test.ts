@@ -93,3 +93,23 @@ it("retains the exact committed guest pair on equivalent publication and permane
   expect(current()).toBe(false);
   expect(observeStoredGuestAccess(storage)()).toBe(true);
 });
+
+it("an observed silent credential replacement permanently retires every observer of the earlier grant", () => {
+  const storage = memoryStorage();
+  storeGuestOrderAccess("B", "grant-b", storage);
+  const first = observeStoredGuestAccess(storage),
+    second = observeStoredGuestAccess(storage);
+  expect([first(), second()]).toEqual([true, true]);
+  storage.setItem("rdk_guest_order_id", "C");
+  storage.setItem("rdk_guest_order_token", "grant-c");
+  expect(first()).toBe(false);
+  storage.setItem("rdk_guest_order_id", "B");
+  storage.setItem("rdk_guest_order_token", "grant-b");
+  expect([first(), second()]).toEqual([false, false]);
+  const fresh = observeStoredGuestAccess(storage);
+  expect([first(), second(), fresh()]).toEqual([false, false, true]);
+  storage.setItem("rdk_guest_order_id", "C");
+  expect(readGuestOrderAccess("C", storage)).toBe("grant-b");
+  storage.setItem("rdk_guest_order_id", "B");
+  expect(fresh()).toBe(false);
+});

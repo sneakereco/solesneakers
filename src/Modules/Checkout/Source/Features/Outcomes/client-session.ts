@@ -185,29 +185,30 @@ function publish(storage: Storage, keys: PairKeys, value: StoragePair) {
     throw error;
   }
 }
-function guestPair(storage: Storage) {
-  try {
-    return readPair(storage, credential);
-  } catch {
-    return undefined;
-  }
-}
-
-// Only committed pairs advance the observation. Repeated publication of B preserves B;
-// observing B → C → B retires observers of the first B, including delayed payment callbacks.
+// Every committed read and publication shares this identity. Observing a different
+// pair retires all previous readers, even if a later write restores the original bytes.
 type GuestObservation = { pair: StoragePair | undefined };
 const guestObservations = new WeakMap<Storage, GuestObservation>();
-function noteGuestPublication(storage: Storage | null) {
-  if (!storage) return;
+function readGuestObservation(storage: Storage): GuestObservation {
+  let pair: StoragePair | undefined;
+  try {
+    pair = readPair(storage, credential);
+  } catch {
+    /* An unreadable credential retires the prior observation. */
+  }
   const previous = guestObservations.get(storage);
-  if (!previous) return;
-  const next = guestPair(storage);
   if (
-    previous.pair === undefined || next === undefined
-      ? previous.pair !== next
-      : !equal(previous.pair, next)
+    previous &&
+    (previous.pair === pair ||
+      (previous.pair !== undefined && pair !== undefined && equal(previous.pair, pair)))
   )
-    guestObservations.set(storage, { pair: next });
+    return previous;
+  const current = { pair };
+  guestObservations.set(storage, current);
+  return current;
+}
+function noteGuestPublication(storage: Storage | null) {
+  if (storage) readGuestObservation(storage);
 }
 let listening: Window | undefined;
 function listenForGuestPublication() {
@@ -237,15 +238,8 @@ function listenForGuestPublication() {
 export function observeStoredGuestAccess(storage = getSessionStorage()) {
   if (!storage) return () => false;
   listenForGuestPublication();
-  noteGuestPublication(storage);
-  const original = guestObservations.get(storage) ?? { pair: guestPair(storage) };
-  guestObservations.set(storage, original);
-  return () => {
-    if (original.pair === undefined || original !== guestObservations.get(storage))
-      return false;
-    const next = guestPair(storage);
-    return next !== undefined && equal(original.pair, next);
-  };
+  const original = readGuestObservation(storage);
+  return () => readGuestObservation(storage) === original && original.pair !== undefined;
 }
 
 export function resolveCheckoutAttempt(
@@ -263,7 +257,7 @@ export function resolveCheckoutAttempt(
     );
   if (previous?.[1] !== fingerprint && storage.getItem(financial.journal) !== null)
     publish(storage, financial, previous);
-  const guest = guestPair(storage);
+  const guestCurrent = observeStoredGuestAccess(storage);
   const reused = previous?.[1] === fingerprint ? previous[0] : null;
   const mode: "new" | "resume" = reused ? "resume" : "new";
   const key = reused ?? createId();
@@ -335,13 +329,7 @@ export function resolveCheckoutAttempt(
       ownerId?: string | null,
     ) {
       if (!current()) return false;
-      const activeGuest = guestPair(storage);
-      if (
-        token &&
-        guest !== undefined &&
-        activeGuest !== undefined &&
-        equal(guest, activeGuest)
-      ) {
+      if (token && guestCurrent()) {
         try {
           storeGuestOrderAccess(orderId, token, storage);
         } catch {
@@ -438,7 +426,7 @@ export function readGuestOrderAccess(
   orderId: string,
   storage: Storage | null = getSessionStorage(),
 ): string | null {
-  const pair = storage ? guestPair(storage) : null;
+  const pair = storage ? readGuestObservation(storage).pair : null;
   return pair?.[0] === orderId ? pair[1] : null;
 }
 
