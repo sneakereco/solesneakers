@@ -11,6 +11,7 @@ const pending = {
   fulfillment: "ship",
   updatedAt: "2026-11-24T00:00:00Z",
   events: [],
+  financial: { source: "legacy" },
   supportEmail: "support@example.com",
   purchasedLines: null,
 };
@@ -67,6 +68,7 @@ describe("checkout order polling", () => {
       updatedAt: "2026-09-16T00:00:00.000Z",
       purchasedLines: null,
       events: [],
+      financial: { source: "legacy" },
       supportEmail: "support@example.com",
     };
     global.fetch = jest

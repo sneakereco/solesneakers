@@ -27,6 +27,7 @@ const receipt = {
   fulfillment: "ship",
   updatedAt: "2026-11-24T00:00:00Z",
   events: [],
+  financial: { source: "legacy" },
   supportEmail: "support@example.test",
   purchasedLines: [line],
 };
@@ -261,6 +262,16 @@ async function fixture(
         flow.dropPrepare = false;
         return route.abort();
       }
+      if (flow.terminalOriginal)
+        return route.fulfill({
+          status: flow.prepares.at(-1).recoveryOnly ? 200 : 409,
+          json: {
+            code: "CHECKOUT_RECOVERY_REQUIRED",
+            orderId: flow.reservations.get(key),
+            totals,
+            guestAccessToken: "from-prepare",
+          },
+        });
       if (flow.prepareFailure)
         return route.fulfill({
           status: flow.prepareFailure,
@@ -1279,3 +1290,212 @@ test("actual gateway timeout checks the prepared order without another payment",
     [1, 1, 1, 1],
   );
 });
+
+for (const missing of [false, true])
+  test(
+    "actual recovery-only rejection retains the original key across repeated checkout and reload missing=" +
+      missing,
+    async (t) => {
+      const { open, flow } = await fixture(t);
+      flow.dropPrepare = true;
+      const page = await open();
+      await submit(page);
+      await page.getByText("Return to checkout").waitFor();
+      const key = (await state(page)).key;
+      if (missing)
+        await page.evaluate(() =>
+          localStorage.removeItem("rdk_cart_user_buyer:purchase-v1"),
+        );
+      await page.reload();
+      flow.prepareFailure = 409;
+      await submit(page);
+      await page.getByText("Return to checkout").waitFor();
+      await page.getByText("Return to checkout").click();
+      assert.equal((await state(page)).key, key);
+      await expect(
+        page.getByRole("button", { name: /^Pay(?: .*?)? now$/ }),
+      ).toBeDisabled();
+      await page.reload();
+      await expect(
+        page.getByRole("button", { name: /^Pay(?: .*?)? now$/ }),
+      ).toBeDisabled();
+      assert.deepEqual(
+        flow.prepares.map((p) => p.idempotencyKey),
+        [key, key],
+      );
+      assert.deepEqual([flow.reservations.size, flow.permits, flow.pays], [1, 0, 0]);
+    },
+  );
+for (const previousId of ["prior", order])
+  test(
+    "actual guest binding and credential writes denied still use the returned grant for one GET previous=" +
+      previousId,
+    async (t) => {
+      const { open, flow } = await fixture(t, {
+        owner: null,
+        initialStatus: (url) =>
+          url.searchParams.get("token") === "from-prepare" ? receipt : 403,
+      });
+      const page = await open();
+      await page.evaluate((id) => {
+        sessionStorage.setItem("rdk_guest_order_id", id);
+        sessionStorage.setItem("rdk_guest_order_token", "prior-grant");
+      }, previousId);
+      flow.holdPrepare = true;
+      await submit(page);
+      await expect.poll(() => !!flow.releasePrepare).toBe(true);
+      await page.evaluate(() => {
+        window.credentialAttempts = 0;
+        const set = Storage.prototype.setItem;
+        Storage.prototype.setItem = function (k, v) {
+          if (k === "rdk_guest_order_token") window.credentialAttempts++;
+          if (
+            k.endsWith(":purchase-v1") ||
+            k === "checkout_original_recovery_v1" ||
+            k === "rdk_guest_order_token"
+          )
+            throw new DOMException("denied", "QuotaExceededError");
+          return set.call(this, k, v);
+        };
+      });
+      flow.releasePrepare();
+      await page.getByText("Order Confirmed!").waitFor();
+      assert.ok(await page.evaluate(() => window.credentialAttempts > 0));
+      assert.equal((await state(page)).token, "prior-grant");
+      assert.deepEqual([flow.gets.length, flow.permits, flow.pays], [1, 0, 0]);
+      assert.deepEqual(
+        await page.evaluate(() =>
+          JSON.parse(sessionStorage.getItem("rdk_cart_session")).map(
+            (row) => row.quantity,
+          ),
+        ),
+        [2],
+      );
+    },
+  );
+for (const [pay, change] of [
+  ["decline", "pair"],
+  ["pre-provider", "credential"],
+  ["decline", "owner"],
+]) {
+  test(
+    "actual delayed " + pay + " body retires after " + change + " changes",
+    async (t) => {
+      const { open, flow } = await fixture(t, {
+        owner: change === "credential" ? null : "buyer",
+        pay,
+      });
+      const page = await open();
+      await page.evaluate(() => {
+        const old = window.fetch.bind(window);
+        window.fetch = async (path, init) => {
+          const response = await old(path, init);
+          if (path === "/api/checkout/pay") {
+            const json = response.json.bind(response);
+            response.json = async () => {
+              await new Promise((r) => (window.releaseErrorBody = r));
+              return json();
+            };
+          }
+          return response;
+        };
+      });
+      await submit(page);
+      await page.waitForFunction(() => !!window.releaseErrorBody);
+      if (change === "pair")
+        await page.evaluate(() => {
+          sessionStorage.setItem("checkout_cart_fingerprint", "new purchase");
+          window.releaseErrorBody();
+        });
+      if (change === "credential")
+        await page.evaluate(() => {
+          sessionStorage.setItem("rdk_guest_order_token", "new grant");
+          window.dispatchEvent(new Event("checkout-guest-access"));
+          window.releaseErrorBody();
+        });
+      if (change === "owner") {
+        flow.user = "other";
+        await page.evaluate(() => {
+          window.dispatchEvent(new Event("sessionUpdate"));
+          window.releaseErrorBody();
+        });
+      }
+      if (change !== "owner") await page.getByText(/Your checkout changed/).waitFor();
+      else await expect.poll(async () => (await state(page)).items).toEqual([]);
+      assert.equal(
+        await page
+          .getByText(
+            /Payment declined by provider|Address verification is temporarily unavailable/,
+          )
+          .count(),
+        0,
+      );
+      assert.equal(flow.gets.length, 0);
+      assert.equal(flow.pays, 1);
+    },
+  );
+}
+for (const notify of [false, true])
+  test(
+    "receipt pair-only replacement revokes visible facts and a queued consumption notify=" +
+      notify,
+    async (t) => {
+      const { open, flow } = await fixture(t);
+      flow.holdStatus = true;
+      const page = await open();
+      await submit(page);
+      await expect.poll(() => !!flow.releaseStatus).toBe(true);
+      await holdCartLock(page);
+      const before = await proofBytes(page);
+      flow.holdStatus = false;
+      flow.releaseStatus();
+      await page.getByText("Order Confirmed!").waitFor();
+      await queued(page);
+      flow.status = 403;
+      await page.evaluate((notify) => {
+        sessionStorage.setItem("checkout_cart_fingerprint", "replaced");
+        if (notify)
+          window.dispatchEvent(
+            new StorageEvent("storage", {
+              key: "checkout_cart_fingerprint",
+              storageArea: sessionStorage,
+            }),
+          );
+        window.releaseCartLock();
+      }, notify);
+      await page.getByText("Order details unavailable").waitFor();
+      assert.equal(await proofBytes(page), before);
+      assert.deepEqual((await state(page)).items, [2]);
+      assert.equal((await state(page)).fingerprint, "replaced");
+    },
+  );
+
+for (const missing of [false, true])
+  test(
+    "actual settled original goes directly to verified GET with missing proof " + missing,
+    async (t) => {
+      const { open, flow } = await fixture(t);
+      flow.dropPrepare = true;
+      const page = await open();
+      await submit(page);
+      await page.getByText("Return to checkout").waitFor();
+      const key = (await state(page)).key;
+      if (missing)
+        await page.evaluate(() =>
+          localStorage.removeItem("rdk_cart_user_buyer:purchase-v1"),
+        );
+      await page.reload();
+      flow.terminalOriginal = true;
+      await submit(page);
+      await page.getByText("Order Confirmed!").waitFor();
+      assert.deepEqual(
+        flow.prepares.map((p) => p.idempotencyKey),
+        [key, key],
+      );
+      assert.deepEqual(
+        [flow.reservations.size, flow.gets.length, flow.permits, flow.pays],
+        [1, 1, 0, 0],
+      );
+      assert.deepEqual((await state(page)).items, [2]);
+    },
+  );

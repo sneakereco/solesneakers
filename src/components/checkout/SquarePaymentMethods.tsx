@@ -982,8 +982,13 @@ export function SquarePaymentMethods({
       clearTimeout(timeout);
     }
 
-    if (response && !response.ok && (response.status < 500 || response.status === 503)) {
-      const data = await readUnavailablePayment(response, paymentRequest);
+    const data =
+      response && !response.ok && (response.status < 500 || response.status === 503)
+        ? await readUnavailablePayment(response, paymentRequest)
+        : null;
+    await requireOwner?.();
+    checkout.assertFinancialAttempt?.();
+    if (response && data) {
       if (
         ([400, 401, 402, 403, 409].includes(response.status) &&
           typeof data?.error === "string" &&
@@ -992,8 +997,6 @@ export function SquarePaymentMethods({
       )
         throw Error(data?.error || "Payment could not be completed");
     }
-    await requireOwner?.();
-    checkout.assertFinancialAttempt?.();
     onProcessing(checkout.orderId, checkout.transientGuestAccessToken);
     router.replace(
       "/checkout/processing?orderId=" + encodeURIComponent(checkout.orderId),

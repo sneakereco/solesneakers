@@ -12,6 +12,7 @@ import {
   readPreparedScope,
   closePreparedScope,
   readFinancialPair,
+  readGuestOrderAccess,
 } from "./client-session";
 import type { OrderStatusResponse } from "@/types/domain/checkout";
 
@@ -62,16 +63,23 @@ function makeHandoff() {
   };
 }
 function preparedCredential() {
-  let value: { orderId: string; token: string } | null = null;
+  let value: { orderId: string; token: string; previous: string | null } | null = null;
   return {
     remember(orderId: string, token?: string) {
-      value = token ? { orderId, token } : null;
+      value = token ? { orderId, token, previous: readGuestOrderAccess(orderId) } : null;
     },
     read(orderId: string | null) {
-      return value?.orderId === orderId ? value?.token : null;
+      if (!orderId || value?.orderId !== orderId) return null;
+      if (readGuestOrderAccess(orderId) !== value.previous) return null;
+      return value.token;
     },
     retain(orderId: string | null) {
-      if (value?.orderId !== orderId) value = null;
+      if (
+        value &&
+        (value.orderId !== orderId ||
+          readGuestOrderAccess(value.orderId) !== value.previous)
+      )
+        value = null;
     },
   };
 }

@@ -1,6 +1,5 @@
 import { buildCheckoutStatusUrl } from "./status-url";
-import { orderStatus, type Outcome } from "./outcome-contract";
-import { classifyCheckoutOrderStatus } from "./order-state";
+import { classifyObservedOrder, orderStatus, type Outcome } from "./outcome-contract";
 export function pollOrder(
   orderId: string,
   credential: string | null,
@@ -57,13 +56,8 @@ export function pollOrder(
         if (!receipt.success || receipt.data.id !== orderId)
           return finish({ state: "error" });
         const order = receipt.data;
-        const classification = classifyCheckoutOrderStatus(order.status);
-        if (order.financialReview || classification === "review")
-          return finish({ state: "review", order });
-        if (classification === "paid") return finish({ state: "confirmed", order });
-        if (order.status === "refunded" || order.status === "partially_refunded")
-          return finish({ state: "refunded", order });
-        if (classification !== "waiting") return finish({ state: "error", order });
+        const state = classifyObservedOrder(order);
+        if (state !== "waiting") return finish({ state, order });
       } else {
         const after = response.headers?.get("Retry-After");
         if (after) {

@@ -254,13 +254,19 @@ export async function prepareCheckoutHandler(
       )
         return recoveryRequired();
       if (!matchesCheckoutCartHash(existing.cartHash, cartHash, cartHashInput)) {
-        return json({ error: "Checkout key conflicts with another cart" }, 409);
+        return parsed.data.recoveryOnly
+          ? recoveryRequired()
+          : json({ error: "Checkout key conflicts with another cart" }, 409);
       }
-      if (existing.status !== "pending" || !isFuture(existing.expiresAt, deps.now())) {
-        return json({ error: "Checkout cannot be reused" }, 409);
-      }
+      if (
+        !existing.squareOrderId &&
+        (existing.status !== "pending" || !isFuture(existing.expiresAt, deps.now()))
+      )
+        return recoveryRequired();
       if (existing.squareOrderId && typeof existing.squareOrderVersion !== "number") {
-        return json({ error: "Checkout cannot be migrated; start again" }, 409);
+        return parsed.data.recoveryOnly
+          ? recoveryRequired()
+          : json({ error: "Checkout cannot be migrated; start again" }, 409);
       }
     }
 
@@ -425,6 +431,7 @@ export async function prepareCheckoutHandler(
       totals: calculatedTotals,
     });
     if (!quoteFingerprintsMatch(parsed.data.quoteFingerprint, currentFingerprint)) {
+      if (parsed.data.recoveryOnly) return recoveryRequired();
       return json(
         {
           error: "Checkout totals changed. Review the updated total and try again.",
@@ -433,10 +440,14 @@ export async function prepareCheckoutHandler(
       );
     }
 
-    if (parsed.data.recoveryOnly) {
+    const terminalOriginal =
+      existing &&
+      (existing.status !== "pending" || !isFuture(existing.expiresAt, deps.now()));
+    if (parsed.data.recoveryOnly || terminalOriginal) {
       if (!existing?.squareOrderId) return recoveryRequired();
       return json(
         {
+          code: "CHECKOUT_RECOVERY_REQUIRED",
           orderId: existing.orderId,
           expiresAt: existing.expiresAt,
           reused: true,
@@ -444,7 +455,7 @@ export async function prepareCheckoutHandler(
           guestAccessToken: await guestToken(existing.orderId, !session, deps),
           paymentConfig,
         },
-        200,
+        parsed.data.recoveryOnly ? 200 : 409,
       );
     }
     const expiresAt = new Date(deps.now().getTime() + 15 * 60 * 1000);

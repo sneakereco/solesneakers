@@ -30,6 +30,7 @@ const valid = {
   fulfillment: "pickup",
   updatedAt: "2026-11-25T00:00:00Z",
   events: [],
+  financial: { source: "legacy" },
   supportEmail: "support@example.test",
 };
 describe("authorized outcome lifetime", () => {
@@ -53,6 +54,38 @@ describe("authorized outcome lifetime", () => {
       onState,
     });
   }
+  it.each([
+    ["pending", "partially_refunded", 0, 500, "refunded"],
+    ["shipped", "unpaid", 0, 0, "review"],
+    ["pending", "paid", 1000, 0, "review"],
+    ["paid", "paid", 1000, 0, "confirmed"],
+  ] as const)(
+    "classifies durable %s/%s settlement",
+    async (status, financialState, capturedCents, refundedCents, state) => {
+      global.fetch = jest.fn().mockResolvedValue(
+        Response.json({
+          ...valid,
+          status,
+          financial: {
+            source: "ledger",
+            snapshot: {
+              orderId: id,
+              revision: "2",
+              financialState,
+              capturedCents,
+              refundedCents,
+              fulfillmentStatus: "unfulfilled",
+              reviewReason: null,
+            },
+          },
+        }),
+      );
+      const notify = jest.fn();
+      observe(notify);
+      await jest.advanceTimersByTimeAsync(0);
+      expect(notify).toHaveBeenLastCalledWith(expect.objectContaining({ state }));
+    },
+  );
   it.each([
     ["paid", true, "review"],
     ["refunded", false, "refunded"],

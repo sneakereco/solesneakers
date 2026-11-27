@@ -30,6 +30,7 @@ import {
   getOrCreateCheckoutDeviceSessionId,
   capturePreparedAttempt,
   readGuestOrderAccess,
+  needsOriginalRecovery,
   useCheckoutRegistration,
   useProcessingCredential,
 } from "@/Modules/Checkout/Source/Client";
@@ -203,7 +204,9 @@ function OwnerCheckout({
     captureCheckoutStarted();
   }, [isReady, items.length, isRedirecting]);
 
-  const [needsRecovery, setNeedsRecovery] = useState(false);
+  const [needsRecovery, setNeedsRecovery] = useState(() =>
+    needsOriginalRecovery(initialData.ownerId),
+  );
   const stockBlocked = items.some(needsBasketReview);
   const basketKey = JSON.stringify(
     items.map((i) => [
@@ -378,6 +381,10 @@ function OwnerCheckout({
         throw new Error("Your cart changed. Review your items before paying.");
     };
     assertCurrentBasket();
+    if (needsOriginalRecovery(initialData.ownerId)) {
+      setNeedsRecovery(true);
+      throw Error("Check your original order status before trying another payment.");
+    }
     if (stockBlocked || needsRecovery)
       throw new Error("Review your cart and check your order status before paying.");
     const buyerEmail = (initialData.isGuest ? (context?.buyerEmail ?? email) : email)
@@ -440,6 +447,7 @@ function OwnerCheckout({
     assertCurrentBasket();
     if (!attempt.current() || lifetime.signal.aborted)
       throw Error("Your checkout changed. Review your current order.");
+    if (attempt.recoveryOnly) attempt.requireRecovery();
     const response = await fetch("/api/checkout/prepare", {
       method: "POST",
       headers: { "Content-Type": "application/json" },
@@ -470,13 +478,35 @@ function OwnerCheckout({
           : "Your checkout changed. Review your current order.",
       );
     assertCurrentBasket();
-    if (!response.ok) {
+    const observeOnly =
+      data?.code === "CHECKOUT_RECOVERY_REQUIRED" &&
+      z.uuid().safeParse(data?.orderId).success;
+    if (!response.ok && !observeOnly) {
+      if (
+        attempt.recoveryOnly ||
+        (attempt.resumed &&
+          response.status === 409 &&
+          data?.code !== "INVENTORY_CONFLICT" &&
+          data?.code !== "CHECKOUT_RECOVERY_REQUIRED")
+      ) {
+        setNeedsRecovery(true);
+        attempt.requireRecovery();
+        throw Error(
+          "Check your order status in your account or through your secure order link before trying another payment.",
+        );
+      }
       if (
         data?.code === "INVENTORY_CONFLICT" ||
         data?.code === "CHECKOUT_RECOVERY_REQUIRED"
       ) {
         const pending =
           "Check your order status in your account or through your secure order link before trying another payment.";
+        if (
+          attempt.resumed &&
+          (data?.code === "CHECKOUT_RECOVERY_REQUIRED" ||
+            data?.paymentState !== "not_submitted")
+        )
+          attempt.requireRecovery();
         const sameAttempt = () => !lifetime.signal.aborted && attempt.current();
         if (!sameAttempt())
           throw new Error("Your cart changed. Review your items before paying.");
@@ -562,7 +592,8 @@ function OwnerCheckout({
       initialData.isGuest && typeof data.guestAccessToken === "string"
         ? data.guestAccessToken
         : undefined;
-    const bound = await attempt.prepared(data.orderId, token);
+    if (observeOnly) attempt.requireRecovery();
+    const bound = await attempt.prepared(data.orderId, token, observeOnly);
     await requireOwner();
     if (lifetime.signal.aborted || !attempt.current())
       throw Error("Your checkout changed. Review your current order.");
@@ -583,7 +614,7 @@ function OwnerCheckout({
       if (
         lifetime.signal.aborted ||
         !attempt.current() ||
-        (token && stored === token && readGuestOrderAccess(data.orderId) !== token)
+        (initialData.isGuest && readGuestOrderAccess(data.orderId) !== stored)
       )
         throw Error("Your checkout changed. Review your current order.");
     };

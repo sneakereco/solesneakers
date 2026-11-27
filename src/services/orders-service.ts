@@ -6,6 +6,8 @@ import { OrdersRepository } from "@/repositories/orders-repo";
 import { OrderEventsRepository } from "@/repositories/order-events-repo";
 import { OrderAccessTokenService } from "@/services/order-access-token-service";
 import type { OrderStatusResponse } from "@/types/domain/checkout";
+import { readOrderFinancialEvidence } from "@/Modules/Orders/Source/Features/OrderStatus/financial-evidence";
+import { classifyObservedOrder } from "@/Modules/Checkout/Source/Features/Outcomes/outcome-contract";
 import { readPurchasedLines } from "@/Modules/Orders/Source/Features/OrderStatus/purchased-lines";
 import type { Tables } from "@/types/db/database.types";
 import { SUPPORT_EMAIL } from "@/config/constants/mail";
@@ -94,10 +96,28 @@ export class OrdersService {
   }
 
   private async buildResponse(
-    order: OrderRow,
+    authorized: OrderRow,
     events: OrderEvent[],
     client: TypedSupabaseClient,
   ): Promise<OrderStatusResponse> {
+    const { order, financial } = await readOrderFinancialEvidence(
+      authorized,
+      this.adminSupabase,
+    );
+    const status = order.status ?? "pending";
+    const total = monetaryAmount(order.total);
+    const financialReview = Boolean(
+      order.checkout_financial_review ||
+        (financial.source === "ledger" && financial.snapshot.reviewReason),
+    );
+    const confirmed =
+      classifyObservedOrder({
+        id: order.id,
+        status,
+        total,
+        financial,
+        financialReview,
+      }) === "confirmed";
     if (
       order.fulfillment !== null &&
       order.fulfillment !== "ship" &&
@@ -111,19 +131,22 @@ export class OrdersService {
 
     return {
       id: order.id,
-      financialReview: Boolean(order.checkout_financial_review),
+      financialReview,
+      financial,
       subtotal: monetaryAmount(order.subtotal),
       shipping: monetaryAmount(order.shipping),
       tax: monetaryAmount(order.tax_amount),
-      total: monetaryAmount(order.total),
+      total,
       purchasedLines: await readPurchasedLines(
         {
           orderId: order.id,
-          authorizedAccess: {
-            orderId: order.id,
-            status: order.status ?? "pending",
-            financialReview: Boolean(order.checkout_financial_review),
-          },
+          authorizedAccess: confirmed
+            ? {
+                orderId: order.id,
+                status: order.status ?? "pending",
+                financialReview,
+              }
+            : null,
         },
         client,
       ),

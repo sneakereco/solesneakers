@@ -18,6 +18,15 @@ const item = {
 const order = {
   id: orderId,
   user_id: "buyer",
+  tenant_id: "merchant",
+  checkout_attempt_guarded: false,
+  checkout_financial_review: null,
+  failure_reason: null,
+  refund_amount: null,
+  currency: "USD",
+  square_order_id: "square",
+  payment_transaction_id: null,
+  fulfillment_status: "unfulfilled",
   status: "paid",
   subtotal: 0,
   total: 0,
@@ -27,6 +36,7 @@ const order = {
   created_at: "2026-11-24T00:00:00Z",
 };
 type Options = {
+  evidence?: Record<string, unknown>;
   requestedId?: string;
   reconcile?: boolean;
   attemptState?: "unknown" | "ready";
@@ -87,6 +97,22 @@ async function observe(options: Options = {}) {
                   }
                 : null,
             };
+          if (table === "orders" && columns.includes("checkout_financial_facts")) {
+            if (access !== "admin" || filters.id !== orderId)
+              throw Error("Unscoped financial read");
+            return {
+              data: {
+                ...selected,
+                facts: [],
+                attempts: [],
+                refunds: [],
+                factCount: [{ count: 0 }],
+                attemptCount: [{ count: 0 }],
+                refundCount: [{ count: 0 }],
+                ...options.evidence,
+              },
+            };
+          }
           if (table === "orders")
             return {
               data:
@@ -156,6 +182,7 @@ test.each(["paid", "shipped"])(
     expect(result.reads).toEqual([
       "session.orders",
       "session.order_events",
+      "admin.orders",
       "session.order_items",
     ]);
   },
@@ -192,7 +219,11 @@ test.each(["pending", "processing", "review", "canceled"])(
   async (status) => {
     const result = await observe({ status });
     expect(result.data.purchasedLines).toBeNull();
-    expect(result.reads).toEqual(["session.orders", "session.order_events"]);
+    expect(result.reads).toEqual([
+      "session.orders",
+      "session.order_events",
+      "admin.orders",
+    ]);
   },
 );
 test.each([
@@ -253,4 +284,274 @@ test("denied GET cannot request recovery", async () => {
   expect(result.status).toBe(401);
   expect(result.jobs).toEqual([]);
   expect(result.reads).not.toContain("admin.checkout_payment_attempts");
+});
+
+const attempt = {
+  sequence: 1,
+  id: item.id,
+  order_id: orderId,
+  provider_payment_id: "pay",
+  square_order_id: "square",
+  amount_cents: 1000,
+  currency: "USD",
+  state: "succeeded",
+};
+const capture = {
+  order_id: orderId,
+  kind: "payment",
+  provider_id: "pay",
+  provider_version: "opaque",
+  payment_id: "pay",
+  amount_cents: 1000,
+  currency: "USD",
+  status: "COMPLETED",
+};
+const refund = {
+  order_id: orderId,
+  tenant_id: "merchant",
+  square_refund_id: "refund",
+  square_payment_id: "pay",
+  status: "COMPLETED",
+  amount_cents: 500,
+  currency: "USD",
+  checkout_status_conflict: false,
+};
+const ledger = {
+  payment_transaction_id: "pay",
+  checkout_attempt_guarded: true,
+  total: 10,
+  attempts: [attempt],
+  attemptCount: [{ count: 1 }],
+  facts: [capture],
+  factCount: [{ count: 1 }],
+};
+test("real GET returns Task6 refund before capture even with pending compatibility status", async () => {
+  const result = await observe({
+    status: "pending",
+    evidence: {
+      ...ledger,
+      facts: [{ ...capture, kind: "refund", provider_id: "refund", amount_cents: 500 }],
+      refunds: [refund],
+      refundCount: [{ count: 1 }],
+    },
+  });
+  expect(result.data).toMatchObject({
+    status: "pending",
+    financial: {
+      source: "ledger",
+      snapshot: {
+        orderId,
+        financialState: "partially_refunded",
+        capturedCents: 0,
+        refundedCents: 500,
+        reviewReason: null,
+      },
+    },
+    purchasedLines: null,
+  });
+});
+test.each(["paid", "shipped", "pending"])(
+  "real GET rejects incompatible %s settlement evidence",
+  async (status) => {
+    const result = await observe({
+      status,
+      evidence:
+        status === "pending"
+          ? ledger
+          : { ...ledger, facts: [], factCount: [{ count: 0 }] },
+    });
+    expect(result.data.financial.source).toEqual("ledger");
+    expect(result.data.purchasedLines).toBeNull();
+    expect(result.reads).not.toContain("session.order_items");
+  },
+);
+test("real GET counts one capture across opaque revisions and earlier sequence", async () => {
+  const result = await observe({
+    evidence: {
+      ...ledger,
+      facts: [capture, { ...capture, provider_version: "a" }],
+      factCount: [{ count: 2 }],
+      attempts: [
+        attempt,
+        {
+          ...attempt,
+          sequence: 2,
+          id: variant,
+          provider_payment_id: null,
+          state: "ready",
+        },
+      ],
+      attemptCount: [{ count: 2 }],
+    },
+  });
+  expect(result.data.financial.snapshot).toMatchObject({
+    revision: "2",
+    capturedCents: 1000,
+    financialState: "paid",
+    reviewReason: null,
+  });
+  expect(result.data.purchasedLines).toHaveLength(1);
+});
+test.each([
+  { ...ledger, factCount: [{ count: 2 }] },
+  {
+    ...ledger,
+    facts: [capture, { ...capture, status: "FAILED" }],
+    factCount: [{ count: 2 }],
+  },
+  { ...ledger, attempts: [{ ...attempt, currency: "EUR" }] },
+  { ...ledger, payment_transaction_id: "replacement" },
+  {
+    ...ledger,
+    facts: [
+      capture,
+      { ...capture, kind: "refund", provider_id: "refund", amount_cents: 500 },
+    ],
+    factCount: [{ count: 2 }],
+  },
+])(
+  "real GET with incomplete/contradictory ledger withholds purchase",
+  async (evidence) => {
+    const result = await observe({ evidence });
+    expect(result.data.financial.source).toBe("unavailable");
+    expect(result.data.purchasedLines).toBeNull();
+  },
+);
+test("authorized projection rechecks account/tenant binding", async () => {
+  const result = await observe({ evidence: { ...ledger, user_id: "replacement" } });
+  expect(result.status).toBeGreaterThanOrEqual(400);
+  expect(result.data.financial).toBeUndefined();
+  expect(result.reads).not.toContain("session.order_items");
+});
+
+test("real GET retains multiple independently captured payments and sticky review", async () => {
+  const result = await observe({
+    evidence: {
+      ...ledger,
+      attempts: [
+        attempt,
+        { ...attempt, sequence: 2, id: variant, provider_payment_id: "pay2" },
+      ],
+      attemptCount: [{ count: 2 }],
+      facts: [capture, { ...capture, provider_id: "pay2", payment_id: "pay2" }],
+      factCount: [{ count: 2 }],
+    },
+  });
+  expect(result.data.financial.snapshot).toMatchObject({
+    capturedCents: 2000,
+    reviewReason: "square_multiple_captures",
+  });
+  expect(result.data.purchasedLines).toBeNull();
+});
+test("real GET keeps completed corroborated refund with sticky conflict", async () => {
+  const result = await observe({
+    evidence: {
+      ...ledger,
+      facts: [
+        capture,
+        {
+          ...capture,
+          kind: "refund",
+          provider_id: "refund",
+          amount_cents: 500,
+          status: "PENDING",
+        },
+      ],
+      factCount: [{ count: 2 }],
+      refunds: [{ ...refund, checkout_status_conflict: true }],
+      refundCount: [{ count: 1 }],
+      refund_amount: 500,
+    },
+  });
+  expect(result.data.financial.snapshot).toMatchObject({
+    capturedCents: 1000,
+    refundedCents: 500,
+    reviewReason: "square_status_conflict",
+    financialState: "partially_refunded",
+  });
+  expect(result.data.purchasedLines).toBeNull();
+});
+test("historical payment binding is independent of compatibility and migrated review remains sticky", async () => {
+  const result = await observe({
+    evidence: {
+      ...ledger,
+      checkout_attempt_guarded: false,
+      payment_transaction_id: "pay",
+      checkout_financial_review: "square_payment_high_risk",
+    },
+  });
+  expect(result.data.financial.snapshot).toMatchObject({
+    capturedCents: 1000,
+    reviewReason: "square_payment_high_risk",
+  });
+  expect(result.data.purchasedLines).toBeNull();
+  const wrong = await observe({
+    evidence: {
+      ...ledger,
+      checkout_attempt_guarded: false,
+      payment_transaction_id: "other",
+    },
+  });
+  expect(wrong.data.financial.source).toEqual("unavailable");
+  expect(wrong.data.purchasedLines).toBeNull();
+});
+
+test.each(["refunded", "partially_refunded"])(
+  "guarded %s status alone cannot create refund money",
+  async (status) => {
+    const result = await observe({ status, evidence: ledger });
+    expect(result.data.financial).toMatchObject({
+      source: "ledger",
+      snapshot: { financialState: "paid", capturedCents: 1000, refundedCents: 0 },
+    });
+    expect(result.data.purchasedLines).toBeNull();
+  },
+);
+test.each([0, 500])(
+  "guarded refund floor cannot bypass independent completed cents %i",
+  async (cents) => {
+    const result = await observe({
+      status: "paid",
+      evidence: {
+        ...ledger,
+        refund_amount: 800,
+        facts: cents
+          ? [
+              capture,
+              { ...capture, kind: "refund", provider_id: "refund", amount_cents: cents },
+            ]
+          : [capture],
+        factCount: [{ count: cents ? 2 : 1 }],
+        refunds: cents ? [refund] : [],
+        refundCount: [{ count: cents ? 1 : 0 }],
+      },
+    });
+    expect(result.data.financial.source).toBe("unavailable");
+    expect(result.data.purchasedLines).toBeNull();
+  },
+);
+test.each([
+  ["refunded", 0, 1000, "refunded"],
+  ["paid", 800, 800, "partially_refunded"],
+  ["partially_refunded", 0, 0, "partially_refunded"],
+] as const)(
+  "bound legacy %s preserves historical refund floor",
+  async (status, persisted, refundedCents, financialState) => {
+    const result = await observe({
+      status,
+      evidence: { ...ledger, checkout_attempt_guarded: false, refund_amount: persisted },
+    });
+    expect(result.data.financial).toMatchObject({
+      source: "ledger",
+      snapshot: { financialState, capturedCents: 1000, refundedCents },
+    });
+    expect(result.data.purchasedLines).toBeNull();
+  },
+);
+test("guarded completed refund object without matching verified facts cannot establish money", async () => {
+  const result = await observe({
+    evidence: { ...ledger, refunds: [refund], refundCount: [{ count: 1 }] },
+  });
+  expect(result.data.financial.source).toBe("unavailable");
+  expect(result.data.purchasedLines).toBeNull();
 });

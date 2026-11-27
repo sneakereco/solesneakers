@@ -64,6 +64,7 @@ export interface CartPurchaseActions {
     orderId: string,
     purchased: readonly PurchaseLine[],
     signal?: AbortSignal,
+    isCurrentObservation?: () => boolean,
   ): Promise<ConsumptionResult>;
 }
 

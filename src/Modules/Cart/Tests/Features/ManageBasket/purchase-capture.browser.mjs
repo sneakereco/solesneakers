@@ -1282,3 +1282,26 @@ for (const interference of ["raw", "revision"]) {
     },
   );
 }
+
+test("consumption rechecks the synchronous observation including receipt replay", async (t) => {
+  const { page } = await fixture(t);
+  const { orderId, attemptKey } = await prepared(page);
+  const probe = (mode) =>
+    page.evaluate(
+      ([order, items, mode]) =>
+        window.testCart.consumeConfirmedPurchase(order, items, undefined, () => {
+          if (mode === "throw") throw Error("retired");
+          return mode === "invalid" ? {} : false;
+        }),
+      [orderId, lines(3), mode],
+    );
+  const before = await bytes(page);
+  for (const mode of ["false", "throw", "invalid"])
+    expect((await probe(mode)).status).toBe("stale");
+  assert.deepEqual(await bytes(page), before);
+  assert.deepEqual(await consume(page, orderId, lines(3)), {
+    status: "matched",
+    attemptKey,
+  });
+  expect((await probe("throw")).status).toBe("stale");
+});

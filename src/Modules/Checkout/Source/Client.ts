@@ -3,6 +3,7 @@ export { capturePreparedAttempt } from "./Features/Outcomes/prepared-attempt";
 export {
   getOrCreateCheckoutDeviceSessionId,
   readGuestOrderAccess,
+  needsOriginalRecovery,
 } from "./Features/Outcomes/client-session";
 export { CheckoutOutcome } from "./Features/Outcomes/CheckoutOutcome";
 export {

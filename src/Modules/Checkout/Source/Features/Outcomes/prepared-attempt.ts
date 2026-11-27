@@ -41,15 +41,18 @@ export async function capturePreparedAttempt(
   return {
     applyStockConflicts:
       result.status === "captured" ? result.applyStockConflicts : undefined,
+    resumed: attempt.mode === "resume",
+    requireRecovery: () => attempt.requireRecovery(ownerId),
     key: attempt.key,
     current: attempt.current,
     recoveryOnly: resumedWithoutProof,
     items: [...items],
     reject: () => !signal.aborted && attempt.reject(),
-    async prepared(orderId: string, token?: string) {
+    async prepared(orderId: string, token?: string, observeOnly = false) {
       if (signal.aborted || !attempt.current())
         throw Error("Your checkout changed. Review your current order.");
       const bound =
+        !observeOnly &&
         result.status === "captured" &&
         (await cart
           .bindPreparedOrder(result.captureId, orderId, signal)

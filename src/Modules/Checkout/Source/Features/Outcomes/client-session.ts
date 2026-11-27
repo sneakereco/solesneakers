@@ -14,6 +14,27 @@ const credential: PairKeys = {
   journal: "checkout_guest_rollback_v1",
 };
 const DEVICE_SESSION_KEY = "rdk_checkout_device_session_id";
+const RECOVERY = "checkout_original_recovery_v1";
+function changedFinancialPair() {
+  if (typeof window !== "undefined" && typeof window.dispatchEvent === "function")
+    window.dispatchEvent(new Event("checkout-financial-pair"));
+}
+export function needsOriginalRecovery(
+  ownerId: string | null,
+  storage = getSessionStorage(),
+) {
+  try {
+    if (!storage) return false;
+    const record = JSON.parse(storage.getItem(RECOVERY) ?? "null");
+    return (
+      !!record &&
+      record.ownerId === ownerId &&
+      equal(requirePair(record.pair), readPair(storage, financial))
+    );
+  } catch {
+    return true;
+  }
+}
 const SWITCH = "checkout_replacing_attempt_v1";
 const HOUSEKEEPING = "checkout_prepared_housekeeping_v1";
 
@@ -140,6 +161,14 @@ export function resolveCheckoutAttempt(
       started = JSON.stringify({ source: previous, targetFingerprint: fingerprint });
       storage.setItem(SWITCH, started);
     },
+    requireRecovery(ownerId?: string | null) {
+      try {
+        if (current())
+          storage.setItem(RECOVERY, JSON.stringify({ ownerId, pair: original }));
+      } catch {
+        /* Preserve the issued key. A denied optional marker cannot block an authorized GET. */
+      }
+    },
     rejectCapture() {
       forget(started);
     },
@@ -149,6 +178,7 @@ export function resolveCheckoutAttempt(
       if (!equal(previous, readPair(storage, financial))) return false;
       const protectedSwitch = mode === "new" ? storage.getItem(SWITCH) : null;
       publish(storage, financial, original);
+      if (!equal(previous, original)) changedFinancialPair();
       forget(protectedSwitch ?? undefined);
       return true;
     },
@@ -156,6 +186,7 @@ export function resolveCheckoutAttempt(
       if (!current()) return false;
       const record = storage.getItem(SWITCH);
       publish(storage, financial, null);
+      changedFinancialPair();
       forget(record ?? undefined);
       return true;
     },
@@ -172,8 +203,13 @@ export function resolveCheckoutAttempt(
         guest !== undefined &&
         activeGuest !== undefined &&
         equal(guest, activeGuest)
-      )
-        storeGuestOrderAccess(orderId, token, storage);
+      ) {
+        try {
+          storeGuestOrderAccess(orderId, token, storage);
+        } catch {
+          /* The returned grant remains available to this mounted checkout. */
+        }
+      }
       if (eligible) {
         try {
           storage.setItem(
@@ -198,6 +234,7 @@ export function finishCheckoutAttempt(
   orderId: string,
   matchedKey: string,
   storage = getSessionStorage(),
+  onCleared?: () => void,
 ) {
   try {
     if (!storage) return;
@@ -211,7 +248,20 @@ export function finishCheckoutAttempt(
       return;
     if (equal(readPair(storage, financial), [matchedKey, record.fingerprint])) {
       publish(storage, financial, null);
-      storage.removeItem(SWITCH);
+      onCleared?.();
+      try {
+        storage.removeItem(SWITCH);
+        storage.removeItem(HOUSEKEEPING);
+        const recovery = JSON.parse(storage.getItem(RECOVERY) ?? "null");
+        if (
+          recovery &&
+          equal(requirePair(recovery.pair), [matchedKey, record.fingerprint])
+        )
+          storage.removeItem(RECOVERY);
+      } finally {
+        changedFinancialPair();
+      }
+      return;
     }
     storage.removeItem(HOUSEKEEPING);
   } catch {

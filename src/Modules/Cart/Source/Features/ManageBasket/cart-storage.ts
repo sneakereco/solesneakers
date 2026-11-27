@@ -305,11 +305,21 @@ export class BasketStorage {
     if (this.pending && !sameSnapshot(this.pending, snapshot)) this.pending = undefined;
     this.published = snapshot;
     const generation = this.connection;
-    const eligible = (signal?: AbortSignal) => () =>
-      this.connection === generation &&
-      !generation?.signal.aborted &&
-      !signal?.aborted &&
-      this.observed();
+    const eligible =
+      (signal?: AbortSignal, isCurrentObservation?: () => boolean) => () => {
+        if (
+          this.connection !== generation ||
+          generation?.signal.aborted ||
+          signal?.aborted ||
+          !this.observed()
+        )
+          return false;
+        try {
+          return isCurrentObservation === undefined || isCurrentObservation() === true;
+        } catch {
+          return false;
+        }
+      };
     this.listener?.({
       review: {
         ...unavailableReview,
@@ -363,9 +373,9 @@ export class BasketStorage {
             generation,
             signal,
           )) ?? false,
-        consumeConfirmedPurchase: async (orderId, items, signal) =>
+        consumeConfirmedPurchase: async (orderId, items, signal, isCurrentObservation) =>
           (await this.atomic(
-            () => this.consume(orderId, items, eligible(signal)),
+            () => this.consume(orderId, items, eligible(signal, isCurrentObservation)),
             generation,
             signal,
           )) ?? unavailablePurchase(signal),
@@ -773,6 +783,7 @@ export class BasketStorage {
     input: readonly PurchaseLine[],
     eligible: () => boolean,
   ): ConsumptionResult {
+    if (!eligible()) return { status: "stale" };
     const purchased = projection(input);
     if (!validId(orderId) || !purchased) return { status: "mismatch" };
     const origin = contextOrigin();
@@ -793,7 +804,7 @@ export class BasketStorage {
     if (record.stage !== "pending" && !sameProjection(record.purchased, purchased))
       return { status: "mismatch" };
     const matched = { status: "matched", attemptKey: record.attemptKey } as const;
-    if (record.stage === "receipt") return matched;
+    if (record.stage === "receipt") return eligible() ? matched : { status: "stale" };
     if (!subset(record, purchased)) return { status: "mismatch" };
     const current = this.read();
     if (!current.complete || current.raw === null) return { status: "corrupt" };

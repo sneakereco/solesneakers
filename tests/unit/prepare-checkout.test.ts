@@ -216,6 +216,47 @@ describe("prepareCheckoutHandler", () => {
     },
   );
 
+  it.each([
+    { status: "paid" },
+    { expiresAt: "2020-01-01T00:00:00Z" },
+    { cartHash: "mismatch" },
+    { squareOrderVersion: null },
+    { taxCents: 700 },
+  ])(
+    "recovery-only terminal or incompatible order never invites a new payment %#",
+    async (changes) => {
+      const { deps, body } = await existingCheckout(3, changes);
+      const req = new Request("https://shop.example.com/api/checkout/prepare", {
+        method: "POST",
+        headers: { cookie },
+        body: JSON.stringify({ ...body, recoveryOnly: true }),
+      });
+      const res = await prepareCheckoutHandler(req as never, deps);
+      const data = await res.json();
+      if (
+        "cartHash" in changes ||
+        "squareOrderVersion" in changes ||
+        "taxCents" in changes
+      ) {
+        expect(res.status).toBe(409);
+        expect(data.code).toBe("CHECKOUT_RECOVERY_REQUIRED");
+        expect(data.orderId).toBeUndefined();
+      } else {
+        expect(res.status).toBe(200);
+        expect(data.orderId).toBe("order-1");
+        expect(data.guestAccessToken).toBe("guest-token");
+      }
+      for (const fn of [
+        deps.reserve,
+        deps.checkAttempt,
+        deps.createSquareOrder,
+        deps.attachSquareOrder,
+        deps.calculateSquareOrder,
+        deps.validateShippingAddress,
+      ])
+        expect(fn).not.toHaveBeenCalled();
+    },
+  );
   it.each([3, 4] as const)(
     "reuses a persisted v%s checkout without rewriting or creating a Square order",
     async (version) => {
@@ -294,8 +335,15 @@ describe("prepareCheckoutHandler", () => {
     "refuses unusable v4 pending checkout %j",
     async (change) => {
       const { deps } = await existingCheckout(4, change);
-      expect((await prepareCheckoutHandler(request(), deps)).status).toBe(409);
+      const response = await prepareCheckoutHandler(request(), deps);
+      expect(response.status).toBe(409);
+      expect(await response.json()).toMatchObject({
+        code: "CHECKOUT_RECOVERY_REQUIRED",
+        orderId: "order-1",
+        guestAccessToken: "guest-token",
+      });
       expect(deps.createSquareOrder).not.toHaveBeenCalled();
+      expect(deps.reserve).not.toHaveBeenCalled();
     },
   );
 
