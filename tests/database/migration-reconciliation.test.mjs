@@ -9,6 +9,7 @@ import * as gate from "../../scripts/single-store/check-migration-baseline.mjs";
 
 const root = fileURLToPath(new URL("../../", import.meta.url));
 const bootstrap = "20261127134000";
+const forward = ["20261127195500"];
 const checkout = [
   "20261127040000",
   "20261127041000",
@@ -60,10 +61,10 @@ test("production-shaped registry produces the exact reviewed backfill plan", () 
   assert.deepEqual(
     result.migrationPlan.pendingFiles,
     inventory.entries
-      .filter(({ version }) => checkout.includes(version))
+      .filter(({ version }) => checkout.includes(version) || forward.includes(version))
       .map(({ path }) => path),
   );
-  assert.equal(result.migrationPlan.pendingFiles.length, 8);
+  assert.equal(result.migrationPlan.pendingFiles.length, 8 + forward.length);
   for (const field of ["inventoryDigest", "recordedDigest", "databaseFingerprint"])
     assert.match(result.migrationPlan[field], /^[a-f0-9]{64}$/);
   assert.match(result.migrationPlan.head, /^[a-f0-9]{40}$/);
@@ -82,7 +83,7 @@ test("every sequential partial retry permits only the remaining reviewed suffix"
     const result = plan([...baseline, ...applied, boot]);
     assert.deepEqual(result.blockers, []);
     assert.equal(result.migrationPlan.includeAll, count < 8);
-    assert.equal(result.migrationPlan.pendingFiles.length, 8 - count);
+    assert.equal(result.migrationPlan.pendingFiles.length, 8 - count + forward.length);
   }
 });
 
@@ -247,7 +248,7 @@ test("strict ordinary prefixes and completed registry retain their original beha
   const ordinary = plan(baseline);
   assert.deepEqual(ordinary.blockers, []);
   assert.equal(ordinary.migrationPlan.includeAll, false);
-  assert.equal(ordinary.migrationPlan.pendingFiles.length, 9);
+  assert.equal(ordinary.migrationPlan.pendingFiles.length, 9 + forward.length);
   const complete = plan(inventory.entries.map(row));
   assert.deepEqual(complete.blockers, []);
   assert.deepEqual(complete.migrationPlan.pendingFiles, []);

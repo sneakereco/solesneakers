@@ -6,6 +6,23 @@ import { readServerAnalyticsConfig } from "../Configuration/server-config";
 import { resolveActiveDataset } from "../Configuration/dataset";
 import { createDeliveryRepository } from "./delivery-repository";
 import { deliverAnalyticsBatch } from "./delivery-worker";
+import {
+  analyticsConfigurationFingerprint,
+  analyticsPublicBuildFingerprint,
+} from "../Configuration/deployment-identity";
+import { configuredMeasurement } from "../VisitorMeasurement/host-gate";
+
+// Protected cron inspection proves the running environment and compiled public
+// settings without returning credentials or triggering a publication.
+export function analyticsRuntimeIdentity() {
+  const config = readServerAnalyticsConfig(process.env);
+  return {
+    enabled: config !== null,
+    environment: config?.environment ?? null,
+    configurationSha256: analyticsConfigurationFingerprint(process.env),
+    publicBuildSha256: analyticsPublicBuildFingerprint(configuredMeasurement()),
+  };
+}
 
 export async function runAnalyticsDrain() {
   const config = readServerAnalyticsConfig(process.env);

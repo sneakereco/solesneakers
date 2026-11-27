@@ -58,6 +58,20 @@ function run(
   return result.status;
 }
 it("accepts matching enabled build and runtime", () => expect(run(build, build)).toBe(0));
+it("accepts Vercel's sensitive-value marker only for private keys, with live verification following deployment", () => {
+  const runtime = { ...build };
+  for (const key of [
+    "POSTHOG_API_HOST",
+    "POSTHOG_PROJECT_ID",
+    "POSTHOG_QUERY_API_KEY",
+    "ANALYTICS_IDENTITY_SECRET",
+  ] as const)
+    runtime[key] = "[SENSITIVE]";
+  expect(run(build, runtime)).toBe(0);
+  expect(run(build, { ...runtime, NEXT_PUBLIC_POSTHOG_PROJECT_KEY: "[SENSITIVE]" })).toBe(
+    1,
+  );
+});
 it.each([
   ["NEXT_PUBLIC_POSTHOG_ENABLED", "false"],
   ["NEXT_PUBLIC_MEASUREMENT_ENVIRONMENT", "production"],
