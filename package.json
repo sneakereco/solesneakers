@@ -23,7 +23,8 @@
     "build": "doppler run -- next build",
     "start": "doppler run -- next start",
     "gen:types": "npx supabase gen types typescript --local --schema public > src/types/db/database.types.ts",
-    "test:store-lock:database": "node --test --test-concurrency=1 tests/database/site-lock-registration.test.mjs"
+    "test:store-lock:database": "node --test --test-concurrency=1 tests/database/site-lock-registration.test.mjs",
+    "test:reseller-orders:database": "node --test --test-concurrency=1 tests/database/reseller-order-notifications.test.mjs"
   },
   "dependencies": {
     "@dnd-kit/core": "^6.3.1",
