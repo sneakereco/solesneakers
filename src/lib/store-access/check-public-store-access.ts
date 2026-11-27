@@ -5,9 +5,11 @@ type PublicStoreAccess =
   | { allowed: true }
   | { allowed: false; status: 423 | 503; error: string };
 
-export async function checkPublicStoreAccess(): Promise<PublicStoreAccess> {
+export async function checkPublicStoreAccess({
+  fresh = false,
+} = {}): Promise<PublicStoreAccess> {
   try {
-    const access = await getStoreAccessSettings();
+    const access = await getStoreAccessSettings({ fresh });
     if (access) {
       return access.isSiteLocked
         ? {

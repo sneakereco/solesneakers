@@ -27,8 +27,36 @@ type StoreAccessSettingsRow = {
   checkout_lock_message: string | null;
 };
 
+function mapSettings(row: StoreAccessSettingsRow | null): StoreAccessSettings {
+  return {
+    siteLockEnabled: row?.site_lock_enabled ?? false,
+    siteUnlockAt: row?.site_unlock_at ?? null,
+    checkoutLockEnabled: row?.checkout_lock_enabled ?? false,
+    checkoutLockMessage: normalizeCheckoutLockMessage(row?.checkout_lock_message),
+  };
+}
+
 export class StoreAccessSettingsRepository {
   constructor(private readonly supabase: TypedSupabaseClient) {}
+
+  async getFirstTenantSettings(signal: AbortSignal) {
+    const { data, error } = await this.supabase
+      .from("tenants")
+      .select(
+        "id, tenant_store_access_settings(site_lock_enabled, site_unlock_at, checkout_lock_enabled, checkout_lock_message)",
+      )
+      .order("created_at", { ascending: true })
+      .limit(1)
+      .abortSignal(signal)
+      .maybeSingle();
+
+    if (error) throw error;
+    if (!data) return null;
+    return {
+      tenantId: data.id,
+      settings: mapSettings(data.tenant_store_access_settings[0] ?? null),
+    };
+  }
 
   async getByTenant(tenantId: string): Promise<StoreAccessSettings> {
     const { data, error } = await this.supabase
@@ -42,12 +70,7 @@ export class StoreAccessSettingsRepository {
     }
 
     const row = (data ?? null) as StoreAccessSettingsRow | null;
-    return {
-      siteLockEnabled: row?.site_lock_enabled ?? false,
-      siteUnlockAt: row?.site_unlock_at ?? null,
-      checkoutLockEnabled: row?.checkout_lock_enabled ?? false,
-      checkoutLockMessage: normalizeCheckoutLockMessage(row?.checkout_lock_message),
-    };
+    return mapSettings(row);
   }
 
   async upsert(

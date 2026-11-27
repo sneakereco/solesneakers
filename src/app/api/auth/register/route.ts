@@ -31,7 +31,7 @@ export async function POST(req: NextRequest) {
       );
     }
 
-    const access = await checkPublicStoreAccess();
+    const access = await checkPublicStoreAccess({ fresh: true });
     if (!access.allowed) {
       return NextResponse.json(
         { ok: false, error: access.error, requestId },

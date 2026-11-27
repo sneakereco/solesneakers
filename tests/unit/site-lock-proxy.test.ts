@@ -2,16 +2,8 @@ jest.mock("@/lib/supabase/proxy", () => ({
   createSupabaseProxyClient: jest.fn(),
 }));
 
-jest.mock("@/lib/supabase/service-role", () => ({
-  createSupabaseAdminClient: jest.fn(),
-}));
-
-jest.mock("@/repositories/tenant-repo", () => ({
-  TenantRepository: jest.fn(),
-}));
-
-jest.mock("@/services/store-access-settings-service", () => ({
-  StoreAccessSettingsService: jest.fn(),
+jest.mock("@/lib/store-access/get-store-access-settings", () => ({
+  getStoreAccessSettings: jest.fn(),
 }));
 
 jest.mock("@/repositories/profile-repo", () => ({
@@ -25,18 +17,14 @@ jest.mock("@/lib/http/admin-session", () => ({
 import { NextRequest } from "next/server";
 
 import { createSupabaseProxyClient } from "@/lib/supabase/proxy";
-import { createSupabaseAdminClient } from "@/lib/supabase/service-role";
+import { getStoreAccessSettings } from "@/lib/store-access/get-store-access-settings";
 import { logError } from "@/lib/utils/log";
 import { ProfileRepository } from "@/repositories/profile-repo";
-import { TenantRepository } from "@/repositories/tenant-repo";
-import { StoreAccessSettingsService } from "@/services/store-access-settings-service";
 import { verifyAdminSessionToken } from "@/lib/http/admin-session";
 import { checkSiteLock } from "@/proxy/site-lock";
 
 const mockCreateSupabaseProxyClient = jest.mocked(createSupabaseProxyClient);
-const mockCreateSupabaseAdminClient = jest.mocked(createSupabaseAdminClient);
-const mockTenantRepository = jest.mocked(TenantRepository);
-const mockStoreAccessSettingsService = jest.mocked(StoreAccessSettingsService);
+const mockGetStoreAccessSettings = jest.mocked(getStoreAccessSettings);
 const mockProfileRepository = jest.mocked(ProfileRepository);
 const mockVerifyAdminSessionToken = jest.mocked(verifyAdminSessionToken);
 jest.mock("@/lib/utils/log", () => ({
@@ -53,25 +41,17 @@ describe("checkSiteLock", () => {
 
   beforeEach(() => {
     jest.clearAllMocks();
-    mockCreateSupabaseAdminClient.mockReturnValue({} as never);
     mockCreateSupabaseProxyClient.mockReturnValue({
       auth: {
         getUser: mockGetUser,
       },
     } as never);
-    mockTenantRepository.mockImplementation(
-      () =>
-        ({
-          getFirstTenantId: mockGetFirstTenantId,
-        }) as never,
-    );
-    mockStoreAccessSettingsService.mockImplementation(
-      () =>
-        ({
-          getSettings: mockGetSettings,
-          isSiteLocked: mockIsSiteLocked,
-        }) as never,
-    );
+    mockGetStoreAccessSettings.mockImplementation(async () => {
+      const tenantId = await mockGetFirstTenantId();
+      if (!tenantId) return null;
+      const settings = await mockGetSettings();
+      return { tenantId, settings, isSiteLocked: mockIsSiteLocked(settings) };
+    });
     mockProfileRepository.mockImplementation(
       () =>
         ({

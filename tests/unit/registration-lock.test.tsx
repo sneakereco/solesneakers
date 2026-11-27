@@ -60,6 +60,7 @@ it("rejects a signup opened before locking without calling Auth", async () => {
   });
   const response = await POST(request());
   expect(response.status).toBe(423);
+  expect(getAccess).toHaveBeenCalledWith({ fresh: true });
   expect(response.headers.get("cache-control")).toBe("no-store");
   expect(signUp).not.toHaveBeenCalled();
 });
