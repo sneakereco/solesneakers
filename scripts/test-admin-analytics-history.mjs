@@ -165,7 +165,41 @@ export async function testReportingHistory(db) {
       ].sort(),
     );
     await db.query("reset role");
+    for (const role of [
+      "anon",
+      "authenticated",
+      "sole_analytics_staging_reader",
+      "sole_analytics_production_reader",
+      "service_role",
+    ]) {
+      const { can_verify, can_read } = (
+        await db.query(
+          `select has_function_privilege($1,'public.analytics_has_active_journey_link(text,uuid,uuid)','execute') as can_verify,
+             has_table_privilege($1,'analytics_reporting.source_links','select') as can_read`,
+          [role],
+        )
+      ).rows[0];
+      assert.equal(can_verify, role === "service_role");
+      assert.equal(can_read, false);
+    }
+    const hasJourneyLink = async (dataset, order, browserSession) =>
+      (
+        await db.query(
+          "select public.analytics_has_active_journey_link($1,$2,$3) as matched",
+          [dataset, order, browserSession],
+        )
+      ).rows[0].matched;
+    await db.query("set local role service_role");
+    assert.equal(await hasJourneyLink(ds, id, session), true);
+    assert.equal(await hasJourneyLink(ds, id, randomUUID()), false);
+    assert.equal(await hasJourneyLink(ds, randomUUID(), session), false);
+    assert.equal(await hasJourneyLink("sole-production", id, session), false);
     await db.query("select public.analytics_revoke_receipt($1,$2)", [ds, receipt]);
+    assert.equal(await hasJourneyLink(ds, id, session), false);
+    await db.query("reset role");
+    console.log(
+      "PASS staging journey link requires an exact session and order with current consent",
+    );
     const revoked = await link();
     assert.equal(revoked.active, false);
     assert.ok(revoked.updated_at >= active.updated_at);

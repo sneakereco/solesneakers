@@ -160,17 +160,24 @@ try {
       limit: 101,
       offset: 0,
     });
-    verifyJourney(
-      input,
-      events,
-      await sourceSnapshot(scope.datasetId, input.start, input.end),
+    const source = sourceSnapshot(
+      scope.datasetId,
+      observedRange.startInclusive,
+      observedRange.endExclusive,
     );
     const result = await reconcileAnalyticsFacts(observedRange, {
       datasetId: scope.datasetId,
       query,
-      source: sourceSnapshot,
+      source: () => source,
     });
     if (result.status !== "matched") throw Error();
+    const { data: link, error } = await db.rpc("analytics_has_active_journey_link", {
+      p_dataset_id: scope.datasetId,
+      p_order_id: input.orderId,
+      p_session_id: input.sessionId,
+    });
+    if (error) throw Error();
+    verifyJourney(input, events, await source, link);
     console.log(
       JSON.stringify({
         environment,

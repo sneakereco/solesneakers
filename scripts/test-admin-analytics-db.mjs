@@ -1,4 +1,5 @@
 import { checkNativeLaunchReport } from "./fixtures/admin-analytics/native-launch-report.mjs";
+import { checkStockLaunch } from "./fixtures/admin-analytics/stock-launch.mjs";
 import {
   ownedFixture,
   fixtureDatabase,
@@ -139,6 +140,7 @@ try {
     "PASS activation replay, fenced exhaustive partitions, idle proof and first-marker boundary",
   );
   await checkNativeLaunchReport(db);
+  await checkStockLaunch(db, worker);
   await db.query(
     readFileSync(
       new URL("./fixtures/admin-analytics/check-source-sweep.sql", import.meta.url),

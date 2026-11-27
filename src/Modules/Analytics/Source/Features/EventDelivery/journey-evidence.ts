@@ -41,8 +41,14 @@ export const journeyEvidence = z.strictObject({
     .min(3)
     .max(100),
 });
-export function verifyJourney(input: unknown, provider: unknown, source: unknown) {
+export function verifyJourney(
+  input: unknown,
+  provider: unknown,
+  source: unknown,
+  activeLink: unknown,
+) {
   const j = journeyEvidence.parse(input);
+  if (activeLink !== true) throw Error("Journey purchase link unavailable");
   const page = z
     .object({
       columns: z.tuple([z.literal("event_name"), z.literal("event_uuid")]),

@@ -2293,6 +2293,10 @@ export type Database = {
       analytics_native_probe: { Args: { p_dataset_id: string }; Returns: Json }
       analytics_record_native_retention: { Args: { p_dataset_id: string; p_months: number | null; p_retained_from: string | null; p_verified_at: string }; Returns: boolean }
       analytics_native_advance: { Args: { p_dataset_id: string; p_last_id: string }; Returns: boolean }
+      analytics_has_active_journey_link: {
+        Args: { p_dataset_id: string; p_order_id: string; p_session_id: string }
+        Returns: boolean
+      }
       analytics_read_history_evidence: {
         Args: { p_dataset_id: string }
         Returns: Json

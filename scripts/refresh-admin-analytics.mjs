@@ -159,8 +159,7 @@ try {
         p_months: months,
         p_retained_from: retainedFrom,
         p_verified_at: checked,
-      })) ||
-      (months !== null && months < 24)
+      }))
     )
       throw Error("Native retention unavailable");
     const scope = {
