@@ -138,6 +138,12 @@ test("expiry fences dispatch and conserves stock across independently committed 
                 "p_verified_facts",
               ],
               apply_checkout_financial_fact: ["p_fact", "p_provider_time", "p_review"],
+              apply_checkout_payment_with_analytics: [
+                "p_fact",
+                "p_provider_time",
+                "p_source",
+                "p_review",
+              ],
               record_square_payment_details: [
                 "p_square_order_id",
                 "p_square_payment_id",

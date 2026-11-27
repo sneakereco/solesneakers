@@ -118,6 +118,7 @@ async function withRedis(work) {
 function localDatabase(sql, session) {
   const rpcNames = new Set([
     "reserve_checkout_inventory_v2",
+    "reserve_checkout_inventory_v2_with_analytics",
     "attach_square_checkout_order",
     "get_or_create_checkout_payment_attempt",
     "begin_checkout_payment_dispatch",
