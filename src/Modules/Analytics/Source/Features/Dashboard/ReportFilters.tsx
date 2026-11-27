@@ -17,8 +17,13 @@ import {
 } from "./request-state";
 
 const commerceSelects = [
-  ["paymentMethod", "All payment methods"],
-  ["fulfillment", "All fulfillment types"],
+  ["paymentMethod", "All payment methods", filterNames.paymentMethod],
+  ["fulfillment", "All fulfillment types", filterNames.fulfillment],
+] as const;
+const audienceCommerceSelects = [
+  ...commerceSelects,
+  ["customer", "All buyer types", "Buyer type"],
+  ["status", "All order statuses", "Order status"],
 ] as const;
 
 export function ReportFilters({
@@ -37,7 +42,13 @@ export function ReportFilters({
   if (request.source && !reportedSources.has(request.source))
     reportedSources.set(request.source, filterLabel(request.source));
   const showSources = request.report === "overview" && reportedSources.size > 0;
-  const showCommerceFilters = request.report === "sales" || request.report === "products";
+  const businessSelects = ["customers", "acquisition", "products"].includes(
+    request.report,
+  )
+    ? audienceCommerceSelects
+    : request.report === "sales"
+      ? commerceSelects
+      : [];
   const reportedFilters = (
     Object.keys(reportedOptions ?? {}) as Array<keyof ReportedOptions>
   ).filter((key) => reportedOptions?.[key]?.length);
@@ -47,7 +58,7 @@ export function ReportFilters({
     (key) =>
       key !== "device" &&
       !(key === "source" && showSources) &&
-      !(showCommerceFilters && commerceSelects.some(([filter]) => key === filter)) &&
+      !businessSelects.some(([filter]) => key === filter) &&
       !reportedFilters.some((reported) => reported === key) &&
       request[key] !== undefined,
   );
@@ -133,29 +144,29 @@ export function ReportFilters({
             </div>
           );
         })}
-        {showCommerceFilters &&
-          commerceSelects.map(([filter, all]) => (
-            <div className="analytics-filter-field" key={filter}>
-              <label htmlFor={id + "-" + filter}>{filterNames[filter]}</label>
-              <select
-                id={id + "-" + filter}
-                value={request[filter] ?? ""}
-                onChange={(event) =>
-                  onChange({
-                    [filter]: (event.target.value ||
-                      undefined) as ReportRequest[typeof filter],
-                  })
-                }
-              >
-                <option value="">{all}</option>
-                {REPORT_FILTER_VALUES[filter].map((value) => (
-                  <option key={value} value={value}>
-                    {filterLabel(value)}
-                  </option>
-                ))}
-              </select>
-            </div>
-          ))}
+        {businessSelects.map(([filter, all, label]) => (
+          <div className="analytics-filter-field" key={filter}>
+            <label htmlFor={id + "-" + filter}>{label}</label>
+            <select
+              id={id + "-" + filter}
+              value={request[filter] ?? ""}
+              onChange={({ target }) =>
+                onChange({
+                  [filter]: REPORT_FILTER_VALUES[filter].find(
+                    (value) => value === target.value,
+                  ),
+                })
+              }
+            >
+              <option value="">{all}</option>
+              {REPORT_FILTER_VALUES[filter].map((value) => (
+                <option key={value} value={value}>
+                  {filterLabel(value)}
+                </option>
+              ))}
+            </select>
+          </div>
+        ))}
         {hasReportBucketControl(request.report) && (
           <div className="analytics-filter-field">
             <label htmlFor={`${id}-group`}>Group by</label>

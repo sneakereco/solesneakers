@@ -6,11 +6,12 @@ import type {
   ReportRequest,
 } from "../../ReportContract/types";
 import { RankedBars } from "../charts/ComparisonCharts";
-import { AttributionCoverage } from "../DataCoverage";
+import { AttributionCoverage, PreviousAttributionCoverage } from "../DataCoverage";
 import { ReportPanel } from "../ReportPanel";
 import { ReportPager, ReportSort } from "../ReportRankingControls";
 import {
   changeDashboardLocation,
+  reportParams,
   type DashboardChange,
   type DashboardLocation,
 } from "../request-state";
@@ -87,6 +88,12 @@ export function ProductsReport({
         description="Financial results cover matching original product lines. Product names and taxonomy come from recorded purchase snapshots, including sales of products since removed from the catalog."
       >
         <AttributionCoverage attribution={report.scope.attribution} />
+        {request.compare && (
+          <PreviousAttributionCoverage
+            attribution={comparison?.attribution ?? null}
+            orderScope={report.scope.attribution.orderScope}
+          />
+        )}
         <ReportSort
           request={request}
           onRequestChange={onRequestChange}
@@ -186,6 +193,7 @@ export function ProductsReport({
       </div>
       {drawer && (
         <ProductDetailsDrawer
+          key={`${drawer.target.variantId ?? "product"}:${reportParams(drawer.location)}`}
           target={drawer.target}
           location={drawer.location}
           onClose={() => {

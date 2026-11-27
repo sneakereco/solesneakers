@@ -17,10 +17,13 @@ import { ReportTable } from "../ReportTable";
 import { canOpenProduct } from "../report-options";
 
 const salesColumns = ["Confirmed orders", "Units sold", "Net units", "Net product sales"];
-const demand = [
+const rankedDemand = [
   ["stockoutSignals", "Product views with all known sizes out of stock"],
   ["unavailableSizeSelections", "Unavailable size selections"],
   ["variantSelections", "Variant selections"],
+] as const;
+const demand = [
+  ...rankedDemand,
   ["searches", "Observed searches"],
   ["searchesWithNoResults", "Searches with no results"],
 ] as const;
@@ -111,7 +114,17 @@ export function ProductRows({
                 ) : (
                   <>
                     <td>{formatCount(row.views)}</td>
-                    <td>{formatPercent(row.viewToPurchase.value)}</td>
+                    <td>
+                      {formatPercent(row.viewToPurchase.value)}
+                      {(row.viewToPurchase.numerator !== null ||
+                        row.viewToPurchase.denominator !== null) && (
+                        <small>
+                          {formatCount(row.viewToPurchase.numerator)} converted /{" "}
+                          {formatCount(row.viewToPurchase.denominator)} eligible viewing
+                          sessions
+                        </small>
+                      )}
+                    </td>
                   </>
                 )}
               </tr>
@@ -221,21 +234,29 @@ export function ProductDemand({
   previous?: ProductPeriod["unmetDemand"];
   row?: ProductRow;
 }) {
-  const demandLabels = row
-    ? [
-        ...demand
-          .slice(0, 3)
-          .map(([key, label]) => [label, selected?.[key] ?? null, undefined] as const),
-        ["Persisted cart additions", row.successfulAdditions, undefined] as const,
-      ]
-    : demand.map(
-        ([key, label]) =>
-          [
-            label,
-            selected?.[key] ?? null,
-            previous === undefined ? undefined : (previous?.[key] ?? null),
-          ] as const,
-      );
+  const scopedCounts =
+    row &&
+    (selected ?? {
+      stockoutSignals: row.variantId === null ? row.stockoutViews : null,
+      unavailableSizeSelections: row.unavailableSizeRequests,
+      variantSelections: row.variantSelections,
+    });
+  const demandLabels =
+    scopedCounts && row
+      ? [
+          ...rankedDemand.map(
+            ([key, label]) => [label, scopedCounts[key], undefined] as const,
+          ),
+          ["Persisted cart additions", row.successfulAdditions, undefined] as const,
+        ]
+      : demand.map(
+          ([key, label]) =>
+            [
+              label,
+              selected?.[key] ?? null,
+              previous === undefined ? undefined : (previous?.[key] ?? null),
+            ] as const,
+        );
   return (
     <ReportPanel
       title="Observed demand signals"

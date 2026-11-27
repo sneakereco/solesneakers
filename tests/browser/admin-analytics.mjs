@@ -301,7 +301,23 @@ async function run() {
     const id = params.get("report");
     if (Object.hasOwn(audienceFixtures, id)) {
       const behaviorThrough = end < meta.behaviorThrough ? end : meta.behaviorThrough;
-      return audienceFixtures[id]({ ...meta, behaviorThrough }, compare, params);
+      const orderScope = ["device", "source", "channel", "campaign"].some((key) =>
+        params.has(key),
+      )
+        ? "filtered-orders"
+        : "all-orders";
+      return audienceFixtures[id](
+        {
+          ...meta,
+          behaviorThrough,
+          scope: {
+            ...meta.scope,
+            attribution: { ...meta.scope.attribution, orderScope },
+          },
+        },
+        compare,
+        params,
+      );
     }
 
     const selectedSummary = {

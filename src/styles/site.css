@@ -1172,6 +1172,14 @@ body:has(.analytics-product-drawer[open]) {
 .analytics-product-drawer .analytics-calendar-heading {
   overflow-wrap: anywhere;
 }
+.analytics-drawer-coverage {
+  display: grid;
+  gap: 0.5rem;
+}
+.analytics-product-drawer .analytics-breakdown > div {
+  display: grid;
+  grid-template-columns: minmax(0, 1fr) fit-content(45%);
+}
 
 body:has(.analytics-calendar[open]) {
   overflow: hidden;

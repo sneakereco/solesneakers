@@ -6,7 +6,7 @@ import type {
 } from "../../ReportContract/types";
 import { CohortHeatmap } from "../charts/CohortHeatmap";
 import { RankedBars, StackedShares } from "../charts/ComparisonCharts";
-import { AttributionCoverage } from "../DataCoverage";
+import { AttributionCoverage, PreviousAttributionCoverage } from "../DataCoverage";
 import {
   formatCount,
   formatMoney,
@@ -145,6 +145,12 @@ export function CustomersReport({
         description="Purchases and tracked sessions measure different populations. Recorded purchase history begins at analytics activation."
       >
         <AttributionCoverage attribution={report.scope.attribution} />
+        {request.compare && (
+          <PreviousAttributionCoverage
+            attribution={comparison?.attribution ?? null}
+            orderScope={report.scope.attribution.orderScope}
+          />
+        )}
         <div className="analytics-metrics analytics-metrics-customers">
           {counts.map(([key, label, definition]) => (
             <MetricCard

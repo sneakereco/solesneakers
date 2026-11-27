@@ -1,4 +1,9 @@
-import type { CoverageIssue, ReportEnvelope, ReportScope } from "../ReportContract/types";
+import type {
+  CoverageIssue,
+  ReportEnvelope,
+  ReportScope,
+  SalesPeriod,
+} from "../ReportContract/types";
 import { formatCount, formatStoreTime } from "./format";
 
 const stateLabels = {
@@ -107,5 +112,29 @@ export function AttributionCoverage({
         </>
       )}
     </p>
+  );
+}
+
+export function PreviousAttributionCoverage({
+  attribution,
+  orderScope,
+}: {
+  attribution: SalesPeriod["attribution"] | null;
+  orderScope: ReportScope["attribution"]["orderScope"];
+}) {
+  return (
+    <div>
+      <p className="analytics-muted">Previous period attribution</p>
+      <AttributionCoverage
+        attribution={{
+          orderScope,
+          eligibleOrders: attribution?.eligibleOrders ?? null,
+          attributedOrders: attribution?.attributedOrders ?? null,
+          unattributedOrders: attribution
+            ? attribution.eligibleOrders - attribution.attributedOrders
+            : null,
+        }}
+      />
+    </div>
   );
 }

@@ -1,3 +1,4 @@
+import type { Ref } from "react";
 import { MAX_REPORT_OFFSET } from "../ReportContract/filters";
 import type { ReportRequest } from "../ReportContract/types";
 import { formatCount } from "./format";
@@ -38,8 +39,12 @@ export function ReportPager({
   request,
   onRequestChange,
   resultCount,
+  label = "Report pages",
+  focusRef,
 }: RequestControls & {
   resultCount: number;
+  label?: string;
+  focusRef?: Ref<HTMLElement>;
 }) {
   const { page, pageSize } = request;
   const pageCount = Math.min(
@@ -48,7 +53,12 @@ export function ReportPager({
   );
   if (pageCount <= 1 && page <= 1) return null;
   return (
-    <nav className="analytics-filter-row" aria-label="Report pages">
+    <nav
+      className="analytics-filter-row"
+      aria-label={label}
+      ref={focusRef}
+      tabIndex={focusRef ? -1 : undefined}
+    >
       <button
         type="button"
         className="admin-button-secondary"
