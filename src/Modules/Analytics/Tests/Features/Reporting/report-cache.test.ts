@@ -198,6 +198,61 @@ function setup() {
     },
   };
 }
+test("overview keeps verified sales when traffic queries exhaust the query budget", async () => {
+  jest.useFakeTimers();
+  try {
+    const { deps, f } = setup();
+    f.sale("guest", "guest");
+    deps.execute = (query, timeoutMs) => {
+      if (
+        query.endpoint === "sole_analytics_sales" ||
+        query.endpoint === "sole_analytics_sales_series"
+      )
+        return new Promise((resolve) =>
+          setTimeout(() => resolve(f.execute(query)), 6000),
+        );
+      return new Promise((_, reject) =>
+        setTimeout(
+          () => reject(new PostHogQueryError({ status: "retryable", reason: "timeout" })),
+          timeoutMs,
+        ),
+      );
+    };
+    const completed = jest.fn();
+    const pending = loadAnalyticsReport(request("overview"), deps).then(completed);
+    try {
+      await jest.advanceTimersByTimeAsync(19_500);
+      expect(completed).toHaveBeenCalledWith(
+        expect.objectContaining({
+          state: "ready",
+          data: expect.objectContaining({
+            summary: expect.objectContaining({
+              confirmedOrders: 1,
+              sessions: null,
+              visitors: null,
+            }),
+            series: [expect.objectContaining({ sessions: null, visitors: null })],
+          }),
+          coverage: expect.arrayContaining([
+            expect.objectContaining({
+              code: "component-unavailable",
+              metric: "sessions",
+            }),
+            expect.objectContaining({
+              code: "component-unavailable",
+              metric: "visitorSeries",
+            }),
+          ]),
+        }),
+      );
+    } finally {
+      await jest.advanceTimersByTimeAsync(1000);
+      await pending;
+    }
+  } finally {
+    jest.useRealTimers();
+  }
+});
 test("a slow provider response can finish before the shared report deadline", async () => {
   jest.useFakeTimers();
   const { deps } = setup();

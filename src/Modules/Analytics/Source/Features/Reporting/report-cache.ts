@@ -142,6 +142,7 @@ function execution(
   deps: Pick<ReportLoaderDependencies, "store" | "execute" | "mode">,
   project: string,
   deadline: number,
+  queryDeadline = deadline,
 ) {
   const store = deps.store!;
   const localProject = reserveReportProject(project, store, deadline);
@@ -160,7 +161,7 @@ function execution(
       let acquired = false;
       try {
         for (let attempt = 0; attempt < 8; attempt++) {
-          if (stopped || performance.now() >= deadline) throw deadlineError();
+          if (stopped || performance.now() >= queryDeadline) throw deadlineError();
           if (await localProject.blocked()) throw temporary();
           const admission = await store.admit(project, id);
           if (admission === "ok") {
@@ -172,7 +173,7 @@ function execution(
         }
         if (!acquired) throw temporary();
         if (localProject.isBlocked()) throw temporary();
-        const remaining = Math.floor(deadline - performance.now());
+        const remaining = Math.floor(queryDeadline - performance.now());
         if (stopped || remaining < 1) throw deadlineError();
         const raw = await deps.execute(q, Math.min(QUERY_TIMEOUT_MS, remaining));
         if (deps.mode === CSV_EXECUTION) checkRankedExport(q, raw);
@@ -280,7 +281,9 @@ export async function loadAnalyticsReport(
     try {
       prior = await cached();
       if (prior && isFresh(prior)) return prior;
-      const worker = execution(deps, project, deadline);
+      // Let timed-out sections settle, release permits, and map coverage before
+      // the outer deadline resolves the whole report as unavailable.
+      const worker = execution(deps, project, deadline, deadline - 1000);
       let transientUnavailable = false;
       let report: Envelope;
       try {

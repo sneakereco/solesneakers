@@ -74,7 +74,13 @@ function productSql(scope: DatasetScope) {
   const pageEnd = "toInt({variables.page_end})";
   const source = `${factsSql},${observationSql(scope)}, measured AS (SELECT * FROM valid_events WHERE ${devicePredicate} AND ${segmentPredicate("session")} AND ${idFilters(["product_id", "variant_id", "NULL", "NULL", "NULL"])}),
  views AS (SELECT product_id,toString(session_id) AS sid,min(occurred_at) AS first_view,min(entered_at) AS entry_time,count(*) AS views FROM measured WHERE event_name='product_viewed' GROUP BY product_id,sid),
- purchased_sessions AS (SELECT p.product_id,toString(l.session_id) AS sid,max(p.confirmed_at) AS bought_at FROM purchased p JOIN ranked_links l ON p.order_id=toString(l.order_id) AND l.active=1 AND l.link_rank=1 JOIN session_entries anchor ON toString(anchor.session_id)=toString(l.session_id) WHERE action='sale' AND ${purchaseInSession("p.confirmed_at", "anchor.entered_at")} GROUP BY p.product_id,sid),
+ purchased_sessions AS (
+ SELECT ${snapshotIds[0]} AS product_id,toString(l.session_id) AS sid,max(s.confirmed_at) AS bought_at
+ FROM selected s JOIN originals o ON s.order_id=o.line_order AND ${str("lineId", "s.payload")}=o.original_id
+ JOIN ranked_links l ON s.order_id=toString(l.order_id) AND l.active=1 AND l.link_rank=1
+ JOIN session_entries anchor ON toString(anchor.session_id)=toString(l.session_id)
+ WHERE s.kind='line' AND ${idFilters(snapshotIds)} AND ${purchaseInSession("s.confirmed_at", "anchor.entered_at")} GROUP BY product_id,sid
+ ),
  activity AS (SELECT product_id,variant_id,brand_id,category_id,size_id,name_label,brand_label,category_label,size_label,
  CASE WHEN action='sale' THEN order_id ELSE NULL END AS oid,units,returned,revenue,missing_revenue,missing_units,NULL AS view_sid,0 AS views,NULL AS bought_sid,NULL AS stock,NULL AS stock_time,NULL AS demand,CASE WHEN action!='incomplete' AND revenue IS NOT NULL THEN 1 ELSE 0 END AS known_revenue
  FROM purchased

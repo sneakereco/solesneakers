@@ -71,7 +71,7 @@ const stepColumns = [
   "usable_checkouts",
   "completed_checkouts",
 ] as const;
-const aggregates = `count(DISTINCT session_visitor) AS visitors,count(*) AS sessions,count(viewed_at) AS viewed,count(added_at) AS added,count(checkout_at) AS checkout,count(purchase_at) AS purchasing,count(CASE WHEN purchase_at>=checkout_at THEN 1 END) AS ordered,
+const aggregates = `count(DISTINCT session_visitor) AS visitors,count(session_id) AS sessions,count(viewed_at) AS viewed,count(added_at) AS added,count(checkout_at) AS checkout,count(purchase_at) AS purchasing,count(CASE WHEN purchase_at>=checkout_at THEN 1 END) AS ordered,
  count(usable_checkout_at) AS usable_checkouts,count(CASE WHEN purchase_at>=usable_checkout_at THEN 1 END) AS completed_checkouts`;
 const activeEndpoint = (scope: DatasetScope) =>
   endpoint(
@@ -93,10 +93,16 @@ export function visitorEndpoints(scope: DatasetScope) {
   return [
     endpoint(
       "sole_analytics_sessions",
-      `${session} SELECT * FROM (
- SELECT 'total' AS segment,${aggregates},${invalidTimingCount(devicePredicate + " AND " + segmentPredicate("session"))} AS invalid_events FROM steps
- UNION ALL SELECT ${observedDimension("device")} AS segment,${aggregates},0 AS invalid_events FROM steps GROUP BY segment
- )`,
+      `${session}, session_rows AS (
+ SELECT session_id,session_visitor,device,viewed_at,added_at,checkout_at,usable_checkout_at,purchase_at FROM steps
+ UNION ALL SELECT NULL,NULL,NULL,NULL,NULL,NULL,NULL,NULL
+ ), group_modes AS (SELECT 'total' AS group_mode UNION ALL SELECT 'device' AS group_mode),
+ grouped_sessions AS (
+ SELECT CASE WHEN group_mode='total' THEN 'total' ELSE ${observedDimension("device")} END AS segment,${aggregates}
+ FROM session_rows CROSS JOIN group_modes WHERE group_mode='total' OR session_id IS NOT NULL GROUP BY segment
+ )
+ SELECT *,CASE WHEN segment='total' THEN ${invalidTimingCount(devicePredicate + " AND " + segmentPredicate("session"))} ELSE 0 END AS invalid_events
+ FROM grouped_sessions`,
     ),
     activeEndpoint(scope),
     endpoint(
