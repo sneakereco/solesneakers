@@ -1,5 +1,10 @@
 import "server-only";
 import { factFields } from "../CommerceFacts/contract";
+
+// HogQL emits ClickHouse's nullable DateTime64 parser at microsecond precision.
+export const parseHogqlInstant = (value: string) =>
+  `parseDateTimeBestEffort(${value},'UTC')`;
+
 // Date.parse retains milliseconds. Preserve the remaining supported microseconds in comparisons.
 export function analyticsInstantMicros(value: string): bigint {
   factFields.effectiveAt.parse(value);

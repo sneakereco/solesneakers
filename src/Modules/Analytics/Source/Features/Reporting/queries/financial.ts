@@ -44,7 +44,8 @@ const signed = `CASE WHEN ${str("adjustment")}='credit' THEN -${amount("amountCe
 const sum = (condition: string, value = "1") =>
   `coalesce(sum(CASE WHEN ${condition} THEN ${value} ELSE 0 END),0)`;
 const dayLabel = (d: string) => `formatDateTime(${d},'%Y-%m-%d','America/New_York')`;
-export const localBucket = `CASE WHEN {variables.bucket}='week' THEN ${dayLabel("toStartOfWeek(report_at,1,'America/New_York')")} WHEN {variables.bucket}='month' THEN ${dayLabel("toStartOfMonth(toTimeZone(report_at,'America/New_York'))")} ELSE ${dayLabel("report_at")} END`;
+const easternReportTime = "toTimeZone(report_at,'America/New_York')";
+export const localBucket = `CASE WHEN {variables.bucket}='week' THEN ${dayLabel(`toStartOfWeek(${easternReportTime},1)`)} WHEN {variables.bucket}='month' THEN ${dayLabel(`toStartOfMonth(${easternReportTime})`)} ELSE ${dayLabel("report_at")} END`;
 const saleValue = amount("merchandiseCents", "order_basis");
 export const decomposed = `(${saleValue}=${amount("grossMerchandiseCents", "order_basis")}-${amount("discountCents", "order_basis")} AND ${amount("totalCollectedCents", "order_basis")}=${saleValue}+${amount("shippingCents", "order_basis")}+${amount("taxCents", "order_basis")})`;
 const originalLinesReconcile = `e.line_count>0 AND e.unknown_line_amounts=0 AND e.line_revenue=${saleValue}`;

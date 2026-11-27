@@ -4,7 +4,7 @@ import { z } from "zod";
 import type { DatasetScope } from "../CommerceFacts/contract";
 import { endpoint } from "../Reporting/queries/commerce-source";
 import { compileBehaviorHistorySql } from "./behavior-archive";
-import { analyticsInstantMicros } from "./instant";
+import { analyticsInstantMicros, parseHogqlInstant } from "./instant";
 import { postHogWarehouseTables } from "./history-source";
 
 const amount = (s: string) =>
@@ -37,6 +37,14 @@ const linkFields = [
 ];
 const timeFields = new Set(["effective_at", "recorded_at", "updated_at"]);
 const jsonFields = new Set(["payload", "discovery", "purchase_session"]);
+const nullableTextFields = new Set([
+  "currency",
+  "order_id",
+  "buyer_key",
+  "visitor_id",
+  "session_id",
+  "device",
+]);
 function projection(table: string, fields: string[], id: string) {
   const cols = fields.map((key) => {
     const col = table + "." + key;
@@ -61,14 +69,15 @@ export const linkObservation = endpoint(
 );
 export function nativeObservation(scope: DatasetScope) {
   const native = compileBehaviorHistorySql({ ...scope, behaviorArchiveCutoff: null });
+  // PostHog marker ingestion truncates receipt timestamps to milliseconds.
   return endpoint(
     "sole_analytics_observe_native",
     `SELECT
     (SELECT count() FROM (${native})) AS visible_events,
     (SELECT countDistinct(tuple(uuid,timestamp,distinct_id)) FROM events WHERE
       event='sole_analytics_probe_v1' AND properties.dataset_id={variables.dataset_id}
-      AND distinct_id='sole:availability' AND ((toString(uuid)={variables.first_id} AND timestamp=parseDateTime64BestEffort({variables.start_inclusive},6,'UTC')) OR
-      (toString(uuid)={variables.last_id} AND timestamp=parseDateTime64BestEffort({variables.end_exclusive},6,'UTC')))) AS markers`,
+      AND distinct_id='sole:availability' AND ((toString(uuid)={variables.first_id} AND dateDiff('millisecond',timestamp,${parseHogqlInstant("{variables.start_inclusive}")})=0) OR
+      (toString(uuid)={variables.last_id} AND dateDiff('millisecond',timestamp,${parseHogqlInstant("{variables.end_exclusive}")})=0))) AS markers`,
   );
 }
 
@@ -91,22 +100,32 @@ export function checkObservation(
     return "split";
   const key = kind === "finance" ? "fact_id" : "order_id";
   const expected = new Map(source.map((row) => [row[key], row]));
-  if (expected.size !== source.length) throw Error("Invalid source identities");
+  if (
+    expected.size !== source.length ||
+    source.some((row) => typeof row[key] !== "string" || !row[key])
+  )
+    throw Error("Invalid source identities");
+  let mismatch = false;
   for (const row of data.results) {
     if (row.length !== fields.length + 1 || row.at(-1) !== data.results.length)
-      return "retry";
-    const id = row[fields.indexOf(key)],
-      original = expected.get(id);
-    if (!original || typeof id !== "string") return "retry";
+      throw Error("Invalid observation row");
+    const id = row[fields.indexOf(key)];
+    if (typeof id !== "string" || !id) throw Error("Invalid observation identity");
+    const original = expected.get(id);
+    if (!original) mismatch = true;
     for (const [index, name] of fields.entries()) {
       let actual = row[index],
-        wanted = original[name];
+        wanted = original?.[name];
       if (timeFields.has(name)) {
-        if (typeof actual !== "string" || typeof wanted !== "string") return "retry";
+        if (typeof actual !== "string") throw Error("Invalid observation timestamp");
         actual = analyticsInstantMicros(actual);
-        wanted = analyticsInstantMicros(wanted);
+        if (original) {
+          if (typeof wanted !== "string") throw Error("Invalid source timestamp");
+          wanted = analyticsInstantMicros(wanted);
+        }
       } else if (jsonFields.has(name) && actual !== null) {
-        if (typeof actual !== "string" || actual.length > 8192) return "retry";
+        if (typeof actual !== "string" || actual.length > 8192)
+          throw Error("Invalid observation JSON");
         actual = JSON.parse(actual, (_k, v, context?: { source?: string }) => {
           if (
             typeof v === "number" &&
@@ -116,10 +135,20 @@ export function checkObservation(
             throw Error("Invalid numeric observation");
           return v;
         });
+      } else if (name === "revision") {
+        if (typeof actual !== "number" || !Number.isSafeInteger(actual) || actual < 1)
+          throw Error("Invalid observation revision");
+      } else if (name === "active") {
+        if (typeof actual !== "boolean") throw Error("Invalid observation link status");
+      } else if (
+        typeof actual !== "string" &&
+        !(actual === null && (jsonFields.has(name) || nullableTextFields.has(name)))
+      ) {
+        throw Error("Invalid observation text");
       }
-      if (!isDeepStrictEqual(actual, wanted)) return "retry";
+      if (original && !isDeepStrictEqual(actual, wanted)) mismatch = true;
     }
     expected.delete(id);
   }
-  return expected.size ? "retry" : "matched";
+  return mismatch || expected.size ? "retry" : "matched";
 }

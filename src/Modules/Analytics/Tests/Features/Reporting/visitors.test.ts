@@ -192,8 +192,8 @@ it("compares buyers in the preceding calendar period using the same lifetime obs
   });
   expect(r.data?.comparison).not.toHaveProperty("activeFiveMinuteVisitors");
 });
-it("bounds current behavior and purchasing conversion to a verified prefix while preserving full financials", async () => {
-  const f = makeAudienceFixture(),
+it("bounds hybrid behavior and purchasing conversion to a verified prefix while preserving full financials", async () => {
+  const f = makeAudienceFixture("2026-06-09T04:00:00.000Z"),
     stop = new Date(Date.parse(day) + 5000),
     now = new Date(Date.parse(day) + 120000);
   f.event(1, "public_page_viewed");
@@ -451,9 +451,10 @@ it("review: retains coverage from Overview leaders when the session section fail
   );
 });
 
-it("exposes an initial observation gap while a later fully observed day remains usable", async () => {
+it("reports recorded native traffic across startup gaps and keeps unverified periods unknown", async () => {
   const f = makeAudienceFixture();
   f.event(1, "public_page_viewed");
+  f.sale("guest", "guest");
   const dataset = { ...f.deps.dataset!, activatedAt: "2026-06-09T04:00:00.000Z" };
   const now = new Date("2026-06-11T12:00:00Z");
   const deps = {
@@ -461,12 +462,18 @@ it("exposes an initial observation gap while a later fully observed day remains 
     dataset,
     now,
     history: {
-      native: [{ start: "2026-06-09T04:05:00Z", end: "2026-06-11T04:00:00Z" }],
+      native: [
+        { start: "2026-06-09T04:05:00Z", end: "2026-06-09T08:00:00Z" },
+        { start: "2026-06-10T04:00:00Z", end: "2026-06-11T04:00:00Z" },
+      ],
       archive: [],
-      observation: null,
+      observation: {
+        observedAt: now.toISOString(),
+        sourceFreshThrough: now.toISOString(),
+      },
     },
   };
-  const report = async (from: string) =>
+  const report = async (from: string, native = deps.history.native) =>
     service.getReport(
       {
         ...parseReportRequest(
@@ -480,16 +487,42 @@ it("exposes an initial observation gap while a later fully observed day remains 
         ),
         report: "overview",
       },
-      deps,
+      { ...deps, history: { ...deps.history, native } },
     );
   const spans = await report("2026-06-09");
-  expect(spans.behaviorThrough).toBeNull();
+  expect(spans.behaviorThrough).toBe("2026-06-11T04:00:00.000Z");
+  expect(spans.data?.summary).toMatchObject({
+    confirmedOrders: 1,
+    sessions: 1,
+    visitors: 1,
+  });
   expect(spans.coverage).toEqual(
     expect.arrayContaining([
-      expect.objectContaining({ code: "incomplete-coverage", metric: "behavior" }),
+      expect.objectContaining({
+        code: "incomplete-coverage",
+        metric: "behavior",
+        message: expect.stringContaining("Counts reflect recorded consented activity"),
+      }),
     ]),
   );
   const later = await report("2026-06-10");
   expect(later.behaviorThrough).not.toBeNull();
   expect(later.data?.summary.sessions).toBe(1);
+  expect(later.coverage).not.toEqual(
+    expect.arrayContaining([expect.objectContaining({ metric: "behavior" })]),
+  );
+
+  // Expired retention metadata omits native intervals from the evidence RPC.
+  for (const native of [
+    [],
+    [{ start: "2026-06-11T04:00:00Z", end: "2026-06-11T12:00:00Z" }],
+  ]) {
+    const unverified = await report("2026-06-09", native);
+    expect(unverified.behaviorThrough).toBeNull();
+    expect(unverified.data?.summary).toMatchObject({
+      confirmedOrders: 1,
+      sessions: null,
+      visitors: null,
+    });
+  }
 });

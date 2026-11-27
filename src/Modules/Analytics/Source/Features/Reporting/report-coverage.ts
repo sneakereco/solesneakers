@@ -144,6 +144,19 @@ export function resolveReportCoverage(
     const result = behaviorReportAvailability(dataset, { start: lo, end: hi }, history);
     if (result.available) return hi;
     const [gap] = result.gaps;
+    const fullyUncovered =
+      result.gaps.length === 1 &&
+      micros(gap.start) === micros(lo) &&
+      micros(gap.end) === micros(hi);
+    if (dataset.behaviorArchiveCutoff === null && !fullyUncovered) {
+      coverage.push({
+        code: "incomplete-coverage",
+        metric,
+        message:
+          "Counts reflect recorded consented activity. Complete coverage is unverified, and a zero may reflect missing observations.",
+      });
+      return hi;
+    }
     if (
       allowPrefix &&
       micros(hi) === nowMicros &&
