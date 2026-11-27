@@ -11,7 +11,7 @@
     "test:jest:unit": "jest --config jest.config.ts",
     "test:jest:integration": "jest --config jest.integration.config.ts",
     "test:analytics:browser": "node tests/browser/admin-analytics.mjs",
-    "test:analytics:operations": "node --test tests/operations/admin-analytics-provision.test.mjs tests/operations/admin-analytics-observers.test.mjs",
+    "test:analytics:operations": "node --test tests/database/admin-analytics-migration-order.test.mjs tests/operations/admin-analytics-provision.test.mjs tests/operations/admin-analytics-observers.test.mjs",
     "analytics:provision": "node scripts/provision-admin-analytics.mjs",
     "analytics:observe": "node scripts/run-admin-analytics-observers.mjs",
     "test:measurement:browser": "node tests/browser/measurement-trigger-sites.mjs && node tests/browser/measurement-sdk-boundary.mjs",
