@@ -4,12 +4,13 @@ on:
   pull_request:
     branches:
       - main
+  workflow_dispatch:
 
 permissions:
   contents: read
 
 concurrency:
-  group: ci-${{ github.event.pull_request.number }}
+  group: ci-${{ github.event.pull_request.number || github.ref }}
   cancel-in-progress: true
 
 jobs:
@@ -47,12 +48,18 @@ jobs:
     steps:
       - name: Checkout
         uses: actions/checkout@11d5960a326750d5838078e36cf38b85af677262 # v4
+        with:
+          fetch-depth: 0
 
       - name: Setup Node
         uses: actions/setup-node@49933ea5288caeca8642d1e84afbd3f7d6820020 # v4
         with:
           node-version: 24.14.1
           cache: npm
+
+      - name: Determine checkout validation scope
+        id: checkout_scope
+        run: node scripts/checkout-validation-scope.mjs
 
       - name: Install dependencies
         run: npm ci
@@ -90,7 +97,7 @@ jobs:
         run: '"$RUNNER_TEMP/checkout-check" integration npm run test:jest:integration -- --runInBand'
 
       - name: Release reconciliation operation gates
-        run: node --test tests/database/migration-reconciliation.test.mjs tests/operations/migration-deployment.test.mjs tests/operations/admin-analytics-warehouse-bindings.test.mjs tests/operations/admin-analytics-runtime-sync.test.mjs tests/operations/admin-analytics-observers.test.mjs tests/operations/admin-analytics-observer-clock.test.mjs
+        run: node --test tests/database/migration-reconciliation.test.mjs tests/operations/migration-deployment.test.mjs tests/operations/admin-analytics-warehouse-bindings.test.mjs tests/operations/admin-analytics-runtime-sync.test.mjs tests/operations/admin-analytics-observers.test.mjs tests/operations/admin-analytics-observer-clock.test.mjs tests/operations/checkout-validation-scope.test.mjs
 
       - name: Install the locked Playwright Chromium runtime
         run: ./node_modules/.bin/playwright install --with-deps chromium
@@ -101,12 +108,14 @@ jobs:
           docker pull postgrest/postgrest@sha256:e9490aa503a5fb07d8e8c80da46e5c0c193894e583b59ed9077e74c4101ffae2
 
       - name: Isolated checkout database gates
+        if: steps.checkout_scope.outputs.database == 'true'
         run: npm run test:checkout:db
 
       - name: Rehearse hosted bootstrap and checkout migration ordering
         run: node --test --test-concurrency=1 tests/database/checkout-migration-order.test.mjs
 
       - name: Checkout Chromium gates
+        if: steps.checkout_scope.outputs.chromium == 'true'
         run: npm run test:checkout:browser
 
       - name: Measurement browser suites
