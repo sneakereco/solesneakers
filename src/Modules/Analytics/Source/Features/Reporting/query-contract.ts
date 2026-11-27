@@ -6,8 +6,8 @@ import { MAX_REPORT_BUCKETS, MAX_REPORT_OFFSET } from "../ReportContract/filters
 
 export const REPORT_ENDPOINT_VERSIONS = {
   sole_analytics_reconciliation: 1,
-  sole_analytics_reconciliation_raw: 2,
-  sole_analytics_reconciliation_warehouse: 2,
+  sole_analytics_reconciliation_raw: 1,
+  sole_analytics_reconciliation_warehouse: 1,
   sole_analytics_observe_finance: 1,
   sole_analytics_observe_links: 1,
   sole_analytics_observe_native: 1,

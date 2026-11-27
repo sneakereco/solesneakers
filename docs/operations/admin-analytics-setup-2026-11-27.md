@@ -52,6 +52,8 @@ This assessment read selected launch/configuration paths. It was not a complete 
 
 ## Remaining sequence
 
+Use the [current staging handoff](admin-analytics.md#prepare-the-source-definitions-and-launch) for local preview, initial v1 provisioning and the protected observer workflow. The workflow and provisioner have no effect on the recorded hosted state before the owner's explicit setup and opt-ins.
+
 1. Complete the small code corrections and the outstanding full Task 14/whole-branch reviews.
 2. Deploy ordered feature migrations through the established staging workflow; audit the restricted reader before enabling its login.
 3. Configure the finance and purchase-link warehouse views with exact aliases, composite keys, update cursor and revocation tombstones. Verify actual connector behavior.

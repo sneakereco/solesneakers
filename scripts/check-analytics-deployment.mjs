@@ -17,7 +17,11 @@ export function pairingFingerprint(config) {
 }
 export function checkDeployment(environment, env, deployed) {
   if (!["staging", "production"].includes(environment)) throw Error();
-  const operatorOnly = ["POSTHOG_OPERATOR_API_KEY", "POSTHOG_PROVISIONING_KEY"];
+  const operatorOnly = [
+    "POSTHOG_OPERATOR_API_KEY",
+    "POSTHOG_PROVISIONING_KEY",
+    "DOPPLER_ANALYTICS_TOKEN",
+  ];
   if (operatorOnly.some((key) => env[key] || Object.hasOwn(deployed, key))) throw Error();
   const publicSettings = [
     "NEXT_PUBLIC_MEASUREMENT_ENVIRONMENT",

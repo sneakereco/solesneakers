@@ -1,6 +1,6 @@
 import "server-only";
 import { Redis } from "@upstash/redis";
-import { env } from "@/config/env";
+import { z } from "zod";
 
 export interface ReportStore {
   read(key: string): Promise<string | null>;
@@ -115,10 +115,17 @@ const extendCooldown = `
  redis.call('ZREM',KEYS[2],ARGV[2])
  return 1`;
 
+const redisSettings = z.object({
+  UPSTASH_REDIS_REST_URL: z.string().url(),
+  UPSTASH_REDIS_REST_TOKEN: z.string(),
+});
+
 function reportRedis(signal: AbortSignal | (() => AbortSignal)) {
+  const settings = redisSettings.safeParse(process.env);
+  if (!settings.success) throw Error("Analytics query budget unavailable.");
   return new Redis({
-    url: env.UPSTASH_REDIS_REST_URL,
-    token: env.UPSTASH_REDIS_REST_TOKEN,
+    url: settings.data.UPSTASH_REDIS_REST_URL,
+    token: settings.data.UPSTASH_REDIS_REST_TOKEN,
     retry: false,
     signal,
     cache: "no-store",

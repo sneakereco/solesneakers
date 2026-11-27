@@ -65,6 +65,7 @@ it.each([
   ["NEXT_PUBLIC_POSTHOG_HOST", "https://eu.i.posthog.com"],
   ["POSTHOG_QUERY_API_KEY", "synthetic-private-different"],
   ["POSTHOG_OPERATOR_API_KEY", "synthetic-private-operator"],
+  ["DOPPLER_ANALYTICS_TOKEN", "synthetic-private-doppler-observer"],
 ])("rejects a mismatched or forbidden runtime %s", (name, value) => {
   expect(run(build, { ...build, [name]: value })).toBe(1);
 });
