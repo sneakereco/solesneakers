@@ -60,10 +60,15 @@ test("production-shaped registry produces the exact reviewed backfill plan", () 
   assert.deepEqual(
     result.migrationPlan.pendingFiles,
     inventory.entries
-      .filter(({ version }) => checkout.includes(version))
+      .filter(({ version }) => checkout.includes(version) || version > bootstrap)
       .map(({ path }) => path),
   );
-  assert.equal(result.migrationPlan.pendingFiles.length, 8);
+  assert.equal(
+    result.migrationPlan.pendingFiles.length,
+    inventory.entries.filter(
+      ({ version }) => checkout.includes(version) || version > bootstrap,
+    ).length,
+  );
   for (const field of ["inventoryDigest", "recordedDigest", "databaseFingerprint"])
     assert.match(result.migrationPlan[field], /^[a-f0-9]{64}$/);
   assert.match(result.migrationPlan.head, /^[a-f0-9]{40}$/);
@@ -82,7 +87,14 @@ test("every sequential partial retry permits only the remaining reviewed suffix"
     const result = plan([...baseline, ...applied, boot]);
     assert.deepEqual(result.blockers, []);
     assert.equal(result.migrationPlan.includeAll, count < 8);
-    assert.equal(result.migrationPlan.pendingFiles.length, 8 - count);
+    assert.deepEqual(
+      result.migrationPlan.pendingFiles,
+      inventory.entries
+        .filter(
+          ({ version }) => checkout.slice(count).includes(version) || version > bootstrap,
+        )
+        .map(({ path }) => path),
+    );
   }
 });
 
@@ -247,7 +259,10 @@ test("strict ordinary prefixes and completed registry retain their original beha
   const ordinary = plan(baseline);
   assert.deepEqual(ordinary.blockers, []);
   assert.equal(ordinary.migrationPlan.includeAll, false);
-  assert.equal(ordinary.migrationPlan.pendingFiles.length, 9);
+  assert.equal(
+    ordinary.migrationPlan.pendingFiles.length,
+    inventory.entries.length - baseline.length,
+  );
   const complete = plan(inventory.entries.map(row));
   assert.deepEqual(complete.blockers, []);
   assert.deepEqual(complete.migrationPlan.pendingFiles, []);

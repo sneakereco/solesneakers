@@ -1,4 +1,5 @@
 import { log } from "@/lib/utils/log";
+import { checkoutAdmissionBudgets } from "../Operations/admission";
 import type {
   CheckoutDependency,
   CheckoutDependencyLeaseRepository,
@@ -10,7 +11,11 @@ import {
   SquareTerminalCaptureConflict,
 } from "../Payments/payment-facts";
 
-export const recoverySettings = { deadlineMs: 45000, batchSize: 50, concurrency: 4 };
+export const recoverySettings = {
+  deadlineMs: 45000,
+  batchSize: 50,
+  concurrency: checkoutAdmissionBudgets?.providers.square ?? 4,
+};
 export type WorkerOptions = typeof recoverySettings;
 export type DependencyLeases = Pick<
   CheckoutDependencyLeaseRepository,

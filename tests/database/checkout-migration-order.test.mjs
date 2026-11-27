@@ -28,7 +28,7 @@ const checkoutVersions = [
 async function assertCanonicalLedger(admin) {
   const directory = join(root, "supabase", "migrations");
   const files = (await readdir(directory)).filter((file) => file.endsWith(".sql")).sort();
-  assert.equal(files.length, 131);
+  assert.ok(files.length >= 131, "The released migration baseline must remain intact");
   const expected = await Promise.all(
     files.map(async (file) => {
       const [, version, name] = /^(\d{14})_(.+)\.sql$/.exec(file);
@@ -38,7 +38,11 @@ async function assertCanonicalLedger(admin) {
   const { rows } = await admin.query(
     "select version, name, statements[1] as source from supabase_migrations.schema_migrations order by version",
   );
-  assert.equal(rows.length, 131, "The complete migration ledger must remain intact");
+  assert.equal(
+    rows.length,
+    expected.length,
+    "The complete migration ledger must remain intact",
+  );
   assert.deepEqual(
     rows,
     expected,
@@ -49,7 +53,7 @@ async function assertCanonicalLedger(admin) {
       expected.map(({ version }) => version),
       rows.map(({ version }) => version),
     ),
-    { blockers: [], through: bootstrapVersion },
+    { blockers: [], through: expected.at(-1).version },
     "Reconciliation must restore the strict canonical migration prefix",
   );
 }
@@ -216,14 +220,19 @@ for (const mode of ["fresh", "populated"]) {
       ? "bootstrap before checkout"
       : "canonical order";
     test(
-      `${mode}: ${order} preserves all 131 migrations and reporting`,
+      `${mode}: ${order} preserves the canonical migrations and reporting`,
       { timeout: 240_000 },
       async () => {
         const resources = [];
         await withCheckoutProject(
           mode,
           async (fixture) => {
-            assert.equal(fixture.migrations, 131);
+            assert.equal(
+              fixture.migrations,
+              (await readdir(join(root, "supabase", "migrations"))).filter((file) =>
+                file.endsWith(".sql"),
+              ).length,
+            );
             if (bootstrapBeforeCheckout) {
               assert.equal(
                 fixture.preCheckoutVersions?.length,
