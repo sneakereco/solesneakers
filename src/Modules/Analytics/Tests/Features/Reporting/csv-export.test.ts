@@ -11,6 +11,15 @@ import { checkRankedExport } from "../../../Source/Features/Reporting/csv-export
 import { scope } from "./commerce-fixture";
 
 jest.mock("server-only", () => ({}), { virtual: true });
+test("exports the independent checkout completion numerator and denominator", async () => {
+  const f = makeAudienceFixture();
+  f.journey();
+  const r = { ...request("health"), report: "health" as const };
+  const { body } = exportAnalyticsCsv(await getReport(r, f.deps), r);
+  expect(body).toContain('"report.data.checkoutCompletion.numerator","1","observed"');
+  expect(body).toContain('"report.data.checkoutCompletion.denominator","2","observed"');
+  expect(body).toContain('"report.data.checkoutCompletion.value","0.5","observed"');
+});
 test.each(["sole_analytics_acquisition", "sole_analytics_products", "none"])(
   "Overview leader export distinguishes unavailable and observed empty: %s",
   async (failed) => {

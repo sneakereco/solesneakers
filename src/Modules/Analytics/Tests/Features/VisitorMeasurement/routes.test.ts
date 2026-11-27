@@ -1,10 +1,28 @@
 import { NextRequest } from "next/server";
 import { validEnv, identitySecret } from "../Configuration/config-fixture";
 import { createBuyerKey } from "@/Modules/Analytics/Source/Features/CommerceFacts/buyer-key";
+import { resolveCheckoutSourceContext } from "@/Modules/Analytics/Source/Features/CommerceFacts/source-context";
 import { GET, POST } from "@/app/api/analytics/preferences/route";
 import { GET as identity } from "@/app/api/analytics/identity/route";
 
 const id = "123e4567-e89b-42d3-a456-426614174000";
+const sessionId = "123e4567-e89b-42d3-a456-426614174001";
+const email = "guest@example.com";
+const totals = {
+  subtotalCents: 2500,
+  shippingCents: 250,
+  taxCents: 310,
+  totalCents: 3060,
+};
+const commerceKey = createBuyerKey({ normalizedEmail: email }, identitySecret);
+const checkoutTracking = (visitorId: string) => ({
+  receiptId: id,
+  visitorId,
+  sessionId,
+  device: "desktop",
+  discovery: null,
+  purchaseSession: null,
+});
 const mockGetDataset = jest.fn();
 const mockActive = jest.fn();
 const mockRevoke = jest.fn();
@@ -28,6 +46,7 @@ jest.mock("@/services/auth-service", () => ({
   },
 }));
 jest.mock("@/Modules/Analytics/Source/Features/CommerceFacts/repository", () => ({
+  ...jest.requireActual("@/Modules/Analytics/Source/Features/CommerceFacts/repository"),
   createFactRepository: () => ({
     getDataset: mockGetDataset,
     issueReceipt: () => Promise.resolve({ receiptId: id }),
@@ -112,16 +131,57 @@ it("resolves only the consenting verified customer and never takes contact from 
   });
   expect((await getIdentity("?email=another%40example.com")).status).toBe(400);
   const result = await getIdentity();
-  expect(await result.json()).toEqual({
-    buyerKey: createBuyerKey({ normalizedEmail: "guest@example.com" }, identitySecret),
-  });
+  const { buyerKey: visitorId } = await result.json();
+  expect(visitorId).toMatch(/^sole-buyer:v1:[a-f0-9]{64}$/);
+  expect(visitorId).not.toBe(commerceKey);
   expect(result.headers.get("cache-control")).toContain("private");
+  await expect(
+    resolveCheckoutSourceContext(email, totals, checkoutTracking(visitorId)),
+  ).resolves.toMatchObject({
+    buyerKey: commerceKey,
+    tracking: checkoutTracking(visitorId),
+  });
+  await expect(
+    resolveCheckoutSourceContext(email, totals, checkoutTracking(commerceKey)),
+  ).resolves.toMatchObject({ buyerKey: commerceKey, tracking: null });
+  mockActive.mockResolvedValue(false);
+  await expect(
+    resolveCheckoutSourceContext(email, totals, checkoutTracking(visitorId)),
+  ).resolves.toMatchObject({ buyerKey: commerceKey, tracking: null });
+  mockActive.mockResolvedValue(true);
   mockProfile.mockResolvedValue({
     user: { email: "staff@example.com", email_confirmed_at: "2026-01-01" },
     profile: { role: "admin" },
   });
   expect((await getIdentity()).status).toBe(403);
 });
+it("keeps the commerce buyer key without optional measurement configuration", async () => {
+  process.env.NEXT_PUBLIC_POSTHOG_ENABLED = "false";
+  delete process.env.POSTHOG_QUERY_API_KEY;
+  mockCookie = id;
+  await expect(
+    resolveCheckoutSourceContext(email, totals, checkoutTracking(sessionId)),
+  ).resolves.toEqual({
+    datasetId: "sole-staging",
+    buyerKey: commerceKey,
+    totals,
+    tracking: null,
+  });
+  expect(mockActive).not.toHaveBeenCalled();
+});
+it.each(["", "too-short", validEnv.NEXT_PUBLIC_POSTHOG_PROJECT_KEY])(
+  "omits the commerce buyer key when the identity secret is invalid",
+  async (secret) => {
+    process.env.NEXT_PUBLIC_POSTHOG_ENABLED = "false";
+    process.env.ANALYTICS_IDENTITY_SECRET = secret;
+    await expect(
+      resolveCheckoutSourceContext(email, totals, null),
+    ).resolves.toMatchObject({
+      buyerKey: null,
+      tracking: null,
+    });
+  },
+);
 it("refuses to issue production-linked grants or return identity on a preview host", async () => {
   const preview = "https://sole-preview.vercel.app";
   const grant = await POST(

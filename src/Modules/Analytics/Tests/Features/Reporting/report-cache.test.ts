@@ -22,7 +22,7 @@ test.each(
   "multiple required outcomes are decisive regardless of order: $fault, transient first $transientFirst",
   async ({ fault, transientFirst }) => {
     const { deps, tick } = setup();
-    deps.history = { ...deps.history, observation: null };
+    deps.history = { ...deps.history, observation: laggingObservation };
     const r = request("sales");
     expect((await loadAnalyticsReport(r, deps)).data).not.toBeNull();
     tick(301);
@@ -118,7 +118,7 @@ test.each([
   "a malformed fulfilled %s sibling %s vetoes fallback",
   async (report, endpoint) => {
     const { deps, f, tick } = setup();
-    deps.history = { ...deps.history, observation: null };
+    deps.history = { ...deps.history, observation: laggingObservation };
     const r = request(report, "compare=true");
     expect((await loadAnalyticsReport(r, deps)).data).not.toBeNull();
     tick(301);
@@ -147,6 +147,11 @@ test.each([
   },
 );
 let fixtureProject = 0;
+// Keep the warehouse verified and in the same freshness bucket while TTL advances.
+const laggingObservation = {
+  sourceFreshThrough: "2026-07-01T03:50:00.000Z",
+  observedAt: "2026-07-01T04:00:00.000Z",
+};
 function setup() {
   const f = makeAudienceFixture();
   const entries = new Map<string, string>();
@@ -215,7 +220,7 @@ test.each(["none", "empty-cohorts", "prior"])(
     deps.history = {
       native: [{ start: "2026-07-01T03:00:00.000Z", end }],
       archive: [],
-      observation: null,
+      observation: f.deps.history.observation,
     };
     deps.execute = async (q) => {
       if (q.endpoint === "sole_analytics_active") {
@@ -247,7 +252,6 @@ test.each(["schema", "transport"])(
   "stale eligibility follows the required Overview result: %s",
   async (reason) => {
     const { deps, tick, f } = setup();
-    deps.history = { ...deps.history, observation: null };
     const r = request("overview");
     await loadAnalyticsReport(r, deps);
     tick(61);
@@ -359,7 +363,7 @@ test("an already pending second-scope Redis admission cannot reopen the provider
 test("429 after expiry only serves a labeled matching report, with the original as-of", async () => {
   const { deps, tick } = setup();
   const r = request("payments");
-  deps.history = { ...deps.history, observation: null };
+  deps.history = { ...deps.history, observation: laggingObservation };
   const first = await loadAnalyticsReport(r, deps);
   tick(301);
   const limited = {
@@ -385,7 +389,7 @@ test.each(["products", "payments", "overview", "customers", "health"])(
   "historical %s with a current section refreshes in sixty seconds",
   async (report) => {
     const { deps, tick } = setup();
-    deps.history = { archive: [], native: [], observation: null };
+    deps.history = { ...deps.history, archive: [], native: [] };
     const r = request(report);
     const a = await loadAnalyticsReport(r, deps);
     tick(59);
@@ -398,7 +402,7 @@ test.each(["sales", "acquisition"])(
   "historical activity-basis %s can reuse a heavy result for 300 seconds",
   async (report) => {
     const { deps, tick } = setup();
-    deps.history = { ...deps.history, observation: null };
+    deps.history = { ...deps.history, observation: laggingObservation };
     const r = request(report);
     const initial = await loadAnalyticsReport(r, deps);
     tick(299);
@@ -440,6 +444,20 @@ test("a changed finite proof invalidates a cached report before its fresh TTL", 
   });
   expect(b.data).toMatchObject({ sessions: null, activeWindow: null });
 });
+test("losing warehouse evidence cannot reuse an empty financial cache entry", async () => {
+  const { deps } = setup();
+  const r = request("sales");
+  expect(await loadAnalyticsReport(r, deps)).toMatchObject({
+    state: "empty",
+    data: { confirmedOrders: 0 },
+  });
+  expect(
+    await loadAnalyticsReport(r, {
+      ...deps,
+      history: { ...deps.history, observation: null },
+    }),
+  ).toMatchObject({ state: "unavailable", data: null });
+});
 test("shared store failure fails closed without endpoint work", async () => {
   const { deps } = setup();
   deps.store!.read = () => Promise.reject(new Error("private-fixture"));
@@ -479,7 +497,6 @@ test("a stale active window is suppressed even when the prior result remains eli
 });
 test("limited optional behavior preserves newer independently verified product sections", async () => {
   const { deps, f, tick } = setup();
-  deps.history = { ...deps.history, observation: null };
   const r = request("products");
   await loadAnalyticsReport(r, deps);
   tick(61);

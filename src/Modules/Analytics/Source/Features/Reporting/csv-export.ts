@@ -191,6 +191,7 @@ const health = {
   attribution,
   ...fields("fulfillmentDateBasis missingFulfillmentStates missingFulfillmentDurations"),
   funnel,
+  checkoutCompletion: rate,
   outcomes: fields("stage outcome reason count"),
   fulfillmentPreference: fields("ship pickup unknown"),
   backlog: fields("fulfillment state count"),

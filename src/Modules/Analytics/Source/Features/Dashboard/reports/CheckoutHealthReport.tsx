@@ -3,6 +3,7 @@ import type {
   FunnelStep,
   HealthData,
   HealthPeriod,
+  Rate,
   ReportEnvelope,
   ReportRequest,
 } from "../../ReportContract/types";
@@ -11,6 +12,7 @@ import { StackedShares } from "../charts/ComparisonCharts";
 import { AttributionCoverage, PreviousAttributionCoverage } from "../DataCoverage";
 import {
   formatCount,
+  formatPercent,
   formatPreviousPeriod,
   formatStoreInterval,
   formatStoreTime,
@@ -50,6 +52,26 @@ function SessionFunnel({ steps }: { steps: FunnelStep[] }) {
   );
 }
 
+function CheckoutCompletion({ completion }: { completion: Rate }) {
+  const { numerator, denominator, value } = completion;
+  if (numerator === null || denominator === null)
+    return (
+      <p className="analytics-muted">
+        Checkout completion unavailable for this period.
+        {denominator !== null &&
+          ` ${formatCount(denominator)} sessions reached usable checkout.`}
+      </p>
+    );
+  return (
+    <p className="analytics-muted">
+      <strong>Checkout completion</strong>{" "}
+      {denominator === 0
+        ? "· 0 sessions reached usable checkout"
+        : `· ${formatPercent(value)} (${formatCount(numerator)} / ${formatCount(denominator)}) sessions purchased after reaching usable checkout`}
+    </p>
+  );
+}
+
 function OutcomeTable({
   label,
   outcomes,
@@ -57,6 +79,8 @@ function OutcomeTable({
   label: string;
   outcomes: HealthPeriod["outcomes"];
 }) {
+  if (outcomes === null)
+    return <p className="analytics-muted">Operational outcomes unavailable.</p>;
   return outcomes.length ? (
     <ReportTable label={label} columns={["Stage", "Outcome", "Reason", "Recorded count"]}>
       {outcomes.map(({ stage, outcome, reason, count }) => (
@@ -136,7 +160,7 @@ function FulfillmentTables({
         <p className="analytics-muted">Fulfillment preference unavailable.</p>
       )}
       <h3 className="text-sm font-semibold">Latest recorded fulfillment states</h3>
-      {backlog.length ? (
+      {backlog?.length ? (
         <ReportTable
           label={
             previous
@@ -156,16 +180,20 @@ function FulfillmentTables({
         </ReportTable>
       ) : (
         <p className="analytics-muted">
-          No fulfillment states recorded for these orders.
+          {backlog === null
+            ? "Fulfillment states unavailable."
+            : "No fulfillment states recorded for these orders."}
         </p>
       )}
-      <p className="analytics-muted">
-        {formatCount(missingFulfillmentStates)}{" "}
-        {missingFulfillmentStates === 1 ? "order" : "orders"} without a recorded
-        fulfillment state
-      </p>
+      {missingFulfillmentStates !== null && (
+        <p className="analytics-muted">
+          {formatCount(missingFulfillmentStates)}{" "}
+          {missingFulfillmentStates === 1 ? "order" : "orders"} without a recorded
+          fulfillment state
+        </p>
+      )}
       <h3 className="text-sm font-semibold">Payment to fulfillment</h3>
-      {paymentToFulfillment.length ? (
+      {paymentToFulfillment?.length ? (
         <ReportTable
           label={
             previous
@@ -192,14 +220,18 @@ function FulfillmentTables({
         </ReportTable>
       ) : (
         <p className="analytics-muted">
-          No recorded payment-to-fulfillment durations for these orders.
+          {paymentToFulfillment === null
+            ? "Payment-to-fulfillment durations unavailable."
+            : "No recorded payment-to-fulfillment durations for these orders."}
         </p>
       )}
-      <p className="analytics-muted">
-        {formatCount(missingFulfillmentDurations)} fulfilled{" "}
-        {missingFulfillmentDurations === 1 ? "order" : "orders"} without usable duration
-        evidence
-      </p>
+      {missingFulfillmentDurations !== null && (
+        <p className="analytics-muted">
+          {formatCount(missingFulfillmentDurations)} fulfilled{" "}
+          {missingFulfillmentDurations === 1 ? "order" : "orders"} without usable duration
+          evidence
+        </p>
+      )}
     </div>
   );
 }
@@ -225,10 +257,12 @@ export function CheckoutHealthReport({
           description="Tracks ordered steps within sessions with analytics consent. A purchase requires a confirmed order linked to that session."
         >
           <SessionFunnel steps={data.funnel} />
+          <CheckoutCompletion completion={data.checkoutCompletion} />
           {comparison && (
             <details className="analytics-chart-data">
               <summary>Previous period checkout funnel</summary>
               <SessionFunnel steps={comparison.funnel} />
+              <CheckoutCompletion completion={comparison.checkoutCompletion} />
             </details>
           )}
         </ReportPanel>

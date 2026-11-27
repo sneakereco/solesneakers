@@ -1,6 +1,7 @@
 import { build } from "esbuild";
 import { GET as csv } from "@/app/api/admin/analytics/[report]/export/route";
 import { GET as json } from "@/app/api/admin/analytics/[report]/route";
+import { GET as summary } from "@/app/api/admin/analytics/summary/route";
 import { createScopedSupabaseAdminClient } from "@/lib/supabase/service-role";
 import { createReportStore } from "../../../Source/Features/Reporting/report-store";
 import { scope } from "./commerce-fixture";
@@ -53,9 +54,13 @@ test("closed server configuration binds the active dataset and external transpor
           },
         }),
     }));
+    let historyUnavailable = false;
     jest.mocked(createScopedSupabaseAdminClient).mockReturnValue({
       from: () => ({ select: () => ({ eq }) }),
-      rpc: () => Promise.resolve({ data: f.deps.history }),
+      rpc: () =>
+        historyUnavailable
+          ? Promise.resolve({ error: { message: "fixture observation unavailable" } })
+          : Promise.resolve({ data: f.deps.history }),
     } as never);
     jest.mocked(createReportStore).mockReturnValue({
       read: () => Promise.resolve(null),
@@ -107,6 +112,24 @@ test("closed server configuration binds the active dataset and external transpor
     expect(failure.status).toBe(422);
     expect(failure.headers.get("Cache-Control")).toBe("private, no-store");
     expect(await failure.text()).not.toContain(privateQueryKey);
+    historyUnavailable = true;
+    const financial = await summary();
+    expect(financial.status).toBe(200);
+    expect(await financial.json()).toMatchObject({
+      state: "unavailable",
+      ingestionAsOf: null,
+      netMerchandise: null,
+      confirmedOrders: null,
+    });
+    historyUnavailable = false;
+    const observedAt = new Date(Date.now() - 1000).toISOString();
+    f.deps.history.observation = { observedAt, sourceFreshThrough: observedAt };
+    expect(await (await summary()).json()).toMatchObject({
+      state: "empty",
+      ingestionAsOf: observedAt,
+      netMerchandise: { cents: 0, complete: true },
+      confirmedOrders: 0,
+    });
   } finally {
     global.fetch = originalFetch;
     process.env = before;

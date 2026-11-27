@@ -23,6 +23,30 @@ export type ServerAnalyticsConfig = PublicAnalyticsConfig &
     identitySecret: string;
   }>;
 
+function isIdentitySecret(
+  secret: string | undefined,
+  projectKey: string | undefined,
+  queryKey: string | undefined,
+): secret is string {
+  return (
+    typeof secret === "string" &&
+    Buffer.byteLength(secret.trim(), "utf8") >= 32 &&
+    secret.trim() !== projectKey?.trim() &&
+    secret.trim() !== queryKey?.trim()
+  );
+}
+
+export function readAnalyticsIdentitySecret(env: Record<string, string | undefined>) {
+  const secret = env.ANALYTICS_IDENTITY_SECRET;
+  return isIdentitySecret(
+    secret,
+    env.NEXT_PUBLIC_POSTHOG_PROJECT_KEY,
+    env.POSTHOG_QUERY_API_KEY,
+  )
+    ? secret
+    : null;
+}
+
 export function isServerAnalyticsConfig(
   config: ServerAnalyticsConfig | null,
 ): config is ServerAnalyticsConfig {
@@ -35,10 +59,7 @@ export function isServerAnalyticsConfig(
     /^[1-9][0-9]*$/.test(config.projectId) &&
     Number.isSafeInteger(Number(config.projectId)) &&
     /^ph[sx]_[a-zA-Z0-9_-]{20,}$/.test(config.queryApiKey) &&
-    typeof config.identitySecret === "string" &&
-    Buffer.byteLength(config.identitySecret.trim(), "utf8") >= 32 &&
-    config.identitySecret !== config.projectKey &&
-    config.identitySecret !== config.queryApiKey
+    isIdentitySecret(config.identitySecret, config.projectKey, config.queryApiKey)
   );
 }
 

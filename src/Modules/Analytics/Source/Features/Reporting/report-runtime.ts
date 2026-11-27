@@ -46,7 +46,7 @@ export async function loadServerReport(
   );
   let history = noEvidence;
   if (dataset) {
-    // Missing independent evidence suppresses behavioral sections while verified ledger results can survive.
+    // Provider aggregates alone cannot establish complete source coverage.
     try {
       history = await readHistoryEvidence(db, dataset.datasetId);
     } catch {

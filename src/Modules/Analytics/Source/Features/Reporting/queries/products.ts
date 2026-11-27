@@ -19,6 +19,7 @@ import {
   textField as str,
   attributionSql,
   attribution,
+  observedWarehouseMoney,
 } from "./commerce-source";
 import { evidenceSql, unknownReturn } from "./financial";
 import {
@@ -157,7 +158,12 @@ const names = [
   "unassigned_returns",
   "invalid_events",
 ];
-export function readProductRows(raw: unknown, request: ReportRequest, behavior: boolean) {
+export function readProductRows(
+  raw: unknown,
+  request: ReportRequest,
+  behavior: boolean,
+  warehouseObserved = true,
+) {
   const records = rows(raw, names, request.pageSize * 5);
   const hasTaxonomy = !!(request.brandId || request.categoryId || request.sizeId);
   function page<T>(axis: string, fn: (r: Record<string, unknown>) => T) {
@@ -173,17 +179,26 @@ export function readProductRows(raw: unknown, request: ReportRequest, behavior: 
   function metrics(r: Record<string, unknown>) {
     const tracked =
       behavior && r.axis === "product" && !request.variantId && !hasTaxonomy;
+    const orders = count(r.orders),
+      sold = count(r.sold),
+      netUnits = count(r.unknown_units) ? null : integer(r.net_units),
+      knownAmounts = count(r.known_money),
+      missingAmounts = count(r.missing);
     return {
-      confirmedOrders: count(r.orders),
-      units: count(r.sold),
-      netUnits: count(r.unknown_units) ? null : integer(r.net_units),
+      confirmedOrders: warehouseObserved ? orders : orders || null,
+      units: warehouseObserved ? sold : sold || null,
+      netUnits: warehouseObserved || sold ? netUnits : netUnits || null,
       views: tracked ? count(r.views) : null,
       viewToPurchase: tracked
-        ? rate(count(r.converted), count(r.viewed))
+        ? rate(warehouseObserved ? count(r.converted) : null, count(r.viewed))
         : rate(null, null),
-      netMerchandise: moneyValue(
-        count(r.known_money) ? decimalText(r.net, true) : count(r.missing) ? null : 0,
-        count(r.missing),
+      netMerchandise: observedWarehouseMoney(
+        moneyValue(
+          knownAmounts ? decimalText(r.net, true) : missingAmounts ? null : 0,
+          missingAmounts,
+        ),
+        warehouseObserved,
+        knownAmounts > 0,
       ),
     };
   }
@@ -214,11 +229,12 @@ export function readProductRows(raw: unknown, request: ReportRequest, behavior: 
   function breakdown(r: Record<string, unknown>): ProductBreakdownRow {
     return { ...metrics(r), id: String(r.item), label: String(r.label ?? "Unknown") };
   }
+  const orderCoverage = attribution(records[0]);
   return {
     invalidEvents: count(records[0].invalid_events),
     unassignedOrders: count(records[0].unassigned_orders),
     unassignedReturns: count(records[0].unassigned_returns),
-    attribution: attribution(records[0]),
+    attribution: warehouseObserved || orderCoverage.eligibleOrders ? orderCoverage : null,
     products: page("product", product),
     variants: page("variant", product),
     brands: page("brand", breakdown),

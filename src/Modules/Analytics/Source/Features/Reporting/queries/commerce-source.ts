@@ -6,7 +6,7 @@ import {
   financialHistorySource,
   warehouseSources,
 } from "../../EventDelivery/history-source";
-import type { ReportRequest, Rate } from "../../ReportContract/types";
+import type { ReportRequest, Rate, MoneyValue } from "../../ReportContract/types";
 import {
   REPORT_ENDPOINT_VERSIONS,
   validateCompiledQuery,
@@ -218,6 +218,16 @@ export function rate(numerator: number | null, denominator: number | null): Rate
     value: numerator !== null && denominator ? numerator / denominator : null,
   };
 }
+
+export function observedWarehouseMoney(
+  value: MoneyValue,
+  warehouseObserved: boolean,
+  recorded: boolean,
+): MoneyValue {
+  if (warehouseObserved) return value;
+  return { ...value, cents: recorded ? value.cents : null, complete: false };
+}
+
 export const reportInput = z.object({
   activatedAt: z.iso.datetime({ offset: true }),
   request: z.custom<ReportRequest>((r) => !!r && typeof r === "object" && "range" in r),

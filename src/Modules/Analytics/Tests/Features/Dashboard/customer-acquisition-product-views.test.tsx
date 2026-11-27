@@ -325,5 +325,5 @@ test("A failed Products ranking leaves independently recorded stock visible", as
   expect(html).toContain("This section is unavailable.");
   expect(html).toContain("<dt>Units available across recorded variants</dt><dd>7</dd>");
   expect(html).toContain("<dt>Catalog-wide variant count</dt><dd>Unavailable</dd>");
-  expect(html).not.toContain("No matching groups in this period.");
+  expect(html).not.toContain("No observed groups in this period.");
 });

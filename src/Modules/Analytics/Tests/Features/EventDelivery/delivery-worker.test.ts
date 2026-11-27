@@ -267,7 +267,7 @@ it("reconciles replay after the provider received a batch whose acknowledgement 
       Response.json({
         name,
         execution_id: randomUUID(),
-        endpoint_version: name === "sole_analytics_reconciliation" ? 1 : 2,
+        endpoint_version: 1,
         ...packet,
         hasMore: false,
       }),

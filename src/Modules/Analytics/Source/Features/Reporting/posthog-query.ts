@@ -28,11 +28,13 @@ const endpointResponse = z.object({
   columns: z.array(z.string().min(1)).min(1),
   results: z.array(z.array(z.unknown())),
   hasMore: z.boolean(),
-  truncated: z.literal(false).optional(),
+  truncated: z.boolean().optional(),
 });
 
+export const WAREHOUSE_OBSERVATION_EXECUTION = Symbol("warehouse-observation");
+
 export type QueryDependencies = PostHogRequestDependencies & {
-  mode?: CsvExecution;
+  mode?: CsvExecution | typeof WAREHOUSE_OBSERVATION_EXECUTION;
   config: ServerAnalyticsConfig | null;
 };
 
@@ -81,7 +83,8 @@ export async function executePostHogQuery(
       reason: "not-configured",
     });
   }
-  const compiled = validateCompiledQuery(query, deps.mode);
+  const csv = deps.mode === CSV_EXECUTION;
+  const compiled = validateCompiledQuery(query, csv ? CSV_EXECUTION : undefined);
   if (!compiled) {
     throw new PostHogQueryError({ status: "permanent-failure", reason: "invalid-query" });
   }
@@ -106,27 +109,25 @@ export async function executePostHogQuery(
 
   const parsed = endpointResponse.safeParse(response.data);
   if (
-    deps.mode === CSV_EXECUTION &&
-    typeof response.data === "object" &&
-    response.data !== null &&
-    (("hasMore" in response.data && response.data.hasMore === true) ||
-      ("truncated" in response.data && response.data.truncated === true) ||
-      ("results" in response.data &&
-        Array.isArray(response.data.results) &&
-        response.data.results.length > limit))
-  )
-    throw new ExportScopeError();
-  if (
     !parsed.success ||
     parsed.data.name !== endpoint ||
     parsed.data.endpoint_version !== version ||
-    parsed.data.results.length > limit ||
     new Set(parsed.data.columns).size !== parsed.data.columns.length ||
     parsed.data.results.some((row) => row.length !== parsed.data.columns.length)
   ) {
     throw new PostHogQueryError({ status: "retryable", reason: "invalid-response" });
   }
 
-  const { columns, results, hasMore } = parsed.data;
-  return { columns, results, hasMore } satisfies PostHogQueryResult;
+  const { columns, results, hasMore, truncated } = parsed.data;
+  if (csv && (hasMore || truncated || results.length > limit))
+    throw new ExportScopeError();
+  const warehouseObservation =
+    deps.mode === WAREHOUSE_OBSERVATION_EXECUTION &&
+    (endpoint === "sole_analytics_observe_finance" ||
+      endpoint === "sole_analytics_observe_links");
+  if (results.length > limit || (truncated && !warehouseObservation)) {
+    throw new PostHogQueryError({ status: "retryable", reason: "invalid-response" });
+  }
+  const data = { columns, results, hasMore } satisfies PostHogQueryResult;
+  return truncated ? { ...data, truncated } : data;
 }

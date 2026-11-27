@@ -27,6 +27,7 @@ import {
   attributionSql,
   attribution,
   observedDimension,
+  observedWarehouseMoney,
 } from "./commerce-source";
 import { calendarBuckets, decomposed, localBucket } from "./financial";
 import type { CompiledReportQueries, CsvExecution } from "../query-contract";
@@ -103,7 +104,12 @@ const net = (value: unknown, known: unknown, missing: unknown) =>
     count(known) ? decimalText(value, true) : count(missing) ? null : 0,
     count(missing),
   );
-export function readSources(raw: unknown, request: ReportRequest, behavior: boolean) {
+export function readSources(
+  raw: unknown,
+  request: ReportRequest,
+  behavior: boolean,
+  warehouseObserved = true,
+) {
   const records = rows(
     raw,
     [
@@ -127,20 +133,26 @@ export function readSources(raw: unknown, request: ReportRequest, behavior: bool
       .map((r) => {
         if (typeof r.label !== "string")
           throw new RangeError("Invalid acquisition label.");
+        const orders = count(r.confirmed);
         return {
           key: r.label,
           label: r.label,
           sessions: behavior ? count(r.sessions) : null,
-          purchasingSessions: behavior ? count(r.purchasing) : null,
-          confirmedOrders: count(r.confirmed),
-          revenue: net(r.revenue, r.known, r.missing),
+          purchasingSessions: behavior && warehouseObserved ? count(r.purchasing) : null,
+          confirmedOrders: warehouseObserved ? orders : orders || null,
+          revenue: observedWarehouseMoney(
+            net(r.revenue, r.known, r.missing),
+            warehouseObserved,
+            count(r.known) > 0,
+          ),
         };
       });
     return { rows: values, totalCount, page: request.page, pageSize: request.pageSize };
   };
+  const orderCoverage = attribution(records[0]);
   return {
     invalidEvents: count(records[0].invalid_events),
-    attribution: attribution(records[0]),
+    attribution: warehouseObserved || orderCoverage.eligibleOrders ? orderCoverage : null,
     sources: page("source"),
     channels: page("channel"),
     campaigns: page("campaign"),
@@ -153,10 +165,17 @@ export function readAcquisitionPeriod(
   request: ReportRequest,
   activatedAt: string,
   through: string | null,
+  warehouseObserved = true,
 ): AttributionBreakdown & { invalidEvents: number } {
   return {
-    ...readSources(table, request, through !== null),
-    series: readAcquisitionSeries(series, request, activatedAt, through),
+    ...readSources(table, request, through !== null, warehouseObserved),
+    series: readAcquisitionSeries(
+      series,
+      request,
+      activatedAt,
+      through,
+      warehouseObserved,
+    ),
   };
 }
 
@@ -165,6 +184,7 @@ export function readAcquisitionSeries(
   request: ReportRequest,
   activatedAt: string,
   through: string | null,
+  warehouseObserved = true,
 ): AttributionBreakdown["series"] {
   const entries = rows(
     series,
@@ -188,14 +208,17 @@ export function readAcquisitionSeries(
     buckets.delete(date);
     const observed =
       active && through !== null && Date.parse(startInclusive) < Date.parse(through);
+    const orders = count(r?.orders ?? 0);
     return {
       startInclusive,
       endExclusive,
-      confirmedOrders: active ? count(r?.orders ?? 0) : null,
+      confirmedOrders: active ? (warehouseObserved ? orders : orders || null) : null,
       netMerchandise: active
-        ? r
-          ? net(r.net, r.known_amounts, r.missing_amounts)
-          : moneyValue(0)
+        ? observedWarehouseMoney(
+            r ? net(r.net, r.known_amounts, r.missing_amounts) : moneyValue(0),
+            warehouseObserved,
+            count(r?.known_amounts ?? 0) > 0,
+          )
         : moneyValue(null),
       visitors: observed ? count(r?.visitors ?? 0) : null,
       sessions: observed ? count(r?.traffic ?? 0) : null,

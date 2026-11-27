@@ -9,6 +9,7 @@ import {
   type SalesData,
   type ReportRequest,
   type TimeBucket,
+  type MoneyValue,
   type PaymentsData,
   type SalesPeriod,
   type PaymentsPeriod,
@@ -27,6 +28,7 @@ import {
   decimalText,
   count,
   rate,
+  observedWarehouseMoney,
   rows,
   reportInput,
   hasComparison,
@@ -100,6 +102,9 @@ for (const [name, key] of Object.entries(componentFields)) {
   );
 }
 Object.assign(metrics, {
+  observed_financial_facts: sum(
+    "kind IN ('order','line','refund','refund_line','fee','shipping_cost')",
+  ),
   captured: sum(order, amount("totalCollectedCents")),
   refunded: sum(refund, amount("totalCents")),
   unallocated: sum(refund, amount("unallocatedCents")),
@@ -290,6 +295,7 @@ export function readSalesBuckets(
   request: ReportRequest,
   comparison: boolean,
   activatedAt: string,
+  warehouseObserved = true,
 ): TimeBucket[] {
   const entries = rows(raw, ["period", ...seriesFields], 2000).map((row) => {
     if (typeof row.period !== "string") throw new RangeError("Invalid sales bucket.");
@@ -307,15 +313,22 @@ export function readSalesBuckets(
       const v = byDate.get(date);
       byDate.delete(date);
       const beforeActivation = Date.parse(endExclusive) <= Date.parse(activatedAt);
+      const netMerchandise = v ? net(v, "merchandise", "refund_merch") : moneyValue(0);
       return {
         startInclusive,
         endExclusive,
-        confirmedOrders: beforeActivation ? null : (v?.orders ?? 0),
+        confirmedOrders: beforeActivation
+          ? null
+          : warehouseObserved
+            ? (v?.orders ?? 0)
+            : v?.orders || null,
         netMerchandise: beforeActivation
           ? moneyValue(null)
-          : v
-            ? net(v, "merchandise", "refund_merch")
-            : moneyValue(0),
+          : observedWarehouseMoney(
+              netMerchandise,
+              warehouseObserved,
+              !!(v?.merchandise_known || v?.refund_merch_known),
+            ),
         sessions: null,
         visitors: null,
       };
@@ -359,7 +372,7 @@ export function calendarBuckets<T>(
   }
   return result;
 }
-export function readSalesPeriod(raw: unknown): SalesPeriod {
+export function readSalesPeriod(raw: unknown, warehouseObserved = true) {
   const summaries = rows(raw, salesColumns, 1);
   if (summaries.length !== 1) throw new RangeError("Missing sales summary.");
   const { period, v } = readSales(summaries[0]);
@@ -386,27 +399,45 @@ export function readSalesPeriod(raw: unknown): SalesPeriod {
     exact(v.profit_line_cost, v.profit_return_cost, true),
     true,
   );
-  return {
-    grossMerchandise: component(v, "gross"),
-    discounts: component(v, "discount"),
-    merchandiseRefunds: component(v, "refund_merch"),
-    shippingCollected: component(v, "shipping"),
-    shippingRefunds: component(v, "refund_shipping"),
-    taxCollected: component(v, "tax"),
-    taxRefunds: component(v, "refund_tax"),
-    unallocatedRefunds: moneyValue(v.unallocated),
-    netMerchandise: net(v, "merchandise", "refund_merch"),
-    netShipping,
-    netTax: net(v, "tax", "refund_tax"),
-    totalCollected: moneyValue(exact(v.captured, v.refunded, true)),
-    confirmedOrders: v.orders,
-    averageOrderValue: moneyValue(
-      v.missing_values ? null : divide(v.order_value, v.orders),
-      v.missing_values,
+  const observed = (value: MoneyValue, records: number) =>
+    observedWarehouseMoney(value, warehouseObserved, records !== 0);
+  const parts = (key: keyof typeof componentFields) =>
+    observed(component(v, key), v[key + "_known"]);
+  const refundRecords = v.refund_merch_known || v.refund_merch_missing;
+  const netShippingRecords = v.shipping_known || v.refund_shipping_known;
+  const data: SalesPeriod = {
+    grossMerchandise: parts("gross"),
+    discounts: parts("discount"),
+    merchandiseRefunds: parts("refund_merch"),
+    shippingCollected: parts("shipping"),
+    shippingRefunds: parts("refund_shipping"),
+    taxCollected: parts("tax"),
+    taxRefunds: parts("refund_tax"),
+    unallocatedRefunds: observed(moneyValue(v.unallocated), refundRecords),
+    netMerchandise: observed(
+      net(v, "merchandise", "refund_merch"),
+      v.merchandise_known || v.refund_merch_known,
     ),
-    medianOrderValue: moneyValue(
-      v.missing_values ? null : divide(v.middle_sum, v.middle_count),
-      v.missing_values,
+    netShipping: observed(netShipping, netShippingRecords),
+    netTax: observed(net(v, "tax", "refund_tax"), v.tax_known || v.refund_tax_known),
+    totalCollected: observed(
+      moneyValue(exact(v.captured, v.refunded, true)),
+      v.orders || refundRecords,
+    ),
+    confirmedOrders: warehouseObserved ? v.orders : v.orders || null,
+    averageOrderValue: observed(
+      moneyValue(
+        v.missing_values ? null : divide(v.order_value, v.orders),
+        v.missing_values,
+      ),
+      knownOrders,
+    ),
+    medianOrderValue: observed(
+      moneyValue(
+        v.missing_values ? null : divide(v.middle_sum, v.middle_count),
+        v.missing_values,
+      ),
+      knownOrders,
     ),
     orderValueBins: valueBins.map((minimumCents, i) => ({
       minimumCents,
@@ -414,45 +445,73 @@ export function readSalesPeriod(raw: unknown): SalesPeriod {
       confirmedOrders: v["bin_" + i],
     })),
     missingOrderValues: v.missing_values,
-    units: v.missing_lines ? null : v.units,
+    units: v.missing_lines || (!warehouseObserved && !v.lines) ? null : v.units,
     netUnits:
-      v.missing_returns || v.missing_lines ? null : exact(v.units, v.returned, true),
+      v.missing_returns ||
+      v.missing_lines ||
+      (!warehouseObserved && !v.lines && !v.returned)
+        ? null
+        : exact(v.units, v.returned, true),
     missingReturnQuantities: v.missing_returns,
     buyers: { known: v.buyers, missingOrders: v.missing_buyers },
     attribution: {
       eligibleOrders: v.eligible_orders,
       attributedOrders: v.attributed_orders,
     },
-    recordedCogs: knownMoney(cogs, v.known_costs, v.missing_costs),
-    recordedProfit: knownMoney(
-      profit,
+    recordedCogs: observed(
+      knownMoney(cogs, v.known_costs, v.missing_costs),
+      v.known_costs,
+    ),
+    recordedProfit: observed(
+      knownMoney(profit, v.known_profit, exact(v.missing_costs, v.missing_profit)),
       v.known_profit,
-      exact(v.missing_costs, v.missing_profit),
     ),
     costCoverage: {
       orders: rate(v.covered_orders, v.orders),
       lines: rate(v.covered_lines, v.missing_lines ? null : v.lines),
       revenue: rate(v.costed_revenue, v.missing_values ? null : v.order_value),
     },
-    shippingContribution: moneyValue(
-      v.missing_labels || netShipping.cents === null
-        ? null
-        : exact(netShipping.cents, v.label_cost, true),
-      exact(v.missing_labels, netShipping.missingCount),
+    shippingContribution: observed(
+      moneyValue(
+        v.missing_labels || netShipping.cents === null
+          ? null
+          : exact(netShipping.cents, v.label_cost, true),
+        exact(v.missing_labels, netShipping.missingCount),
+      ),
+      netShippingRecords || v.label_cost,
     ),
-    fees: knownMoney(v.fees, v.known_fees, v.missing_fees),
+    fees: observed(knownMoney(v.fees, v.known_fees, v.missing_fees), v.known_fees),
+  };
+  return { data, available: warehouseObserved || v.observed_financial_facts > 0 };
+}
+export function readSalesReport(raw: unknown, warehouseObserved: boolean) {
+  const input = reportInput.parse(raw);
+  return {
+    summary: readSalesPeriod(input.summary, warehouseObserved),
+    comparison: hasComparison(input)
+      ? readSalesPeriod(input.comparison, warehouseObserved)
+      : null,
+    series: readSalesBuckets(
+      input.series,
+      input.request,
+      false,
+      input.activatedAt,
+      warehouseObserved,
+    ),
+    comparisonSeries: input.request.compare
+      ? readSalesBuckets(
+          input.comparisonSeries,
+          input.request,
+          true,
+          input.activatedAt,
+          warehouseObserved,
+        )
+      : null,
   };
 }
 export function mapSalesResult(raw: unknown): SalesData {
-  const input = reportInput.parse(raw);
-  return {
-    ...readSalesPeriod(input.summary),
-    comparison: hasComparison(input) ? readSalesPeriod(input.comparison) : null,
-    series: readSalesBuckets(input.series, input.request, false, input.activatedAt),
-    comparisonSeries: input.request.compare
-      ? readSalesBuckets(input.comparisonSeries, input.request, true, input.activatedAt)
-      : null,
-  };
+  const { summary, comparison, ...series } = readSalesReport(raw, true);
+  return { ...summary.data, ...series, comparison: comparison?.data ?? null };
 }
 const paymentColumns = [
   "method",
@@ -469,7 +528,11 @@ const paymentColumns = [
   "failed",
   "pending",
 ];
-export function readPaymentsPeriod(raw: unknown, request: ReportRequest): PaymentsPeriod {
+export function readPaymentsPeriod(
+  raw: unknown,
+  request: ReportRequest,
+  warehouseObserved = true,
+): PaymentsPeriod {
   const allRows = rows(
     raw,
     [...paymentColumns, "eligible_orders", "attributed_orders"],
@@ -514,12 +577,24 @@ export function readPaymentsPeriod(raw: unknown, request: ReportRequest): Paymen
       failedAttempts: v.failed,
       pendingAttempts: v.pending,
       successRate: rate(v.succeeded, resolved),
-      revenue: knownMoney(v.revenue, v.known_revenue, v.missing_revenue),
-      averageOrderValue: moneyValue(
-        v.bad_paid ? null : divide(v.original_value, v.paid_orders),
-        v.bad_paid,
+      revenue: observedWarehouseMoney(
+        knownMoney(v.revenue, v.known_revenue, v.missing_revenue),
+        warehouseObserved,
+        v.known_revenue > 0,
       ),
-      fees: knownMoney(v.fees, v.known_fees, v.missing_fees),
+      averageOrderValue: observedWarehouseMoney(
+        moneyValue(
+          v.bad_paid ? null : divide(v.original_value, v.paid_orders),
+          v.bad_paid,
+        ),
+        warehouseObserved,
+        v.paid_orders > v.bad_paid,
+      ),
+      fees: observedWarehouseMoney(
+        knownMoney(v.fees, v.known_fees, v.missing_fees),
+        warehouseObserved,
+        v.known_fees > 0,
+      ),
     };
   });
   const sortValue = (row: PaymentRow) =>
@@ -537,10 +612,10 @@ export function readPaymentsPeriod(raw: unknown, request: ReportRequest): Paymen
   );
   const { page, pageSize } = request;
   return {
-    attribution: scope,
-    paidOrders,
-    resolvedAttempts,
-    pendingAttempts,
+    attribution: warehouseObserved || scope.eligibleOrders ? scope : null,
+    paidOrders: warehouseObserved ? paidOrders : paidOrders || null,
+    resolvedAttempts: warehouseObserved ? resolvedAttempts : resolvedAttempts || null,
+    pendingAttempts: warehouseObserved ? pendingAttempts : pendingAttempts || null,
     methods: {
       rows: methodRows.slice((page - 1) * pageSize, page * pageSize),
       totalCount: methodRows.length,
@@ -549,12 +624,13 @@ export function readPaymentsPeriod(raw: unknown, request: ReportRequest): Paymen
     },
   };
 }
-export function mapPaymentsResult(raw: unknown): PaymentsData {
+export function mapPaymentsResult(raw: unknown, warehouseObserved = true): PaymentsData {
   const input = reportInput.parse(raw);
+  const comparison = hasComparison(input)
+    ? readPaymentsPeriod(input.comparison, input.request, warehouseObserved)
+    : null;
   return {
-    ...readPaymentsPeriod(input.summary, input.request),
-    comparison: hasComparison(input)
-      ? readPaymentsPeriod(input.comparison, input.request)
-      : null,
+    ...readPaymentsPeriod(input.summary, input.request, warehouseObserved),
+    comparison: warehouseObserved || comparison?.methods.totalCount ? comparison : null,
   };
 }

@@ -134,7 +134,7 @@ export function resolveReportCoverage(
       message:
         freshness.status === "lagging"
           ? "Observed warehouse ingestion is behind the five-minute target."
-          : "Warehouse ingestion freshness has not been verified.",
+          : "Warehouse ingestion is unverified. Any commerce values shown reflect only records visible to the report.",
     });
   const nowMicros = micros(now.toISOString());
   const behaviorEnd = (from: string, to: string, metric: string, allowPrefix = false) => {
@@ -286,6 +286,7 @@ export function resolveReportCoverage(
     coverage,
     fail,
     freshness,
+    warehouseObserved: freshness.status !== "unknown",
     behavior,
     compar,
     comparisonThrough,

@@ -25,6 +25,7 @@ import {
   centsField as amount,
   textField,
   observedDimension,
+  observedWarehouseMoney,
 } from "./commerce-source";
 import {
   sessionSql,
@@ -67,8 +68,11 @@ const stepColumns = [
   "checkout",
   "purchasing",
   "ordered",
+  "usable_checkouts",
+  "completed_checkouts",
 ] as const;
-const aggregates = `count(DISTINCT session_visitor) AS visitors,count(*) AS sessions,count(viewed_at) AS viewed,count(added_at) AS added,count(checkout_at) AS checkout,count(purchase_at) AS purchasing,count(CASE WHEN purchase_at>=checkout_at THEN 1 END) AS ordered`;
+const aggregates = `count(DISTINCT session_visitor) AS visitors,count(*) AS sessions,count(viewed_at) AS viewed,count(added_at) AS added,count(checkout_at) AS checkout,count(purchase_at) AS purchasing,count(CASE WHEN purchase_at>=checkout_at THEN 1 END) AS ordered,
+ count(usable_checkout_at) AS usable_checkouts,count(CASE WHEN purchase_at>=usable_checkout_at THEN 1 END) AS completed_checkouts`;
 const activeEndpoint = (scope: DatasetScope) =>
   endpoint(
     "sole_analytics_active",
@@ -122,11 +126,22 @@ export function compileVisitorQueries(
   }
   return { queries };
 }
-export function readSessions(raw: unknown, request: ReportRequest) {
+export function readSessions(
+  raw: unknown,
+  request: ReportRequest,
+  warehouseObserved = true,
+) {
   const result = rows(raw, ["segment", ...stepColumns, "invalid_events"], 5);
   const total = result.find((x) => x.segment === "total");
   if (!total) throw new RangeError("Missing session summary.");
   const v = Object.fromEntries(stepColumns.map((k) => [k, count(total[k])]));
+  if (
+    v.usable_checkouts > v.sessions ||
+    v.usable_checkouts < v.checkout ||
+    v.completed_checkouts < v.ordered ||
+    v.completed_checkouts > v.purchasing
+  )
+    throw new RangeError("Invalid checkout completion counts.");
   const steps: FunnelStep["step"][] = [
     "session",
     "product-view",
@@ -134,7 +149,13 @@ export function readSessions(raw: unknown, request: ReportRequest) {
     "checkout",
     "purchase",
   ];
-  const counts = [v.sessions, v.viewed, v.added, v.checkout, v.ordered];
+  const counts = [
+    v.sessions,
+    v.viewed,
+    v.added,
+    v.checkout,
+    warehouseObserved ? v.ordered : null,
+  ];
   const funnel = steps.map((step, i) => ({
     step,
     sessions: counts[i],
@@ -162,7 +183,11 @@ export function readSessions(raw: unknown, request: ReportRequest) {
   return {
     visitors: v.visitors,
     sessions: v.sessions,
-    conversion: rate(v.purchasing, v.sessions),
+    conversion: rate(warehouseObserved ? v.purchasing : null, v.sessions),
+    checkoutCompletion: rate(
+      warehouseObserved ? v.completed_checkouts : null,
+      v.usable_checkouts,
+    ),
     invalidEvents: count(total.invalid_events),
     funnel,
     devices: {
@@ -174,7 +199,7 @@ export function readSessions(raw: unknown, request: ReportRequest) {
   };
 }
 
-export function readBuyers(raw: unknown) {
+export function readBuyers(raw: unknown, warehouseObserved = true) {
   const [r] = rows(
     raw,
     [
@@ -199,10 +224,11 @@ export function readBuyers(raw: unknown) {
   function spend(k: string) {
     const missing = count(r[k + "_missing"]),
       known = count(r[k + "_known"]);
-    return moneyValue(
+    const value = moneyValue(
       !known && missing ? null : decimalText(r[k + "_value"], true),
       missing,
     );
+    return observedWarehouseMoney(value, warehouseObserved, known > 0);
   }
   return {
     buyers,

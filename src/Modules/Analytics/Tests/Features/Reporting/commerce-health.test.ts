@@ -30,12 +30,12 @@ test("health uses latest fulfillment states of orders in confirmation range and 
   expect(h.outcomes).toEqual([
     { stage: "reservation", reason: "inventory", outcome: "expired", count: 1 },
   ]);
-  expect(h.backlog.find((s) => s.fulfillment === "pickup")).toEqual({
+  expect(h.backlog?.find((s) => s.fulfillment === "pickup")).toEqual({
     fulfillment: "pickup",
     state: "processing",
     count: 1,
   });
-  expect(h.paymentToFulfillment.find((s) => s.fulfillment === "ship")).toEqual({
+  expect(h.paymentToFulfillment?.find((s) => s.fulfillment === "ship")).toEqual({
     fulfillment: "ship",
     fulfilledOrders: 1,
     medianSeconds: 3600,
@@ -71,9 +71,9 @@ test("new and returning buyer outcome counts use both boundaries of each activit
     }
   }
   const n = (await f.report("health", "customer=new&compare=true")) as HealthData;
-  expect(n.outcomes[0].count).toBe(1);
-  expect(n.comparison?.outcomes[0].count).toBe(1);
+  expect(n.outcomes?.[0].count).toBe(1);
+  expect(n.comparison?.outcomes?.[0].count).toBe(1);
   const r = (await f.report("health", "customer=returning&compare=true")) as HealthData;
-  expect(r.outcomes[0].count).toBe(2);
-  expect(r.comparison?.outcomes[0].count).toBe(1);
+  expect(r.outcomes?.[0].count).toBe(2);
+  expect(r.comparison?.outcomes?.[0].count).toBe(1);
 });

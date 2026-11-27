@@ -7,6 +7,8 @@ import type {
   ReportEnvelope,
   OverviewData,
   CustomersData,
+  SalesPeriod,
+  HealthPeriod,
   TimeBucket,
 } from "../ReportContract/types";
 import type { HistoryEvidence } from "../EventDelivery/history-source";
@@ -40,6 +42,7 @@ import {
   mapPaymentsResult,
   mapSalesResult,
   readSalesPeriod,
+  readSalesReport,
   readSalesBuckets,
   readPaymentsPeriod,
 } from "./queries/financial";
@@ -118,6 +121,7 @@ function attachTraffic(
   request: ReportRequest,
   comparison: boolean,
   through: string | null,
+  activatedAt: string,
 ) {
   const records = rows(raw, ["period", "visitors", "sessions"], 2000);
   const byDate = new Map(records.map((r) => [r.period, r]));
@@ -130,13 +134,13 @@ function attachTraffic(
     return {
       ...bucket,
       visitors:
-        bucket.confirmedOrders === null ||
+        Date.parse(bucket.endExclusive) <= Date.parse(activatedAt) ||
         !through ||
         Date.parse(bucket.startInclusive) >= Date.parse(through)
           ? null
           : count(r?.visitors ?? 0),
       sessions:
-        bucket.confirmedOrders === null ||
+        Date.parse(bucket.endExclusive) <= Date.parse(activatedAt) ||
         !through ||
         Date.parse(bucket.startInclusive) >= Date.parse(through)
           ? null
@@ -146,6 +150,32 @@ function attachTraffic(
   if (byDate.size) throw new RangeError("Unexpected visitor bucket.");
   return values;
 }
+
+function overviewSummary(
+  sales: SalesPeriod | null,
+  sessions: ReturnType<typeof readSessions> | null,
+) {
+  return {
+    netMerchandise: sales?.netMerchandise ?? moneyValue(null),
+    confirmedOrders: sales?.confirmedOrders ?? null,
+    averageOrderValue: sales?.averageOrderValue ?? moneyValue(null),
+    buyers: sales?.buyers.known ?? null,
+    missingBuyerOrders: sales?.buyers.missingOrders ?? null,
+    conversion: sessions?.conversion ?? rate(null, null),
+    visitors: sessions?.visitors ?? null,
+    sessions: sessions?.sessions ?? null,
+  };
+}
+
+function hasOperationalEvidence(period: HealthPeriod | null) {
+  return Boolean(
+    period?.outcomes?.length ||
+      period?.fulfillmentPreference ||
+      period?.backlog?.length ||
+      period?.paymentToFulfillment?.length,
+  );
+}
+
 export async function getReport<T extends ReportId>(
   request: ReportRequest & { report: T },
   deps: ReportingDependencies,
@@ -203,12 +233,19 @@ async function getReportPeriod<T extends ReportId>(
     coverage,
     fail,
     freshness,
+    warehouseObserved,
     behavior,
     compar,
     comparisonThrough,
     activeWindow,
     setAttribution,
   } = result;
+  const unavailableWarehouse = () =>
+    fail(
+      "unavailable",
+      "component-unavailable",
+      "No warehouse data is verified for this period.",
+    );
   const report: ReportId = request.report;
   try {
     const queries: Record<string, CompiledQuery> = {};
@@ -350,9 +387,11 @@ async function getReportPeriod<T extends ReportId>(
         return null;
       }
     }
-    const sessions = optional("sessions", (raw) => readSessions(raw, request));
+    const sessions = optional("sessions", (raw) =>
+      readSessions(raw, request, warehouseObserved),
+    );
     const comparison = optional("comparisonSessions", (raw) =>
-      readSessions(raw, request),
+      readSessions(raw, request, warehouseObserved),
     );
     function reportTiming(metric: string, invalidEvents: number | undefined) {
       if (invalidEvents)
@@ -364,7 +403,7 @@ async function getReportPeriod<T extends ReportId>(
         });
     }
     function parseProductTable(raw: unknown, tableRequest: ReportRequest) {
-      const p = readProductRows(raw, tableRequest, behavior);
+      const p = readProductRows(raw, tableRequest, behavior, warehouseObserved);
       reportTiming("productBehavior", p.invalidEvents);
       for (const [metric, missingCount] of [
         ["productOrders", p.unassignedOrders],
@@ -386,23 +425,42 @@ async function getReportPeriod<T extends ReportId>(
     let data: ReportDataMap[ReportId];
     let empty = false;
     if (report === "payments") {
-      const p = mapPaymentsResult(financialResults);
-      setAttribution(p.attribution);
+      const p = mapPaymentsResult(financialResults, warehouseObserved);
+      if (!warehouseObserved && !p.methods.totalCount) return unavailableWarehouse();
+      if (p.attribution) setAttribution(p.attribution);
       empty = p.paidOrders === 0 && p.methods.totalCount === 0;
       data = p;
     } else if (report === "health") {
-      const p = mapHealthResult(financialResults);
-      setAttribution(p.attribution);
-      if (sessions) p.funnel = sessions.funnel;
-      if (p.comparison && comparison) p.comparison.funnel = comparison.funnel;
+      const p = mapHealthResult(financialResults, warehouseObserved);
+      if (p.attribution) setAttribution(p.attribution);
+      if (sessions) {
+        p.funnel = sessions.funnel;
+        p.checkoutCompletion = sessions.checkoutCompletion;
+      }
+      if (p.comparison && comparison) {
+        p.comparison.funnel = comparison.funnel;
+        p.comparison.checkoutCompletion = comparison.checkoutCompletion;
+      }
+      if (
+        !warehouseObserved &&
+        !sessions &&
+        !comparison &&
+        !hasOperationalEvidence(p) &&
+        !hasOperationalEvidence(p.comparison)
+      )
+        return unavailableWarehouse();
       data = p;
       empty =
-        p.attribution.eligibleOrders === 0 &&
-        !p.outcomes.length &&
+        p.attribution?.eligibleOrders === 0 &&
+        !p.outcomes?.length &&
         sessions?.sessions === 0;
     } else if (report === "customers") {
-      const p = optional("customers", readBuyers);
-      const cohorts = optional("cohorts", (raw) => readCohorts(raw, now));
+      const buyers = optional("customers", (raw) => readBuyers(raw, warehouseObserved));
+      const p =
+        warehouseObserved || buyers?.buyers || buyers?.missingBuyerOrders ? buyers : null;
+      const observedCohorts = optional("cohorts", (raw) => readCohorts(raw, now));
+      const cohorts =
+        warehouseObserved || observedCohorts?.length ? observedCohorts : null;
       if (p) setAttribution(p.attribution);
       const live = optional("active", (raw) => {
         const [row] = rows(raw, ["visitors", "invalid_events"], 1);
@@ -445,6 +503,7 @@ async function getReportPeriod<T extends ReportId>(
           request,
           dataset.activatedAt,
           base.behaviorThrough,
+          warehouseObserved,
         );
       const { invalidEvents: discoveryInvalid, ...discovery } = readAcquisitionPeriod(
         values.discovery,
@@ -452,10 +511,18 @@ async function getReportPeriod<T extends ReportId>(
         request,
         dataset.activatedAt,
         base.behaviorThrough,
+        warehouseObserved,
       );
       reportTiming("purchaseSession", purchaseInvalid);
       reportTiming("discovery", discoveryInvalid);
-      setAttribution(purchaseSession.attribution);
+      if (purchaseSession.attribution) setAttribution(purchaseSession.attribution);
+      if (
+        !warehouseObserved &&
+        !behavior &&
+        !purchaseSession.sources.totalCount &&
+        !discovery.sources.totalCount
+      )
+        return unavailableWarehouse();
       data = { purchaseSession, discovery, comparison: null };
       empty =
         behavior &&
@@ -464,14 +531,22 @@ async function getReportPeriod<T extends ReportId>(
         purchaseSession.sources.totalCount === 0 &&
         discovery.sources.totalCount === 0;
     } else if (report === "products") {
-      const p = optional("products", (raw) => parseProductTable(raw, request));
+      const productRows = optional("products", (raw) => parseProductTable(raw, request));
+      const p =
+        warehouseObserved || productRows?.products.totalCount ? productRows : null;
       const demand = optional("signals", (raw) => readDemand(raw, request, behavior));
-      if (!p && !demand)
+      const inventory =
+        warehouseObserved || demand?.inventory.recordedVariants
+          ? (demand?.inventory ?? null)
+          : null;
+      const unmetDemand =
+        behavior || warehouseObserved ? (demand?.unmetDemand ?? null) : null;
+      if (!p && !inventory && !unmetDemand)
         return unavailableSections(
           ["products", "signals"],
           "Product report sections are unavailable.",
         );
-      if (p) setAttribution(p.attribution);
+      if (p?.attribution) setAttribution(p.attribution);
       if (!p) reportTiming("productBehavior", demand?.invalidEvents);
       if (!comparisonOnly && demand?.inventory.availableUnits === null)
         coverage.push({
@@ -487,8 +562,8 @@ async function getReportPeriod<T extends ReportId>(
         brands: p?.brands ?? null,
         categories: p?.categories ?? null,
         sizes: p?.sizes ?? null,
-        inventory: demand?.inventory ?? null,
-        unmetDemand: demand?.unmetDemand ?? null,
+        inventory,
+        unmetDemand,
         comparison: null,
       };
       empty =
@@ -500,15 +575,26 @@ async function getReportPeriod<T extends ReportId>(
         demand?.unmetDemand.searches === 0 &&
         demand.unmetDemand.unavailableSizeSelections === 0;
     } else {
-      const sales = mapSalesResult(financialResults);
-      setAttribution(sales.attribution);
+      const {
+        summary,
+        comparison: previous,
+        ...series
+      } = readSalesReport(financialResults, warehouseObserved);
+      const sales = summary.available ? summary.data : null;
+      const previousSales = previous?.available ? previous.data : null;
+      if (sales && (warehouseObserved || sales.attribution.eligibleOrders))
+        setAttribution(sales.attribution);
       empty =
-        sales.confirmedOrders === 0 &&
+        sales?.confirmedOrders === 0 &&
         sales.totalCollected.cents === 0 &&
         sales.unallocatedRefunds.cents === 0 &&
         sales.fees.cents === 0;
-      if (report === "sales") data = sales;
-      else {
+      if (report === "sales") {
+        if (!sales) return unavailableWarehouse();
+        data = { ...sales, ...series, comparison: previousSales };
+      } else {
+        if (!sales && !sessions && !previousSales && !comparison)
+          return unavailableWarehouse();
         const funnel =
           sessions?.funnel ??
           (
@@ -520,50 +606,41 @@ async function getReportPeriod<T extends ReportId>(
             fromPrevious: rate(null, null),
           }));
         const overview: OverviewData = {
-          summary: {
-            netMerchandise: sales.netMerchandise,
-            confirmedOrders: sales.confirmedOrders,
-            averageOrderValue: sales.averageOrderValue,
-            buyers: sales.buyers.known,
-            missingBuyerOrders: sales.buyers.missingOrders,
-            conversion: sessions?.conversion ?? rate(null, null),
-            visitors: sessions?.visitors ?? null,
-            sessions: sessions?.sessions ?? null,
-          },
-          comparison: sales.comparison
-            ? {
-                netMerchandise: sales.comparison.netMerchandise,
-                confirmedOrders: sales.comparison.confirmedOrders,
-                averageOrderValue: sales.comparison.averageOrderValue,
-                buyers: sales.comparison.buyers.known,
-                missingBuyerOrders: sales.comparison.buyers.missingOrders,
-                conversion: comparison?.conversion ?? rate(null, null),
-                visitors: comparison?.visitors ?? null,
-                sessions: comparison?.sessions ?? null,
-              }
-            : null,
+          summary: overviewSummary(sales, sessions),
+          comparison:
+            previousSales || comparison
+              ? overviewSummary(previousSales, comparison)
+              : null,
           funnel,
           series:
             optional("visitorSeries", (raw) =>
-              attachTraffic(sales.series, raw, request, false, base.behaviorThrough),
-            ) ?? sales.series,
-          comparisonSeries: sales.comparisonSeries
+              attachTraffic(
+                series.series,
+                raw,
+                request,
+                false,
+                base.behaviorThrough,
+                dataset.activatedAt,
+              ),
+            ) ?? series.series,
+          comparisonSeries: series.comparisonSeries
             ? (optional("comparisonVisitorSeries", (raw) =>
                 attachTraffic(
-                  sales.comparisonSeries!,
+                  series.comparisonSeries!,
                   raw,
                   request,
                   true,
                   comparisonThrough,
+                  dataset.activatedAt,
                 ),
-              ) ?? sales.comparisonSeries)
+              ) ?? series.comparisonSeries)
             : null,
           components: Object.fromEntries(
-            components.map((k) => [k, sales[k]]),
+            components.map((k) => [k, sales?.[k] ?? moneyValue(null)]),
           ) as OverviewData["components"],
           leadingSources:
             optional("purchaseSession", (raw) => {
-              const source = readSources(raw, ranked, behavior);
+              const source = readSources(raw, ranked, behavior, warehouseObserved);
               reportTiming("purchaseSession", source.invalidEvents);
               return source.sources.rows;
             }) ?? [],
@@ -571,6 +648,18 @@ async function getReportPeriod<T extends ReportId>(
             optional("products", (raw) => parseProductTable(raw, ranked).products.rows) ??
             [],
         };
+        if (!warehouseObserved) {
+          for (const [metric, visible] of [
+            ["purchaseSession", overview.leadingSources.length],
+            ["products", overview.leadingProducts.length],
+          ] as const)
+            if (!visible)
+              coverage.push({
+                code: "component-unavailable",
+                metric,
+                message: "Warehouse coverage for this section is unverified.",
+              });
+        }
         data = overview;
         empty = empty && sessions?.sessions === 0;
       }
@@ -632,7 +721,7 @@ async function getReportPeriod<T extends ReportId>(
       ...base,
       data: data as ReportDataMap[T],
       state:
-        !result.liveOnly && freshness.status === "lagging"
+        !result.liveOnly && freshness.status !== "current"
           ? "stale"
           : empty
             ? "empty"

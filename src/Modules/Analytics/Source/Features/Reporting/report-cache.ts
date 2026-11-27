@@ -247,7 +247,7 @@ export async function loadAnalyticsReport(
   if (!store || performance.now() >= deadline) return failed();
   const project = providerBudgetKey(deps.project);
   const key =
-    "sole:report:v1:{" +
+    "sole:report:v2:{" +
     digest([
       project,
       reportCacheKey(request, resolved.dataset),

@@ -2,7 +2,7 @@ import "server-only";
 import { createBuyerKey } from "./buyer-key";
 import { privateTrackingSchema } from "./repository";
 import { DATASET_IDS } from "../Configuration/dataset";
-import { readServerAnalyticsConfig } from "../Configuration/server-config";
+import { readAnalyticsIdentitySecret } from "../Configuration/server-config";
 import { readServerConsent } from "../VisitorMeasurement/server-consent";
 import { resolveConsentedIdentity } from "../VisitorMeasurement/identity";
 import {
@@ -94,15 +94,17 @@ export async function resolveCheckoutSourceContext(
 ) {
   const env = process.env.NEXT_PUBLIC_MEASUREMENT_ENVIRONMENT;
   if (env !== "staging" && env !== "production") return null;
-  const config = readServerAnalyticsConfig(process.env);
   return buildSourceContext({
     datasetId: DATASET_IDS[env],
     buyerEmail,
     totals,
-    identitySecret: config?.identitySecret ?? null,
-    tracking: await validateCheckoutTracking(raw, {
-      consent: readServerConsent,
-      identity: resolveConsentedIdentity,
-    }),
+    identitySecret: readAnalyticsIdentitySecret(process.env),
+    tracking:
+      process.env.NEXT_PUBLIC_POSTHOG_ENABLED === "true"
+        ? await validateCheckoutTracking(raw, {
+            consent: readServerConsent,
+            identity: resolveConsentedIdentity,
+          })
+        : null,
   });
 }

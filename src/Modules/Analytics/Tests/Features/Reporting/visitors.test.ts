@@ -38,6 +38,83 @@ it("uses native identity merge, ordered events and entry boundaries", async () =
     activeFiveMinuteVisitors: 0,
   });
 });
+it("counts a returning shopper's usable checkout once despite duplicate events and orders", async () => {
+  const f = makeAudienceFixture();
+  const buyer = "sole-buyer:v1:" + "a".repeat(64);
+  const visitor = "sole-buyer:v1:" + "b".repeat(64);
+  f.event(19, "product_added_to_cart", 0, visitor, "2026-06-09T18:00:00.000Z");
+  f.event(1, "checkout_started", 0, visitor);
+  f.event(1, "checkout_started", 1, visitor);
+  for (const [id, time] of [
+    ["first", "2026-06-10T12:00:03.000Z"],
+    ["second", "2026-06-10T12:00:04.000Z"],
+  ]) {
+    f.sale(id, buyer, time);
+    f.link(id, 1, time, visitor);
+  }
+  const report = (extra = "") =>
+    service.getReport({ ...request("health", extra), report: "health" }, f.deps);
+  const result = await report("source=google&device=mobile&compare=true");
+  expect(result.data?.checkoutCompletion).toEqual({
+    numerator: 1,
+    denominator: 1,
+    value: 1,
+  });
+  expect(result.data?.funnel.map((s) => s.sessions)).toEqual([1, 0, 0, 0, 0]);
+  expect(result.data?.comparison?.checkoutCompletion).toEqual({
+    numerator: 0,
+    denominator: 0,
+    value: null,
+  });
+  expect((await report("paymentMethod=afterpay")).data?.checkoutCompletion).toEqual({
+    numerator: 0,
+    denominator: 1,
+    value: 0,
+  });
+  expect((await report("source=instagram")).data?.checkoutCompletion).toEqual({
+    numerator: 0,
+    denominator: 0,
+    value: null,
+  });
+});
+it("counts only in-frame purchases after checkout with an active explicit link", async () => {
+  const f = makeAudienceFixture();
+  const visitor = "sole-buyer:v1:" + "a".repeat(64);
+  for (const session of [1, 2, 3, 4]) {
+    f.event(session, "checkout_started", 5, visitor);
+  }
+  const cases = [
+    ["identifiers-only", "2026-06-10T12:00:06.000Z"],
+    ["before-checkout", "2026-06-10T12:00:01.000Z"],
+    ["out-of-frame", "2026-06-11T04:00:00.000Z"],
+    ["revoked", "2026-06-10T12:00:06.000Z"],
+  ];
+  for (const [index, [id, time]] of cases.entries()) {
+    f.sale(id, visitor, time);
+    if (index > 0) f.link(id, index + 1, time, visitor);
+  }
+  f.db
+    .prepare(
+      "insert into analytics_purchase_link_export(dataset_id,order_id,active,updated_at) values(?,?,0,?)",
+    )
+    .run(f.deps.dataset!.datasetId, "revoked", "2026-06-11T00:00:00.000Z");
+  const req = { ...request("health"), report: "health" as const };
+  const result = await service.getReport(req, f.deps);
+  expect(result.data?.checkoutCompletion).toEqual({
+    numerator: 0,
+    denominator: 4,
+    value: 0,
+  });
+  const gap = await service.getReport(req, {
+    ...f.deps,
+    history: { ...f.deps.history, native: [] },
+  });
+  expect(gap.data?.checkoutCompletion).toEqual({
+    numerator: null,
+    denominator: null,
+    value: null,
+  });
+});
 it("groups since-activation buyers and leaves future retention months unavailable", async () => {
   const f = makeAudienceFixture();
   f.sale("old", "repeat", older);
@@ -129,7 +206,10 @@ it("bounds current behavior and purchasing conversion to a verified prefix while
     history: {
       archive: [],
       native: [{ start: f.deps.dataset!.activatedAt, end: stop.toISOString() }],
-      observation: null,
+      observation: {
+        observedAt: now.toISOString(),
+        sourceFreshThrough: now.toISOString(),
+      },
     },
   };
   const req = parseReportRequest(

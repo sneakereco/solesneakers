@@ -43,7 +43,9 @@ try {
     return data;
   };
   const { createObservationQueryBudget } = feature("Reporting/report-cache");
-  const { executePostHogQuery } = feature("Reporting/posthog-query");
+  const { executePostHogQuery, WAREHOUSE_OBSERVATION_EXECUTION } = feature(
+    "Reporting/posthog-query",
+  );
   const deadline = performance.now() + 20000;
   let exhaustedBytes = false;
   let remaining = 16 * 1024 * 1024;
@@ -77,6 +79,7 @@ try {
           timeoutMs,
           now: () => new Date(),
           fetch: boundedFetch,
+          mode: source === "warehouse" ? WAREHOUSE_OBSERVATION_EXECUTION : undefined,
         }),
     },
     deadline,

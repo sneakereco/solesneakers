@@ -86,7 +86,7 @@ function AcquisitionTable({
         <p className="analytics-muted">
           {rows.totalCount
             ? "No rows on this page."
-            : "No matching groups in this period."}
+            : "No observed groups in this period."}
         </p>
       )}
     </>
@@ -97,12 +97,14 @@ function viewCoverage(
   view: AttributionBreakdown,
   orderScope: ReportScope["attribution"]["orderScope"],
 ) {
-  const { eligibleOrders, attributedOrders } = view.attribution;
+  const evidence = view.attribution;
   return {
     orderScope,
-    eligibleOrders,
-    attributedOrders,
-    unattributedOrders: eligibleOrders - attributedOrders,
+    eligibleOrders: evidence?.eligibleOrders ?? null,
+    attributedOrders: evidence?.attributedOrders ?? null,
+    unattributedOrders: evidence
+      ? evidence.eligibleOrders - evidence.attributedOrders
+      : null,
   };
 }
 

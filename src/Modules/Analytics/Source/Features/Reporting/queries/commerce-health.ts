@@ -70,7 +70,11 @@ export function compileCommerceHealthQueries(
     },
   };
 }
-export function readHealthPeriod(raw: unknown, request: ReportRequest): HealthPeriod {
+export function readHealthPeriod(
+  raw: unknown,
+  request: ReportRequest,
+  warehouseObserved = true,
+): HealthPeriod {
   const values = rows(
     raw,
     [
@@ -88,15 +92,16 @@ export function readHealthPeriod(raw: unknown, request: ReportRequest): HealthPe
     512,
   );
   if (!values.length) throw new RangeError("Missing operational evidence.");
-  const data: HealthPeriod = {
+  const data = {
     attribution: attribution(values[0]),
-    outcomes: [],
-    backlog: [],
-    paymentToFulfillment: [],
+    outcomes: [] as NonNullable<HealthPeriod["outcomes"]>,
+    backlog: [] as NonNullable<HealthPeriod["backlog"]>,
+    paymentToFulfillment: [] as NonNullable<HealthPeriod["paymentToFulfillment"]>,
     fulfillmentPreference: { ship: 0, pickup: 0, unknown: 0 },
     fulfillmentDateBasis: "latest-state-of-orders-confirmed-in-range",
     missingFulfillmentDurations: 0,
     missingFulfillmentStates: 0,
+    checkoutCompletion: rate(null, null),
     funnel: (
       [
         "session",
@@ -111,7 +116,7 @@ export function readHealthPeriod(raw: unknown, request: ReportRequest): HealthPe
       fromStart: rate(null, null),
       fromPrevious: rate(null, null),
     })),
-  };
+  } satisfies HealthPeriod;
   const seen = new Set<string>();
   for (const row of values) {
     const { section, first_key: a, second_key: b, third_key: c } = row;
@@ -140,7 +145,7 @@ export function readHealthPeriod(raw: unknown, request: ReportRequest): HealthPe
       case "preference":
         if (a !== "ship" && a !== "pickup" && a !== "unknown")
           throw new RangeError("Unexpected preference.");
-        data.fulfillmentPreference![a] = n;
+        data.fulfillmentPreference[a] = n;
         break;
       case "state":
         data.backlog.push({
@@ -193,14 +198,27 @@ export function readHealthPeriod(raw: unknown, request: ReportRequest): HealthPe
       a.reason.localeCompare(b.reason),
   );
   data.paymentToFulfillment.sort((a, b) => a.fulfillment.localeCompare(b.fulfillment));
-  return data;
+  if (warehouseObserved) return data;
+  const hasOrders = Object.values(data.fulfillmentPreference).some((n) => n > 0);
+  return {
+    ...data,
+    attribution: data.attribution.eligibleOrders ? data.attribution : null,
+    outcomes: data.outcomes.length ? data.outcomes : null,
+    backlog: data.backlog.length ? data.backlog : null,
+    paymentToFulfillment: data.paymentToFulfillment.length
+      ? data.paymentToFulfillment
+      : null,
+    fulfillmentPreference: hasOrders ? data.fulfillmentPreference : null,
+    missingFulfillmentStates: hasOrders ? data.missingFulfillmentStates : null,
+    missingFulfillmentDurations: data.missingFulfillmentDurations || null,
+  };
 }
-export function mapHealthResult(raw: unknown): HealthData {
+export function mapHealthResult(raw: unknown, warehouseObserved = true): HealthData {
   const input = reportInput.parse(raw);
   return {
-    ...readHealthPeriod(input.summary, input.request),
+    ...readHealthPeriod(input.summary, input.request, warehouseObserved),
     comparison: hasComparison(input)
-      ? readHealthPeriod(input.comparison, input.request)
+      ? readHealthPeriod(input.comparison, input.request, warehouseObserved)
       : null,
   };
 }

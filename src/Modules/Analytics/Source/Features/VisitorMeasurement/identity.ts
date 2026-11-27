@@ -1,4 +1,5 @@
 import "server-only";
+import { createHmac } from "node:crypto";
 import { AuthService } from "@/services/auth-service";
 import { createSupabaseServerClient } from "@/lib/supabase/server";
 import { createBuyerKey } from "../CommerceFacts/buyer-key";
@@ -14,7 +15,11 @@ export async function resolveConsentedIdentity(): Promise<{ buyerKey: string } |
   ).getCurrentUserProfile({ requireAvailable: true });
   if (!user?.email_confirmed_at || !user.email || profile?.role !== "customer")
     return null;
+  // Keep the existing opaque wire format with a separate HMAC key for behavior.
+  const visitorSecret = createHmac("sha256", config.identitySecret)
+    .update("sole:consented-visitor:v1", "utf8")
+    .digest("hex");
   return {
-    buyerKey: createBuyerKey({ normalizedEmail: user.email }, config.identitySecret),
+    buyerKey: createBuyerKey({ normalizedEmail: user.email }, visitorSecret),
   };
 }

@@ -165,7 +165,7 @@ export function makeAudienceFixture(
   function putSale(order: string, buyer: string, at = day) {
     f.put("order", order, sale, { order, buyer, at });
   }
-  function link(order: string, n: number, at = day) {
+  function link(order: string, n: number, at = day, visitor = sid(n)) {
     db.prepare(
       "insert into analytics_purchase_link_export values (?,?,?,?,?,?,?,?,?)",
     ).run(
@@ -175,7 +175,7 @@ export function makeAudienceFixture(
       "mobile",
       '{"source":"google"}',
       at,
-      sid(n),
+      visitor,
       sid(n),
       '{"source":"instagram"}',
     );

@@ -69,6 +69,8 @@ test("keeps session evidence and overlapping operational outcomes independent", 
   expect(html).toContain("Same-session checkout funnel");
   expect(html).toContain("Visitor and session activity retain their behavioral scope.");
   expect(html).toContain('<th scope="row">Purchased</th><td>1</td>');
+  expect(html).toContain("Checkout completion");
+  expect(html).toContain("50% (1 / 2)");
   expect(html).toContain("Counts can overlap across stages and reasons.");
   expect(html).toContain(
     '<th scope="row">Payment</th><td>Unknown</td><td>Timeout</td><td>1</td>',
@@ -123,6 +125,7 @@ test("reports the latest fulfillment states and recorded duration with honest ag
 test("keeps operational evidence visible when the consented provider section is unavailable", async () => {
   const html = await render("health", "compare=true", "traffic-outage");
   expect(html).toContain("Same-session funnel unavailable for this period.");
+  expect(html).toContain("Checkout completion unavailable for this period.");
   expect(html).toContain(
     '<th scope="row">Reservation</th><td>Expired</td><td>Inventory</td><td>1</td>',
   );

@@ -242,7 +242,7 @@ export type OverviewSummary = {
   visitors: number | null;
   sessions: number | null;
   buyers: number | null;
-  missingBuyerOrders: number;
+  missingBuyerOrders: number | null;
 };
 export type OverviewData = {
   summary: OverviewSummary;
@@ -305,7 +305,7 @@ export type CustomersData = CustomerPeriod & {
 };
 
 export type AttributionBreakdown = {
-  attribution: SalesPeriod["attribution"];
+  attribution: SalesPeriod["attribution"] | null;
   series: TimeBucket[];
   sources: PaginatedRows<SourceRow>;
   channels: PaginatedRows<SourceRow>;
@@ -354,7 +354,7 @@ export type ProductsData = ProductPeriod & {
   comparison: ProductPeriod | null;
 };
 export type PaymentsPeriod = {
-  attribution: SalesPeriod["attribution"];
+  attribution: SalesPeriod["attribution"] | null;
   methods: PaginatedRows<PaymentRow>;
   paidOrders: number | null;
   resolvedAttempts: number | null;
@@ -364,24 +364,30 @@ export type PaymentsPeriod = {
 export type PaymentsData = PaymentsPeriod & { comparison: PaymentsPeriod | null };
 
 export type HealthPeriod = {
-  attribution: SalesPeriod["attribution"];
+  attribution: SalesPeriod["attribution"] | null;
   fulfillmentDateBasis: "latest-state-of-orders-confirmed-in-range";
-  missingFulfillmentStates: number;
-  missingFulfillmentDurations: number;
+  missingFulfillmentStates: number | null;
+  missingFulfillmentDurations: number | null;
   funnel: FunnelStep[];
-  outcomes: Array<{ stage: string; outcome: string; reason: string; count: number }>;
+  checkoutCompletion: Rate;
+  outcomes: Array<{
+    stage: string;
+    outcome: string;
+    reason: string;
+    count: number;
+  }> | null;
   fulfillmentPreference: { ship: number; pickup: number; unknown: number } | null;
   backlog: Array<{
     fulfillment: FilterValue<"fulfillment">;
     state: string;
     count: number;
-  }>;
+  }> | null;
   paymentToFulfillment: Array<{
     fulfillment: FilterValue<"fulfillment">;
     fulfilledOrders: number;
     medianSeconds: number | null;
     p90Seconds: number | null;
-  }>;
+  }> | null;
 };
 
 export type HealthData = HealthPeriod & { comparison: HealthPeriod | null };
