@@ -7,24 +7,29 @@ import { join, resolve } from "node:path";
 const projectLabel = "com.supabase.cli.project";
 const workdirLabel = "com.supabase.cli.workdir";
 export const runLabel = "com.solesneakers.checkout-hardening.owner";
-const databaseImage = "public.ecr.aws/supabase/postgres:17.6.1.167";
+const databaseImage = "supabase/postgres:17.6.1.167";
 const pinnedDatabaseCommandHash =
   "ec6b2bcd8e000bd2bbb4a773aaf89b1e13628c4b525d2396aba384a3069c3dc6";
 const platformInitializers = new Map([
   [
-    "public.ecr.aws/supabase/realtime:v2.130.0",
+    "supabase/realtime:v2.130.0",
     [
       "/app/bin/realtime",
       "eval",
       '{:ok, _} = Application.ensure_all_started(:realtime)\n{:ok, _} = Realtime.Tenants.health_check("realtime-dev")',
     ],
   ],
-  [
-    "public.ecr.aws/supabase/storage-api:v1.72.1",
-    ["node", "dist/scripts/migrate-call.js"],
-  ],
-  ["public.ecr.aws/supabase/gotrue:v2.196.0", ["gotrue", "migrate"]],
+  ["supabase/storage-api:v1.72.1", ["node", "dist/scripts/migrate-call.js"]],
+  ["supabase/gotrue:v2.196.0", ["gotrue", "migrate"]],
 ]);
+
+// The pinned Supabase CLI tries ECR, GHCR, then Docker Hub. Only its registry
+// prefix may vary. The repository, tag, and initializer command stay pinned.
+function pinnedImageName(image) {
+  return typeof image === "string"
+    ? image.replace(/^(?:public\.ecr\.aws|ghcr\.io|docker\.io)\//, "")
+    : undefined;
+}
 
 function dockerEndpoint(path) {
   return new URL(path, "http://local-docker.invalid").pathname.replace(
@@ -72,6 +77,7 @@ export function rewriteStartupRequest(
       );
     if (kind === "container") {
       const config = body.HostConfig;
+      const image = pinnedImageName(body.Image);
       assert.equal(config.NetworkMode, names.network);
       assert.ok(
         Object.keys(body.NetworkingConfig?.EndpointsConfig ?? {}).every(
@@ -89,8 +95,8 @@ export function rewriteStartupRequest(
       assert.deepEqual(Object.keys(body.Volumes ?? {}), []);
       assert.equal(Boolean(config.Privileged), false);
       if (!name) {
-        assert.ok(platformInitializers.has(body.Image));
-        assert.deepEqual(body.Cmd, platformInitializers.get(body.Image));
+        assert.ok(platformInitializers.has(image));
+        assert.deepEqual(body.Cmd, platformInitializers.get(image));
         assert.equal(body.Entrypoint, null);
         assert.equal(config.AutoRemove, true);
         assert.deepEqual(Object.keys(config.PortBindings ?? {}), []);
@@ -98,7 +104,7 @@ export function rewriteStartupRequest(
       } else {
         assert.equal(resolve(body.Labels[workdirLabel]), directory);
         assert.equal(name, names.container);
-        assert.equal(body.Image, databaseImage);
+        assert.equal(image, databaseImage);
         assert.deepEqual(body.Entrypoint, ["sh"]);
         assert.equal(
           createHash("sha256").update(JSON.stringify(body.Cmd)).digest("hex"),
@@ -129,7 +135,7 @@ export function rewriteStartupRequest(
   if (method === "POST" && endpoint === "/images/create") {
     const repository = url.searchParams.get("fromImage");
     const tag = url.searchParams.get("tag");
-    const image = tag ? repository + ":" + tag : repository;
+    const image = pinnedImageName(tag ? repository + ":" + tag : repository);
     assert.ok(image === databaseImage || platformInitializers.has(image));
     return body;
   }
