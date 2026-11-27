@@ -11,14 +11,20 @@
     "test:jest:unit": "jest --config jest.config.ts",
     "test:jest:integration": "jest --config jest.integration.config.ts",
     "test:measurement:browser": "node tests/browser/measurement-trigger-sites.mjs && node tests/browser/measurement-sdk-boundary.mjs",
-    "test:e2e": "node tests/browser/payment-methods.mjs && node tests/browser/checkout-ui.mjs && node tests/browser/shipping-validation.mjs && node tests/browser/checkout-success.mjs && node tests/browser/checkout-progress.mjs && node tests/browser/admin-transaction-detail.mjs && node tests/browser/admin-button-contrast.mjs && node tests/browser/shipping-settings-modal.mjs && node tests/browser/store-menu.mjs && node tests/browser/home-featured-items.mjs && node tests/browser/home-clothing.mjs && node tests/browser/home-categories.mjs && node tests/browser/storefront-branding.mjs",
+    "test:e2e": "node tests/browser/payment-methods.mjs && node tests/browser/checkout-ui.mjs && node tests/browser/shipping-validation.mjs && node tests/browser/checkout-success.mjs && node tests/browser/checkout-progress.mjs && node tests/browser/admin-transaction-detail.mjs && node tests/browser/admin-button-contrast.mjs && node tests/browser/shipping-settings-modal.mjs && node tests/browser/store-menu.mjs && node tests/browser/home-featured-items.mjs && node tests/browser/home-clothing.mjs && node tests/browser/home-categories.mjs && node tests/browser/storefront-branding.mjs && node tests/browser/auth-lock-navigation.mjs",
+    "test:ux:browser": "node tests/browser/ux-journeys.mjs",
     "test:rls": "tsx ./tests/rls/rls-check.ts",
+    "test:specialty:browser": "node tests/browser/specialty-claims.mjs",
+    "test:specialty:load": "node --import tsx scripts/load/specialty-claims.mjs",
+    "test:specialty:database": "node --test --test-concurrency=1 tests/database/specialty-claims-schema.test.mjs tests/database/specialty-claims-concurrency.test.mjs tests/database/specialty-claims-admin.test.mjs tests/database/specialty-claims-backpressure.test.mjs tests/database/specialty-claims-observation.test.mjs tests/database/specialty-browser-environment.test.mjs tests/database/specialty-local-redis.test.mjs",
     "format": "prettier --write .",
     "format:check": "prettier --check .",
     "dev": "doppler run -- next dev",
     "build": "doppler run -- next build",
     "start": "doppler run -- next start",
-    "gen:types": "npx supabase gen types typescript --local --schema public > src/types/db/database.types.ts"
+    "gen:types": "npx supabase gen types typescript --local --schema public > src/types/db/database.types.ts",
+    "test:store-lock:database": "node --test --test-concurrency=1 tests/database/site-lock-registration.test.mjs",
+    "test:reseller-orders:database": "node --test --test-concurrency=1 tests/database/reseller-order-notifications.test.mjs"
   },
   "dependencies": {
     "@date-fns/tz": "1.5.0",

@@ -88,7 +88,7 @@ const bundle = await build({
           loader: "jsx",
           contents:
             path === "next/link"
-              ? "export default function Link({ prefetch, ...props }) { return <a {...props} />; }"
+              ? "export const useLinkStatus = () => ({pending:false}); export default function Link({prefetch, onNavigate, ...props}) { return <a {...props} onClick={onNavigate} />; }"
               : "export const usePathname = () => location.pathname;",
         }));
       },

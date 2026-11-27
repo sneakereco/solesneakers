@@ -204,6 +204,7 @@ export async function POST(request: NextRequest) {
     if (!trackingNumber) {
       return NextResponse.json(
         {
+          code: "shipping_label_purchased_without_tracking",
           error:
             "Label purchase succeeded but returned no tracking number. Please contact support.",
           requestId,

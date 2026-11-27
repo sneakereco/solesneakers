@@ -1,7 +1,21 @@
 // src/components/inventory/ProductForm.tsx
 "use client";
+import { useAsyncAction } from "@/components/ui/useAsyncAction";
+import { ActionButton } from "@/components/ui/ActionButton";
+import { adminCommand } from "@/components/admin/admin-command";
+import { fetchJsonWithDeadline } from "@/lib/http/request-deadline";
+import { useId } from "react";
+import { useHydrated } from "@/components/ui/useHydrated";
 
-import { useState, useEffect, useMemo, useRef, useCallback } from "react";
+import {
+  useState,
+  useEffect,
+  useMemo,
+  useRef,
+  useCallback,
+  type Dispatch,
+  type SetStateAction,
+} from "react";
 import { GripVertical, ImagePlus, Plus, Trash2, X } from "lucide-react";
 import {
   closestCenter,
@@ -27,11 +41,18 @@ import type { ProductCreateInput } from "@/services/product-service";
 import { logError } from "@/lib/utils/log";
 import { Toast } from "@/components/ui/Toast";
 import { RdkSelect } from "@/components/ui/Select";
+import { SpecialtyProductForm } from "@/Modules/SpecialtyProducts/Source/Features/ManageProducts/SpecialtyProductForm";
+import type {
+  SpecialtyProductDraft,
+  SpecialtyProductWrite,
+} from "@/Modules/SpecialtyProducts/Source/Features/ManageProducts/specialty-product-contract";
 
 // OPTIMIZATION: Lazy load image compression library
 const loadImageCompression = () => import("browser-image-compression");
 
 interface ProductFormProps {
+  specialtyInitial?: SpecialtyProductDraft;
+  onSpecialtySubmit?: (data: SpecialtyProductWrite) => Promise<void>;
   initialData?: Omit<Partial<ProductCreateInput>, "variants"> & {
     id?: string;
     variants?: Array<
@@ -43,6 +64,7 @@ interface ProductFormProps {
   };
   onSubmit: (data: ProductCreateInput) => Promise<void>;
   onCancel: () => void;
+  onCheckSave?: () => Promise<void>;
 
   initialBrands?: Array<{
     id: string;
@@ -227,21 +249,101 @@ function SortableVariantRow({ id, className, children }: SortableVariantRowProps
   );
 }
 
-export function ProductForm({
+type OrdinaryFormState = {
+  work: ReturnType<typeof useAsyncAction>;
+  workKind: "save" | "upload";
+  setWorkKind: Dispatch<SetStateAction<"save" | "upload">>;
+  saved: boolean;
+  setSaved: Dispatch<SetStateAction<boolean>>;
+};
+
+export function ProductForm(props: ProductFormProps) {
+  // The category selector and ordinary form share one operation owner.
+  const work = useAsyncAction();
+  const [workKind, setWorkKind] = useState<"save" | "upload">("save");
+  const [saved, setSaved] = useState(false);
+  const [specialtyBusy, setSpecialtyBusy] = useState(false);
+  const categoryLocked = work.pending || saved || specialtyBusy || !!props.onCheckSave;
+  const [specialty, setSpecialty] = useState(props.initialData?.category === "specialty");
+  const editing = Boolean(props.initialData?.id || props.specialtyInitial);
+  return (
+    <div className="space-y-4">
+      {!editing && props.onSpecialtySubmit && (
+        <label className="block text-sm text-zinc-300">
+          Product category
+          <select
+            className="ml-3 rounded border border-zinc-700 bg-zinc-900 p-2"
+            value={specialty ? "specialty" : "ordinary"}
+            disabled={categoryLocked}
+            onChange={(event) => {
+              if (!categoryLocked) setSpecialty(event.target.value === "specialty");
+            }}
+          >
+            <option value="ordinary">Standard product</option>
+            <option value="specialty">Specialty giveaway</option>
+          </select>
+        </label>
+      )}
+      {specialty && props.onSpecialtySubmit ? (
+        <SpecialtyProductForm
+          onActivityChange={setSpecialtyBusy}
+          initial={props.specialtyInitial}
+          onSubmit={props.onSpecialtySubmit}
+          onCancel={props.onCancel}
+        />
+      ) : (
+        <OrdinaryProductForm
+          {...props}
+          work={work}
+          workKind={workKind}
+          setWorkKind={setWorkKind}
+          saved={saved}
+          setSaved={setSaved}
+        />
+      )}
+    </div>
+  );
+}
+
+function OrdinaryProductForm({
   initialData,
   onSubmit,
   onCancel,
+  onCheckSave,
+  work,
+  workKind,
+  setWorkKind,
+  saved,
+  setSaved,
   initialBrands, // NEW
   initialModels,
   initialSizes = [],
-}: ProductFormProps) {
-  const [isLoading, setIsLoading] = useState(false);
+}: ProductFormProps & OrdinaryFormState) {
+  const id = useId();
+  const hydrated = useHydrated();
+  const [fieldError, setFieldError] = useState<{ key: string; message: string } | null>(
+    null,
+  );
+  const [parseAttempt, retryParse] = useState(0);
+  const [catalogAttempt, retryCatalog] = useState(0);
+  const [brandStatus, setBrandStatus] = useState<"loading" | "error" | "idle">(
+    initialBrands ? "idle" : "loading",
+  );
+  const [modelRead, setModelRead] = useState<{
+    brandId: string;
+    status: "loading" | "error" | "idle";
+  }>();
+  const isLoading = work.pending && workKind === "save";
+  const uploading = work.pending && workKind === "upload";
 
   const initialTitle = initialData?.name ?? "";
   const [titleRaw, setTitleRaw] = useState(initialTitle);
 
-  const [parseResult, setParseResult] = useState<TitleParseResult | null>(null);
-  const [parseStatus, setParseStatus] = useState<"idle" | "loading" | "error">("idle");
+  const [parsedTitle, setParseResult] = useState<TitleParseResult | null>(null);
+  const [parseRead, setParseRead] = useState<{
+    key: string;
+    status: "loading" | "error" | "idle";
+  }>();
 
   const [brandOverrideId, setBrandOverrideId] = useState<string | null>(
     initialData?.brand_id ?? null,
@@ -256,12 +358,20 @@ export function ProductForm({
     initialModels?.find((model) => model.id === initialData?.model_id)?.label ?? "",
   );
 
+  const [category, setCategory] = useState<Category>(initialData?.category || "sneakers");
+  const parseKey = JSON.stringify([titleRaw, category, brandOverrideId, modelOverrideId]);
+  const parseStatus = !titleRaw.trim()
+    ? "idle"
+    : parseRead?.key === parseKey
+      ? parseRead.status
+      : "loading";
+  const [parsedKey, setParsedKey] = useState("");
+  const parseResult = parsedKey === parseKey ? parsedTitle : null;
   // UPDATED: Use server data if provided
   const [brandOptions, setBrandOptions] = useState<CatalogOption[]>(initialBrands || []);
   const [loadedModels, setModelOptions] = useState<CatalogOption[]>(initialModels ?? []);
   const [sizeOptions] = useState(initialSizes);
 
-  const [category, setCategory] = useState<Category>(initialData?.category || "sneakers");
   const [condition, setCondition] = useState<Condition>(initialData?.condition || "new");
   const [description, setDescription] = useState(initialData?.description || "");
   const [publishMode, setPublishMode] = useState<"immediately" | "scheduled">(() => {
@@ -297,10 +407,10 @@ export function ProductForm({
     const sortedInitialVariants = [...(initialData?.variants ?? [])].sort(
       (a, b) => (a.sort_order ?? 0) - (b.sort_order ?? 0),
     );
-    const mapped = sortedInitialVariants.map((variant) => ({
-      draft_id: createVariantDraftId(),
+    const mapped = sortedInitialVariants.map((variant, index) => ({
+      draft_id: variant.id ?? `initial-${index}`,
       id: variant.id ?? undefined,
-      sku: variant.sku?.trim() || createDraftSku(),
+      sku: variant.sku?.trim() ?? "",
       size_id: variant.size_id,
       size_label: variant.size?.label.trim() ?? "",
       salePrice: formatMoney(variant.sale_price_cents / 100),
@@ -318,8 +428,8 @@ export function ProductForm({
       ? mapped
       : [
           {
-            draft_id: createVariantDraftId(),
-            sku: createDraftSku(),
+            draft_id: "initial-0",
+            sku: "",
             size_id: defaultSize?.id ?? "",
             size_label: defaultSize?.label ?? "",
             salePrice: "",
@@ -328,6 +438,14 @@ export function ProductForm({
           },
         ];
   });
+
+  if (hydrated && variants.some((variant) => !variant.sku)) {
+    setVariants(
+      variants.map((variant) =>
+        variant.sku ? variant : { ...variant, sku: createDraftSku() },
+      ),
+    );
+  }
 
   const [images, setImages] = useState<ImageDraft[]>(() =>
     normalizeImages(initialData?.images ?? []),
@@ -345,7 +463,10 @@ export function ProductForm({
     () => variants.map((variant) => variant.draft_id),
     [variants],
   );
-  const scheduleMin = useMemo(() => toDateTimeLocalValue(new Date().toISOString()), []);
+  const scheduleMin = useMemo(
+    () => (hydrated ? toDateTimeLocalValue(new Date().toISOString()) : undefined),
+    [hydrated],
+  );
   const variantDragSensors = useSensors(
     useSensor(PointerSensor, { activationConstraint: { distance: 6 } }),
     useSensor(KeyboardSensor, { coordinateGetter: sortableKeyboardCoordinates }),
@@ -372,11 +493,14 @@ export function ProductForm({
     const controller = new AbortController();
     const loadBrands = async () => {
       try {
-        const response = await fetch("/api/admin/tags/brands", {
-          signal: controller.signal,
-        });
-        const data = await response.json();
-        if (response.ok && !controller.signal.aborted) {
+        setBrandStatus("loading");
+        const data = await fetchJsonWithDeadline<{ brands: BrandCatalogEntry[] }>(
+          "/api/admin/tags/brands",
+          "Brands unavailable",
+          controller.signal,
+        );
+        if (!controller.signal.aborted) {
+          setBrandStatus("idle");
           const options = (data.brands || []).map((brand: BrandCatalogEntry) => ({
             id: brand.id,
             label: brand.canonical_label,
@@ -385,16 +509,22 @@ export function ProductForm({
         }
       } catch (error) {
         if (controller.signal.aborted) return;
+        setBrandStatus("error");
         logError(error, { layer: "frontend", event: "inventory_load_brand_catalog" });
       }
     };
     void loadBrands();
     return () => controller.abort();
-  }, [initialBrands]);
+  }, [initialBrands, catalogAttempt]);
 
   const effectiveBrandId = brandOverrideId ?? parseResult?.brand?.id ?? null;
   const effectiveModelId = modelOverrideId ?? parseResult?.model?.id ?? null;
-  const modelOptions = effectiveBrandId ? loadedModels : [];
+  const modelStatus = !effectiveBrandId
+    ? "idle"
+    : modelRead?.brandId === effectiveBrandId
+      ? modelRead.status
+      : "loading";
+  const modelOptions = effectiveBrandId && modelStatus === "idle" ? loadedModels : [];
 
   useEffect(() => {
     if (!effectiveBrandId) {
@@ -403,19 +533,21 @@ export function ProductForm({
     const controller = new AbortController();
     const loadModels = async () => {
       try {
-        const response = await fetch(
+        setModelRead({ brandId: effectiveBrandId, status: "loading" });
+        const data = await fetchJsonWithDeadline<{ models: ModelCatalogEntry[] }>(
           `/api/admin/tags/models?brandId=${effectiveBrandId}`,
-          { signal: controller.signal },
+          "Models unavailable",
+          controller.signal,
         );
-        const data = await response.json();
-        if (response.ok && !controller.signal.aborted) {
+        if (!controller.signal.aborted) {
+          setModelRead({ brandId: effectiveBrandId, status: "idle" });
           const options = (data.models || []).map((model: ModelCatalogEntry) => ({
             id: model.id,
             label: model.canonical_label,
           }));
-          const selectedInitial = initialModels?.find(
-            (model) => model.id === effectiveModelId,
-          );
+          const selectedInitial =
+            initialData?.brand_id === effectiveBrandId &&
+            initialModels?.find((model) => model.id === effectiveModelId);
           const nextOptions: CatalogOption[] =
             selectedInitial &&
             !options.some((option: CatalogOption) => option.id === selectedInitial.id)
@@ -430,13 +562,21 @@ export function ProductForm({
         }
       } catch (error) {
         if (controller.signal.aborted) return;
+        setModelRead({ brandId: effectiveBrandId, status: "error" });
         logError(error, { layer: "frontend", event: "inventory_load_model_catalog" });
       }
     };
 
     void loadModels();
     return () => controller.abort();
-  }, [effectiveBrandId, effectiveModelId, initialModels, modelOverrideId]);
+  }, [
+    effectiveBrandId,
+    effectiveModelId,
+    initialData?.brand_id,
+    initialModels,
+    modelOverrideId,
+    catalogAttempt,
+  ]);
 
   useEffect(() => {
     if (!titleRaw.trim()) {
@@ -445,26 +585,31 @@ export function ProductForm({
 
     const controller = new AbortController();
     const parseTitle = async () => {
-      setParseStatus("loading");
+      setParseRead({ key: parseKey, status: "loading" });
       try {
-        const response = await fetch("/api/admin/tags/parse-title", {
-          method: "POST",
-          headers: { "Content-Type": "application/json" },
-          body: JSON.stringify({
-            titleRaw,
-            category,
-            brandOverrideId,
-            modelOverrideId,
-          }),
-          signal: controller.signal,
-        });
-        const data = await response.json();
+        const { response, data } = await adminCommand<
+          TitleParseResult & { error?: string }
+        >(
+          "/api/admin/tags/parse-title",
+          {
+            method: "POST",
+            headers: { "Content-Type": "application/json" },
+            body: JSON.stringify({
+              titleRaw,
+              category,
+              brandOverrideId,
+              modelOverrideId,
+            }),
+          },
+          controller.signal,
+        );
         if (controller.signal.aborted) return;
-        if (!response.ok) {
+        if (!response.ok || !data) {
           throw new Error(data?.error || "Failed to parse title.");
         }
+        setParsedKey(parseKey);
         setParseResult(data);
-        setParseStatus("idle");
+        setParseRead({ key: parseKey, status: "idle" });
       } catch (error: unknown) {
         const isAbort =
           error instanceof DOMException
@@ -473,11 +618,11 @@ export function ProductForm({
               error !== null &&
               "name" in error &&
               (error as { name?: string }).name === "AbortError";
-        if (isAbort) {
+        if (controller.signal.aborted || isAbort) {
           return;
         }
         logError(error, { layer: "frontend", event: "inventory_parse_title" });
-        setParseStatus("error");
+        setParseRead({ key: parseKey, status: "error" });
       }
     };
     const timeout = setTimeout(() => {
@@ -488,7 +633,7 @@ export function ProductForm({
       controller.abort();
       clearTimeout(timeout);
     };
-  }, [titleRaw, category, brandOverrideId, modelOverrideId]);
+  }, [titleRaw, category, brandOverrideId, modelOverrideId, parseKey, parseAttempt]);
 
   const changeCategory = (nextCategory: Category) => {
     setCategory(nextCategory);
@@ -632,23 +777,43 @@ export function ProductForm({
     });
 
     try {
-      const imageCompression = await loadImageCompression();
-      const options = {
-        maxSizeMB: 2,
-        maxWidthOrHeight: 1920,
-        useWebWorker: true,
-        fileType: file.type || "image/jpeg",
-      };
+      const controller = new AbortController();
+      let timer: ReturnType<typeof setTimeout> | undefined;
+      try {
+        const compression = async () => {
+          const imageCompression = await loadImageCompression();
+          if (controller.signal.aborted) return file;
+          const options = {
+            signal: controller.signal,
+            maxSizeMB: 2,
+            maxWidthOrHeight: 1920,
+            useWebWorker: true,
+            fileType: file.type || "image/jpeg",
+          };
 
-      const compressedFile = await imageCompression.default(file, options);
+          return imageCompression.default(file, options);
+        };
+        // Compression is optional and library loading may ignore cancellation. Upload exactly one file.
+        const compressedFile = await Promise.race([
+          compression(),
+          new Promise<File>((resolve) => {
+            timer = setTimeout(() => {
+              controller.abort();
+              resolve(file);
+            }, 15000);
+          }),
+        ]);
 
-      console.info("[compressImage] Compression successful:", {
-        originalSize: file.size,
-        compressedSize: compressedFile.size,
-        reduction: `${Math.round((1 - compressedFile.size / file.size) * 100)}%`,
-      });
+        console.info("[compressImage] Compression successful:", {
+          originalSize: file.size,
+          compressedSize: compressedFile.size,
+          reduction: `${Math.round((1 - compressedFile.size / file.size) * 100)}%`,
+        });
 
-      return compressedFile;
+        return compressedFile;
+      } finally {
+        clearTimeout(timer);
+      }
     } catch (error) {
       console.error("[compressImage] Compression failed, using original:", error);
       logError(error, {
@@ -727,7 +892,7 @@ export function ProductForm({
   };
 
   const handleUploadFiles = async (files: FileList | null) => {
-    if (!files || files.length === 0) {
+    if (onCheckSave || !files || files.length === 0) {
       return;
     }
 
@@ -755,6 +920,7 @@ export function ProductForm({
       }
     }
 
+    let failedFiles = 0;
     setUploadQueue({
       total: valid.length,
       completed: 0,
@@ -796,22 +962,10 @@ export function ProductForm({
           fd.append("productId", initialData.id);
         }
 
-        const res = await fetch("/api/admin/uploads/product-image", {
-          method: "POST",
-          body: fd,
-        });
-
-        const responseText = await res.text();
-        console.info(`[ProductForm] Response for file ${i + 1}:`, res.status);
-
-        let json: unknown = null;
-        try {
-          json = JSON.parse(responseText);
-        } catch (parseError) {
-          console.error("[ProductForm] JSON parse error:", parseError);
-          throw new Error(`Invalid server response: ${responseText.substring(0, 100)}`);
-        }
-
+        const { response: res, data: json } = await adminCommand<unknown>(
+          "/api/admin/uploads/product-image",
+          { method: "POST", body: fd },
+        );
         if (!res.ok) {
           const errorMsg = isUploadErrorResponse(json)
             ? json.error || json.message
@@ -819,21 +973,17 @@ export function ProductForm({
           throw new Error(errorMsg);
         }
 
-        if (isUploadsResponse(json)) {
-          json.uploads.forEach((upload) => {
-            if (isUploadResult(upload)) {
-              addImageEntry(upload.url);
-            }
-          });
-        } else if (isUploadResult(json)) {
-          addImageEntry(json.url);
-        }
-
+        const uploads = (isUploadsResponse(json) ? json.uploads : [json])
+          .filter(isUploadResult)
+          .filter((upload) => upload.url.trim());
+        if (!uploads.length) throw new Error("Upload response did not contain an image.");
+        uploads.forEach((upload) => addImageEntry(upload.url));
         setUploadQueue((prev) => ({
           ...prev,
           completed: prev.completed + 1,
         }));
       } catch (error) {
+        failedFiles++;
         console.error(`[ProductForm] Upload failed for ${file.name}:`, error);
 
         logError(error, {
@@ -852,32 +1002,15 @@ export function ProductForm({
       }
     }
 
-    setUploadQueue((prev) => {
-      const successCount = prev.total - prev.failed;
-
-      if (prev.failed === 0) {
-        setToast({
-          message: `${successCount} image(s) uploaded successfully`,
-          tone: "success",
-        });
-      } else if (successCount === 0) {
-        setToast({
-          message: `All ${prev.failed} upload(s) failed`,
-          tone: "error",
-        });
-      } else {
-        setToast({
-          message: `${successCount} succeeded, ${prev.failed} failed`,
-          tone: "info",
-        });
-      }
-
-      return {
-        ...prev,
-        isUploading: false,
-      };
-    });
-
+    const successCount = valid.length - failedFiles;
+    setUploadQueue((prev) => ({ ...prev, isUploading: false }));
+    setToast(
+      failedFiles === 0
+        ? { message: `${successCount} image(s) uploaded successfully`, tone: "success" }
+        : successCount === 0
+          ? { message: `All ${failedFiles} upload(s) failed`, tone: "error" }
+          : { message: `${successCount} succeeded, ${failedFiles} failed`, tone: "info" },
+    );
     if (fileInputRef.current) {
       fileInputRef.current.value = "";
     }
@@ -894,7 +1027,11 @@ export function ProductForm({
   const handleDrop = (event: React.DragEvent<HTMLDivElement>) => {
     event.preventDefault();
     setIsDragging(false);
-    void handleUploadFiles(event.dataTransfer.files);
+    if (!saved && !onCheckSave)
+      void work.run(() => {
+        setWorkKind("upload");
+        return handleUploadFiles(event.dataTransfer.files);
+      });
   };
 
   const applyBrandOverride = (option: CatalogOption | null) => {
@@ -980,42 +1117,63 @@ export function ProductForm({
 
   const handleSubmit = async (e: React.FormEvent) => {
     e.preventDefault();
-    setIsLoading(true);
+    if (uploading || saved || onCheckSave) return;
+    setFieldError(null);
 
+    function invalid(key: string, message: string): never {
+      setFieldError({ key, message });
+      document.getElementById(key)?.focus();
+      throw new Error(message);
+    }
     try {
       const trimmedTitle = titleRaw.trim();
       if (!trimmedTitle) {
-        throw new Error("Full title is required.");
+        invalid(`${id}-titleRaw`, "Full title is required.");
       }
       if (!effectiveBrandId) {
-        throw new Error("Select a canonical brand.");
+        invalid(`${id}-brandOverrideInput`, "Select a canonical brand.");
       }
 
       const seenSizeKeys = new Set<string>();
       const preparedVariants = variants.map((variant, index) => {
         const priceCents = parseMoneyToCents(variant.salePrice);
         if (priceCents === null) {
-          throw new Error(`Variant ${index + 1} price is invalid.`);
+          invalid(
+            `${id}-${variant.draft_id}-salePrice`,
+            `Variant ${index + 1} price is invalid.`,
+          );
         }
 
         const trimmedUnitCost = variant.unitCost.trim();
         const costCents = trimmedUnitCost ? parseMoneyToCents(trimmedUnitCost) : null;
         if (trimmedUnitCost && costCents === null) {
-          throw new Error(`Variant ${index + 1} cost is invalid.`);
+          invalid(
+            `${id}-${variant.draft_id}-unitCost`,
+            `Variant ${index + 1} cost is invalid.`,
+          );
         }
 
         const stockCount = parseStockCount(variant.stock);
         if (stockCount === null) {
-          throw new Error(`Variant ${index + 1} stock is invalid.`);
+          invalid(
+            `${id}-${variant.draft_id}-stock`,
+            `Variant ${index + 1} stock is invalid.`,
+          );
         }
 
         const sizeLabel = variant.size_label.trim();
         if (!variant.size_id || !sizeLabel) {
-          throw new Error(`Variant ${index + 1} size is required.`);
+          invalid(
+            `${id}-${variant.draft_id}-size_id`,
+            `Variant ${index + 1} size is required.`,
+          );
         }
         const sizeKey = variant.size_id;
         if (seenSizeKeys.has(sizeKey)) {
-          throw new Error(`Duplicate size "${sizeLabel}" found in variants.`);
+          invalid(
+            `${id}-${variant.draft_id}-size_id`,
+            `Duplicate size "${sizeLabel}" found in variants.`,
+          );
         }
         seenSizeKeys.add(sizeKey);
 
@@ -1042,16 +1200,16 @@ export function ProductForm({
       if (publishMode === "scheduled") {
         const value = scheduledGoLiveAt.trim();
         if (!value) {
-          throw new Error("Please choose a go-live date and time.");
+          invalid(`${id}-scheduledGoLiveAt`, "Please choose a go-live date and time.");
         }
         const parsed = new Date(value);
         if (Number.isNaN(parsed.getTime())) {
-          throw new Error("Go-live date/time is invalid.");
+          invalid(`${id}-scheduledGoLiveAt`, "Go-live date/time is invalid.");
         }
         const nowMinute = new Date();
         nowMinute.setSeconds(0, 0);
         if (parsed.getTime() < nowMinute.getTime()) {
-          throw new Error("Go-live date/time cannot be in the past.");
+          invalid(`${id}-scheduledGoLiveAt`, "Go-live date/time cannot be in the past.");
         }
         goLiveAt = parsed.toISOString();
       }
@@ -1070,12 +1228,12 @@ export function ProductForm({
       };
 
       await onSubmit(data);
+      setSaved(true);
+      setToast({ message: "Product saved.", tone: "success" });
     } catch (error) {
       logError(error, { layer: "frontend", event: "inventory_form_submit" });
       const message = error instanceof Error ? error.message : "Failed to save product";
       setToast({ message, tone: "error" });
-    } finally {
-      setIsLoading(false);
     }
   };
 
@@ -1083,12 +1241,24 @@ export function ProductForm({
     <form
       data-admin-form
       onSubmit={(event) => {
-        void handleSubmit(event);
+        event.preventDefault();
+        void work.run(() => {
+          setWorkKind("save");
+          return handleSubmit(event);
+        });
       }}
-      className="space-y-4 md:space-y-6"
+      className="space-y-4 pb-24 sm:pb-0 md:space-y-6"
     >
+      {fieldError && (
+        <p id={`${id}-error`} role="alert">
+          {fieldError.message}
+        </p>
+      )}
       {/* MOBILE OPTIMIZATION: Improved mobile layout */}
-      <div className="rounded border border-zinc-800/70 bg-zinc-900 p-4 md:p-6">
+      <div
+        inert={isLoading || saved || !!onCheckSave}
+        className="rounded border border-zinc-800/70 bg-zinc-900 p-4 md:p-6"
+      >
         <h2 className="mb-3 text-lg font-semibold text-white md:mb-4 md:text-xl">
           Basic Information
         </h2>
@@ -1096,17 +1266,25 @@ export function ProductForm({
         <div className="space-y-4">
           {/* Full width title on mobile */}
           <div>
-            <label className="mb-1 block text-sm text-gray-400">
+            <label
+              htmlFor={`${id}-titleRaw`}
+              className="mb-1 block text-sm text-gray-400"
+            >
               Full Title <RequiredMark />
             </label>
             <input
+              id={`${id}-titleRaw`}
+              aria-invalid={fieldError?.key === `${id}-titleRaw`}
+              aria-describedby={
+                fieldError?.key === `${id}-titleRaw` ? `${id}-error` : undefined
+              }
               type="text"
               value={titleRaw}
               onChange={(e) => {
                 setTitleRaw(e.target.value);
                 if (!e.target.value.trim()) {
                   setParseResult(null);
-                  setParseStatus("idle");
+                  setParseRead(undefined);
                 }
               }}
               required
@@ -1120,10 +1298,18 @@ export function ProductForm({
           {/* Stack category/condition on mobile */}
           <div className="grid grid-cols-1 gap-4 sm:grid-cols-2">
             <div>
-              <label className="mb-1 block text-sm text-gray-400">
+              <label
+                htmlFor={`${id}-category`}
+                className="mb-1 block text-sm text-gray-400"
+              >
                 Category <RequiredMark />
               </label>
               <RdkSelect
+                id={`${id}-category`}
+                aria-invalid={fieldError?.key === `${id}-category`}
+                aria-describedby={
+                  fieldError?.key === `${id}-category` ? `${id}-error` : undefined
+                }
                 value={category}
                 onChange={(v) => changeCategory(v as Category)}
                 options={[
@@ -1136,10 +1322,18 @@ export function ProductForm({
             </div>
 
             <div>
-              <label className="mb-1 block text-sm text-gray-400">
+              <label
+                htmlFor={`${id}-condition`}
+                className="mb-1 block text-sm text-gray-400"
+              >
                 Condition <RequiredMark />
               </label>
               <RdkSelect
+                id={`${id}-condition`}
+                aria-invalid={fieldError?.key === `${id}-condition`}
+                aria-describedby={
+                  fieldError?.key === `${id}-condition` ? `${id}-error` : undefined
+                }
                 value={condition}
                 onChange={(v) => setCondition(v as Condition)}
                 options={[
@@ -1151,15 +1345,34 @@ export function ProductForm({
           </div>
         </div>
 
+        {(brandStatus === "loading" ||
+          (effectiveBrandId && modelStatus === "loading")) && (
+          <p role="status">Loading tag options…</p>
+        )}
+        {(brandStatus === "error" || (effectiveBrandId && modelStatus === "error")) && (
+          <p role="alert">
+            Tag options unavailable.{" "}
+            <button type="button" onClick={() => retryCatalog((n) => n + 1)}>
+              Retry tag options
+            </button>
+          </p>
+        )}
         {/* Parsed Preview - Collapsible on mobile */}
         <div className="mt-4 space-y-3 rounded border border-zinc-800/70 bg-zinc-950/40 p-3 md:p-4">
           <div className="flex items-center justify-between">
             <h3 className="text-sm font-semibold text-gray-300">Parsed Preview</h3>
             {parseStatus === "loading" && (
-              <span className="text-xs text-gray-500">Parsing...</span>
+              <span role="status" className="text-xs text-gray-500">
+                Parsing...
+              </span>
             )}
             {parseStatus === "error" && (
-              <span className="text-xs text-red-400">Unable to parse title</span>
+              <span role="alert" className="text-xs text-red-400">
+                Unable to parse title.{" "}
+                <button type="button" onClick={() => retryParse((n) => n + 1)}>
+                  Retry parsing
+                </button>
+              </span>
             )}
           </div>
 
@@ -1213,16 +1426,26 @@ export function ProductForm({
         {/* Stack overrides on mobile */}
         <div className="mt-4 grid grid-cols-1 gap-4 sm:grid-cols-2">
           <div>
-            <label className="mb-1 block text-sm text-gray-400">Override Brand</label>
+            <label
+              htmlFor={`${id}-brandOverrideInput`}
+              className="mb-1 block text-sm text-gray-400"
+            >
+              Override Brand
+            </label>
             <input
+              id={`${id}-brandOverrideInput`}
+              aria-invalid={fieldError?.key === `${id}-brandOverrideInput`}
+              aria-describedby={
+                fieldError?.key === `${id}-brandOverrideInput` ? `${id}-error` : undefined
+              }
               type="text"
-              list="brand-options"
+              list={`${id}-brand-options`}
               value={brandOverrideInput}
               onChange={(e) => handleBrandOverrideChange(e.target.value)}
               placeholder="Search brands..."
               className="w-full rounded border border-zinc-300 bg-white px-3 py-2 text-sm text-zinc-900 focus:border-black focus:outline-none focus:ring-2 focus:ring-black/10 md:px-4 md:text-base"
             />
-            <datalist id="brand-options">
+            <datalist id={`${id}-brand-options`}>
               {brandOptions.map((brand) => (
                 <option key={brand.id} value={brand.label} />
               ))}
@@ -1240,19 +1463,31 @@ export function ProductForm({
 
           {category === "sneakers" && (
             <div>
-              <label className="mb-1 block text-sm text-gray-400">Override Model</label>
+              <label
+                htmlFor={`${id}-modelOverrideInput`}
+                className="mb-1 block text-sm text-gray-400"
+              >
+                Override Model
+              </label>
               <input
+                id={`${id}-modelOverrideInput`}
+                aria-invalid={fieldError?.key === `${id}-modelOverrideInput`}
+                aria-describedby={
+                  fieldError?.key === `${id}-modelOverrideInput`
+                    ? `${id}-error`
+                    : undefined
+                }
                 type="text"
-                list="model-options"
+                list={`${id}-model-options`}
                 value={modelOverrideInput}
                 onChange={(e) => handleModelOverrideChange(e.target.value)}
                 placeholder={
                   effectiveBrandId ? "Search models..." : "Select a brand first"
                 }
-                disabled={!effectiveBrandId}
+                disabled={!effectiveBrandId || modelStatus !== "idle"}
                 className="w-full rounded border border-zinc-300 bg-white px-3 py-2 text-sm text-zinc-900 focus:border-black focus:outline-none focus:ring-2 focus:ring-black/10 disabled:bg-zinc-100 disabled:text-zinc-400 md:px-4 md:text-base"
               />
-              <datalist id="model-options">
+              <datalist id={`${id}-model-options`}>
                 {modelOptions.map((model) => (
                   <option key={model.id} value={model.label} />
                 ))}
@@ -1271,8 +1506,14 @@ export function ProductForm({
         </div>
 
         <div className="mt-4">
-          <label className="mb-1 block text-sm text-gray-400">Description</label>
+          <label
+            htmlFor={`${id}-description`}
+            className="mb-1 block text-sm text-gray-400"
+          >
+            Description
+          </label>
           <textarea
+            id={`${id}-description`}
             value={description}
             onChange={(e) => setDescription(e.target.value)}
             rows={4}
@@ -1282,7 +1523,10 @@ export function ProductForm({
       </div>
 
       {/* Variants - Better mobile layout */}
-      <div className="rounded border border-zinc-800/70 bg-zinc-900 p-4 md:p-6">
+      <div
+        inert={isLoading || saved || !!onCheckSave}
+        className="rounded border border-zinc-800/70 bg-zinc-900 p-4 md:p-6"
+      >
         <div className="mb-3 flex items-center justify-between md:mb-4">
           <h2 className="text-lg font-semibold text-white md:text-xl">Variants</h2>
           <button
@@ -1296,6 +1540,7 @@ export function ProductForm({
           </button>
         </div>
         <DndContext
+          id={`${id}-variants`}
           sensors={variantDragSensors}
           collisionDetection={closestCenter}
           modifiers={[restrictToVerticalAxis, restrictToParentElement]}
@@ -1326,8 +1571,22 @@ export function ProductForm({
                       {/* Fields: wrap-flow of fixed-width inputs so nothing stretches */}
                       <div className="flex flex-1 flex-col gap-3 md:flex-row md:flex-wrap md:gap-4">
                         <div className="w-full md:w-32">
-                          <label className="mb-1 block text-xs text-gray-400">SKU</label>
+                          <label
+                            htmlFor={`${id}-${variant.draft_id}-sku`}
+                            className="mb-1 block text-xs text-gray-400"
+                          >
+                            SKU
+                          </label>
                           <input
+                            id={`${id}-${variant.draft_id}-sku`}
+                            aria-invalid={
+                              fieldError?.key === `${id}-${variant.draft_id}-sku`
+                            }
+                            aria-describedby={
+                              fieldError?.key === `${id}-${variant.draft_id}-sku`
+                                ? `${id}-error`
+                                : undefined
+                            }
                             type="text"
                             value={variant.sku}
                             readOnly
@@ -1339,11 +1598,23 @@ export function ProductForm({
                         </div>
 
                         <div className="w-full md:w-40">
-                          <label className="mb-1 block text-xs text-gray-400">
+                          <label
+                            htmlFor={`${id}-${variant.draft_id}-size_id`}
+                            className="mb-1 block text-xs text-gray-400"
+                          >
                             Size <RequiredMark />
                           </label>
 
                           <RdkSelect
+                            id={`${id}-${variant.draft_id}-size_id`}
+                            aria-invalid={
+                              fieldError?.key === `${id}-${variant.draft_id}-size_id`
+                            }
+                            aria-describedby={
+                              fieldError?.key === `${id}-${variant.draft_id}-size_id`
+                                ? `${id}-error`
+                                : undefined
+                            }
                             value={variant.size_id}
                             onChange={(value) => updateVariantSize(index, value)}
                             placeholder="Select..."
@@ -1354,10 +1625,22 @@ export function ProductForm({
                         </div>
 
                         <div className="w-full md:w-32">
-                          <label className="mb-1 block text-xs text-gray-400">
+                          <label
+                            htmlFor={`${id}-${variant.draft_id}-salePrice`}
+                            className="mb-1 block text-xs text-gray-400"
+                          >
                             Sale Price ($) <RequiredMark />
                           </label>
                           <input
+                            id={`${id}-${variant.draft_id}-salePrice`}
+                            aria-invalid={
+                              fieldError?.key === `${id}-${variant.draft_id}-salePrice`
+                            }
+                            aria-describedby={
+                              fieldError?.key === `${id}-${variant.draft_id}-salePrice`
+                                ? `${id}-error`
+                                : undefined
+                            }
                             type="text"
                             inputMode="decimal"
                             value={variant.salePrice}
@@ -1370,11 +1653,23 @@ export function ProductForm({
                         </div>
 
                         <div className="w-full md:w-32">
-                          <label className="mb-1 block text-xs text-gray-400">
+                          <label
+                            htmlFor={`${id}-${variant.draft_id}-unitCost`}
+                            className="mb-1 block text-xs text-gray-400"
+                          >
                             Unit Cost ($){" "}
                             <span className="text-zinc-500">(Optional)</span>
                           </label>
                           <input
+                            id={`${id}-${variant.draft_id}-unitCost`}
+                            aria-invalid={
+                              fieldError?.key === `${id}-${variant.draft_id}-unitCost`
+                            }
+                            aria-describedby={
+                              fieldError?.key === `${id}-${variant.draft_id}-unitCost`
+                                ? `${id}-error`
+                                : undefined
+                            }
                             type="text"
                             inputMode="decimal"
                             value={variant.unitCost}
@@ -1387,10 +1682,22 @@ export function ProductForm({
                         </div>
 
                         <div className="w-full md:w-24">
-                          <label className="mb-1 block text-xs text-gray-400">
+                          <label
+                            htmlFor={`${id}-${variant.draft_id}-stock`}
+                            className="mb-1 block text-xs text-gray-400"
+                          >
                             Stock <RequiredMark />
                           </label>
                           <input
+                            id={`${id}-${variant.draft_id}-stock`}
+                            aria-invalid={
+                              fieldError?.key === `${id}-${variant.draft_id}-stock`
+                            }
+                            aria-describedby={
+                              fieldError?.key === `${id}-${variant.draft_id}-stock`
+                                ? `${id}-error`
+                                : undefined
+                            }
                             type="text"
                             inputMode="numeric"
                             value={variant.stock}
@@ -1436,14 +1743,23 @@ export function ProductForm({
       </div>
 
       {/* Images - Mobile optimized */}
-      <div className="rounded border border-zinc-800/70 bg-zinc-900 p-4 md:p-6">
+      <div
+        inert={isLoading || saved || !!onCheckSave}
+        className="rounded border border-zinc-800/70 bg-zinc-900 p-4 md:p-6"
+      >
         <div className="mb-3 flex items-center justify-between md:mb-4">
           <h2 className="text-lg font-semibold text-white md:text-xl">
-            Images <RequiredMark />
+            Images (optional)
           </h2>
           <span className="text-xs text-gray-500">{images.length} total</span>
         </div>
 
+        {uploadQueue.isUploading && (
+          <span role="status">
+            {uploadQueue.currentStatus} · {uploadQueue.completed} of {uploadQueue.total}{" "}
+            processed
+          </span>
+        )}
         {uploadQueue.isUploading && (
           <div className="mb-4 rounded border border-blue-800/50 bg-blue-900/20 p-3 md:p-4">
             <div className="mb-2 flex items-center justify-between">
@@ -1473,6 +1789,7 @@ export function ProductForm({
         <input
           ref={fileInputRef}
           type="file"
+          disabled={!!onCheckSave || work.pending || saved}
           accept="image/jpeg,image/png,image/webp"
           multiple
           onChange={(e) => {
@@ -1490,14 +1807,36 @@ export function ProductForm({
                 })),
               );
             }
-            void handleUploadFiles(e.target.files);
+            const files = e.target.files;
+            if (!saved && !onCheckSave)
+              void work.run(() => {
+                setWorkKind("upload");
+                return handleUploadFiles(files);
+              });
           }}
           className="hidden"
         />
 
         {/* Mobile-friendly dropzone */}
         <div
-          onClick={() => fileInputRef.current?.click()}
+          role="button"
+          tabIndex={0}
+          aria-label="Add product images"
+          aria-disabled={uploading || isLoading || saved}
+          onKeyDown={(e) => {
+            if (
+              (e.key === "Enter" || e.key === " ") &&
+              !uploading &&
+              !isLoading &&
+              !saved
+            ) {
+              e.preventDefault();
+              fileInputRef.current?.click();
+            }
+          }}
+          onClick={() => {
+            if (!uploading && !isLoading && !saved) fileInputRef.current?.click();
+          }}
           onDragOver={handleDragOver}
           onDragLeave={handleDragLeave}
           onDrop={handleDrop}
@@ -1599,7 +1938,10 @@ export function ProductForm({
         </div>
       </div>
 
-      <div className="rounded border border-zinc-800/70 bg-zinc-900 p-4 md:p-6">
+      <div
+        inert={isLoading || saved || !!onCheckSave}
+        className="rounded border border-zinc-800/70 bg-zinc-900 p-4 md:p-6"
+      >
         <h2 className="mb-2 text-lg font-semibold text-white md:text-xl">
           Posting Schedule
         </h2>
@@ -1635,7 +1977,10 @@ export function ProductForm({
         </div>
 
         <div className="mt-4">
-          <label className="mb-1 block text-sm text-gray-400">
+          <label
+            htmlFor={`${id}-scheduledGoLiveAt`}
+            className="mb-1 block text-sm text-gray-400"
+          >
             Go Live Date & Time
             {publishMode === "scheduled" && (
               <>
@@ -1645,6 +1990,11 @@ export function ProductForm({
             )}
           </label>
           <input
+            id={`${id}-scheduledGoLiveAt`}
+            aria-invalid={fieldError?.key === `${id}-scheduledGoLiveAt`}
+            aria-describedby={
+              fieldError?.key === `${id}-scheduledGoLiveAt` ? `${id}-error` : undefined
+            }
             type="datetime-local"
             value={scheduledGoLiveAt}
             min={scheduleMin}
@@ -1663,21 +2013,44 @@ export function ProductForm({
       {/* Actions - Mobile friendly */}
       <div
         data-admin-form-actions
-        className="sticky bottom-0 -mx-4 flex flex-col gap-3 border-t border-zinc-800 bg-black p-4 sm:static sm:mx-0 sm:flex-row sm:border-0 sm:bg-transparent sm:p-0 md:gap-4"
+        className="fixed inset-x-0 bottom-0 flex gap-2 border-t border-zinc-800 bg-black p-4 sm:static sm:mx-0 sm:flex-row sm:border-0 sm:bg-transparent sm:p-0 md:gap-4"
       >
-        <button
-          type="submit"
-          disabled={isLoading}
+        <ActionButton
+          pending={isLoading}
+          pendingLabel={onCheckSave ? "Checking…" : "Saving…"}
+          type={onCheckSave ? "button" : "submit"}
+          onClick={
+            onCheckSave
+              ? () =>
+                  void work.run(async () => {
+                    setWorkKind("save");
+                    try {
+                      await onCheckSave();
+                      setSaved(true);
+                    } catch (error) {
+                      setToast({
+                        message:
+                          error instanceof Error
+                            ? error.message
+                            : "Unable to check inventory.",
+                        tone: "error",
+                      });
+                    }
+                  })
+              : undefined
+          }
+          disabled={uploading || saved}
           className="admin-button-primary flex-1 py-3 disabled:border-zinc-300 disabled:bg-zinc-300 disabled:text-zinc-500"
         >
-          {isLoading
-            ? "Saving..."
+          {onCheckSave
+            ? "Check inventory"
             : initialData?.id
               ? "Update Product"
               : "Create Product"}
-        </button>
+        </ActionButton>
         <button
           type="button"
+          disabled={isLoading || uploading}
           onClick={onCancel}
           className="rounded bg-zinc-700 px-6 py-3 text-sm font-semibold text-white transition hover:bg-zinc-600 md:text-base"
         >

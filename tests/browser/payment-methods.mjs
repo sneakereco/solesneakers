@@ -53,7 +53,7 @@ const result = await build({
         test.change = (next) => setProps(old => ({ ...old, ...next }));
         return <SquarePaymentMethods {...props} paymentConfig={{ applicationId: 'sandbox-test', locationId: 'test', environment: 'sandbox' }}
           isGuest={false} prepare={async (...args) => { test.prepareCalls++; test.lastPrepare = args; if (test.holdPrepare) return new Promise((resolve, reject) => { test.resolvePrepare = resolve; test.rejectPrepare = reject; }); throw new Error('test boundary'); }}
-          clearCart={() => {}} quoteWalletShippingDestination={async () => { throw new Error('unused'); }}
+          onPaymentSubmitted={() => {}} quoteWalletShippingDestination={async () => { throw new Error('unused'); }}
           resolveWalletShippingContact={async () => { throw new Error('unused'); }} />;
       }
       createRoot(document.getElementById('root')).render(<StrictMode><CheckoutPaymentProvider><Harness /></CheckoutPaymentProvider></StrictMode>);
@@ -241,7 +241,7 @@ try {
   );
   assert.equal(
     await page.locator("#checkout-payment-title").textContent(),
-    "Loading Cash App Pay…",
+    "Preparing your order",
   );
   await page.evaluate(() => {
     window.paymentTest.holdPrepare = false;
@@ -423,9 +423,9 @@ try {
     true,
   );
   assert.equal(
-    await page.locator("dialog[open]").count(),
-    0,
-    "Afterpay address preparation finishes before processing is shown",
+    await page.getByRole("heading", { name: "Preparing your order" }).isVisible(),
+    true,
+    "Preparation is visible before the provider takes focus",
   );
   await page.route("**/api/checkout/payment-permit", (route) =>
     route.fulfill({ json: { permit: "test" } }),
@@ -551,7 +551,7 @@ try {
   await page.waitForFunction(() => Boolean(window.paymentTest.resolvePrepare));
   assert.equal(
     await page.locator("#checkout-payment-title").textContent(),
-    "Loading Cash App Pay…",
+    "Preparing your order",
   );
   await page.evaluate(() =>
     window.paymentTest.resolvePrepare({
@@ -582,10 +582,18 @@ try {
     await page.waitForFunction(() => window.paymentTest.counts.applePay === 1);
     assert.equal(await page.evaluate(() => window.paymentTest.prepareCalls), 0);
     assert.equal(await page.evaluate(() => window.paymentTest.tokenizeCalls || 0), 0);
-    await page.reload();
-    await page.evaluate(() => history.replaceState(null, "", "/checkout"));
-    await page.addScriptTag({ content: result.outputFiles[0].text });
+    await page.getByRole("textbox", { name: "Name on card" }).fill("Original Buyer");
+    await page.evaluate(() => {
+      window.paymentTest.cardFailure = null;
+    });
+    await page.getByRole("button", { name: "Retry card fields" }).click();
     await page.getByText("Secure card fields", { exact: true }).waitFor();
+    assert.equal(
+      await page.getByRole("textbox", { name: "Name on card" }).inputValue(),
+      "Original Buyer",
+    );
+    assert.equal(await page.evaluate(() => window.paymentTest.counts.applePay), 1);
+    assert.equal(await page.evaluate(() => window.paymentTest.prepareCalls), 0);
   }
   assert.deepEqual(errors, []);
   console.log(

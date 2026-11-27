@@ -154,15 +154,8 @@ async function exercise(browser, bundle, scenario) {
         ),
       ]);
       if (scenario === "changed-cart") {
-        await tab.evaluate(
-          (item) =>
-            window.dispatchEvent(
-              new CustomEvent("cartUpdated", {
-                detail: { count: 2, items: [{ ...item, quantity: 2 }] },
-              }),
-            ),
-          cartItem,
-        );
+        assert.equal(await tab.evaluate(() => window.removeCheckoutItem()), true);
+        await tab.locator("[data-summary]").waitFor({ state: "detached" });
       } else {
         await tab.evaluate(() => window.leaveCheckout());
       }

@@ -1,0 +1,22 @@
+{
+  "boundary": "Actual app API and local GoTrue; two newly created disposable customer accounts only",
+  "sourceHead": "196d403874c7fc8a525bc5a923d5c6ac260638e8",
+  "route": "src/app/api/auth/update-password/route.ts",
+  "routeSha256": "268765a4cef4d788b5929b2a6c048032f4d6ad8e1a9522a2be27036ff56e8eba",
+  "command": "doppler run -- node tests/browser/ux-local-recovery-owner.mjs",
+  "localOnly": true,
+  "checks": {
+    "serverReturnedVerifiedOwner": true,
+    "otherFixtureOwnerRejected409": true,
+    "otherFixturePasswordUnchanged": true
+  },
+  "expectedRejectedStatus": 409,
+  "cleanup": {
+    "accountsAndProfilesRemoved": 2,
+    "browserClosed": true,
+    "ownedServerClosed": true,
+    "dependencyLinkRemoved": true,
+    "isolatedRuntimeRemoved": true,
+    "errors": []
+  }
+}

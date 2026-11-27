@@ -40,7 +40,7 @@ describe("Square method lifecycle", () => {
     expect(events).toEqual(["destroy"]);
   });
 
-  it("waits for old attachment and destruction before attaching a replacement", async () => {
+  it("allows a new host to attach before retired provider work finishes", async () => {
     const events: string[] = [];
     const attachment = deferred<void>();
     const destruction = deferred<boolean>();
@@ -68,13 +68,12 @@ describe("Square method lifecycle", () => {
         return Promise.resolve();
       },
     );
+    await second;
+    expect(events).toEqual(["attach old", "destroy old", "attach new"]);
     attachment.resolve();
-    await Promise.resolve();
-    await Promise.resolve();
-    expect(events).not.toContain("attach new");
     destruction.resolve(true);
     await Promise.all([first, second]);
-    expect(events).toEqual(["attach old", "destroy old", "attach new"]);
+    expect(events).toEqual(["attach old", "destroy old", "attach new", "destroy old"]);
     await lifecycle.dispose();
   });
 

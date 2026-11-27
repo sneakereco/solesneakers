@@ -76,6 +76,7 @@ export type AdminOrderPlacedEmailInput = {
   shipping: number;
   total: number;
   itemCount: number;
+  items: OrderItemEmail[];
   customerEmail?: string | null;
   orderUrl?: string | null;
 };

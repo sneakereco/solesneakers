@@ -1,4 +1,6 @@
 // src/lib/auth/session.ts
+import { isDefinitiveAuthRejection } from "./lookup-availability";
+export { isRejectedSessionError } from "./rejected-session";
 import { redirect } from "next/navigation";
 import { isDynamicServerError } from "next/dist/client/components/hooks-server-context";
 
@@ -6,7 +8,7 @@ import { createSupabaseServerClient } from "@/lib/supabase/server";
 import { ProfileRepository } from "@/repositories/profile-repo";
 import type { ProfileRole } from "@/config/constants/roles";
 import { isAdminRole, isProfileRole } from "@/config/constants/roles";
-import { requireAuthLookupAvailable } from "@/lib/auth/lookup-availability";
+import { withRequestDeadline } from "@/lib/http/request-deadline";
 import { logError } from "@/lib/utils/log";
 
 export interface ServerSession {
@@ -32,60 +34,61 @@ export class AuthError extends Error {
   }
 }
 
-async function getServerSessionUncached({
+/** Read the validated session for callers that can represent temporary unavailability. */
+export async function readServerSession(): Promise<ServerSession | null> {
+  return withRequestDeadline(readVerifiedSession);
+}
+
+async function readVerifiedSession(signal: AbortSignal): Promise<ServerSession | null> {
+  const supabase = await createSupabaseServerClient(signal);
+  const {
+    data: { user },
+    error,
+  } = await supabase.auth.getUser();
+
+  if (error) {
+    if (isDefinitiveAuthRejection(error)) return null;
+    throw error;
+  }
+  if (!user) return null;
+
+  if (signal.aborted) throw signal.reason;
+  const profileRepo = new ProfileRepository(supabase);
+  const row = await profileRepo.getByUserId(user.id);
+  const profile = row
+    ? {
+        id: row.id,
+        email: row.email ?? user.email ?? "",
+        role: isProfileRole(row.role) ? row.role : ("customer" as const),
+        full_name: row.full_name ?? null,
+        tenant_id: row.tenant_id ?? null,
+      }
+    : null;
+
+  return {
+    user: { id: user.id, email: user.email ?? "" },
+    profile,
+    role: profile?.role ?? "customer",
+  };
+}
+
+export async function getServerSession({
   requireAvailable = false,
 } = {}): Promise<ServerSession | null> {
+  if (requireAvailable) return readServerSession();
   try {
-    const supabase = await createSupabaseServerClient();
-
-    // ✅ Correct: validates user by contacting Supabase Auth server
-    const {
-      data: { user },
-      error,
-    } = await supabase.auth.getUser();
-
-    if (requireAvailable) requireAuthLookupAvailable(error);
-    if (error || !user) {
-      return null;
-    }
-
-    const profileRepo = new ProfileRepository(supabase);
-    const row = await profileRepo.getByUserId(user.id);
-
-    const profile = row
-      ? {
-          id: row.id,
-          email: row.email ?? user.email ?? "",
-          role: isProfileRole(row.role) ? row.role : "customer",
-          full_name: row.full_name ?? null,
-          tenant_id: row.tenant_id ?? null,
-        }
-      : null;
-
-    return {
-      user: {
-        id: user.id,
-        email: user.email ?? "",
-      },
-      profile,
-      role: profile?.role ?? "customer",
-    };
+    return await readServerSession();
   } catch (error) {
-    if (requireAvailable) throw error;
-    if (isDynamicServerError(error)) {
-      return null;
+    if (!isDynamicServerError(error)) {
+      logError(error, {
+        layer: "auth",
+        route: "getServerSession",
+        message: "server_session_lookup_failed",
+      });
     }
-
-    logError(error, {
-      layer: "auth",
-      route: "getServerSession",
-      message: "server_session_lookup_failed",
-    });
     return null;
   }
 }
-
-export const getServerSession = getServerSessionUncached;
 
 /**
  * PAGE GUARDS (Server Components / Pages)

@@ -14,6 +14,7 @@ jest.mock("@/Modules/Analytics/Source/Features/VisitorMeasurement/triggers", () 
   captureCheckoutStarted: jest.fn(),
 }));
 
+import { renderToStaticMarkup } from "react-dom/server";
 import { CheckoutClient } from "@/components/checkout/CheckoutClient";
 import { CheckoutLockedNotice } from "@/components/checkout/CheckoutLockedNotice";
 import { CheckoutUnavailable } from "@/components/checkout/CheckoutUnavailable";
@@ -81,6 +82,15 @@ describe("src/app/checkout/page", () => {
     expect(captureCheckoutStarted).not.toHaveBeenCalled();
   });
 
+  it("allows Next to render checkout dynamically when the session requires request cookies", async () => {
+    jest.mocked(loadCheckoutPageAccess).mockResolvedValue({ open: true });
+    const signal = Object.assign(new Error("Request cookies needed"), {
+      digest: "DYNAMIC_SERVER_USAGE",
+    });
+    jest.mocked(loadCheckoutPageData).mockRejectedValue(signal);
+    await expect(CheckoutPage()).rejects.toBe(signal);
+  });
+
   it("fails closed when safe checkout page data cannot load", async () => {
     jest.mocked(loadCheckoutPageAccess).mockResolvedValue({ open: true });
     jest
@@ -90,6 +100,9 @@ describe("src/app/checkout/page", () => {
     const result = await CheckoutPage();
 
     expect(result.type).toBe(CheckoutUnavailable);
+    const html = renderToStaticMarkup(result);
+    expect(html).toMatch(/href="\/checkout"[^>]*>Retry checkout/);
+    expect(html).not.toContain("transitions to a new payment");
     expect(captureCheckoutStarted).not.toHaveBeenCalled();
   });
 });

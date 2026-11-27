@@ -1,9 +1,14 @@
 // app/admin/pickups/page.tsx
 "use client";
+import { useAdminOrderQueue } from "@/components/admin/useAdminOrderQueue";
+import { useAsyncAction } from "@/components/ui/useAsyncAction";
+import { adminCommand } from "@/components/admin/admin-command";
+
+import { AdminReadStatus } from "@/components/admin/AdminSkeletons";
 
 import Image from "next/image";
 
-import { Fragment, useEffect, useMemo, useState } from "react";
+import { Fragment, useMemo, useState } from "react";
 import { ChevronDown } from "lucide-react";
 
 import { AdminPage, AdminPageHeader } from "@/components/admin/AdminPage";
@@ -17,7 +22,7 @@ import {
   getOrderNetProfitDollars,
   getOrderNetRevenueDollars,
 } from "@/lib/orders/metrics";
-import { logError } from "@/lib/utils/log";
+
 import { Toast } from "@/components/ui/Toast";
 
 type TabKey = "pending" | "completed";
@@ -100,99 +105,62 @@ const getPrimaryImage = (item: OrderItem) => {
   return primary?.url ?? "/images/logo.png";
 };
 
+const orderParams = (tab: (typeof PICKUP_TABS)[number], page: number, limit: number) => {
+  const params = new URLSearchParams({
+    fulfillment: "pickup",
+    fulfillmentStatus: tab.fulfillmentStatus,
+    page: String(page),
+    limit: String(limit),
+  });
+  PICKUP_ORDER_STATUSES.forEach((status) => params.append("status", status));
+  return params;
+};
 export default function PickupsPage() {
-  const [orders, setOrders] = useState<PickupOrder[]>([]);
   const [activeTab, setActiveTab] = useState<TabKey>("pending");
   const [searchQuery, setSearchQuery] = useState("");
-  const [isLoading, setIsLoading] = useState(true);
   const [pageByTab, setPageByTab] = useState<Record<TabKey, number>>({
     pending: 1,
     completed: 1,
   });
-  const [counts, setCounts] = useState<Record<TabKey, number>>({
-    pending: 0,
-    completed: 0,
-  });
-  const [refreshToken, setRefreshToken] = useState(0);
   const [expandedOrders, setExpandedOrders] = useState<Record<string, boolean>>({});
   const [expandedDetails, setExpandedDetails] = useState<Record<string, boolean>>({});
+  const marking = useAsyncAction();
   const [markingId, setMarkingId] = useState<string | null>(null);
   const [selectedItem, setSelectedItem] = useState<OrderItem | null>(null);
+  const [itemInvoker, setItemInvoker] = useState<HTMLElement | null>(null);
   const [toast, setToast] = useState<{
     message: string;
     tone: "success" | "error" | "info";
   } | null>(null);
 
   const currentPage = pageByTab[activeTab];
-  const activeCount = counts[activeTab] ?? 0;
-  const totalPages = Math.max(1, Math.ceil(activeCount / PAGE_SIZE));
-
-  useEffect(() => {
-    const loadCounts = async () => {
-      try {
-        const results = await Promise.all(
-          PICKUP_TABS.map(async (tab) => {
-            const params = new URLSearchParams({
-              fulfillment: "pickup",
-              fulfillmentStatus: tab.fulfillmentStatus,
-              limit: "1",
-              page: "1",
-            });
-            PICKUP_ORDER_STATUSES.forEach((status) => params.append("status", status));
-            const response = await fetch(`/api/admin/orders?${params.toString()}`);
-            const data = await response.json();
-            return { key: tab.key, count: Number(data.count ?? 0) };
-          }),
-        );
-
-        const nextCounts: Record<TabKey, number> = { pending: 0, completed: 0 };
-        results.forEach((result) => {
-          nextCounts[result.key] = result.count;
-        });
-        setCounts(nextCounts);
-      } catch (error) {
-        logError(error, { layer: "frontend", event: "admin_load_pickup_counts" });
-      }
-    };
-
-    void loadCounts();
-  }, [refreshToken]);
-
-  useEffect(() => {
-    const loadOrders = async () => {
-      setIsLoading(true);
-      try {
-        const tab =
-          PICKUP_TABS.find((entry) => entry.key === activeTab) ?? PICKUP_TABS[0];
-        const params = new URLSearchParams({
-          fulfillment: "pickup",
-          fulfillmentStatus: tab.fulfillmentStatus,
-          limit: String(PAGE_SIZE),
-          page: String(currentPage),
-        });
-        PICKUP_ORDER_STATUSES.forEach((status) => params.append("status", status));
-        const response = await fetch(`/api/admin/orders?${params.toString()}`);
-        if (!response.ok) {
-          const errorText = await response.text();
-          throw new Error(`Failed to fetch orders: ${response.status} ${errorText}`);
-        }
-        const data = await response.json();
-        setOrders(data.orders || []);
-        if (typeof data.count === "number") {
-          setCounts((prev) => ({ ...prev, [activeTab]: data.count }));
-        }
-      } catch (error) {
-        logError(error, { layer: "frontend", event: "admin_load_pickup_orders" });
-        setOrders([]);
-      } finally {
-        setIsLoading(false);
-      }
-    };
-
-    void loadOrders();
-  }, [activeTab, currentPage, refreshToken]);
-
-  if (currentPage > totalPages) {
+  const {
+    selectionScope,
+    access,
+    list,
+    listLabel,
+    displayedPage,
+    totals,
+    orders,
+    counts,
+    totalPages,
+  } = useAdminOrderQueue<PickupOrder, (typeof PICKUP_TABS)[number]>(
+    PICKUP_TABS,
+    orderParams,
+    activeTab,
+    currentPage,
+    PAGE_SIZE,
+  );
+  const [previousScope, setPreviousScope] = useState(selectionScope);
+  if (previousScope !== selectionScope) {
+    setPreviousScope(selectionScope);
+    setSelectedItem(null);
+    setExpandedDetails({});
+    setItemInvoker(null);
+    setExpandedOrders({});
+    if (previousScope?.owner !== selectionScope?.owner) setToast(null);
+  }
+  if (displayedPage === currentPage && currentPage > totalPages) {
     setPageByTab((prev) => ({ ...prev, [activeTab]: totalPages }));
   }
 
@@ -277,31 +245,44 @@ export default function PickupsPage() {
     setExpandedDetails((prev) => ({ ...prev, [orderId]: nextExpanded }));
   };
 
-  const openItemDetails = (item: OrderItem) => {
+  const openItemDetails = (item: OrderItem, invoker: HTMLElement) => {
+    if (!access.isCurrent()) return;
+    setItemInvoker(invoker);
     setSelectedItem(item);
   };
 
   const handleMarkPickedUp = async (order: PickupOrder) => {
-    if (markingId || activeTab !== "pending") {
+    if (!access.canCommand() || markingId || activeTab !== "pending") {
       return;
     }
     setMarkingId(order.id);
     try {
-      const response = await fetch(`/api/admin/orders/${order.id}/pickup`, {
+      const { response, data } = await adminCommand<{
+        success?: boolean;
+        error?: string;
+      }>(`/api/admin/orders/${order.id}/pickup`, {
         method: "POST",
         headers: { "Content-Type": "application/json" },
         body: JSON.stringify({}),
       });
-      const data = await response.json().catch(() => ({}));
-      if (!response.ok || data?.success === false) {
-        throw new Error(data?.error ?? "Failed to mark pickup complete.");
+
+      if (!access.isCurrent()) return;
+      if (response.status >= 400 && response.status < 500) {
+        setToast({ message: data?.error ?? "Pickup update declined.", tone: "error" });
+        return;
       }
+      if (!response.ok || data?.success !== true) throw new Error("Unconfirmed pickup");
       setToast({ message: "Pickup marked complete.", tone: "success" });
-      setRefreshToken((token) => token + 1);
-    } catch (error: unknown) {
-      const message =
-        error instanceof Error ? error.message : "Failed to mark pickup complete.";
-      setToast({ message, tone: "error" });
+      list.retry();
+      totals.retry();
+    } catch {
+      if (!access.isCurrent()) return;
+      setToast({
+        message: "Pickup update is unconfirmed. Checking current order status.",
+        tone: "info",
+      });
+      list.retry();
+      totals.retry();
     } finally {
       setMarkingId(null);
     }
@@ -330,8 +311,8 @@ export default function PickupsPage() {
               [activeTab]: Math.max(1, currentPage - 1),
             }))
           }
-          disabled={currentPage === 1}
-          className="rounded-sm border border-zinc-800/70 px-3 py-2 text-sm text-gray-300 disabled:border-zinc-900 disabled:text-zinc-600"
+          aria-disabled={currentPage === 1}
+          className="rounded-sm border border-zinc-800/70 px-3 py-2 text-sm text-gray-300 aria-disabled:border-zinc-900 aria-disabled:text-zinc-600"
         >
           Previous
         </button>
@@ -353,7 +334,7 @@ export default function PickupsPage() {
             type="button"
             onClick={() => setPageByTab((prev) => ({ ...prev, [activeTab]: p }))}
             className={`rounded-sm border px-3 py-2 text-sm ${
-              p === currentPage
+              p === displayedPage
                 ? "border-red-600 text-white"
                 : "border-zinc-800/70 text-gray-300"
             }`}
@@ -381,8 +362,8 @@ export default function PickupsPage() {
               [activeTab]: Math.min(totalPages, currentPage + 1),
             }))
           }
-          disabled={currentPage === totalPages}
-          className="rounded-sm border border-zinc-800/70 px-3 py-2 text-sm text-gray-300 disabled:border-zinc-900 disabled:text-zinc-600"
+          aria-disabled={currentPage === totalPages}
+          className="rounded-sm border border-zinc-800/70 px-3 py-2 text-sm text-gray-300 aria-disabled:border-zinc-900 aria-disabled:text-zinc-600"
         >
           Next
         </button>
@@ -398,34 +379,39 @@ export default function PickupsPage() {
         description="Track, prepare, and complete local pickup orders."
       />
 
-      <div data-admin-metrics className="grid grid-cols-3 gap-2 sm:gap-6">
-        <div className="rounded border border-zinc-800/70 bg-zinc-900 p-3 sm:p-6">
-          <span className="text-[11px] text-gray-400 sm:text-sm">Total Sales</span>
-          <div className="mt-1 text-lg font-bold text-white sm:mt-2 sm:text-3xl">
-            <span className="sm:hidden">{compactNumber.format(summary.totalSales)}</span>
-            <span className="hidden sm:inline">{summary.totalSales}</span>
+      {list.data && (
+        <div data-admin-metrics className="grid grid-cols-3 gap-2 sm:gap-6">
+          <div className="rounded border border-zinc-800/70 bg-zinc-900 p-3 sm:p-6">
+            <span className="text-[11px] text-gray-400 sm:text-sm">Total Sales</span>
+            <div className="mt-1 text-lg font-bold text-white sm:mt-2 sm:text-3xl">
+              <span className="sm:hidden">
+                {compactNumber.format(summary.totalSales)}
+              </span>
+              <span className="hidden sm:inline">{summary.totalSales}</span>
+            </div>
+          </div>
+          <div className="rounded border border-zinc-800/70 bg-zinc-900 p-3 sm:p-6">
+            <span className="text-[11px] text-gray-400 sm:text-sm">Revenue</span>
+            <div className="mt-1 text-lg font-bold text-white sm:mt-2 sm:text-3xl">
+              <span className="sm:hidden">{compactMoney(summary.revenue)}</span>
+              <span className="hidden sm:inline">${summary.revenue.toFixed(2)}</span>
+            </div>
+          </div>
+          <div className="rounded border border-zinc-800/70 bg-zinc-900 p-3 sm:p-6">
+            <span className="text-[11px] text-gray-400 sm:text-sm">Profit</span>
+            <div
+              className={`mt-1 text-lg font-bold sm:mt-2 sm:text-3xl ${
+                summary.profit >= 0 ? "text-green-400" : "text-red-400"
+              }`}
+            >
+              <span className="sm:hidden">{compactMoney(summary.profit)}</span>
+              <span className="hidden sm:inline">${summary.profit.toFixed(2)}</span>
+            </div>
           </div>
         </div>
-        <div className="rounded border border-zinc-800/70 bg-zinc-900 p-3 sm:p-6">
-          <span className="text-[11px] text-gray-400 sm:text-sm">Revenue</span>
-          <div className="mt-1 text-lg font-bold text-white sm:mt-2 sm:text-3xl">
-            <span className="sm:hidden">{compactMoney(summary.revenue)}</span>
-            <span className="hidden sm:inline">${summary.revenue.toFixed(2)}</span>
-          </div>
-        </div>
-        <div className="rounded border border-zinc-800/70 bg-zinc-900 p-3 sm:p-6">
-          <span className="text-[11px] text-gray-400 sm:text-sm">Profit</span>
-          <div
-            className={`mt-1 text-lg font-bold sm:mt-2 sm:text-3xl ${
-              summary.profit >= 0 ? "text-green-400" : "text-red-400"
-            }`}
-          >
-            <span className="sm:hidden">{compactMoney(summary.profit)}</span>
-            <span className="hidden sm:inline">${summary.profit.toFixed(2)}</span>
-          </div>
-        </div>
-      </div>
-
+      )}
+      {markingId && <p role="status">Completing pickup…</p>}
+      <AdminReadStatus read={totals} label="Loading queue counts" />
       <div data-admin-tabs className="flex flex-wrap gap-6 border-b border-zinc-800/70">
         {PICKUP_TABS.map((tab) => (
           <button
@@ -444,7 +430,11 @@ export default function PickupsPage() {
           >
             {tab.label}
             <span className="rounded-sm border border-zinc-800/70 bg-zinc-900 px-2 py-0.5 text-[11px] text-gray-300">
-              {counts[tab.key] > 99 ? "99+" : counts[tab.key]}
+              {counts?.[tab.key] === undefined
+                ? "—"
+                : counts[tab.key]! > 99
+                  ? "99+"
+                  : counts[tab.key]}
             </span>
           </button>
         ))}
@@ -462,9 +452,8 @@ export default function PickupsPage() {
         data-admin-table-shell
         className="overflow-hidden rounded border border-zinc-800/70 bg-zinc-900"
       >
-        {isLoading ? (
-          <div className="py-12 text-center text-gray-400">Loading...</div>
-        ) : filteredOrders.length === 0 ? (
+        <AdminReadStatus read={list} shape="table" label={listLabel} />
+        {!list.data ? null : filteredOrders.length === 0 ? (
           <div className="py-12 text-center text-gray-400">No orders in this queue.</div>
         ) : (
           <table className="w-full text-[12px] sm:text-sm">
@@ -522,7 +511,8 @@ export default function PickupsPage() {
                 const colSpan = 9;
                 const isPickedUp =
                   activeTab === "completed" || order.fulfillment_status === "picked_up";
-                const isDisabled = isPickedUp || markingId === order.id;
+                const isDisabled =
+                  isPickedUp || marking.pending || list.pending || !!list.error;
                 const itemCount = (order.items ?? []).reduce(
                   (sum: number, item: OrderItem) => sum + Number(item.quantity ?? 0),
                   0,
@@ -549,7 +539,19 @@ export default function PickupsPage() {
                           "-"
                         )}
                       </td>
-                      <td className="p-3 text-white sm:p-4">#{order.id.slice(0, 8)}</td>
+                      <td className="p-3 text-white sm:p-4">
+                        <button
+                          aria-label={`Details for order ${order.id}`}
+                          aria-expanded={!!expandedOrders[order.id]}
+                          type="button"
+                          onClick={(e) => {
+                            e.stopPropagation();
+                            toggleOrderExpansion(order.id);
+                          }}
+                        >
+                          #{order.id.slice(0, 8)}
+                        </button>
+                      </td>
                       <td className="hidden p-3 text-gray-400 sm:p-4 md:table-cell">
                         {customerName}
                       </td>
@@ -610,7 +612,7 @@ export default function PickupsPage() {
                             onClick={(event) => event.stopPropagation()}
                             onChange={() => {
                               if (!isPickedUp) {
-                                void handleMarkPickedUp(order);
+                                void marking.run(() => handleMarkPickedUp(order));
                               }
                             }}
                             aria-label={`Mark order ${order.id} picked up`}
@@ -632,9 +634,10 @@ export default function PickupsPage() {
                               return (
                                 <div
                                   key={item.id}
+                                  tabIndex={-1}
                                   onClick={(event) => {
                                     event.stopPropagation();
-                                    openItemDetails(item);
+                                    openItemDetails(item, event.currentTarget);
                                   }}
                                   className={`group relative cursor-pointer px-6 py-4 transition-colors ${
                                     isRefunded
@@ -781,7 +784,7 @@ export default function PickupsPage() {
                                     checked={false}
                                     disabled={isDisabled}
                                     onChange={() => {
-                                      void handleMarkPickedUp(order);
+                                      void marking.run(() => handleMarkPickedUp(order));
                                     }}
                                     aria-label={`Mark order ${order.id} picked up`}
                                   />
@@ -809,7 +812,10 @@ export default function PickupsPage() {
                                 return (
                                   <div
                                     key={item.id}
-                                    onClick={() => openItemDetails(item)}
+                                    tabIndex={-1}
+                                    onClick={(event) =>
+                                      openItemDetails(item, event.currentTarget)
+                                    }
                                     className={`relative flex cursor-pointer items-start gap-3 rounded-sm p-2 text-base transition ${
                                       isRefunded
                                         ? "border border-red-900/40 bg-red-950/20"
@@ -855,7 +861,7 @@ export default function PickupsPage() {
                                         type="button"
                                         onClick={(event) => {
                                           event.stopPropagation();
-                                          openItemDetails(item);
+                                          openItemDetails(item, event.currentTarget);
                                         }}
                                         className="mt-1 text-xs text-red-400 hover:text-red-300"
                                       >
@@ -890,6 +896,7 @@ export default function PickupsPage() {
       <AdminOrderItemDetailsModal
         open={Boolean(selectedItem)}
         item={selectedItem}
+        invoker={itemInvoker}
         onClose={() => setSelectedItem(null)}
       />
       <Toast

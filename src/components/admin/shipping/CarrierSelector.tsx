@@ -8,9 +8,11 @@ const AVAILABLE_CARRIERS = [
 
 export function CarrierSelector({
   enabled,
+  disabled,
   onToggle,
 }: {
   enabled: CarrierKey[];
+  disabled?: boolean;
   onToggle(carrier: CarrierKey): void;
 }) {
   return (
@@ -20,6 +22,7 @@ export function CarrierSelector({
         return (
           <button
             key={carrier.key}
+            disabled={disabled}
             type="button"
             aria-pressed={selected}
             data-admin-inverse={selected ? "" : undefined}

@@ -6,6 +6,23 @@ const CONDITION_VALUES = ["new", "used"] as const;
 const SIZE_TYPE_VALUES = ["shoe", "clothing", "custom", "none"] as const;
 const STOCK_STATUS_VALUES = ["in_stock", "out_of_stock", "archived", "all"] as const;
 
+export const inventoryIdentitySchema = z.union([
+  z.object({ exactId: z.string().uuid() }).strict(),
+  z.object({ exactSku: z.string().trim().min(1) }).strict(),
+]);
+export type InventoryIdentity = z.infer<typeof inventoryIdentitySchema>;
+
+export const inventoryLookupResponseSchema = z.object({
+  product: z
+    .object({
+      id: z.string().min(1),
+      name: z.string(),
+      archived_at: z.string().nullable(),
+      variants: z.array(z.object({ sku: z.string().nullable() })),
+    })
+    .nullable(),
+});
+
 const variantSchema = z
   .object({
     id: z.string().uuid().optional(),
@@ -69,7 +86,7 @@ export const productCreateSchema = z
 export const adminProductsQuerySchema = z
   .object({
     q: z.string().trim().min(1).optional(),
-    category: z.array(z.enum(CATEGORY_VALUES)).optional(),
+    category: z.array(z.enum([...CATEGORY_VALUES, "specialty"])).optional(),
     condition: z.array(z.enum(CONDITION_VALUES)).optional(),
     limit: z.coerce.number().int().min(1).max(500).default(100),
     page: z.coerce.number().int().min(1).default(1),

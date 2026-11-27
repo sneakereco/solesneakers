@@ -10,6 +10,8 @@ export interface OrderStatusResponse {
   tax: number;
   total: number;
   fulfillment: FulfillmentMethod;
+  customerId?: string | null;
+  purchasedItems?: Array<{ productId: string; variantId: string; quantity: number }>;
   updatedAt: string;
   events: Array<{
     type: string;

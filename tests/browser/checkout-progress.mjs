@@ -10,6 +10,7 @@ const bundle = await build({
     contents: `
       import { useState } from 'react';
       import { createRoot } from 'react-dom/client';
+      import {SessionProvider} from './src/contexts/SessionContext';
       import Layout from './src/app/checkout/layout';
       import Processing from './src/app/checkout/processing/page';
       import Success from './src/app/checkout/success/page';
@@ -18,17 +19,17 @@ const bundle = await build({
       function Submitted() { return <CheckoutPaymentDialog open />; }
       function Harness() {
         const [route, setRoute] = useState('submitted');
-        window.navigate = url => { history.replaceState({}, '', url); setRoute(url.includes('/success') ? 'success' : url.includes('/cancel') ? 'cancel' : url.includes('/processing') ? 'processing' : 'submitted'); };
-        return <Layout>{route === 'cancel' ? <Cancel /> : route === 'submitted' ? <Submitted /> : route === 'processing' ? <Processing /> : <Success />}</Layout>;
+        window.navigate = url => { history.replaceState({}, '', url); setRoute(url); };
+        return <Layout>{route.includes('/cancel') ? <Cancel /> : route.includes('/processing') ? <Processing /> : route.includes('/success') ? <Success /> : <Submitted />}</Layout>;
       }
-      createRoot(document.getElementById('root')).render(<Harness />);
+      createRoot(document.getElementById('root')).render(<SessionProvider initialUser={{id:"buyer",email:"buyer@example.test"}} initialRole="customer"><Harness /></SessionProvider>);
     `,
   },
   bundle: true,
   write: false,
   platform: "browser",
   jsx: "automatic",
-  define: { "process.env.NODE_ENV": '"development"' },
+  define: { "process.env": "{}", "process.env.NODE_ENV": '"development"' },
   plugins: [
     {
       name: "boundaries",
@@ -42,7 +43,7 @@ const bundle = await build({
           contents:
             args.path === "next/navigation"
               ? `const router = { replace: url => window.navigate(url), push: url => window.navigate(url) }; export const useRouter = () => router; export const useSearchParams = () => new URLSearchParams(location.search);`
-              : `export const useCart = () => ({ clearCart: () => {} });`,
+              : `const consumeConfirmedOrder=async()=>false; export const useCart = () => ({ consumeConfirmedOrder, isReady:true });`,
         }));
       },
     },
@@ -63,6 +64,9 @@ try {
       return route.fulfill({ contentType: "text/html", body: '<div id="root"></div>' });
     if (url.pathname === "/api/auth/session")
       return route.fulfill({ json: { user: { id: "buyer" } } });
+    if (url.pathname === "/api/orders/held-order") return;
+    if (url.pathname === "/api/orders/wrong-review")
+      return route.fulfill({ json: { id: "unrelated", status: "review" } });
     if (url.pathname.startsWith("/api/orders/")) {
       statusRequests++;
       await new Promise((resolve) => {
@@ -114,8 +118,14 @@ try {
   await expect.poll(() => Boolean(releaseStatus)).toBe(true);
   releaseStatus();
   await page.waitForFunction(() => location.pathname.endsWith("/success"));
-  await page.getByRole("heading", { name: "Order Confirmed!", exact: true }).waitFor();
   await expect.poll(() => Boolean(releaseDetails)).toBe(true);
+  assert.equal(
+    await unchanged(),
+    true,
+    "Receipt retains progress while verifying the order",
+  );
+  releaseDetails();
+  await page.getByRole("heading", { name: "Order Confirmed!", exact: true }).waitFor();
   assert.equal(
     await page.locator("dialog[open]").count(),
     0,
@@ -128,21 +138,48 @@ try {
     1,
     "Checkout timing is recorded when payment confirmation is shown",
   );
-  releaseDetails();
   await page.evaluate(() => window.navigate("/checkout"));
   await page
     .getByRole("heading", { name: "Processing your payment", exact: true })
     .waitFor();
-  await page.evaluate(() => window.navigate("/checkout/cancel"));
+  await page.evaluate(() => {
+    sessionStorage.setItem("checkout_idempotency_key", "newer-key");
+    sessionStorage.setItem("checkout_cart_fingerprint", "newer-fingerprint");
+    sessionStorage.setItem("rdk_guest_shipping_address_v1", "newer-draft");
+    window.navigate("/checkout/cancel");
+  });
   await page.getByRole("heading", { name: "Checkout Canceled", exact: true }).waitFor();
   assert.equal(
     await page.locator("dialog[open]").count(),
     0,
     "Cancellation clears retained progress",
   );
+  assert.deepEqual(
+    await page.evaluate(() => [
+      sessionStorage.getItem("checkout_idempotency_key"),
+      sessionStorage.getItem("checkout_cart_fingerprint"),
+      sessionStorage.getItem("rdk_guest_shipping_address_v1"),
+      sessionStorage.getItem("checkout:confirmed:test-order"),
+    ]),
+    ["newer-key", "newer-fingerprint", "newer-draft", null],
+  );
+  await page.evaluate(() => window.navigate("/checkout/processing?orderId=wrong-review"));
+  await expect(
+    page.getByRole("heading", { name: "We could not confirm the order" }),
+  ).toBeVisible();
+  await expect(page.getByRole("status")).not.toContainText(
+    /received|could not be completed|failed/i,
+  );
+  await page.evaluate(() => window.navigate("/checkout/processing?orderId=held-order"));
+  await expect(
+    page.getByRole("heading", { name: "Processing your payment" }),
+  ).toBeVisible();
+  await expect(
+    page.getByRole("heading", { name: "We could not confirm the order" }),
+  ).toHaveCount(0);
   assert.deepEqual(errors, []);
   console.log(
-    "PASS: verified payment renders confirmation without waiting for a duplicate status response",
+    "PASS: payment progress survives receipt verification and closes on confirmed details",
   );
 } finally {
   await browser.close();

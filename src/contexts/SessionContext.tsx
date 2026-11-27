@@ -5,12 +5,15 @@ import {
   useCallback,
   useContext,
   useEffect,
+  useLayoutEffect,
   useRef,
   useState,
 } from "react";
 
 import { SESSION_UPDATE, SESSION_REVALIDATING } from "@/lib/auth/session-events";
-import type { ProfileRole } from "@/config/constants/roles";
+import { isProfileRole, type ProfileRole } from "@/config/constants/roles";
+import { readJsonResponse } from "@/lib/http/read-json-response";
+import { withRequestDeadline } from "@/lib/http/request-deadline";
 
 interface SessionUser {
   id: string;
@@ -24,53 +27,139 @@ interface SessionContextValue {
   isLoading: boolean;
   sessionRevision: number;
   sessionAvailable: boolean;
+  isSessionUnavailable: boolean;
+  hasRefreshed: boolean;
   refreshSession: () => Promise<void>;
+  isIdentityCurrent: (expectedOwner: string | null) => boolean;
 }
 
 const SessionContext = createContext<SessionContextValue | null>(null);
+
+type SessionIdentity = { user: SessionUser | null; role: ProfileRole | null };
+
+function parseIdentity(value: unknown): SessionIdentity {
+  if (!value || typeof value !== "object" || !("user" in value) || !("role" in value)) {
+    throw new Error("Invalid session response");
+  }
+
+  const { user, role } = value;
+  if (user === null && role === null) return { user, role };
+  if (
+    user &&
+    typeof user === "object" &&
+    "id" in user &&
+    typeof user.id === "string" &&
+    user.id &&
+    "email" in user &&
+    typeof user.email === "string" &&
+    isProfileRole(role)
+  ) {
+    return { user: { id: user.id, email: user.email }, role };
+  }
+
+  throw new Error("Invalid session identity");
+}
 
 export function SessionProvider({
   children,
   initialUser,
   initialRole,
+  initialUnavailable = false,
+  serverReadId,
 }: {
   children: React.ReactNode;
   initialUser: SessionUser | null;
   initialRole: ProfileRole | null;
+  initialUnavailable?: boolean;
+  serverReadId?: string;
 }) {
-  const [user, setUser] = useState<SessionUser | null>(initialUser);
-  const [role, setRole] = useState<ProfileRole | null>(initialRole);
+  const [serverSeed, setServerSeed] = useState({
+    readId: serverReadId,
+    user: initialUser,
+    role: initialRole,
+    unavailable: initialUnavailable,
+  });
+  const [identity, setIdentity] = useState<SessionIdentity>({
+    user: initialUser,
+    role: initialRole,
+  });
+  const { user, role } = identity;
   const [isLoading, setIsLoading] = useState(false);
+  const [isSessionUnavailable, setSessionUnavailable] = useState(initialUnavailable);
+  const [hasRefreshed, setHasRefreshed] = useState(false);
+  const active = useRef<AbortController | null>(null);
 
-  const [sessionAvailable, setSessionAvailable] = useState(true);
   const [sessionRevision, setSessionRevision] = useState(0);
-  const latest = useRef(0);
+  const verifiedOwner = useRef<string | null | undefined>(
+    initialUnavailable ? undefined : (initialUser?.id ?? null),
+  );
+  const isIdentityCurrent = useCallback(
+    (expectedOwner: string | null) =>
+      active.current === null && verifiedOwner.current === expectedOwner,
+    [],
+  );
+  useLayoutEffect(() => {
+    verifiedOwner.current =
+      isLoading || isSessionUnavailable ? undefined : (identity.user?.id ?? null);
+    return () => {
+      verifiedOwner.current = undefined;
+    };
+  }, [identity, isLoading, isSessionUnavailable, serverSeed]);
+
+  if (
+    serverSeed.readId !== serverReadId ||
+    serverSeed.user?.id !== initialUser?.id ||
+    serverSeed.user?.email !== initialUser?.email ||
+    serverSeed.role !== initialRole ||
+    serverSeed.unavailable !== initialUnavailable
+  ) {
+    setSessionRevision((revision) => revision + 1);
+    setServerSeed({
+      readId: serverReadId,
+      user: initialUser,
+      role: initialRole,
+      unavailable: initialUnavailable,
+    });
+    setIsLoading(false);
+    setSessionUnavailable(initialUnavailable);
+    if (!initialUnavailable) {
+      setIdentity({ user: initialUser, role: initialRole });
+      setHasRefreshed(true);
+    }
+  }
+
+  useLayoutEffect(() => {
+    // A newly committed server read supersedes any older client refresh.
+    return () => {
+      active.current?.abort();
+      active.current = null;
+    };
+  }, [serverSeed]);
+
   const refreshSession = useCallback(async () => {
-    const revision = ++latest.current;
+    active.current?.abort();
+    const controller = new AbortController();
+    active.current = controller;
+    verifiedOwner.current = undefined;
     window.dispatchEvent(new Event(SESSION_REVALIDATING));
     setIsLoading(true);
     try {
-      const response = await fetch("/api/auth/session", {
-        cache: "no-store",
-        signal: AbortSignal.timeout(5000),
-      });
-      if (revision !== latest.current) return;
-      if (!response.ok) {
-        setSessionAvailable(false);
-        return;
+      const data = await withRequestDeadline(async (signal) => {
+        const response = await fetch("/api/auth/session", { cache: "no-store", signal });
+        return readJsonResponse<unknown>(response, "Could not load account");
+      }, controller.signal);
+      if (active.current === controller) {
+        setIdentity(parseIdentity(data));
+        setHasRefreshed(true);
+        setSessionUnavailable(false);
       }
-      const data = await response.json();
-      if (revision !== latest.current) return;
-      setSessionAvailable(true);
-      setUser(data.user ?? null);
-      setRole(data.role ?? null);
     } catch {
-      if (revision === latest.current) setSessionAvailable(false);
-      // Keep the displayed account on a temporary network error.
+      if (active.current === controller) setSessionUnavailable(true);
     } finally {
-      if (revision === latest.current) {
+      if (active.current === controller) {
+        active.current = null;
         setIsLoading(false);
-        setSessionRevision(revision);
+        setSessionRevision((revision) => revision + 1);
       }
     }
   }, []);
@@ -120,9 +209,12 @@ export function SessionProvider({
         role,
         isAuthenticated: Boolean(user),
         isLoading,
+        isSessionUnavailable,
+        hasRefreshed,
         refreshSession,
-        sessionAvailable,
+        sessionAvailable: !isSessionUnavailable,
         sessionRevision,
+        isIdentityCurrent,
       }}
     >
       {children}

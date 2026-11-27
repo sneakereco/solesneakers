@@ -1,446 +1,288 @@
-// src/components/auth/2fa/EnrollmentForm.tsx
 "use client";
 
-import Link from "next/link";
-import { createElement, lazy, Suspense, useEffect, useReducer, useRef } from "react";
+import { lazy, Suspense, useEffect, useRef, useState, type FormEvent } from "react";
 import { useRouter } from "next/navigation";
 
-import { SixDigitCodeField } from "@/components/auth/ui/SixDigitCodeField";
+import { AuthError } from "@/components/auth/ui/AuthError";
 import { AuthHeader } from "@/components/auth/ui/AuthHeader";
 import { authStyles } from "@/components/auth/ui/authStyles";
-import { mfaEnroll, mfaVerifyEnrollment } from "@/services/mfa-service";
+import { SixDigitCodeField } from "@/components/auth/ui/SixDigitCodeField";
+import { ActionButton } from "@/components/ui/ActionButton";
+import { FeedbackLink } from "@/components/ui/FeedbackLink";
+import { LoadingState, Skeleton } from "@/components/ui/Skeleton";
+import { useAsyncAction } from "@/components/ui/useAsyncAction";
+import { useSession } from "@/contexts/SessionContext";
 import { isMobileDevice } from "@/lib/utils/device";
+import { mfaEnroll, mfaVerifyEnrollment } from "@/services/mfa-service";
 
-type QrDisplayProps = {
-  qrCode: string;
-  onQrError?: () => void;
-};
-
-// Lazy load QR component for desktop only
-const qrDisplay = lazy(() =>
-  import("./QRDisplay").then((mod) => ({ default: mod.QRDisplay })),
+const QRDisplay = lazy(() =>
+  import("./QRDisplay").then((module) => ({ default: module.QRDisplay })),
 );
 
-function QrDisplay(props: QrDisplayProps) {
-  return createElement(qrDisplay, props);
-}
-
-type EnrollState = {
-  factorId: string | null;
-  qrCode: string | null;
-  totpUri: string | null;
-  manualSecret: string | null;
-  code: string;
-  msg: string | null;
-  isGenerating: boolean;
-  isSubmitting: boolean;
-  copyStatus: "idle" | "copied" | "error";
-  isMobile: boolean;
+type Enrollment = {
+  factorId: string;
+  qrCode?: string;
+  manualSecret: string;
 };
 
-type Action =
-  | { type: "SET_MOBILE"; isMobile: boolean }
-  | { type: "START_GENERATING" }
-  | {
-      type: "ENROLL_SUCCESS";
-      data: { factorId: string; qrCode?: string; uri: string; secret: string };
-    }
-  | { type: "ENROLL_ERROR"; error: string }
-  | { type: "SET_CODE"; code: string }
-  | { type: "START_VERIFYING" }
-  | { type: "VERIFY_ERROR"; error: string }
-  | { type: "COPY_SUCCESS" }
-  | { type: "COPY_ERROR" }
-  | { type: "RESET_COPY" }
-  | { type: "RESET_ENROLLMENT" }
-  | { type: "QR_EXPIRED" };
+function extractSecret(uri?: string) {
+  try {
+    return uri ? (new URL(uri).searchParams.get("secret") ?? "") : "";
+  } catch {
+    return "";
+  }
+}
 
-function reducer(state: EnrollState, action: Action): EnrollState {
-  switch (action.type) {
-    case "SET_MOBILE":
-      return { ...state, isMobile: action.isMobile };
-    case "START_GENERATING":
-      return { ...state, isGenerating: true, msg: null };
-    case "ENROLL_SUCCESS":
-      return {
-        ...state,
-        isGenerating: false,
-        factorId: action.data.factorId,
-        qrCode: action.data.qrCode ?? null,
-        totpUri: action.data.uri,
-        manualSecret: action.data.secret,
-        code: "",
-      };
-    case "ENROLL_ERROR":
-      return { ...state, isGenerating: false, msg: action.error };
-    case "SET_CODE":
-      return { ...state, code: action.code };
-    case "START_VERIFYING":
-      return { ...state, isSubmitting: true, msg: null };
-    case "VERIFY_ERROR":
-      return { ...state, isSubmitting: false, msg: action.error };
-    case "COPY_SUCCESS":
-      return { ...state, copyStatus: "copied" };
-    case "COPY_ERROR":
-      return { ...state, copyStatus: "error" };
-    case "RESET_COPY":
-      return { ...state, copyStatus: "idle" };
-    case "QR_EXPIRED":
-      return {
-        ...state,
-        qrCode: null,
-        totpUri: null,
-        manualSecret: null,
-        msg: "QR code expired. Please generate a new one.",
-      };
-    case "RESET_ENROLLMENT":
-      return {
-        ...state,
-        factorId: null,
-        qrCode: null,
-        totpUri: null,
-        manualSecret: null,
-        code: "",
-        msg: null,
-      };
-    default:
-      return state;
+async function copyManualKey(secret: string, invoker: HTMLButtonElement) {
+  if (navigator.clipboard?.writeText) {
+    await navigator.clipboard.writeText(secret);
+    return;
+  }
+
+  const input = document.createElement("textarea");
+  input.value = secret;
+  input.style.cssText = "position:fixed;top:-1000px";
+  document.body.appendChild(input);
+  try {
+    input.select();
+    if (!document.execCommand("copy")) throw new Error("Clipboard unavailable");
+  } finally {
+    input.remove();
+    invoker.focus({ preventScroll: true });
   }
 }
 
 export function EnrollmentForm() {
   const router = useRouter();
-  const [state, dispatch] = useReducer(reducer, {
-    factorId: null,
-    qrCode: null,
-    totpUri: null,
-    manualSecret: null,
-    code: "",
-    msg: null,
-    isGenerating: false,
-    isSubmitting: false,
-    copyStatus: "idle",
-    isMobile: false,
-  });
-
-  const copyResetTimer = useRef<number | null>(null);
-  const qrExpiryTimer = useRef<number | null>(null);
+  const { refreshSession } = useSession();
+  const enrollmentAction = useAsyncAction();
+  const copyAction = useAsyncAction();
+  const [operation, setOperation] = useState<"generate" | "verify">("generate");
+  const [enrollment, setEnrollment] = useState<Enrollment | null>(null);
+  const [previouslyGenerated, setPreviouslyGenerated] = useState(false);
+  const [code, setCode] = useState("");
+  const [error, setError] = useState<string | null>(null);
+  const [copyResult, setCopyResult] = useState<"copied" | "error" | null>(null);
+  const [isMobile, setIsMobile] = useState(false);
+  const [continuing, setContinuing] = useState(false);
+  const generating = enrollmentAction.pending && operation === "generate";
+  const verifying = (enrollmentAction.pending && operation === "verify") || continuing;
+  const codeRef = useRef<HTMLInputElement>(null);
 
   useEffect(() => {
-    dispatch({ type: "SET_MOBILE", isMobile: isMobileDevice() });
+    // Device detection is browser-only.
+    // eslint-disable-next-line react-hooks/set-state-in-effect
+    setIsMobile(isMobileDevice());
   }, []);
 
   useEffect(() => {
-    return () => {
-      if (copyResetTimer.current) {
-        window.clearTimeout(copyResetTimer.current);
-      }
-      if (qrExpiryTimer.current) {
-        window.clearTimeout(qrExpiryTimer.current);
-      }
-    };
-  }, []);
+    if (enrollment) codeRef.current?.focus({ preventScroll: true });
+    if (!enrollment?.qrCode || isMobile) return;
 
-  // Only start QR expiry timer if we have a QR (desktop only)
-  useEffect(() => {
-    if (qrExpiryTimer.current) {
-      window.clearTimeout(qrExpiryTimer.current);
-      qrExpiryTimer.current = null;
-    }
+    const timer = window.setTimeout(
+      () => {
+        setEnrollment((current) => (current === enrollment ? null : current));
+        setError("QR code expired. Generate a new one to continue.");
+      },
+      5 * 60 * 1000,
+    );
+    return () => window.clearTimeout(timer);
+  }, [enrollment, isMobile]);
 
-    if (state.factorId && state.qrCode && !state.isMobile) {
-      qrExpiryTimer.current = window.setTimeout(
-        () => {
-          dispatch({ type: "QR_EXPIRED" });
-        },
-        5 * 60 * 1000,
-      );
-    }
-
-    return () => {
-      if (qrExpiryTimer.current) {
-        window.clearTimeout(qrExpiryTimer.current);
-      }
-    };
-  }, [state.factorId, state.qrCode, state.isMobile]);
-
-  const canVerify = state.code.replace(/\D/g, "").length === 6;
-
-  const extractSecret = (uri: string): string => {
-    try {
-      return new URL(uri).searchParams.get("secret") || "";
-    } catch {
-      return "";
-    }
-  };
-
-  const formatSecret = (secret: string) => secret.replace(/(.{4})/g, "$1 ").trim();
-
-  async function startEnroll() {
-    dispatch({ type: "START_GENERATING" });
-
-    try {
-      const res = await mfaEnroll(state.isMobile);
-      if (res.error) {
-        dispatch({ type: "ENROLL_ERROR", error: res.error });
-        return;
-      }
-
-      dispatch({
-        type: "ENROLL_SUCCESS",
-        data: {
-          factorId: res.factorId,
-          qrCode: res.qrCode,
-          uri: res.uri ?? "",
-          secret: extractSecret(res.uri ?? ""),
-        },
-      });
-    } catch {
-      dispatch({ type: "ENROLL_ERROR", error: "Failed to generate enrollment data" });
-    }
-  }
-
-  async function regenerate() {
-    dispatch({ type: "RESET_ENROLLMENT" });
-    await startEnroll();
-  }
-
-  async function verify() {
-    if (!state.factorId) {
-      dispatch({ type: "VERIFY_ERROR", error: "Missing factor ID. Please regenerate." });
-      return;
-    }
-
-    const cleaned = state.code.replace(/\D/g, "").slice(0, 6);
-    if (cleaned.length !== 6) {
-      dispatch({ type: "VERIFY_ERROR", error: "Enter the 6-digit code." });
-      return;
-    }
-
-    dispatch({ type: "START_VERIFYING" });
-
-    try {
-      const res = await mfaVerifyEnrollment(state.factorId, cleaned);
-      if (res.error) {
-        dispatch({ type: "VERIFY_ERROR", error: res.error });
-        return;
-      }
-      router.push("/admin");
-    } catch {
-      dispatch({ type: "VERIFY_ERROR", error: "Verification failed" });
-    }
-  }
-
-  async function handleCopyManualKey() {
-    if (!state.manualSecret) {
-      return;
-    }
-
-    try {
-      if (navigator.clipboard?.writeText) {
-        await navigator.clipboard.writeText(state.manualSecret);
-      } else {
-        const el = document.createElement("textarea");
-        el.value = state.manualSecret;
-        el.style.cssText = "position:fixed;top:-1000px";
-        document.body.appendChild(el);
-        el.select();
-        const ok = document.execCommand("copy");
-        document.body.removeChild(el);
-        if (!ok) {
-          throw new Error();
+  function generate() {
+    if (continuing || copyAction.pending) return;
+    void enrollmentAction.run(async () => {
+      setOperation("generate");
+      setError(null);
+      setCopyResult(null);
+      try {
+        const result = await mfaEnroll(isMobile);
+        const manualSecret = extractSecret(result.uri);
+        if (isMobile ? !manualSecret : !result.qrCode) {
+          throw new Error(
+            "Authenticator setup details were incomplete. Please try again.",
+          );
         }
+        setEnrollment({ factorId: result.factorId, qrCode: result.qrCode, manualSecret });
+        setPreviouslyGenerated(true);
+        setCode("");
+      } catch (failure) {
+        setError(
+          failure instanceof Error
+            ? failure.message
+            : "Could not generate authenticator setup details.",
+        );
       }
-      dispatch({ type: "COPY_SUCCESS" });
-    } catch {
-      dispatch({ type: "COPY_ERROR" });
-    } finally {
-      if (copyResetTimer.current) {
-        window.clearTimeout(copyResetTimer.current);
-      }
-      copyResetTimer.current = window.setTimeout(
-        () => dispatch({ type: "RESET_COPY" }),
-        2000,
-      );
-    }
+    });
   }
+
+  function verify(event: FormEvent<HTMLFormElement>) {
+    event.preventDefault();
+    if (!enrollment || continuing || code.length !== 6) return;
+    void enrollmentAction.run(async () => {
+      setOperation("verify");
+      setError(null);
+      try {
+        await mfaVerifyEnrollment(enrollment.factorId, code);
+        setContinuing(true);
+        void refreshSession();
+        router.push("/admin");
+      } catch (failure) {
+        setContinuing(false);
+        setError(
+          failure instanceof Error
+            ? failure.message
+            : "Could not verify your setup code.",
+        );
+      }
+    });
+  }
+
+  function copy(invoker: HTMLButtonElement) {
+    if (!enrollment?.manualSecret || generating) return;
+    void copyAction.run(async () => {
+      setCopyResult(null);
+      try {
+        await copyManualKey(enrollment.manualSecret, invoker);
+        setCopyResult("copied");
+      } catch {
+        setCopyResult("error");
+      }
+    });
+  }
+
+  const generationLabel = isMobile
+    ? "Generate setup key"
+    : enrollment
+      ? "Regenerate QR code"
+      : previouslyGenerated
+        ? "Generate new QR code"
+        : "Generate QR code";
 
   return (
     <div className="space-y-6">
       <AuthHeader
         title="Set up 2FA"
         description={
-          state.isMobile
+          isMobile
             ? "Copy the setup key to your authenticator app, then verify."
             : "Scan the QR code with your authenticator app, then verify."
         }
       />
 
-      <div className="space-y-5">
-        {/* STATE 1: Not started */}
-        {!state.factorId && (
-          <div className="space-y-4">
-            <div className={authStyles.panel}>
-              {state.isMobile
-                ? "Generate a setup key for your authenticator app."
-                : "Generate a QR code and scan it with your authenticator app."}
-            </div>
-
-            {state.msg && <div className={authStyles.errorBox}>{state.msg}</div>}
-
-            <button
-              type="button"
-              onClick={() => void startEnroll()}
-              disabled={state.isGenerating}
-              className={authStyles.primaryButton}
-            >
-              {state.isGenerating
-                ? "Generating..."
-                : state.isMobile
-                  ? "Generate setup key"
-                  : "Generate QR code"}
-            </button>
-
-            <Link href="/auth/login" className={authStyles.neutralLink}>
-              Back to sign in
-            </Link>
+      <form onSubmit={verify} className="space-y-4">
+        {!enrollment && (
+          <div className={authStyles.panel}>
+            {isMobile
+              ? "Generate a setup key for your authenticator app."
+              : "Generate a QR code and scan it with your authenticator app."}
           </div>
         )}
 
-        {/* STATE 2: Enrollment started but QR expired (desktop only) */}
-        {state.factorId && !state.qrCode && !state.isMobile && (
-          <div className="space-y-4">
-            <div className={authStyles.panel}>
-              Your QR code is no longer available. Generate a new one to continue.
-            </div>
-
-            {state.msg && <div className={authStyles.errorBox}>{state.msg}</div>}
-
-            <button
-              type="button"
-              onClick={() => void regenerate()}
-              disabled={state.isGenerating || state.isSubmitting}
-              className={authStyles.primaryButton}
-            >
-              {state.isGenerating ? "Generating..." : "Generate new QR code"}
-            </button>
-
-            <Link href="/auth/login" className={authStyles.neutralLink}>
-              Back to sign in
-            </Link>
-          </div>
-        )}
-
-        {/* STATE 3: Normal enrollment flow */}
-        {state.factorId && (state.qrCode || state.isMobile) && (
-          <form
-            onSubmit={(e) => {
-              e.preventDefault();
-              void verify();
-            }}
-            className="space-y-4"
+        {!isMobile && enrollment?.qrCode && (
+          <Suspense
+            fallback={
+              <LoadingState
+                label="Loading authenticator QR code"
+                className="flex justify-center border border-zinc-300 bg-white p-6"
+              >
+                <Skeleton className="h-48 w-48" />
+              </LoadingState>
+            }
           >
-            <div className={authStyles.panel}>
-              {state.isMobile
-                ? "Copy the setup key below, then enter the 6-digit code to confirm."
-                : "Scan the QR code, then enter the 6-digit code to confirm."}
-            </div>
-
-            {/* Desktop: Show QR code */}
-            {!state.isMobile && state.qrCode && (
-              <Suspense
-                fallback={
-                  <div className="border border-zinc-300 bg-white p-6">
-                    <div className="flex justify-center">
-                      <div className="h-48 w-48 animate-pulse bg-zinc-200" />
-                    </div>
-                  </div>
-                }
-              >
-                <QrDisplay
-                  qrCode={state.qrCode}
-                  onQrError={() => {
-                    dispatch({
-                      type: "VERIFY_ERROR",
-                      error: "QR code could not be displayed. Please generate a new one.",
-                    });
-                    dispatch({ type: "QR_EXPIRED" });
-                  }}
-                />
-              </Suspense>
-            )}
-
-            {/* Manual setup key - always show */}
-            {state.manualSecret && (
-              <div className={authStyles.panel}>
-                <div className="text-[0.72rem] uppercase tracking-[0.18em] text-zinc-500">
-                  Manual setup key
-                </div>
-
-                <div className="mt-2">
-                  <input
-                    readOnly
-                    value={formatSecret(state.manualSecret)}
-                    onClick={() => void handleCopyManualKey()}
-                    onPointerUp={() => void handleCopyManualKey()}
-                    onFocus={(e) => e.currentTarget.select()}
-                    className="w-full cursor-pointer select-all border border-zinc-300 bg-[#f8f8f7] px-3 py-3 font-mono text-xs tracking-[0.12em] text-zinc-900 outline-none focus:border-zinc-500 active:border-zinc-500 sm:text-sm"
-                    aria-label="Manual setup key (tap to copy)"
-                  />
-
-                  <div className="mt-2 text-[0.82rem] text-zinc-500">
-                    Tap the key to copy.{" "}
-                    {state.isMobile
-                      ? "Paste this"
-                      : "If you cannot scan the QR, paste this"}{" "}
-                    key into your authenticator app.
-                  </div>
-
-                  {state.copyStatus !== "idle" && (
-                    <div className="mt-2 text-[0.82rem]" aria-live="polite">
-                      {state.copyStatus === "copied" ? "Copied" : "Copy failed"}
-                    </div>
-                  )}
-                </div>
-              </div>
-            )}
-
-            {/* Desktop only: Regenerate button */}
-            {!state.isMobile && (
-              <button
-                type="button"
-                onClick={() => void regenerate()}
-                disabled={state.isGenerating || state.isSubmitting}
-                className={authStyles.primaryButton}
-              >
-                {state.isGenerating ? "Generating..." : "Regenerate QR code"}
-              </button>
-            )}
-
-            <SixDigitCodeField
-              id="enroll-code"
-              label="Verification code"
-              value={state.code}
-              onChange={(code) => dispatch({ type: "SET_CODE", code })}
-              disabled={state.isSubmitting}
+            <QRDisplay
+              qrCode={enrollment.qrCode}
+              onQrError={() => {
+                setEnrollment(null);
+                setError(
+                  "The QR code could not be displayed. Generate a new one to continue.",
+                );
+              }}
             />
-
-            {state.msg && <div className={authStyles.errorBox}>{state.msg}</div>}
-
-            <button
-              type="submit"
-              disabled={!canVerify || state.isSubmitting}
-              className={authStyles.primaryButton}
-            >
-              {state.isSubmitting ? "Verifying..." : "Verify & continue"}
-            </button>
-
-            <Link href="/auth/login" className={authStyles.neutralLink}>
-              Back to sign in
-            </Link>
-          </form>
+          </Suspense>
         )}
-      </div>
+
+        {enrollment?.manualSecret && (
+          <div className={`${authStyles.panel} space-y-3`}>
+            <label htmlFor="manual-setup-key" className={authStyles.label}>
+              Manual setup key
+            </label>
+            <input
+              id="manual-setup-key"
+              readOnly
+              value={enrollment.manualSecret.replace(/(.{4})/g, "$1 ").trim()}
+              onFocus={(event) => event.currentTarget.select()}
+              className="w-full select-all border border-zinc-300 bg-[#f8f8f7] px-3 py-3 font-mono text-xs tracking-[0.12em] text-zinc-900 focus:border-zinc-500 sm:text-sm"
+              aria-describedby="setup-key-help"
+            />
+            <p id="setup-key-help" className="text-[0.82rem] text-zinc-600">
+              Paste this key into your authenticator app.
+            </p>
+            <ActionButton
+              type="button"
+              onClick={(event) => copy(event.currentTarget)}
+              disabled={generating}
+              pending={copyAction.pending}
+              pendingLabel="Copying key…"
+              className={authStyles.secondaryButton}
+            >
+              Copy setup key
+            </ActionButton>
+            {copyResult && (
+              <p
+                role={copyResult === "copied" ? "status" : "alert"}
+                className="text-[0.82rem]"
+              >
+                {copyResult === "copied"
+                  ? "Setup key copied."
+                  : "Could not copy the key. Select and copy it manually."}
+              </p>
+            )}
+          </div>
+        )}
+
+        {(!enrollment || !isMobile) && (
+          <ActionButton
+            type="button"
+            onClick={generate}
+            disabled={verifying || copyAction.pending}
+            pending={generating}
+            pendingLabel={isMobile ? "Generating setup key…" : "Generating QR code…"}
+            className={authStyles.primaryButton}
+          >
+            {generationLabel}
+          </ActionButton>
+        )}
+
+        {enrollment && (
+          <SixDigitCodeField
+            id="enroll-code"
+            label="Verification code"
+            value={code}
+            onChange={setCode}
+            readOnly={generating || verifying}
+            aria-describedby={error ? "mfa-enrollment-error" : undefined}
+            ref={codeRef}
+          />
+        )}
+        <AuthError id="mfa-enrollment-error" message={error} />
+
+        {enrollment && (
+          <ActionButton
+            type="submit"
+            disabled={code.length !== 6 || generating}
+            pending={verifying}
+            pendingLabel="Verifying…"
+            className={authStyles.primaryButton}
+          >
+            Verify &amp; continue
+          </ActionButton>
+        )}
+
+        <FeedbackLink href="/auth/login" className={authStyles.neutralLink}>
+          Back to sign in
+        </FeedbackLink>
+      </form>
     </div>
   );
 }

@@ -1,14 +1,19 @@
-// src/components/auth/login/PasswordLoginForm.tsx
 "use client";
 
 import { notifySessionUpdate } from "@/lib/auth/session-events";
+import { useState, type FormEvent } from "react";
+import { useSearchParams } from "next/navigation";
 
-import { useReducer } from "react";
-import { useRouter, useSearchParams } from "next/navigation";
-import Link from "next/link";
-
+import { AuthError } from "@/components/auth/ui/AuthError";
 import { AuthHeader } from "@/components/auth/ui/AuthHeader";
 import { authStyles } from "@/components/auth/ui/authStyles";
+import { ActionButton } from "@/components/ui/ActionButton";
+import { FeedbackLink } from "@/components/ui/FeedbackLink";
+import { useAsyncAction } from "@/components/ui/useAsyncAction";
+import { navigateAfterAuth } from "@/lib/auth/navigate-after-auth";
+import { postAuthJson } from "@/lib/http/post-auth-json";
+
+import { PasswordField } from "./PasswordField";
 
 interface PasswordLoginFormProps {
   onRequiresEmailVerification: (email: string) => void;
@@ -16,163 +21,135 @@ interface PasswordLoginFormProps {
   onForgotPassword: () => void;
 }
 
-type State = {
-  password: string;
-  isSubmitting: boolean;
-  error: string | null;
-};
-
-type Action =
-  | { type: "SET_PASSWORD"; password: string }
-  | { type: "START_SUBMIT" }
-  | { type: "ERROR"; error: string }
-  | { type: "RESET" };
-
-function reducer(state: State, action: Action): State {
-  switch (action.type) {
-    case "SET_PASSWORD":
-      return { ...state, password: action.password };
-    case "START_SUBMIT":
-      return { ...state, isSubmitting: true, error: null };
-    case "ERROR":
-      return { ...state, isSubmitting: false, error: action.error };
-    case "RESET":
-      return { ...state, isSubmitting: false, error: null };
-    default:
-      return state;
-  }
-}
-
 export function PasswordLoginForm({
   onRequiresEmailVerification,
   onSwitchToOtp,
   onForgotPassword,
 }: PasswordLoginFormProps) {
-  const router = useRouter();
-  const searchParams = useSearchParams();
-  const [state, dispatch] = useReducer(reducer, {
-    password: "",
-    isSubmitting: false,
-    error: null,
-  });
+  const nextUrl = useSearchParams().get("next") || "/";
 
-  const nextUrl = searchParams.get("next") || "/";
+  const login = useAsyncAction();
+  const [password, setPassword] = useState("");
+  const [error, setError] = useState<string | null>(null);
+  const [continuing, setContinuing] = useState(false);
+  const busy = login.pending || continuing;
+  const errorId = error ? "password-login-error" : undefined;
 
-  async function handleSubmit(e: React.FormEvent) {
-    e.preventDefault();
-    dispatch({ type: "START_SUBMIT" });
-
-    const form = e.currentTarget as HTMLFormElement;
-    const formData = new FormData(form);
-
+  function handleSubmit(event: FormEvent<HTMLFormElement>) {
+    event.preventDefault();
+    if (continuing) return;
+    const formData = new FormData(event.currentTarget);
     const email = String(formData.get("email") ?? "").trim();
     const passwordValue = String(formData.get("password") ?? "");
 
-    try {
-      const res = await fetch("/api/auth/login", {
-        method: "POST",
-        headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({ email, password: passwordValue }),
-      });
+    void login.run(async () => {
+      setError(null);
 
-      const json = await res.json();
+      try {
+        const result = await postAuthJson(
+          "/api/auth/login",
+          { email, password: passwordValue },
+          "Could not sign in. Please try again.",
+          true,
+        );
 
-      if (json.requiresEmailVerification) {
-        onRequiresEmailVerification(email);
-        dispatch({ type: "RESET" });
-        return;
+        if (result.requiresEmailVerification) {
+          setContinuing(true);
+          onRequiresEmailVerification(email);
+          return;
+        }
+        if (result.ok !== true) throw new Error("Could not sign in. Please try again.");
+        notifySessionUpdate();
+
+        setContinuing(true);
+        if (result.isAdmin && result.requiresTwoFASetup)
+          return navigateAfterAuth("/auth/2fa/setup");
+        if (result.isAdmin && result.requiresTwoFAChallenge)
+          return navigateAfterAuth("/auth/2fa/challenge");
+
+        navigateAfterAuth(result.isAdmin ? "/admin" : nextUrl);
+      } catch (failure) {
+        setContinuing(false);
+        setError(
+          failure instanceof Error
+            ? failure.message
+            : "Could not sign in. Please try again.",
+        );
       }
-
-      if (!json.ok) {
-        dispatch({ type: "ERROR", error: json.error ?? "Login failed" });
-        return;
-      }
-
-      notifySessionUpdate();
-      if (json.isAdmin && json.requiresTwoFASetup) {
-        return router.push("/auth/2fa/setup");
-      }
-      if (json.isAdmin && json.requiresTwoFAChallenge) {
-        return router.push("/auth/2fa/challenge");
-      }
-
-      const destination = json.isAdmin ? "/admin" : nextUrl;
-      router.push(destination);
-    } catch (err: unknown) {
-      const message = err instanceof Error ? err.message : "Login failed";
-      dispatch({ type: "ERROR", error: message });
-    }
+    });
   }
 
   return (
-    <form onSubmit={(e) => void handleSubmit(e)} className="space-y-5">
+    <form onSubmit={handleSubmit} className="space-y-5">
       <AuthHeader title="Login" description="Enter your email and password to login:" />
-
-      {state.error && <div className={authStyles.errorBox}>{state.error}</div>}
+      <AuthError id="password-login-error" message={error} />
 
       <div className="space-y-4">
-        <input
-          id="email"
-          name="email"
-          type="email"
-          required
-          autoComplete="email"
-          className={authStyles.input}
-          placeholder="E-mail"
-          data-testid="login-email"
-          disabled={state.isSubmitting}
+        <div>
+          <label htmlFor="email" className={authStyles.label}>
+            Email
+          </label>
+          <input
+            id="email"
+            name="email"
+            type="email"
+            required
+            autoComplete="email"
+            className={authStyles.input}
+            data-testid="login-email"
+            readOnly={busy}
+            aria-describedby={errorId}
+          />
+        </div>
+
+        <PasswordField
+          name="password"
+          label="Password"
+          value={password}
+          onChange={setPassword}
+          autoComplete="current-password"
+          dataTestId="login-password"
+          disabled={busy}
+          describedBy={errorId}
         />
 
-        <div className="flex h-14 items-center justify-between border border-zinc-300 bg-white px-5 sm:h-[min(3.2vw,3.85rem)] sm:min-h-12">
-          <input
-            id="password"
-            name="password"
-            type="password"
-            required
-            autoComplete="current-password"
-            value={state.password}
-            onChange={(e) => dispatch({ type: "SET_PASSWORD", password: e.target.value })}
-            className="h-full min-w-0 flex-1 bg-transparent text-[1.02rem] text-zinc-800 placeholder:text-zinc-500 focus:outline-none"
-            placeholder="Password"
-            data-testid="login-password"
-            disabled={state.isSubmitting}
-          />
-          <button
-            type="button"
-            onClick={onForgotPassword}
-            className="ml-4 shrink-0 text-[0.95rem] text-zinc-600 transition-colors hover:text-zinc-900"
-          >
-            Forgot your password?
-          </button>
-        </div>
+        <ActionButton
+          type="button"
+          onClick={onForgotPassword}
+          disabled={busy}
+          className={authStyles.secondaryButton}
+        >
+          Forgot your password?
+        </ActionButton>
       </div>
 
-      <button
+      <ActionButton
         type="submit"
-        disabled={state.isSubmitting}
+        pending={busy}
+        pendingLabel="Logging in…"
         className={authStyles.primaryButton}
         data-testid="login-submit"
       >
-        {state.isSubmitting ? "Logging in..." : "Login"}
-      </button>
+        Login
+      </ActionButton>
 
       <p className="pt-2 text-center text-[0.98rem] text-zinc-600">
         Don&apos;t have an account?{" "}
-        <Link
+        <FeedbackLink
           href={`/auth/register${nextUrl !== "/" ? `?next=${encodeURIComponent(nextUrl)}` : ""}`}
           className={authStyles.inlineAccentLink}
         >
           Sign up
-        </Link>
+        </FeedbackLink>
       </p>
-      <button
+      <ActionButton
         type="button"
         onClick={onSwitchToOtp}
-        disabled={state.isSubmitting}
-        className={`block w-full text-center ${authStyles.neutralLink}`}
+        disabled={busy}
+        className={`w-full ${authStyles.secondaryButton}`}
       >
         Sign in with email code instead
-      </button>
+      </ActionButton>
     </form>
   );
 }

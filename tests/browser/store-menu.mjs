@@ -33,7 +33,8 @@ const bundle = await build({
           resolveDir: process.cwd(),
           contents: `
             import React from 'react';
-            export default ({ children, href, ...props }) =>
+            export const useLinkStatus = () => ({ pending: false });
+            export default ({ children, href, onNavigate, ...props }) =>
               React.createElement('a', { href, ...props }, children);
           `,
         }));

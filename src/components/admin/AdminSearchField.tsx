@@ -22,13 +22,12 @@ export function AdminSearchField({
   autoComplete = "off",
 }: AdminSearchFieldProps) {
   return (
-    <label
+    <div
       data-admin-search
       className={`relative flex w-full items-center rounded-lg border border-zinc-300 bg-white text-zinc-950 shadow-[0_1px_0_rgba(9,9,11,0.03)] transition focus-within:border-black focus-within:ring-2 focus-within:ring-black/10 ${
         compact ? "min-h-9" : "min-h-11"
       } ${className}`}
     >
-      <span className="sr-only">{label}</span>
       <Search
         aria-hidden="true"
         className={`pointer-events-none absolute left-3 text-zinc-500 ${
@@ -37,6 +36,7 @@ export function AdminSearchField({
       />
       <input
         type="search"
+        aria-label={label}
         value={value}
         onChange={(event) => onChange(event.target.value)}
         placeholder={placeholder}
@@ -50,11 +50,11 @@ export function AdminSearchField({
           type="button"
           onClick={() => onChange("")}
           aria-label={`Clear ${label.toLowerCase()}`}
-          className="absolute right-2 flex h-7 w-7 items-center justify-center rounded-full text-zinc-500 hover:bg-zinc-100 hover:text-black"
+          className="absolute right-0 flex h-10 w-10 items-center justify-center rounded-full text-zinc-500 hover:bg-zinc-100 hover:text-black"
         >
           <X className="h-3.5 w-3.5" />
         </button>
       )}
-    </label>
+    </div>
   );
 }

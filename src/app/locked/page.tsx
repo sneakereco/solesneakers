@@ -29,11 +29,9 @@ const lockAnnouncements = [
 ];
 
 export default async function LockedPage(props: {
-  searchParams?: Promise<{ next?: string }> | { next?: string };
+  searchParams?: Promise<{ next?: string }>;
 }) {
-  const searchParams = props.searchParams
-    ? await Promise.resolve(props.searchParams)
-    : undefined;
+  const searchParams = await props.searchParams;
   const next = searchParams?.next || "/";
   const session = await getServerSession();
 
@@ -41,7 +39,21 @@ export default async function LockedPage(props: {
     redirect(next);
   }
 
-  const storeAccess = await getStoreAccessSettings();
+  const storeAccess = await getStoreAccessSettings().catch(() => undefined);
+  if (storeAccess === undefined) {
+    return (
+      <main className="mx-auto max-w-xl px-6 py-20 text-center">
+        <h1 className="text-2xl font-semibold">Store access unavailable</h1>
+        <p className="my-4">We couldn’t check the store’s opening time.</p>
+        <a
+          className="inline-flex min-h-11 items-center underline"
+          href={`/locked?next=${encodeURIComponent(next)}`}
+        >
+          Retry
+        </a>
+      </main>
+    );
+  }
   const unlockAtIso = storeAccess?.settings.siteUnlockAt ?? null;
 
   return (

@@ -10,7 +10,7 @@ export function scheduleCheckoutNotifications(orderId: string): void {
     try {
       await processCheckoutNotifications(
         createCheckoutNotificationDependencies(createSupabaseAdminClient(), orderId),
-        2,
+        3,
       );
     } catch (error) {
       logError(error, {

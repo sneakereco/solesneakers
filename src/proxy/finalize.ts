@@ -16,6 +16,18 @@ export function finalizeProxyResponse(
   ) {
     response.headers.set("Cache-Control", "private, no-store");
   }
+  if (
+    [
+      "/api/specialty/eligibility",
+      "/api/specialty/claims",
+      "/api/specialty/claims/result",
+      "/admin/specialty-claims",
+    ].includes(pathname) ||
+    pathname.startsWith("/api/admin/specialty/")
+  ) {
+    // This also covers responses returned before the route handler (auth, CSRF, and throttling).
+    response.headers.set("Cache-Control", "private, no-store, max-age=0");
+  }
   applySecurityHeaders(response, undefined, pathname);
   return response;
 }

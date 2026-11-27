@@ -1,5 +1,5 @@
 import Image from "next/image";
-import Link from "next/link";
+import { FeedbackLink as Link } from "@/components/ui/FeedbackLink";
 
 import { FeaturedItems } from "@/components/home/FeaturedItems";
 import { HomepageCategories } from "@/components/home/HomepageCategories";
@@ -46,7 +46,7 @@ export default function HomePage() {
         </div>
       </section>
 
-      <FeaturedItems />
+      <FeaturedItems allowSpecialty />
       <OutfitSlideshow />
       <FeaturedItems category="clothing" />
       <HomepageCategories />

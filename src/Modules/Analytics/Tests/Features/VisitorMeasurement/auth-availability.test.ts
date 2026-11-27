@@ -94,6 +94,7 @@ it.each([
   new AuthApiError("Invalid API key", 401, undefined),
   new AuthApiError("Forbidden", 403, undefined),
   new AuthApiError("Unexpected failure", 403, "unexpected_failure"),
+  new AuthApiError("Unexpected provider failure", 503, "bad_jwt"),
 ])(
   "reports indeterminate gateway rejection as unavailable through both routes: %s",
   async (error) => {

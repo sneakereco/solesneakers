@@ -1,13 +1,16 @@
-// src/components/auth/login/EmailCodeFlow.tsx
 "use client";
 
-import Link from "next/link";
-import { useEffect, useReducer } from "react";
+import { useState, type FormEvent } from "react";
 
 import { authStyles } from "@/components/auth/ui/authStyles";
+import { AuthError } from "@/components/auth/ui/AuthError";
 import { AuthHeader } from "@/components/auth/ui/AuthHeader";
+import { ActionButton } from "@/components/ui/ActionButton";
+import { FeedbackLink } from "@/components/ui/FeedbackLink";
+import { useAsyncAction } from "@/components/ui/useAsyncAction";
 
 import { SplitCodeInputWithResend } from "./SplitCodeInputWithResend";
+import { useResendCooldown } from "./use-resend-cooldown";
 
 type Stage = "request" | "verify";
 
@@ -35,71 +38,6 @@ export interface EmailCodeFlowProps {
   onBack?: () => void;
 }
 
-type State = {
-  stage: Stage;
-  email: string;
-  code: string;
-  error: string | null;
-  isSubmitting: boolean;
-  resendCooldown: number;
-  resendSent: boolean;
-  resendError: string | null;
-  isSendingResend: boolean;
-};
-
-type Action =
-  | { type: "SET_EMAIL"; email: string }
-  | { type: "SET_CODE"; code: string }
-  | { type: "START_SUBMIT" }
-  | { type: "SUBMIT_ERROR"; error: string }
-  | { type: "ADVANCE_TO_VERIFY"; cooldown: number }
-  | { type: "START_RESEND" }
-  | { type: "RESEND_SUCCESS"; cooldown: number }
-  | { type: "RESEND_ERROR"; error: string }
-  | { type: "TICK_COOLDOWN" };
-
-function reducer(state: State, action: Action): State {
-  switch (action.type) {
-    case "SET_EMAIL":
-      return { ...state, email: action.email };
-    case "SET_CODE":
-      return { ...state, code: action.code };
-    case "START_SUBMIT":
-      return { ...state, isSubmitting: true, error: null, resendError: null };
-    case "SUBMIT_ERROR":
-      return { ...state, isSubmitting: false, error: action.error };
-    case "ADVANCE_TO_VERIFY":
-      return {
-        ...state,
-        isSubmitting: false,
-        stage: "verify",
-        resendSent: false,
-        resendError: null,
-        resendCooldown: action.cooldown,
-      };
-    case "START_RESEND":
-      return { ...state, isSendingResend: true, error: null, resendError: null };
-    case "RESEND_SUCCESS":
-      return {
-        ...state,
-        isSendingResend: false,
-        resendSent: true,
-        resendCooldown: action.cooldown,
-      };
-    case "RESEND_ERROR":
-      return {
-        ...state,
-        isSendingResend: false,
-        error: action.error,
-        resendError: action.error,
-      };
-    case "TICK_COOLDOWN":
-      return { ...state, resendCooldown: Math.max(0, state.resendCooldown - 1) };
-    default:
-      return state;
-  }
-}
-
 export function EmailCodeFlow({
   flowId,
   title,
@@ -107,13 +45,13 @@ export function EmailCodeFlow({
   emailLabel = "Email",
   getDescription,
   initialStage,
-  initialEmail,
+  initialEmail = "",
   emailReadOnly,
   showEmailInput = true,
   sendButtonLabel = "Send code",
-  sendButtonSendingLabel = "Sending code...",
+  sendButtonSendingLabel = "Sending code…",
   verifyButtonLabel = "Verify code",
-  verifyButtonSubmittingLabel = "Verifying...",
+  verifyButtonSubmittingLabel = "Verifying…",
   onRequestCode,
   onVerifyCode,
   onResendCode,
@@ -123,165 +61,155 @@ export function EmailCodeFlow({
   backHref,
   onBack,
 }: EmailCodeFlowProps) {
-  const [state, dispatch] = useReducer(reducer, {
-    stage: initialStage ?? (onRequestCode ? "request" : "verify"),
-    email: initialEmail ?? "",
-    code: "",
-    error: null,
-    isSubmitting: false,
-    resendCooldown: initialCooldown,
-    resendSent: false,
-    resendError: null,
-    isSendingResend: false,
-  });
+  const action = useAsyncAction();
+  const [operation, setOperation] = useState<"submit" | "resend">("submit");
+  const [stage, setStage] = useState<Stage>(
+    initialStage ?? (onRequestCode ? "request" : "verify"),
+  );
+  const [email, setEmail] = useState(initialEmail);
+  const [code, setCode] = useState("");
+  const [error, setError] = useState<string | null>(null);
+  const cooldown = useResendCooldown(initialCooldown);
+  const [resendResult, setResendResult] = useState<{
+    ok: boolean;
+    message: string;
+  } | null>(null);
+  const [continuing, setContinuing] = useState(false);
+  const submitting = (action.pending && operation === "submit") || continuing;
+  const resending = action.pending && operation === "resend";
 
-  useEffect(() => {
-    if (state.resendCooldown <= 0) {
-      return;
-    }
-    const id = setTimeout(() => dispatch({ type: "TICK_COOLDOWN" }), 1000);
-    return () => clearTimeout(id);
-  }, [state.resendCooldown]);
+  const prefix = flowId ?? "email-code-flow";
+  const emailId = `${prefix}-email`;
+  const errorId = `${prefix}-error`;
+  const trimmedEmail = email.trim();
+  const effectiveResend = onResendCode ?? onRequestCode;
 
-  const trimmedEmail = state.email.trim();
-  const hasError = Boolean(state.error);
-  const descriptionText = getDescription(state.stage, hasError);
-  const canShowEmailInput = !emailReadOnly && showEmailInput;
-  const effectiveResendHandler = onResendCode ?? onRequestCode ?? null;
+  function handleSubmit(event: FormEvent<HTMLFormElement>) {
+    event.preventDefault();
+    if (continuing) return;
 
-  async function handleSubmit(e: React.FormEvent) {
-    e.preventDefault();
-    dispatch({ type: "START_SUBMIT" });
+    void action.run(async () => {
+      setOperation("submit");
+      setError(null);
 
-    try {
-      if (!trimmedEmail) {
-        throw new Error("Email is required.");
-      }
+      try {
+        if (!trimmedEmail) throw new Error("Email is required.");
 
-      if (state.stage === "request") {
-        if (!onRequestCode) {
-          throw new Error("Requesting a code is not supported for this flow.");
+        if (stage === "request" && onRequestCode) {
+          await onRequestCode(trimmedEmail);
+          setStage("verify");
+          setResendResult(null);
+          cooldown.restart();
+          return;
         }
 
-        await onRequestCode(trimmedEmail);
-        dispatch({ type: "ADVANCE_TO_VERIFY", cooldown: 60 });
-      } else {
-        if (!state.code || state.code.length !== codeLength) {
+        if (code.length !== codeLength) {
           throw new Error(`Please enter the ${codeLength}-digit code from your email.`);
         }
 
-        await onVerifyCode(trimmedEmail, state.code.trim());
+        await onVerifyCode(trimmedEmail, code);
+        setContinuing(true);
+      } catch (failure) {
+        setError(
+          failure instanceof Error
+            ? failure.message
+            : "Could not complete verification. Please try again.",
+        );
       }
-    } catch (err: unknown) {
-      const message = err instanceof Error ? err.message : "Something went wrong.";
-      dispatch({ type: "SUBMIT_ERROR", error: message });
-    }
+    });
   }
 
-  async function handleResend() {
-    if (
-      !effectiveResendHandler ||
-      !trimmedEmail ||
-      state.isSendingResend ||
-      state.resendCooldown > 0
-    ) {
-      return;
-    }
+  function handleResend() {
+    if (!effectiveResend || !trimmedEmail || cooldown.seconds > 0 || continuing) return;
 
-    dispatch({ type: "START_RESEND" });
+    void action.run(async () => {
+      setOperation("resend");
+      setResendResult(null);
 
-    try {
-      await effectiveResendHandler(trimmedEmail);
-      dispatch({ type: "RESEND_SUCCESS", cooldown: 60 });
-    } catch (err: unknown) {
-      const message = err instanceof Error ? err.message : "Could not resend code.";
-      dispatch({ type: "RESEND_ERROR", error: message });
-    }
+      try {
+        await effectiveResend(trimmedEmail);
+        setResendResult({ ok: true, message: "Code sent." });
+        cooldown.restart();
+      } catch (failure) {
+        setResendResult({
+          ok: false,
+          message: failure instanceof Error ? failure.message : "Could not resend code.",
+        });
+      }
+    });
   }
-
-  const submitLabel =
-    state.stage === "request"
-      ? state.isSubmitting
-        ? sendButtonSendingLabel
-        : sendButtonLabel
-      : state.isSubmitting
-        ? verifyButtonSubmittingLabel
-        : verifyButtonLabel;
 
   return (
-    <form
-      onSubmit={(e) => void handleSubmit(e)}
-      className="space-y-6"
-      data-flow-id={flowId}
-    >
-      <AuthHeader title={title} description={descriptionText} />
-
-      {state.error && <div className={authStyles.errorBox}>{state.error}</div>}
+    <form onSubmit={handleSubmit} className="space-y-6" data-flow-id={flowId}>
+      <AuthHeader title={title} description={getDescription(stage, Boolean(error))} />
+      <AuthError id={errorId} message={error} />
 
       <div className="space-y-4">
-        {canShowEmailInput && (
-          <div className="space-y-2">
-            <label htmlFor="email" className="block text-sm font-medium text-zinc-700">
+        {showEmailInput && (
+          <div>
+            <label htmlFor={emailId} className={authStyles.label}>
               {emailLabel}
             </label>
             <input
-              id="email"
+              id={emailId}
               name="email"
               type="email"
               required
               autoComplete="email"
-              value={state.email}
-              onChange={(e) => dispatch({ type: "SET_EMAIL", email: e.target.value })}
-              disabled={state.isSubmitting || state.stage === "verify"}
-              className={
-                state.stage === "verify" ? authStyles.inputDisabled : authStyles.input
-              }
+              value={email}
+              onChange={(event) => setEmail(event.target.value)}
+              readOnly={emailReadOnly || stage === "verify" || submitting}
+              aria-describedby={stage === "request" && error ? errorId : undefined}
+              className={authStyles.input}
             />
           </div>
         )}
 
-        {emailReadOnly && !canShowEmailInput && (
-          <div className="border border-zinc-300 bg-zinc-100 px-4 py-5 text-[1.05rem] text-zinc-500">
-            {state.email || "Unknown email"}
-          </div>
-        )}
-
-        {state.stage === "verify" && (
+        {stage === "verify" && (
           <SplitCodeInputWithResend
-            id="email-code"
+            id={`${prefix}-code`}
             label={codeLabel}
             length={codeLength}
-            value={state.code}
-            onChange={(code) => dispatch({ type: "SET_CODE", code })}
-            onResend={() => void handleResend()}
-            isSending={state.isSendingResend}
-            cooldown={state.resendCooldown}
-            disabled={state.isSubmitting}
-            resendSent={state.resendSent}
-            resendError={state.resendError}
+            value={code}
+            onChange={setCode}
+            onResend={effectiveResend ? handleResend : undefined}
+            isSending={resending}
+            cooldown={cooldown.seconds}
+            disabled={submitting}
+            resendResult={resendResult}
+            aria-describedby={error ? errorId : undefined}
           />
         )}
       </div>
 
       <div className="space-y-3">
-        <button
+        <ActionButton
           type="submit"
-          disabled={state.isSubmitting}
+          disabled={resending}
+          pending={submitting}
+          pendingLabel={
+            stage === "request" ? sendButtonSendingLabel : verifyButtonSubmittingLabel
+          }
           className={authStyles.primaryButton}
         >
-          {submitLabel}
-        </button>
+          {stage === "request" ? sendButtonLabel : verifyButtonLabel}
+        </ActionButton>
 
         {(backHref || onBack) && (
           <div className="flex justify-start">
             {backHref ? (
-              <Link href={backHref} className={authStyles.neutralLink}>
+              <FeedbackLink href={backHref} className={authStyles.neutralLink}>
                 {backLabel ?? "Back"}
-              </Link>
+              </FeedbackLink>
             ) : (
-              <button type="button" onClick={onBack} className={authStyles.neutralLink}>
+              <ActionButton
+                type="button"
+                onClick={onBack}
+                disabled={action.pending || continuing}
+                className={authStyles.secondaryButton}
+              >
                 {backLabel ?? "Back"}
-              </button>
+              </ActionButton>
             )}
           </div>
         )}

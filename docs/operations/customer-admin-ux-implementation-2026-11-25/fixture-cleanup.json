@@ -1,0 +1,27 @@
+{
+  "interruptedRun": {
+    "backend": "http://127.0.0.1:64331",
+    "product": "32a230e5-7d33-4536-b106-8e439ca3130a",
+    "users": [
+      "0a20e466-55aa-4666-800b-6e837fc857c3",
+      "af7d2f97-660b-492a-af44-cdc377ebecc7"
+    ],
+    "accountsAfter": 0,
+    "profilesAfter": 0,
+    "productsAfter": 0,
+    "variantsAfter": 0
+  },
+  "finalRun": {
+    "backend": "http://127.0.0.1:64331",
+    "productId": "8932aa0a-42bd-4e2a-9dbe-aebe67eea3a2",
+    "userIds": [
+      "43158c62-fde2-4a69-907f-2b4d7ec5cf45",
+      "138653f9-2e7f-40a1-b5b0-27a2d4e73a28"
+    ],
+    "productsRemaining": 0,
+    "variantsRemainingForProduct": 0,
+    "profilesRemainingForUsers": 0,
+    "accountsRemaining": 0,
+    "ownedNextAndBrowserClosed": true
+  }
+}

@@ -3,12 +3,14 @@ import { emailSubjects, MAIL_REPLY_TO_EMAIL } from "@/config/constants/mail";
 import { sendEmailWithRetry } from "@/lib/email/mailer";
 import {
   buildOrderConfirmationEmail,
+  buildResellerOrderPlacedEmail,
   buildOrderDeliveredEmail,
   buildOrderInTransitEmail,
   buildOrderLabelCreatedEmail,
   buildOrderRefundedEmail,
   buildPickupInstructionsEmail,
   type OrderConfirmationEmailInput,
+  type AdminOrderPlacedEmailInput,
   type OrderDeliveredEmailInput,
   type OrderInTransitEmailInput,
   type OrderLabelCreatedEmailInput,
@@ -228,6 +230,27 @@ export class OrderEmailService {
       content,
       params.order.orderId,
       "order_confirmation",
+    );
+  }
+
+  async sendResellerOrderPlacedFromDetailed(params: {
+    to: string;
+    order: Omit<AdminOrderPlacedEmailInput, "to" | "items" | "itemCount" | "orderUrl">;
+    itemsDetailed: DetailedOrderItemRow[];
+  }) {
+    const items = mapOrderItemsToEmailItems(params.itemsDetailed);
+    const content = buildResellerOrderPlacedEmail({
+      ...params.order,
+      to: params.to,
+      items,
+      itemCount: items.reduce((quantity, item) => quantity + item.quantity, 0),
+    });
+    await this.send(
+      params.to,
+      emailSubjects.resellerOrderPlaced(params.order.orderId),
+      content,
+      params.order.orderId,
+      "reseller_order_placed",
     );
   }
 

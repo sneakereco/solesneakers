@@ -1,5 +1,15 @@
 // src/components/admin/shipping/CreateLabelForm.tsx
 "use client";
+import type { QueueAccess } from "../useAdminOrderQueue";
+import { LabelRecovery } from "./LabelRecovery";
+import { useAsyncAction } from "@/components/ui/useAsyncAction";
+import {
+  adminCommand,
+  rememberProviderCheck,
+  transitionProviderCheck,
+  pendingProviderCheck,
+} from "@/components/admin/admin-command";
+import { useId } from "react";
 
 import { useMemo, useState } from "react";
 import { X, AlertCircle, CheckCircle2 } from "lucide-react";
@@ -52,12 +62,17 @@ type OrderSummary = {
 };
 
 type Props = {
+  queueAccess?: QueueAccess;
   open: boolean;
+  invoker?: HTMLElement | null;
   order: OrderSummary | null;
   originLine?: string | null;
   initialPackage?: ParcelDraft | null;
   onClose: () => void;
   onSuccess: () => void;
+  onUnconfirmed?: (orderId: string) => void;
+  onExistingLabel?: (message: string) => void;
+  onResolved?: () => void;
 };
 
 const resolveShippingAddress = (value: unknown): ShippingAddress | null => {
@@ -163,12 +178,21 @@ const getErrorMessage = (error: string): string => {
 
 export function CreateLabelForm({
   open,
+  queueAccess,
+  invoker,
   order,
   originLine,
   initialPackage,
   onClose,
   onSuccess,
+  onUnconfirmed,
+  onExistingLabel,
+  onResolved,
 }: Props) {
+  const id = useId();
+  const ratesAction = useAsyncAction();
+  const buyAction = useAsyncAction();
+  const [unknown, setUnknown] = useState(false);
   const orderId = order?.id ?? null;
 
   const initialRecipient: ShippingAddressDraft = useMemo(() => {
@@ -210,17 +234,10 @@ export function CreateLabelForm({
   const [error, setError] = useState<string>("");
   const [success, setSuccess] = useState<string>("");
 
-  const [previousInputs, setPreviousInputs] = useState({
-    open,
-    initialRecipient,
-    initialParcel,
-  });
-  if (
-    previousInputs.open !== open ||
-    previousInputs.initialRecipient !== initialRecipient ||
-    previousInputs.initialParcel !== initialParcel
-  ) {
-    setPreviousInputs({ open, initialRecipient, initialParcel });
+  const [previousInputs, setPreviousInputs] = useState({ open, orderId });
+  if (previousInputs.open !== open || previousInputs.orderId !== orderId) {
+    setPreviousInputs({ open, orderId });
+    setUnknown(false);
     setRecipient(initialRecipient);
     setParcel(initialParcel);
     setAddressErrors({});
@@ -248,6 +265,9 @@ export function CreateLabelForm({
     field: "weight" | "length" | "width" | "height",
     value: string,
   ) => {
+    setRates([]);
+    setShipmentId(null);
+    setSelectedRateId(null);
     const cleaned = value.replace(/[^\d.]/g, "");
 
     switch (field) {
@@ -300,6 +320,7 @@ export function CreateLabelForm({
   };
 
   const getRates = async () => {
+    if (queueAccess && !queueAccess.canCommand()) return;
     const v = validate();
     if (v) {
       setError(v);
@@ -314,7 +335,10 @@ export function CreateLabelForm({
     setShipmentId(null);
 
     try {
-      const res = await fetch("/api/admin/shipping/rates", {
+      const { response: res, data } = await adminCommand<{
+        error?: string;
+        shipment?: { id: string; rates: EasyPostRate[] };
+      }>("/api/admin/shipping/rates", {
         method: "POST",
         headers: { "Content-Type": "application/json" },
         body: JSON.stringify({
@@ -326,7 +350,6 @@ export function CreateLabelForm({
         }),
       });
 
-      const data = await res.json();
       if (!res.ok) {
         setError(getErrorMessage(data?.error || "Failed to fetch rates."));
         return;
@@ -360,71 +383,126 @@ export function CreateLabelForm({
     }
   };
 
+  const checkKey = "label:" + orderId;
   const purchase = async () => {
+    if (queueAccess && !queueAccess.canCommand()) return;
+    if (pendingProviderCheck(checkKey)) {
+      setUnknown(true);
+      return;
+    }
     if (!shipmentId || !selectedRateId) {
       setError("Please select a shipping rate before purchasing.");
       return;
     }
 
+    if (!transitionProviderCheck(checkKey, null, "support")) {
+      setError(
+        "Label purchase was not submitted. Enable tab storage in this browser and try again. If this persists, contact support with the order number.",
+      );
+      return;
+    }
     setError("");
     setSuccess("");
     setIsPurchasing(true);
 
     try {
-      const res = await fetch("/api/admin/shipping/labels", {
+      const { response: res, data } = await adminCommand<{
+        error?: string;
+        success?: boolean;
+        message?: string;
+        code?: string;
+        requestId?: string;
+      }>("/api/admin/shipping/labels", {
         method: "POST",
         headers: { "Content-Type": "application/json" },
         body: JSON.stringify({ orderId, shipmentId, rateId: selectedRateId }),
       });
 
-      const data = await res.json();
-
-      if (res.status === 409) {
-        setError(
-          getErrorMessage(data?.error || "Label already purchased for this order."),
+      if (res.ok && data?.success) {
+        setSuccess("Label purchased.");
+        transitionProviderCheck(checkKey, "support", null);
+        if (!queueAccess || queueAccess.isCurrent()) onSuccess();
+        return;
+      }
+      if (res.status === 409 && data?.code === "shipping_order_not_fulfillment_ready") {
+        transitionProviderCheck(checkKey, "support", null);
+        setRates([]);
+        setSelectedRateId(null);
+        setShipmentId(null);
+        setError(data.error ?? "The order is not ready for shipping.");
+        return;
+      }
+      if (
+        res.status === 502 &&
+        data?.code === "shipping_label_purchased_without_tracking"
+      ) {
+        rememberProviderCheck(
+          checkKey,
+          "purchased_without_tracking:" + (data.requestId ?? ""),
         );
+        setUnknown(true);
+        setError("");
+        if (!queueAccess || queueAccess.isCurrent())
+          onExistingLabel?.(
+            "The label was purchased through Shippo without a tracking number. Contact support.",
+          );
         return;
       }
-
-      if (!res.ok) {
-        setError(getErrorMessage(data?.error || "Failed to purchase label."));
+      if (res.status === 409 && data?.code === "shipping_label_already_purchased") {
+        rememberProviderCheck(checkKey, "existing");
+        setUnknown(true);
+        setError(data.error ?? "This order already has a shipping label.");
+        if (!queueAccess || queueAccess.isCurrent())
+          onExistingLabel?.(
+            "Existing label or fulfillment recorded. Check the order before taking further action.",
+          );
         return;
       }
-
-      setSuccess(
-        '✓ Label purchased successfully! The order will move to "Need to Ship" automatically.',
-      );
-
-      // Auto-close and refresh after 2 seconds
-      setTimeout(() => {
-        onSuccess();
-      }, 2000);
+      if (res.status >= 400 && res.status < 500 && res.status !== 409) {
+        transitionProviderCheck(checkKey, "support", null);
+        setError(getErrorMessage(data?.error ?? "Label purchase declined."));
+        return;
+      }
+      throw new Error("Unconfirmed purchase");
     } catch {
-      setError("Network error during label purchase. Please try again.");
+      transitionProviderCheck(checkKey, "support", "unknown");
+      setUnknown(true);
+      setError(
+        "Label purchase is unconfirmed. Check this order and the carrier transaction history before buying another label.",
+      );
+      if (!queueAccess || queueAccess.isCurrent()) onUnconfirmed?.(orderId);
     } finally {
       setIsPurchasing(false);
     }
   };
 
+  const needsCheck =
+    unknown || (Boolean(pendingProviderCheck(checkKey)) && !isPurchasing);
   const hasAddressErrors = Object.keys(addressErrors).length > 0;
 
   return (
-    <ModalPortal open={open} onClose={onClose}>
-      <div
-        className="max-h-[90vh] w-full max-w-6xl overflow-y-auto rounded-lg border border-zinc-800/70 bg-zinc-950"
-        onMouseDown={(e) => e.stopPropagation()}
-      >
+    <ModalPortal
+      open={open}
+      invoker={invoker}
+      onClose={() => {
+        if (!isGettingRates && !isPurchasing) onClose();
+      }}
+      label="Create shipping label"
+    >
+      <div className="max-h-[90vh] w-full max-w-6xl overflow-y-auto rounded-lg border border-zinc-800/70 bg-zinc-950">
         <div className="sticky top-0 z-10 flex items-start justify-between gap-4 border-b border-zinc-800/70 bg-zinc-950 p-5">
           <div>
-            <div className="text-lg font-semibold text-white">Create shipping label</div>
+            <h2 className="text-lg font-semibold text-white">Create shipping label</h2>
             <div className="mt-1 text-xs text-zinc-500">
               Order #{String(orderId).slice(0, 8)}
             </div>
           </div>
           <button
             type="button"
+            aria-label="Close shipping label editor"
+            disabled={isGettingRates || isPurchasing}
             onClick={onClose}
-            className="text-zinc-400 hover:text-white"
+            className="flex h-11 w-11 items-center justify-center text-zinc-400 hover:text-white"
           >
             <X className="h-5 w-5" />
           </button>
@@ -466,8 +544,11 @@ export function CreateLabelForm({
 
               <div className="grid grid-cols-2 gap-2 text-[11px] sm:gap-3 sm:text-sm md:grid-cols-2">
                 <div>
-                  <label className="mb-0.5 block text-gray-400">Name</label>
+                  <label htmlFor={`${id}-name`} className="mb-0.5 block text-gray-400">
+                    Name
+                  </label>
                   <input
+                    id={`${id}-name`}
                     type="text"
                     value={recipient.name}
                     readOnly
@@ -475,8 +556,15 @@ export function CreateLabelForm({
                   />
                 </div>
                 <div>
-                  <label className="mb-0.5 block text-gray-400">Phone *</label>
+                  <label htmlFor={`${id}-phone`} className="mb-0.5 block text-gray-400">
+                    Phone *
+                  </label>
                   <input
+                    id={`${id}-phone`}
+                    aria-invalid={Boolean(addressErrors.phone)}
+                    aria-describedby={
+                      addressErrors.phone ? `${id}-phone-error` : undefined
+                    }
                     type="text"
                     value={recipient.phone}
                     readOnly
@@ -485,13 +573,22 @@ export function CreateLabelForm({
                     }`}
                   />
                   {addressErrors.phone && (
-                    <div className="mt-1 text-xs text-red-400">{addressErrors.phone}</div>
+                    <div id={`${id}-phone-error`} className="mt-1 text-xs text-red-400">
+                      {addressErrors.phone}
+                    </div>
                   )}
                 </div>
 
                 <div className="md:col-span-2">
-                  <label className="mb-0.5 block text-gray-400">Address line 1 *</label>
+                  <label htmlFor={`${id}-line1`} className="mb-0.5 block text-gray-400">
+                    Address line 1 *
+                  </label>
                   <input
+                    id={`${id}-line1`}
+                    aria-invalid={Boolean(addressErrors.line1)}
+                    aria-describedby={
+                      addressErrors.line1 ? `${id}-line1-error` : undefined
+                    }
                     type="text"
                     value={recipient.line1}
                     readOnly
@@ -500,12 +597,17 @@ export function CreateLabelForm({
                     }`}
                   />
                   {addressErrors.line1 && (
-                    <div className="mt-1 text-xs text-red-400">{addressErrors.line1}</div>
+                    <div id={`${id}-line1-error`} className="mt-1 text-xs text-red-400">
+                      {addressErrors.line1}
+                    </div>
                   )}
                 </div>
                 <div className="md:col-span-2">
-                  <label className="mb-0.5 block text-gray-400">Address line 2</label>
+                  <label htmlFor={`${id}-line2`} className="mb-0.5 block text-gray-400">
+                    Address line 2
+                  </label>
                   <input
+                    id={`${id}-line2`}
                     type="text"
                     value={recipient.line2}
                     readOnly
@@ -514,8 +616,13 @@ export function CreateLabelForm({
                 </div>
 
                 <div>
-                  <label className="mb-0.5 block text-gray-400">City *</label>
+                  <label htmlFor={`${id}-city`} className="mb-0.5 block text-gray-400">
+                    City *
+                  </label>
                   <input
+                    id={`${id}-city`}
+                    aria-invalid={Boolean(addressErrors.city)}
+                    aria-describedby={addressErrors.city ? `${id}-city-error` : undefined}
                     type="text"
                     value={recipient.city}
                     readOnly
@@ -524,12 +631,21 @@ export function CreateLabelForm({
                     }`}
                   />
                   {addressErrors.city && (
-                    <div className="mt-1 text-xs text-red-400">{addressErrors.city}</div>
+                    <div id={`${id}-city-error`} className="mt-1 text-xs text-red-400">
+                      {addressErrors.city}
+                    </div>
                   )}
                 </div>
                 <div>
-                  <label className="mb-0.5 block text-gray-400">State *</label>
+                  <label htmlFor={`${id}-state`} className="mb-0.5 block text-gray-400">
+                    State *
+                  </label>
                   <input
+                    id={`${id}-state`}
+                    aria-invalid={Boolean(addressErrors.state)}
+                    aria-describedby={
+                      addressErrors.state ? `${id}-state-error` : undefined
+                    }
                     type="text"
                     value={recipient.state}
                     readOnly
@@ -540,12 +656,24 @@ export function CreateLabelForm({
                     }`}
                   />
                   {addressErrors.state && (
-                    <div className="mt-1 text-xs text-red-400">{addressErrors.state}</div>
+                    <div id={`${id}-state-error`} className="mt-1 text-xs text-red-400">
+                      {addressErrors.state}
+                    </div>
                   )}
                 </div>
                 <div>
-                  <label className="mb-0.5 block text-gray-400">ZIP Code *</label>
+                  <label
+                    htmlFor={`${id}-postal_code`}
+                    className="mb-0.5 block text-gray-400"
+                  >
+                    ZIP Code *
+                  </label>
                   <input
+                    id={`${id}-postal_code`}
+                    aria-invalid={Boolean(addressErrors.postal_code)}
+                    aria-describedby={
+                      addressErrors.postal_code ? `${id}-postal_code-error` : undefined
+                    }
                     type="text"
                     value={recipient.postal_code}
                     readOnly
@@ -555,14 +683,24 @@ export function CreateLabelForm({
                     }`}
                   />
                   {addressErrors.postal_code && (
-                    <div className="mt-1 text-xs text-red-400">
+                    <div
+                      id={`${id}-postal_code-error`}
+                      className="mt-1 text-xs text-red-400"
+                    >
                       {addressErrors.postal_code}
                     </div>
                   )}
                 </div>
                 <div>
-                  <label className="mb-0.5 block text-gray-400">Country *</label>
+                  <label htmlFor={`${id}-country`} className="mb-0.5 block text-gray-400">
+                    Country *
+                  </label>
                   <input
+                    id={`${id}-country`}
+                    aria-invalid={Boolean(addressErrors.country)}
+                    aria-describedby={
+                      addressErrors.country ? `${id}-country-error` : undefined
+                    }
                     type="text"
                     value={recipient.country}
                     readOnly
@@ -573,7 +711,7 @@ export function CreateLabelForm({
                     }`}
                   />
                   {addressErrors.country && (
-                    <div className="mt-1 text-xs text-red-400">
+                    <div id={`${id}-country-error`} className="mt-1 text-xs text-red-400">
                       {addressErrors.country}
                     </div>
                   )}
@@ -587,8 +725,15 @@ export function CreateLabelForm({
               </div>
               <div className="grid grid-cols-2 gap-3 md:grid-cols-4">
                 <div>
-                  <label className="mb-1 block text-xs text-zinc-400">Weight (oz)</label>
+                  <label
+                    htmlFor={`${id}-weightInput`}
+                    className="mb-1 block text-xs text-zinc-400"
+                  >
+                    Weight (oz)
+                  </label>
                   <input
+                    id={`${id}-weightInput`}
+                    disabled={isGettingRates || isPurchasing || needsCheck}
                     type="text"
                     inputMode="numeric"
                     value={weightInput}
@@ -597,8 +742,15 @@ export function CreateLabelForm({
                   />
                 </div>
                 <div>
-                  <label className="mb-1 block text-xs text-zinc-400">Length (in)</label>
+                  <label
+                    htmlFor={`${id}-lengthInput`}
+                    className="mb-1 block text-xs text-zinc-400"
+                  >
+                    Length (in)
+                  </label>
                   <input
+                    id={`${id}-lengthInput`}
+                    disabled={isGettingRates || isPurchasing || needsCheck}
                     type="text"
                     inputMode="numeric"
                     value={lengthInput}
@@ -607,8 +759,15 @@ export function CreateLabelForm({
                   />
                 </div>
                 <div>
-                  <label className="mb-1 block text-xs text-zinc-400">Width (in)</label>
+                  <label
+                    htmlFor={`${id}-widthInput`}
+                    className="mb-1 block text-xs text-zinc-400"
+                  >
+                    Width (in)
+                  </label>
                   <input
+                    id={`${id}-widthInput`}
+                    disabled={isGettingRates || isPurchasing || needsCheck}
                     type="text"
                     inputMode="numeric"
                     value={widthInput}
@@ -617,8 +776,15 @@ export function CreateLabelForm({
                   />
                 </div>
                 <div>
-                  <label className="mb-1 block text-xs text-zinc-400">Height (in)</label>
+                  <label
+                    htmlFor={`${id}-heightInput`}
+                    className="mb-1 block text-xs text-zinc-400"
+                  >
+                    Height (in)
+                  </label>
                   <input
+                    id={`${id}-heightInput`}
+                    disabled={isGettingRates || isPurchasing || needsCheck}
                     type="text"
                     inputMode="numeric"
                     value={heightInput}
@@ -631,16 +797,55 @@ export function CreateLabelForm({
               <button
                 type="button"
                 onClick={() => {
-                  void getRates();
+                  void ratesAction.run(getRates);
                 }}
-                disabled={isGettingRates || hasAddressErrors}
+                disabled={
+                  queueAccess?.writable === false ||
+                  needsCheck ||
+                  isPurchasing ||
+                  isGettingRates ||
+                  hasAddressErrors
+                }
+                aria-busy={isGettingRates}
                 className="admin-button-secondary w-full disabled:cursor-not-allowed disabled:opacity-50 md:w-auto"
               >
                 {isGettingRates ? "Getting rates..." : "Get shipping rates"}
               </button>
 
+              {queueAccess?.writable === false && (
+                <p role="status">
+                  Order changes are unavailable until the current orders load.
+                </p>
+              )}
+              {needsCheck && (
+                <LabelRecovery
+                  key={orderId}
+                  orderId={orderId}
+                  isCurrent={queueAccess?.isCurrent}
+                  writable={queueAccess?.writable}
+                  evidence={pendingProviderCheck(checkKey)}
+                  onResolve={() => {
+                    if (queueAccess && !queueAccess.canCommand()) return;
+                    if (!transitionProviderCheck(checkKey, "unknown", null)) {
+                      setError(
+                        "Unable to verify the updated tab storage. Check browser storage access and try again, or contact support with the order number.",
+                      );
+                      return;
+                    }
+                    setUnknown(false);
+                    setError("");
+                    setRates([]);
+                    setSelectedRateId(null);
+                    setShipmentId(null);
+                    onResolved?.();
+                  }}
+                />
+              )}
               {error && (
-                <div className="flex items-start gap-2 rounded border border-red-400/20 bg-red-400/10 p-3 text-sm text-red-400">
+                <div
+                  role="alert"
+                  className="flex items-start gap-2 rounded border border-red-400/20 bg-red-400/10 p-3 text-sm text-red-400"
+                >
                   <AlertCircle className="mt-0.5 h-4 w-4 flex-shrink-0" />
                   <div>{error}</div>
                 </div>
@@ -689,6 +894,7 @@ export function CreateLabelForm({
                       <input
                         type="radio"
                         name="rate"
+                        disabled={needsCheck || isPurchasing || isGettingRates}
                         checked={selected}
                         onChange={() => setSelectedRateId(r.id)}
                         className="mt-1"
@@ -719,9 +925,12 @@ export function CreateLabelForm({
               <button
                 type="button"
                 onClick={() => {
-                  void purchase();
+                  void buyAction.run(purchase);
                 }}
                 disabled={
+                  queueAccess?.writable === false ||
+                  needsCheck ||
+                  isGettingRates ||
                   isPurchasing ||
                   rates.length === 0 ||
                   !shipmentId ||

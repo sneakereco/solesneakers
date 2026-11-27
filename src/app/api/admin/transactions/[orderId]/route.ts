@@ -145,7 +145,7 @@ export async function GET(
     ];
 
     // --- Email audit log ---
-    const { data: emailLogs } = await supabase
+    const { data: emailLogs, error: emailReadError } = await supabase
       .from("email_audit_log")
       .select(
         "id, email_type, recipient_email, subject, sent_at, delivered_at, opened_at, delivery_status, message_id, html_snapshot, plain_text_snapshot",
@@ -164,6 +164,7 @@ export async function GET(
         squareRefunds: squareRefunds ?? [],
         squareDisputes: squareDisputes ?? [],
         emailLogs: emailLogs ?? [],
+        emailLogsAvailable: !emailReadError && Array.isArray(emailLogs),
         customer: customerIdentity
           ? {
               displayId: buildCustomerDisplayId(customerIdentity),

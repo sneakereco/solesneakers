@@ -5,6 +5,7 @@ export type CheckoutNotification = {
   orderId: string;
   kind:
     | "order_confirmation"
+    | "reseller_order_placed"
     | "pickup_instructions"
     | "refund_confirmation"
     | "label_created"

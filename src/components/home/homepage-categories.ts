@@ -68,9 +68,9 @@ export function getHomepageCategories(
       featured: false,
     },
     {
-      label: "Designer Bags & Accessories",
+      label: "Accessories",
       image: "designer_bags.jpg",
-      href: designerHref("accessories"),
+      href: "/store?category=accessories",
       objectPosition: "50% 50%",
       featured: false,
     },

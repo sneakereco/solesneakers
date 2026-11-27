@@ -10,6 +10,7 @@ const bundle = await build({
     loader: "tsx",
     contents: `
       import React from "react";
+      import { flushSync } from "react-dom";
       import { createRoot } from "react-dom/client";
       import { ClientShell } from "./src/components/shell/ClientShell";
       import { CartProvider, useCart } from "./src/components/cart/CartProvider";
@@ -20,6 +21,7 @@ const bundle = await build({
       import { isApprovedMeasurementHostname } from "./src/Modules/Analytics/Source/Features/VisitorMeasurement/host-gate";
       import { sanitizeMeasurementEvent } from "./src/Modules/Analytics/Source/Features/VisitorMeasurement/contract";
 
+      window.testGrant = "consented";
       const test = window.measurementTriggerTest = { events: [], payloads: [] };
       const assert = {
         deepEqual(actual, expected, message) {
@@ -150,7 +152,7 @@ const bundle = await build({
       };
       await render(<SearchOverlay isOpen={true} onClose={()=>{}}/>);
       const search=async text=>{
-        const field=rootElement.querySelector('[role="searchbox"]');
+        const field=document.querySelector('[role="dialog"] [role="searchbox"]');
         Object.getOwnPropertyDescriptor(HTMLInputElement.prototype,"value").set.call(field,text);
         field.dispatchEvent(new Event("input",{bubbles:true}));await new Promise(r=>setTimeout(r,360));
       };
@@ -193,6 +195,22 @@ const bundle = await build({
       await resetRoot();
       test.events = [];
       sessionStorage.clear();
+      for (const initialGrant of [null, "previous-receipt"]) {
+        window.testGrant = initialGrant;
+        await render(<CartProvider><CartProbe /></CartProvider>);
+        const saved = addItem({
+          productId: product.id, variantId: product.variants[0].id, sizeLabel: "10",
+          brand: "Sole", name: product.name, titleDisplay: product.name,
+          priceCents: 10000, imageUrl: "/shoe.png", maxStock: 1,
+        });
+        window.testGrant = "new-receipt";
+        flushSync(() => root.render(<CartProvider><CartProbe /></CartProvider>));
+        assert.deepEqual(await saved,true,"grant transition preserves the committed cart write");
+        assert.deepEqual(test.events,[],"later consent cannot publish a preexisting cart action");
+        await resetRoot();
+        sessionStorage.clear();
+      }
+      window.testGrant = "consented";
       const originalSetItem = Storage.prototype.setItem;
       Storage.prototype.setItem = () => { throw new Error("storage unavailable"); };
       await render(<CartProvider><CartProbe /></CartProvider>);
@@ -282,7 +300,7 @@ const bundle = await build({
         const mocks = new Map([
           [
             "@/Modules/Analytics/Source/Features/VisitorMeasurement/view-grant",
-            "export const useViewGrant = () => 'consented'; export const useCheckoutMeasurement=()=>'ready';",
+            "export const useViewGrant = () => window.testGrant; export const useCheckoutMeasurement=()=>'ready';",
           ],
           [
             "next/navigation",
@@ -297,7 +315,7 @@ const bundle = await build({
           ],
           [
             "next/link",
-            "export default ({ children, ...props }) => <a {...props}>{children}</a>;",
+            "export const useLinkStatus = () => ({ pending: false }); export default ({ children, onNavigate, ...props }) => <a {...props}>{children}</a>;",
           ],
           ["@/components/shell/Footer", "export const Footer = () => null;"],
           [
@@ -316,7 +334,7 @@ const bundle = await build({
           ["@/lib/utils/log", "export const logError = () => {};"],
           [
             "@/contexts/SessionContext",
-            "export const useSession = () => ({ user: null });",
+            "const session={user:null,isIdentityCurrent:owner=>owner===null}; export const useSession=()=>session;",
           ],
           [
             "@/components/checkout/CheckoutContactSection",
@@ -340,14 +358,14 @@ const bundle = await build({
           ],
           [
             "@/components/checkout/SquarePaymentMethods",
-            "export const SquarePaymentMethods = ({ children }) => <div data-payment>{children}</div>;",
+            "export class CheckoutCartUnavailable extends Error {}; export const SquarePaymentMethods = ({ children }) => <div data-payment>{children}</div>;",
           ],
           [
             "@/lib/checkout/client-session",
             `
           export const getOrCreateCheckoutDeviceSessionId = () => "device";
           export const getOrCreateCheckoutIdempotencyKey = () => "idempotency";
-          export const storeGuestOrderAccess = () => {};
+          export const rememberPendingCheckoutAttempt = () => {}; export const clearCheckoutAttempt = () => {}; export const storeGuestOrderAccess = () => {};
         `,
           ],
           [
@@ -395,7 +413,7 @@ try {
   const page = await browser.newPage();
   const errors = [];
   let outgoingProbe = null;
-  page.on("pageerror", (error) => errors.push(error.message));
+  page.on("pageerror", (error) => errors.push(error.stack || error.message));
   await page.route("http://measurement.test/measurement-probe", (route) => {
     outgoingProbe = JSON.parse(route.request().postData());
     return route.fulfill({ status: 200, contentType: "application/json", body: "{}" });
@@ -408,12 +426,12 @@ try {
       status: 200,
       contentType: "application/json",
       body: JSON.stringify({
-        completeness: "estimate",
-        quoteFingerprint: "a".repeat(64),
+        completeness: "preliminary",
+        quoteFingerprint: null,
         totals: {
           subtotalCents: 10000,
           shippingCents: 0,
-          taxCents: 0,
+          taxCents: null,
           totalCents: 10000,
         },
       }),

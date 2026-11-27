@@ -8,7 +8,11 @@ import { createSupabaseServerClient } from "@/lib/supabase/server";
 import { requireAdminApi } from "@/lib/auth/session";
 import { ensureTenantId } from "@/lib/auth/tenant";
 import { ProductService } from "@/services/product-service";
-import { adminProductsQuerySchema, productCreateSchema } from "@/lib/validation/product";
+import {
+  adminProductsQuerySchema,
+  inventoryIdentitySchema,
+  productCreateSchema,
+} from "@/lib/validation/product";
 import { getRequestIdFromHeaders } from "@/lib/http/request-id";
 import { logError } from "@/lib/utils/log";
 
@@ -60,6 +64,21 @@ export async function GET(request: NextRequest) {
     const tenantId = await ensureTenantId(session, supabase);
 
     const { searchParams } = new URL(request.url);
+
+    const exactFields = [...searchParams].filter(
+      ([key]) => key === "exactSku" || key === "exactId",
+    );
+    if (exactFields.length) {
+      const identity = inventoryIdentitySchema.safeParse(Object.fromEntries(exactFields));
+      if (exactFields.length !== 1 || !identity.success) {
+        return NextResponse.json(
+          { error: "Provide one exact inventory identity.", requestId },
+          { status: 400, headers: { "Cache-Control": "no-store" } },
+        );
+      }
+      const product = await service.lookupInventoryProduct(tenantId, identity.data);
+      return NextResponse.json({ product }, { headers: { "Cache-Control": "no-store" } });
+    }
 
     const parsedQuery = adminProductsQuerySchema.safeParse({
       q: searchParams.get("q") ?? undefined,

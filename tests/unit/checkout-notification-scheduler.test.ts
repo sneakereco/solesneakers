@@ -34,7 +34,7 @@ it("dispatches only the paid order's notifications after the response", async ()
     { kind: "admin" },
     "order-1",
   );
-  expect(processCheckoutNotifications).toHaveBeenCalledWith({ kind: "dependencies" }, 2);
+  expect(processCheckoutNotifications).toHaveBeenCalledWith({ kind: "dependencies" }, 3);
 });
 
 it("leaves payment success intact when prompt delivery fails", async () => {
