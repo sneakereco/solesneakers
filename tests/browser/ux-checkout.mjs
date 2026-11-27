@@ -212,6 +212,7 @@ async function fixture(browser) {
           delete requested.recoveryOnly;
           delete saved.shippingAddressOverride;
           delete saved.shippingConfirmation;
+          delete saved.trackingContext;
           if (!isDeepStrictEqual(requested, saved))
             return route.fulfill({
               status: 409,
@@ -798,8 +799,10 @@ async function copiedCheckout(f, missingOriginal) {
     });
   const { recoveryOnly, ...recovered } = f.prepareCalls[1];
   assert.equal(recoveryOnly, true);
-  const { shippingAddressOverride, ...original } = f.prepareCalls[0];
+  assert.equal(Object.hasOwn(recovered, "trackingContext"), false);
+  const { shippingAddressOverride, trackingContext, ...original } = f.prepareCalls[0];
   assert.equal(shippingAddressOverride, false);
+  assert.equal(trackingContext, null);
   assert.deepEqual(
     recovered,
     original,
