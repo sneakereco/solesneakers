@@ -4,8 +4,83 @@ import { EventEmitter } from "node:events";
 import { existsSync, readFileSync, statSync } from "node:fs";
 import { PassThrough } from "node:stream";
 import { test } from "node:test";
+import { readNativeMarkers } from "../../scripts/analytics-native-readback.mjs";
 import { resolveObserverRelease } from "../../scripts/resolve-analytics-observer-release.mjs";
 import { runObservers } from "../../scripts/run-admin-analytics-observers.mjs";
+
+const markerResult = (markers) => ({
+  columns: ["visible_events", "markers"],
+  results: [[0, markers]],
+  hasMore: false,
+});
+
+test("native readback retries pending markers until both are visible", async () => {
+  const counts = [0, 1, 2];
+  const pauses = [];
+  await readNativeMarkers(
+    async () => markerResult(counts.shift()),
+    2,
+    performance.now() + 20_000,
+    async (ms) => pauses.push(ms),
+  );
+  assert.deepEqual(counts, []);
+  assert.deepEqual(pauses, [2_000, 2_000]);
+});
+
+test("native readback stops on exhausted attempts or remaining time", async () => {
+  const read = async () => markerResult(1);
+  const pauses = [];
+  await assert.rejects(
+    readNativeMarkers(read, 2, performance.now() + 20_000, async (ms) => pauses.push(ms)),
+    { name: "NativeMarkersPendingError", message: /not yet visible/ },
+  );
+  assert.deepEqual(pauses, [2_000, 2_000]);
+  await assert.rejects(
+    readNativeMarkers(read, 2, performance.now() + 1_000, async () => {
+      assert.fail("paused beyond the deadline");
+    }),
+    { name: "NativeMarkersPendingError", message: /not yet visible/ },
+  );
+});
+
+test("a deadline reached before any native response is a failure", async () => {
+  await assert.rejects(
+    readNativeMarkers(
+      async () => assert.fail("queried after the deadline"),
+      2,
+      performance.now() - 1,
+    ),
+    /without a response/,
+  );
+});
+
+test("native readback immediately rejects malformed or excessive counts", async () => {
+  for (const data of [
+    null,
+    markerResult(-1),
+    markerResult(1.5),
+    markerResult(3),
+    { ...markerResult(2), truncated: true },
+    { ...markerResult(2), hasMore: true },
+    { ...markerResult(2), results: [[-1, 2]] },
+    { ...markerResult(2), results: [[0, 2, 0]] },
+  ]) {
+    let reads = 0;
+    await assert.rejects(
+      readNativeMarkers(
+        async () => {
+          reads++;
+          return data;
+        },
+        2,
+        performance.now() + 20_000,
+        async () => assert.fail("retried an invalid response"),
+      ),
+      /Invalid native marker response/,
+    );
+    assert.equal(reads, 1);
+  }
+});
 
 const env = {
   ANALYTICS_OBSERVER_PROBES_APPROVED: "true",
@@ -178,6 +253,66 @@ test("uses the 240-second window and sequential cadence while a native failure l
       assert.equal(invocation.options.env[variable], undefined);
   }
   assert.equal(existsSync(h.attestationPath()), false);
+});
+
+test("one confirmed native proof completes the window after an earlier pending result", async () => {
+  const h = harness((source, at) =>
+    source === "native" && at === 0 ? { code: 75 } : {},
+  );
+  const result = await h.run();
+  assert.equal(result.status, "completed");
+  assert.deepEqual(result.native, { attempted: 2, failed: 0, pending: 1 });
+  assert.deepEqual(result.failures, {});
+});
+
+test("pending native readbacks do not hide native or warehouse failures", async () => {
+  for (const failedSource of ["native", "warehouse"]) {
+    const h = harness((source, at) => {
+      if (source === "native" && at === 0) return { code: 75 };
+      if (source === failedSource) return { code: 1 };
+    });
+    const result = await h.run();
+    assert.equal(result.status, "failed");
+    assert.equal(result.native.pending, 1);
+    assert.ok(result[failedSource].failed > 0);
+  }
+});
+
+test("a window with only pending native readbacks remains pending", async () => {
+  const h = harness((source) => (source === "native" ? { code: 75 } : {}));
+  const result = await h.run();
+  assert.equal(result.status, "pending");
+  assert.deepEqual(result.native, { attempted: 2, failed: 0, pending: 2 });
+  assert.deepEqual(result.failures, {});
+});
+
+test("warehouse progress completes the window despite one pending partition", async () => {
+  const h = harness((source, at) =>
+    source === "warehouse" && at === 0 ? { code: 75 } : {},
+  );
+  const result = await h.run();
+  assert.equal(result.status, "completed");
+  assert.equal(result.warehouse.pending, 1);
+  assert.equal(result.warehouse.failed, 0);
+});
+
+test("a pending warehouse partition does not hide a warehouse worker failure", async () => {
+  const h = harness((source, at) => {
+    if (source === "warehouse" && at === 0) return { code: 75 };
+    if (source === "warehouse" && at === 10_000) return { code: 1 };
+  });
+  const result = await h.run();
+  assert.equal(result.status, "failed");
+  assert.equal(result.warehouse.pending, 1);
+  assert.equal(result.warehouse.failed, 1);
+});
+
+test("a window with only pending warehouse partitions remains pending", async () => {
+  const h = harness((source) => (source === "warehouse" ? { code: 75 } : {}));
+  const result = await h.run();
+  assert.equal(result.status, "pending");
+  assert.equal(result.warehouse.pending, result.warehouse.attempted);
+  assert.deepEqual(result.failures, {});
 });
 
 test("output overflow and child timeouts kill workers, redact output and permit a later warehouse attempt", async () => {

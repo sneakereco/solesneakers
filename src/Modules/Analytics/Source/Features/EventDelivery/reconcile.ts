@@ -4,6 +4,7 @@ import { DATASET_IDS } from "../Configuration/dataset";
 import type { ResolvedRange } from "../ReportContract/types";
 import type { CompiledQuery } from "../Reporting/query-contract";
 import { REPORT_ENDPOINT_VERSIONS } from "../Reporting/query-contract";
+import { parseHogqlInstant } from "./instant";
 import { postHogWarehouseTables, warehouseFreshness } from "./history-source";
 import {
   compareEvidence,
@@ -23,6 +24,8 @@ export {
 } from "./reconciliation-evidence";
 
 const name = "sole_analytics_reconciliation";
+const start = parseHogqlInstant("{variables.start_inclusive}");
+const end = parseHogqlInstant("{variables.end_exclusive}");
 export const reconciliationEndpoint = {
   name,
   version: REPORT_ENDPOINT_VERSIONS[name],
@@ -31,11 +34,11 @@ export const reconciliationEndpoint = {
  (SELECT uniqExact(tuple(properties.fact_id, properties.fact_revision)) FROM events
    WHERE event = 'sole_analytics_fact_v2' AND properties.storefront = 'sole' AND properties.schema_version = 2
    AND properties.dataset_id = {variables.dataset_id}
-   AND timestamp >= parseDateTime64BestEffort({variables.start_inclusive},6,'UTC')
-   AND timestamp < parseDateTime64BestEffort({variables.end_exclusive},6,'UTC')) AS visible_revisions,
+   AND timestamp >= ${start}
+   AND timestamp < ${end}) AS visible_revisions,
  (SELECT uniqExact(fact_id) FROM ${postHogWarehouseTables.finance} WHERE dataset_id = {variables.dataset_id}
-   AND effective_at >= parseDateTime64BestEffort({variables.start_inclusive},6,'UTC')
-   AND effective_at < parseDateTime64BestEffort({variables.end_exclusive},6,'UTC')) AS warehouse_facts`,
+   AND effective_at >= ${start}
+   AND effective_at < ${end}) AS warehouse_facts`,
 };
 const count = z.number().int().nonnegative();
 export const sourceCoverageSchema = z.strictObject({

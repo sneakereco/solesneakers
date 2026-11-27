@@ -1,6 +1,7 @@
 import "server-only";
 import { Redis } from "@upstash/redis";
 import { z } from "zod";
+import { QUERY_TIMEOUT_MS } from "./posthog-query";
 
 export interface ReportStore {
   read(key: string): Promise<string | null>;
@@ -97,6 +98,7 @@ const publish = `
 
 // Slot leases survive a lost worker only until its bounded HTTP call must end.
 // The rolling window is counted per admitted Endpoint, across all report routes.
+const queryLeaseMs = QUERY_TIMEOUT_MS + 4_000;
 const admit = `
  if redis.call('EXISTS',KEYS[3])==1 then return 'limited' end
  local t=redis.call('TIME')
@@ -105,8 +107,8 @@ const admit = `
  if redis.call('ZCARD',KEYS[2])>=900 or redis.call('ZCOUNT',KEYS[2],'('..(now-60000),'+inf')>=90 then return 'limited' end
  redis.call('ZREMRANGEBYSCORE',KEYS[1],'-inf',now)
  if redis.call('ZCARD',KEYS[1])>=2 then return 'busy' end
- redis.call('ZADD',KEYS[1],now+12000,ARGV[1])
- redis.call('PEXPIRE',KEYS[1],12000)
+ redis.call('ZADD',KEYS[1],now+${queryLeaseMs},ARGV[1])
+ redis.call('PEXPIRE',KEYS[1],${queryLeaseMs})
  redis.call('ZADD',KEYS[2],now,ARGV[1])
  redis.call('PEXPIRE',KEYS[2],3600000)
  return 'ok'`;

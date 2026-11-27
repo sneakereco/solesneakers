@@ -47,8 +47,8 @@ export function observationSql(scope: DatasetScope) {
  row_number() OVER (PARTITION BY session_id ORDER BY occurred_at DESC,event_uuid DESC) AS last_rank
  FROM valid_events WHERE ${eligibleSessionEntry("entered_at")}
  ), session_entries AS (
- SELECT e.*,last.visitor AS session_visitor FROM session_events e
- JOIN session_events last ON last.session_id=e.session_id AND last.last_rank=1 WHERE e.entry_rank=1
+ SELECT e.*,latest_session_event.visitor AS session_visitor FROM session_events e
+ JOIN session_events latest_session_event ON latest_session_event.session_id=e.session_id AND latest_session_event.last_rank=1 WHERE e.entry_rank=1
  )`;
 }
 

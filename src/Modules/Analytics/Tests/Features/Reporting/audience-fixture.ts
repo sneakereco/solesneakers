@@ -32,7 +32,6 @@ export function makeAudienceFixture(
     toUUID: (v) => v,
     UUIDv7ToDateTime: (v) =>
       new Date(parseInt(String(v).replaceAll("-", "").slice(0, 12), 16)).toISOString(),
-    parseDateTime64BestEffort: (v) => v,
     toInt: (v) => (v === null ? null : Number(v)),
     regexMatch: (v, p) => {
       const pattern = String(p);

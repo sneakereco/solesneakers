@@ -44,3 +44,55 @@ test("preserves the optional behavior archive source", () => {
     /\bFROM analytics_behavior_export\b/,
   );
 });
+
+test("renders UTC timestamp parsing through the HogQL function registry", () => {
+  const { manifest } = planProvisioning({
+    environment: "staging",
+    at: "2026-11-27T18:00:00.123456Z",
+  });
+  for (const { name, sql } of [
+    { name: "behavior archive", sql: manifest.optionalMinimizedArchiveSql },
+    ...manifest.endpoints,
+  ]) {
+    assert.equal(/\bparseDateTime64BestEffort(?:OrNull)?\(/.test(sql), false, name);
+  }
+  const sales = manifest.endpoints.find(({ name }) => name === "sole_analytics_sales");
+  assert.match(
+    sales.sql,
+    /parseDateTimeBestEffort\(\{variables\.start_inclusive\},'UTC'\)/,
+  );
+  const series = manifest.endpoints.find(
+    ({ name }) => name === "sole_analytics_sales_series",
+  );
+  assert.match(
+    series.sql,
+    /toStartOfWeek\(toTimeZone\(report_at,'America\/New_York'\),1\)/,
+  );
+  assert.match(
+    manifest.optionalMinimizedArchiveSql,
+    /parseDateTimeBestEffort\('2026-11-27T18:00:00\.123456Z','UTC'\)/,
+  );
+});
+
+test("native observer matches both exact marker IDs at PostHog millisecond precision", () => {
+  const { manifest } = planProvisioning({
+    environment: "staging",
+    at: "2026-11-27T18:00:00Z",
+  });
+  const observer = manifest.endpoints.find(
+    ({ name }) => name === "sole_analytics_observe_native",
+  );
+  assert.equal(observer.version, 1);
+  assert.match(
+    observer.sql,
+    /event='sole_analytics_probe_v1' AND properties\.dataset_id=\{variables\.dataset_id\}\s+AND distinct_id='sole:availability'/,
+  );
+  assert.match(
+    observer.sql,
+    /toString\(uuid\)=\{variables\.first_id\} AND dateDiff\('millisecond',timestamp,parseDateTimeBestEffort\(\{variables\.start_inclusive\},'UTC'\)\)=0/,
+  );
+  assert.match(
+    observer.sql,
+    /toString\(uuid\)=\{variables\.last_id\} AND dateDiff\('millisecond',timestamp,parseDateTimeBestEffort\(\{variables\.end_exclusive\},'UTC'\)\)=0/,
+  );
+});

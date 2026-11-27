@@ -7,6 +7,7 @@ import {
 } from "./history-source";
 import scalar from "../CommerceFacts/fact-scalar-schemas.json";
 import { DATASET_IDS } from "../Configuration/dataset";
+import { parseHogqlInstant } from "./instant";
 
 // PostHog substitutes only the interval placeholders. Compile the trusted project
 // scope once when provisioning the saved export definition.
@@ -72,7 +73,7 @@ function nativeProjection(scope: DatasetScope, timePredicate: string): string {
  if(length(properties.referrer_host)<=253 AND match(properties.referrer_host,'${referrer}') AND NOT match(properties.referrer_host,'${unsafe}'),properties.referrer_host,NULL) AS referrer_host,
  ${dimensions.join(",\n ")}
  FROM events
- WHERE timestamp >= parseDateTime64BestEffort('${activation}',6,'UTC')
+ WHERE timestamp >= ${parseHogqlInstant(`'${activation}'`)}
  AND ${timePredicate}
  AND properties.environment='${scope.environment}' AND properties.storefront='sole' AND properties.schema_version=2
  AND match(distinct_id,'${visitor}') AND match(properties.$session_id,'${uuid}') AND match(properties.pathname,'${path}')
@@ -92,11 +93,11 @@ export function compileBehaviorArchive(scope: DatasetScope): string {
 // Endpoint SQL uses a fixed query shape. Provision this for the activated dataset and
 // re-version if its storage cutoff changes. Request variables remain scalar instants.
 export function compileBehaviorHistorySql(scope: DatasetScope): string {
-  const start = "parseDateTime64BestEffort({variables.start_inclusive},6,'UTC')";
-  const end = "parseDateTime64BestEffort({variables.end_exclusive},6,'UTC')";
+  const start = parseHogqlInstant("{variables.start_inclusive}");
+  const end = parseHogqlInstant("{variables.end_exclusive}");
   const cutoff = scope.behaviorArchiveCutoff;
   const bound = cutoff
-    ? `parseDateTime64BestEffort('${datasetScopeSchema.parse(scope).behaviorArchiveCutoff}',6,'UTC')`
+    ? parseHogqlInstant(`'${datasetScopeSchema.parse(scope).behaviorArchiveCutoff}'`)
     : null;
   const recent = nativeProjection(
     scope,
