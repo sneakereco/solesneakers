@@ -14,6 +14,7 @@ import type { PaymentCheckout } from "@/repositories/checkout-reservation-repo";
 type CheckoutSession = { user: { id: string; email: string } } | null;
 
 export type IssuePaymentPermitDependencies = {
+  refusalDisposition(order: PaymentCheckout): Promise<"refuse" | "observe" | "deny">;
   getOrCreateAttempt: CheckoutPaymentAttemptRepository["getOrCreateAttempt"];
   findTenantId(): Promise<string | null>;
   getAccess(tenantId: string): Promise<CheckoutAccessDecision>;
@@ -56,6 +57,33 @@ function isUsable(order: PaymentCheckout, now: Date): boolean {
     Number.isFinite(expiresAt) &&
     expiresAt > now.getTime()
   );
+}
+
+function originalOrderStatus(order: PaymentCheckout): Response {
+  return json(
+    {
+      code: "CHECKOUT_RECOVERY_REQUIRED",
+      error: "Check the original order status for the latest payment information.",
+      orderId: order.orderId,
+      statusUrl: "/checkout/processing?orderId=" + encodeURIComponent(order.orderId),
+    },
+    409,
+  );
+}
+
+async function admissionRefusal(
+  order: PaymentCheckout,
+  deps: IssuePaymentPermitDependencies,
+  refusal: Response,
+): Promise<Response> {
+  try {
+    const disposition = await deps.refusalDisposition(order);
+    if (disposition === "refuse") return refusal;
+    if (disposition === "deny") return json({ error: "Order access denied" }, 403);
+  } catch {
+    deps.reportError(new Error("checkout_permit_evidence_unavailable"));
+  }
+  return originalOrderStatus(order);
 }
 
 export async function issuePaymentPermitHandler(
@@ -107,19 +135,11 @@ export async function issuePaymentPermitHandler(
       return json({ error: "Order access denied" }, 403);
     }
 
-    if (order.financialReview)
-      return json(
-        {
-          code: "CHECKOUT_RECOVERY_REQUIRED",
-          error: "This payment needs review. Check the original order status.",
-          orderId: order.orderId,
-          statusUrl: "/checkout/processing?orderId=" + encodeURIComponent(order.orderId),
-        },
-        409,
-      );
+    if (order.financialReview) return originalOrderStatus(order);
+    // assertCheckoutOpen converts control/configuration read failures to a closed decision.
     const access = await deps.getAccess(tenantId);
     if (!access.open) {
-      return json({ error: access.message }, 503);
+      return admissionRefusal(order, deps, json({ error: access.message }, 503));
     }
 
     if (!isUsable(order, deps.now()))
@@ -146,23 +166,37 @@ export async function issuePaymentPermitHandler(
     const ownerBinding = isGuest
       ? `order:${order.orderId}`
       : `account:${session!.user.id}`;
-    const attempt = await deps.checkPaymentAttempt({
-      tenantId,
-      orderId: order.orderId,
-      clientIp,
-      shopperBinding: order.userId
-        ? "account:" + order.userId
-        : order.guestContextHash
-          ? "guest:" + order.guestContextHash
-          : "order:" + order.orderId,
-    });
+    let attempt: CheckoutAttemptDecision;
+    try {
+      attempt = await deps.checkPaymentAttempt({
+        tenantId,
+        orderId: order.orderId,
+        clientIp,
+        shopperBinding: order.userId
+          ? "account:" + order.userId
+          : order.guestContextHash
+            ? "guest:" + order.guestContextHash
+            : "order:" + order.orderId,
+      });
+    } catch {
+      deps.reportError(new Error("checkout_payment_permit_unavailable"));
+      return admissionRefusal(
+        order,
+        deps,
+        json({ error: "Checkout is temporarily unavailable" }, 503),
+      );
+    }
     if (!attempt.allowed) {
-      return json(
-        { error: "Too many payment attempts; please try again later" },
-        429,
-        attempt.retryAfterSeconds
-          ? { "Retry-After": String(attempt.retryAfterSeconds) }
-          : undefined,
+      return admissionRefusal(
+        order,
+        deps,
+        json(
+          { error: "Too many payment attempts; please try again later" },
+          429,
+          attempt.retryAfterSeconds
+            ? { "Retry-After": String(attempt.retryAfterSeconds) }
+            : undefined,
+        ),
       );
     }
 

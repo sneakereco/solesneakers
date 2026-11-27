@@ -305,6 +305,8 @@ type OrderOwner = Pick<
   "id" | "tenant_id" | "user_id" | "checkout_guest_context_hash"
 >;
 
+class OrderOwnerMismatch extends Error {}
+
 async function readBoundEvidence(authorized: OrderOwner, admin: AdminSupabaseClient) {
   const { data, error } = await admin
     .from("orders")
@@ -321,7 +323,7 @@ async function readBoundEvidence(authorized: OrderOwner, admin: AdminSupabaseCli
     data.checkout_guest_context_hash !== authorized.checkout_guest_context_hash ||
     data.tenant_id !== authorized.tenant_id
   )
-    throw Error("Unauthorized");
+    throw new OrderOwnerMismatch("Unauthorized");
   return { order: data, financial: project(data) };
 }
 
@@ -338,6 +340,37 @@ export async function readOrderFinancialEvidence(
   );
 }
 
+function isVerifiedUnpaid(financial: ReceiptFinancialEvidence): boolean {
+  return (
+    financial.source === "ledger" &&
+    financial.snapshot.financialState === "unpaid" &&
+    financial.snapshot.capturedCents === 0 &&
+    financial.snapshot.refundedCents === 0 &&
+    financial.snapshot.reviewReason === null
+  );
+}
+
+export async function permitRefusalDisposition(
+  authorized: OrderOwner,
+  admin: AdminSupabaseClient,
+): Promise<"refuse" | "observe" | "deny"> {
+  try {
+    const current = await readBoundEvidence(authorized, admin);
+    if (!current || !isVerifiedUnpaid(current.financial)) return "observe";
+    const { order } = current;
+    // A permit can precede the first attempt. Any unresolved dispatch still needs observation.
+    return order.checkout_attempt_guarded &&
+      order.status === "pending" &&
+      !order.payment_transaction_id &&
+      order.attempts.every((a) => ["ready", "declined", "canceled"].includes(a.state))
+      ? "refuse"
+      : "observe";
+  } catch (error) {
+    if (error instanceof OrderOwnerMismatch) return "deny";
+    throw error;
+  }
+}
+
 // Only a complete, owner-bound snapshot may turn a dispatch refusal into
 // an actionable retry. The newest workflow row alone cannot exclude an older capture.
 export async function canReportNegativeCheckout(
@@ -346,17 +379,9 @@ export async function canReportNegativeCheckout(
   admin: AdminSupabaseClient,
 ): Promise<boolean> {
   const current = await readBoundEvidence(authorized, admin);
-  if (!current || current.financial.source !== "ledger") return false;
-  const { snapshot } = current.financial;
+  if (!current || !isVerifiedUnpaid(current.financial)) return false;
   const latest = current.order.attempts.reduce<
     (typeof current.order.attempts)[number] | undefined
   >((newest, a) => (!newest || a.sequence > newest.sequence ? a : newest), undefined);
-  return (
-    latest?.id === observedAttempt.id &&
-    latest.state === observedAttempt.state &&
-    snapshot.financialState === "unpaid" &&
-    snapshot.capturedCents === 0 &&
-    snapshot.refundedCents === 0 &&
-    snapshot.reviewReason === null
-  );
+  return latest?.id === observedAttempt.id && latest.state === observedAttempt.state;
 }

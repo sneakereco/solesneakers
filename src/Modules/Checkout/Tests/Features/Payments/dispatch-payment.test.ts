@@ -261,6 +261,7 @@ it("two newly issued guest bearers share the committed call and the persisted ke
   };
   const issueDeps = {
     ...shared,
+    refusalDisposition: () => Promise.resolve("refuse" as const),
     findTenantId: () => Promise.resolve(order.tenantId),
     verifyBrowser: () =>
       Promise.resolve({ allowed: true as const, reason: "passed" as const }),

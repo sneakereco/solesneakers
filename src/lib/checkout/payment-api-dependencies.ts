@@ -1,4 +1,7 @@
-import { canReportNegativeCheckout } from "@/Modules/Orders/Source/Features/OrderStatus/financial-evidence";
+import {
+  canReportNegativeCheckout,
+  permitRefusalDisposition,
+} from "@/Modules/Orders/Source/Features/OrderStatus/financial-evidence";
 import { deadlineFetch } from "@/Modules/Checkout/Source/Features/Recovery/recovery-worker";
 import { CheckoutProviderCapacity } from "@/lib/checkout/checkout-attempt-limit";
 import { checkoutAdmissionBudgets } from "@/Modules/Checkout/Source/Features/Operations/admission";
@@ -27,10 +30,22 @@ import { squareDeclineCode } from "@/lib/square/payments";
 import { recordSquarePaymentDetails } from "@/lib/square/payment-details";
 import { createSupabaseAdminClient } from "@/lib/supabase/service-role";
 import { logError } from "@/lib/utils/log";
-import { CheckoutReservationRepository } from "@/repositories/checkout-reservation-repo";
+import {
+  CheckoutReservationRepository,
+  type PaymentCheckout,
+} from "@/repositories/checkout-reservation-repo";
 import { OrdersRepository } from "@/repositories/orders-repo";
 import { TenantRepository } from "@/repositories/tenant-repo";
 import { OrderAccessTokenService } from "@/services/order-access-token-service";
+
+function orderOwner(order: PaymentCheckout) {
+  return {
+    id: order.orderId,
+    user_id: order.userId,
+    tenant_id: order.tenantId,
+    checkout_guest_context_hash: order.guestContextHash ?? null,
+  };
+}
 
 function checkoutHostname(): string {
   const value = process.env.NEXT_PUBLIC_SITE_URL?.trim();
@@ -53,6 +68,7 @@ export function createIssuePaymentPermitDependencies(
 
   return {
     getOrCreateAttempt: (input) => attempts.getOrCreateAttempt(input),
+    refusalDisposition: (order) => permitRefusalDisposition(orderOwner(order), supabase),
     findTenantId: () => tenants.getFirstTenantId(),
     getAccess: (tenantId) => assertCheckoutOpen(tenantId, "gateway_attempt"),
     verifyBrowser: verifyCheckoutBrowser,
@@ -105,16 +121,7 @@ export function createDirectPaymentDependencies(
     getSession: getServerSession,
     getAccess: (tenantId) => assertCheckoutOpen(tenantId, "gateway_attempt"),
     canReportNegative: (order, attempt) =>
-      canReportNegativeCheckout(
-        {
-          id: order.orderId,
-          user_id: order.userId,
-          tenant_id: order.tenantId,
-          checkout_guest_context_hash: order.guestContextHash ?? null,
-        },
-        attempt,
-        supabase,
-      ),
+      canReportNegativeCheckout(orderOwner(order), attempt, supabase),
     readCurrentAttempt: (orderId) => readCurrentPaymentAttempt(supabase, orderId),
     beginDispatch: (input) => attempts.beginDispatch(input),
     recordAttemptOutcome: (input) => attempts.recordAttemptOutcome(input),
