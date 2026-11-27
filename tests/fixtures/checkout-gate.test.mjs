@@ -13,6 +13,7 @@ test("browser failure diagnostics expose only bounded owned source locations and
       "AssertionError [ERR_ASSERTION]: private-provider-payload",
       "    at TestContext.<anonymous> (file:///home/runner/work/solesneakers/solesneakers/src/Modules/Cart/Tests/Features/ManageBasket/purchase-capture.browser.mjs:123:9)",
       "    at file:///home/runner/work/solesneakers/solesneakers/tests/browser/measurement-sdk-boundary.mjs:456:2",
+      "    at C:\\repo\\tests\\browser\\checkout-ui.mjs:123:9",
       "    at C:\\private\\customer-record.mjs:30:1",
       "    at /repo/tests/browser/private-secret.mjs:9:1",
       "    at /repo/tests/browser/measurement-sdk-boundary.mjs:0:2",
@@ -26,6 +27,7 @@ test("browser failure diagnostics expose only bounded owned source locations and
     locations: [
       "src/Modules/Cart/Tests/Features/ManageBasket/purchase-capture.browser.mjs:123:9",
       "tests/browser/measurement-sdk-boundary.mjs:456:2",
+      "tests/browser/checkout-ui.mjs:123:9",
     ],
   });
   assert.doesNotMatch(JSON.stringify(output), /private|provider|payload|token|customer/);

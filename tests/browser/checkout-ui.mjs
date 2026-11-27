@@ -8,7 +8,7 @@ const outputDir = join(
   "checkout-ui",
 );
 import { build } from "esbuild";
-import { chromium } from "@playwright/test";
+import { chromium, expect } from "@playwright/test";
 import postcss from "postcss";
 import tailwindcss from "tailwindcss";
 import nextEnv from "@next/env";
@@ -211,19 +211,18 @@ try {
   } else {
     const email = page.getByRole("textbox", { name: "Email", exact: true });
     await email.waitFor();
-    assert.equal(await email.getAttribute("aria-invalid"), null);
+    await expect.poll(() => email.getAttribute("aria-invalid")).toBe(null);
     await email.focus();
     await page.getByRole("textbox", { name: "First name", exact: true }).focus();
-    assert.equal(
-      await email.getAttribute("aria-invalid"),
-      "true",
+    await expect(
+      email,
       "empty email must show an inline error after blur",
-    );
+    ).toHaveAttribute("aria-invalid", "true");
     await email.fill("buyer@example.com");
-    assert.notEqual(await email.getAttribute("aria-invalid"), "true");
+    await expect(email).not.toHaveAttribute("aria-invalid", "true");
     await email.fill("");
     await email.blur();
-    assert.equal(await email.getAttribute("aria-invalid"), "true");
+    await expect(email).toHaveAttribute("aria-invalid", "true");
     await page.getByRole("button", { name: "Pay $110.00 now", exact: true }).click();
     for (const label of [
       "Email",
@@ -236,14 +235,13 @@ try {
       "Phone",
       "Name on card",
     ]) {
-      assert.equal(
-        await page.getByLabel(label, { exact: true }).getAttribute("aria-invalid"),
-        "true",
+      await expect(
+        page.getByLabel(label, { exact: true }),
         `${label} must be marked on submit`,
-      );
+      ).toHaveAttribute("aria-invalid", "true");
     }
     assert.equal(await page.evaluate(() => window.checkoutTest.prepared), 0);
-    assert.equal(await email.evaluate((el) => el === document.activeElement), true);
+    await expect(email).toBeFocused();
     await page.getByRole("button", { name: "Pay with Apple Pay" }).click();
     await page.waitForFunction(() => window.checkoutTest.tokenized.includes("apple"));
     await page.waitForFunction(() => !document.querySelector("dialog")?.open);
@@ -254,10 +252,8 @@ try {
     );
     const last = page.getByLabel("Last name", { exact: true });
     await last.fill("Buyer");
-    assert.equal(
-      await last.inputValue(),
+    await expect(last, "last name must not move into an empty first name").toHaveValue(
       "Buyer",
-      "last name must not move into an empty first name",
     );
     await page.getByRole("radio", { name: "Cash App Pay", exact: true }).click();
     const cashPanel = page.locator('[data-payment-method="cashAppPay"]');
@@ -268,8 +264,7 @@ try {
     await page.getByText("Use a different billing address", { exact: true }).click();
     await page.getByLabel("Billing first name", { exact: true }).fill("Bill");
     await page.getByRole("radio", { name: "Afterpay", exact: true }).click();
-    assert.equal(
-      await page.getByLabel("Billing first name", { exact: true }).inputValue(),
+    await expect(page.getByLabel("Billing first name", { exact: true })).toHaveValue(
       "Bill",
     );
     const billing = page.getByRole("heading", { name: "Billing address", exact: true });
@@ -279,17 +274,20 @@ try {
     );
     await page.getByRole("radio", { name: "Credit card", exact: true }).click();
     await page.evaluate(() =>
-      window.checkoutTest.listeners.cardBrandChanged({
-        detail: {
-          cardBrand: "visa",
-          field: "cardNumber",
-          currentState: { isEmpty: false, isCompletelyValid: false },
-        },
-      }),
+      setTimeout(
+        () =>
+          window.checkoutTest.listeners.cardBrandChanged({
+            detail: {
+              cardBrand: "visa",
+              field: "cardNumber",
+              currentState: { isEmpty: false, isCompletelyValid: false },
+            },
+          }),
+        75,
+      ),
     );
-    assert.equal(await page.getByRole("img", { name: "Visa", exact: true }).count(), 1);
-    assert.equal(
-      await page.getByRole("img", { name: "Mastercard", exact: true }).count(),
+    await expect(page.getByRole("img", { name: "Visa", exact: true })).toHaveCount(1);
+    await expect(page.getByRole("img", { name: "Mastercard", exact: true })).toHaveCount(
       0,
     );
     await page.evaluate(() =>
@@ -300,10 +298,9 @@ try {
         },
       }),
     );
-    assert.equal(
-      await page.getByText("Enter a valid card number", { exact: true }).isVisible(),
-      true,
-    );
+    await expect(
+      page.getByText("Enter a valid card number", { exact: true }),
+    ).toBeVisible();
     await page.evaluate(() =>
       window.checkoutTest.listeners.errorClassRemoved({
         detail: {
@@ -312,10 +309,9 @@ try {
         },
       }),
     );
-    assert.equal(
-      await page.getByText("Enter a valid card number", { exact: true }).count(),
-      0,
-    );
+    await expect(
+      page.getByText("Enter a valid card number", { exact: true }),
+    ).toHaveCount(0);
     await page.evaluate(() =>
       window.checkoutTest.listeners.cardBrandChanged({
         detail: {
@@ -327,17 +323,11 @@ try {
     );
     const more = page.getByRole("button", { name: "Show 4 more accepted card brands" });
     await more.click();
-    assert.equal(
-      await page.getByRole("tooltip", { name: "Accepted cards" }).isVisible(),
-      true,
-    );
+    await expect(page.getByRole("tooltip", { name: "Accepted cards" })).toBeVisible();
     await page.keyboard.press("Escape");
-    assert.equal(
-      await page.getByRole("tooltip", { name: "Accepted cards" }).isVisible(),
-      false,
-    );
+    await expect(page.getByRole("tooltip", { name: "Accepted cards" })).not.toBeVisible();
     await page.getByRole("button", { name: "Pickup", exact: true }).click();
-    assert.equal(await page.getByLabel("Address", { exact: true }).count(), 0);
+    await expect(page.getByLabel("Address", { exact: true })).toHaveCount(0);
     await page.getByRole("button", { name: "Ship", exact: true }).click();
     assert.equal(await page.evaluate(() => window.checkoutTest.created), 1);
     await mkdir(outputDir, { recursive: true });
@@ -419,7 +409,7 @@ try {
     await page.waitForFunction(() => window.checkoutTest.tokenized.includes("card"));
     await page.getByText("Enter a valid card number", { exact: true }).waitFor();
     assert.equal(payRequests, 0, "INVALID card tokens cannot reach payment");
-    assert.equal(await page.getByRole("dialog").count(), 0);
+    await expect(page.getByRole("dialog")).toHaveCount(0);
     assert.deepEqual(errors, []);
     console.log(
       "PASS: checkout blur/submit errors, express bypass, shared billing, card events, responsive layout and reduced motion",
