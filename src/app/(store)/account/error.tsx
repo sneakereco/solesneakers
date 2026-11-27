@@ -1,16 +1,17 @@
 "use client";
 
 import Link from "next/link";
+import { RouteRetryButton } from "@/components/ui/RouteRetryButton";
 import { useEffect } from "react";
 
 import { logError } from "@/lib/utils/log";
 
 export default function Error({
   error,
-  reset,
+  retry,
 }: {
   error: Error & { digest?: string };
-  reset: () => void;
+  retry: () => void;
 }) {
   useEffect(() => {
     logError(error, {
@@ -32,13 +33,10 @@ export default function Error({
         We could not load your account details. Try again or sign in again.
       </p>
       <div className="mt-9 flex flex-col items-center justify-center gap-3 sm:flex-row">
-        <button
-          type="button"
-          onClick={() => reset()}
+        <RouteRetryButton
+          retry={retry}
           className="inline-flex min-h-12 min-w-40 items-center justify-center bg-[#1f1f1d] px-7 text-xs font-semibold uppercase tracking-[0.14em] text-white transition-colors hover:bg-black"
-        >
-          Try again
-        </button>
+        />
         <Link
           href="/auth/login"
           className="inline-flex min-h-12 min-w-40 items-center justify-center border border-zinc-400 px-7 text-xs font-semibold uppercase tracking-[0.14em] text-zinc-800 transition-colors hover:border-black hover:text-black"

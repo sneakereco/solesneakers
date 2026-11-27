@@ -1,10 +1,16 @@
 // app/admin/featured-items/client.tsx
 "use client";
+import { adminCommand } from "@/components/admin/admin-command";
+
+import { useAdminRead } from "@/components/admin/useAdminRead";
+import { AdminReadStatus } from "@/components/admin/AdminSkeletons";
+import { fetchJsonWithDeadline } from "@/lib/http/request-deadline";
+import { useAsyncAction } from "@/components/ui/useAsyncAction";
 
 import { useState, useEffect, useCallback } from "react";
 import { Star, GripVertical, X, Plus } from "lucide-react";
 import Image from "next/image";
-import Link from "next/link";
+import { FeedbackLink as Link } from "@/components/ui/FeedbackLink";
 
 import { AdminSearchField } from "@/components/admin/AdminSearchField";
 import { logError } from "@/lib/utils/log";
@@ -44,124 +50,77 @@ type Product = {
   variants: Array<{ sale_price_cents: number }>;
 };
 
+const loadFeatured = async (signal: AbortSignal) =>
+  (
+    await fetchJsonWithDeadline<{ items: FeaturedItem[] }>(
+      "/api/admin/featured-items",
+      "Featured items unavailable",
+      signal,
+    )
+  ).items;
 export function FeaturedItemsManager() {
-  const [featuredItems, setFeaturedItems] = useState<FeaturedItem[]>([]);
-  const [isLoading, setIsLoading] = useState(true);
+  const read = useAdminRead(loadFeatured, "featured items");
+  const command = useAsyncAction();
+  const [draft, setFeaturedItems] = useState<FeaturedItem[] | null>(null);
+  const featuredItems = draft ?? read.data ?? [];
+  const blocked = command.pending || read.pending || !!read.error;
+  const [progress, setProgress] = useState("");
   const [searchQuery, setSearchQuery] = useState("");
-  const [searchResults, setSearchResults] = useState<Product[]>([]);
-  const [isSearching, setIsSearching] = useState(false);
+  const [query, setQuery] = useState("");
+  useEffect(() => {
+    const timeout = setTimeout(() => setQuery(searchQuery.trim()), 150);
+    return () => clearTimeout(timeout);
+  }, [searchQuery]);
+  const find = useCallback(
+    async (signal: AbortSignal) =>
+      query
+        ? (
+            await fetchJsonWithDeadline<{ products: Product[] }>(
+              `/api/admin/products?${new URLSearchParams({ limit: "20", includeOutOfStock: "1", q: query })}`,
+              "Product search unavailable",
+              signal,
+            )
+          ).products
+        : [],
+    [query],
+  );
+  const search = useAdminRead(find, "product search");
+  const isSearching = query !== searchQuery.trim() || search.pending;
+  const searchResults = isSearching ? [] : (search.data ?? []);
   const [draggedIndex, setDraggedIndex] = useState<number | null>(null);
   const [toast, setToast] = useState<{
     message: string;
     tone: "success" | "error" | "info";
   } | null>(null);
 
-  const loadFeaturedItems = useCallback((signal?: AbortSignal) => {
-    return fetch("/api/admin/featured-items", { signal })
-      .then(async (response) => {
-        const data = await response.json();
-        if (signal?.aborted) return;
-        if (response.ok) {
-          setFeaturedItems(data.items || []);
-        } else {
-          throw new Error(data.error || "Failed to load featured items");
-        }
-      })
-      .catch((error: unknown) => {
-        if (signal?.aborted) return;
-        logError(error, { layer: "frontend", event: "load_featured_items" });
-        setToast({
-          message:
-            error instanceof Error ? error.message : "Failed to load featured items",
-          tone: "error",
-        });
-      })
-      .finally(() => {
-        if (!signal?.aborted) setIsLoading(false);
-      });
-  }, []);
-
-  useEffect(() => {
-    const controller = new AbortController();
-    void loadFeaturedItems(controller.signal);
-    return () => controller.abort();
-  }, [loadFeaturedItems]);
-
-  useEffect(() => {
-    const query = searchQuery.trim();
-    if (query.length === 0) {
-      return;
-    }
-
-    const controller = new AbortController();
-    const searchProducts = async () => {
-      setIsSearching(true);
+  const run = (label: string, operation: () => Promise<void>) =>
+    command.run(async () => {
+      setProgress(label);
       try {
-        const params = new URLSearchParams({
-          limit: "20",
-          includeOutOfStock: "1",
-        });
-        params.set("q", query);
-
-        const response = await fetch(`/api/admin/products?${params.toString()}`, {
-          signal: controller.signal,
-        });
-        const data = await response.json().catch(() => null);
-        if (!response.ok) {
-          throw new Error(data?.error || "Failed to search products");
-        }
-        setSearchResults(data?.products || []);
-      } catch (error: unknown) {
-        const isAbort =
-          error instanceof DOMException
-            ? error.name === "AbortError"
-            : typeof error === "object" &&
-              error !== null &&
-              "name" in error &&
-              (error as { name?: string }).name === "AbortError";
-        if (!isAbort) {
-          setSearchResults([]);
-          logError(error, { layer: "frontend", event: "featured_items_search" });
-          setToast({
-            message: error instanceof Error ? error.message : "Failed to search products",
-            tone: "error",
-          });
-        }
+        await operation();
       } finally {
-        if (!controller.signal.aborted) setIsSearching(false);
+        setProgress("");
       }
-    };
-
-    const timeout = setTimeout(() => {
-      void searchProducts();
-    }, 150);
-
-    return () => {
-      controller.abort();
-      clearTimeout(timeout);
-    };
-  }, [searchQuery]);
-
+    });
   const addFeaturedItem = async (productId: string) => {
     try {
-      const response = await fetch("/api/admin/featured-items", {
-        method: "POST",
-        headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({ productId }),
-      });
-
-      const data = await response.json();
+      const { response, data } = await adminCommand<{ error?: string }>(
+        "/api/admin/featured-items",
+        {
+          method: "POST",
+          headers: { "Content-Type": "application/json" },
+          body: JSON.stringify({ productId }),
+        },
+      );
 
       if (!response.ok) {
-        throw new Error(data.error || "Failed to add featured item");
+        throw new Error(data?.error || "Failed to add featured item");
       }
 
       setToast({ message: "Product added to featured items", tone: "success" });
       setSearchQuery("");
-      setSearchResults([]);
-      setIsSearching(false);
-      setIsLoading(true);
-      await loadFeaturedItems();
+
+      read.retry();
     } catch (error) {
       logError(error, { layer: "frontend", event: "add_featured_item" });
       setToast({
@@ -173,18 +132,19 @@ export function FeaturedItemsManager() {
 
   const removeFeaturedItem = async (productId: string) => {
     try {
-      const response = await fetch(`/api/admin/featured-items?productId=${productId}`, {
-        method: "DELETE",
-      });
+      const { response, data } = await adminCommand<{ error?: string }>(
+        `/api/admin/featured-items?productId=${productId}`,
+        {
+          method: "DELETE",
+        },
+      );
 
       if (!response.ok) {
-        const data = await response.json();
-        throw new Error(data.error || "Failed to remove featured item");
+        throw new Error(data?.error || "Failed to remove featured item");
       }
 
       setToast({ message: "Product removed from featured items", tone: "success" });
-      setIsLoading(true);
-      await loadFeaturedItems();
+      read.retry();
     } catch (error) {
       logError(error, { layer: "frontend", event: "remove_featured_item" });
       setToast({
@@ -214,35 +174,35 @@ export function FeaturedItemsManager() {
     setDraggedIndex(index);
   };
 
-  const handleDragEnd = async () => {
-    if (draggedIndex === null) {
-      return;
-    }
-
-    const updates = featuredItems.map((item, index) => ({
+  const saveOrder = async (ordered: FeaturedItem[]) => {
+    const updates = ordered.map((item, index) => ({
       id: item.id,
       sortOrder: index,
     }));
 
     try {
-      const response = await fetch("/api/admin/featured-items/reorder", {
-        method: "POST",
-        headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({ updates }),
-      });
+      const { response } = await adminCommand<unknown>(
+        "/api/admin/featured-items/reorder",
+        {
+          method: "POST",
+          headers: { "Content-Type": "application/json" },
+          body: JSON.stringify({ updates }),
+        },
+      );
 
       if (!response.ok) {
         throw new Error("Failed to save order");
       }
 
       setToast({ message: "Order updated successfully", tone: "success" });
+      read.retry();
     } catch (error) {
       logError(error, { layer: "frontend", event: "reorder_featured_items" });
       setToast({ message: "Failed to save order", tone: "error" });
-      setIsLoading(true);
-      await loadFeaturedItems();
+      read.retry();
     } finally {
       setDraggedIndex(null);
+      setFeaturedItems(null);
     }
   };
 
@@ -260,16 +220,10 @@ export function FeaturedItemsManager() {
     (product) => !featuredProductIds.has(product.id),
   );
 
-  if (isLoading) {
-    return (
-      <div className="flex min-h-[400px] items-center justify-center">
-        <div className="text-gray-400">Loading featured items...</div>
-      </div>
-    );
-  }
-
   return (
     <div className="space-y-6">
+      <AdminReadStatus read={read} label="Loading featured items" />
+      {progress && <p role="status">{progress}</p>}
       {/* Add Products Section */}
       <section
         data-admin-section-card
@@ -285,15 +239,12 @@ export function FeaturedItemsManager() {
             value={searchQuery}
             onChange={(value) => {
               setSearchQuery(value);
-              if (!value.trim()) {
-                setSearchResults([]);
-                setIsSearching(false);
-              }
             }}
             placeholder="Search products by name, brand, or SKU..."
             label="Search products"
           />
-          {isSearching && (
+          {search.error && <AdminReadStatus read={search} label="Searching products" />}
+          {searchQuery && isSearching && (
             <div className="pointer-events-none absolute right-11 top-1/2 -translate-y-1/2 text-xs text-zinc-500">
               Searching...
             </div>
@@ -308,7 +259,10 @@ export function FeaturedItemsManager() {
                 return (
                   <button
                     key={product.id}
-                    onClick={() => void addFeaturedItem(product.id)}
+                    disabled={blocked}
+                    onClick={() =>
+                      void run("Adding featured item…", () => addFeaturedItem(product.id))
+                    }
                     className="flex w-full items-center gap-4 p-4 text-left transition hover:bg-zinc-700"
                   >
                     {primaryImage ? (
@@ -345,6 +299,7 @@ export function FeaturedItemsManager() {
 
         {searchQuery.trim().length > 0 &&
           filteredSearchResults.length === 0 &&
+          !search.error &&
           !isSearching && (
             <div className="mt-4 text-center text-sm text-gray-400">
               No products found matching &quot;{searchQuery}&quot;
@@ -371,7 +326,7 @@ export function FeaturedItemsManager() {
           </Link>
         </div>
 
-        {featuredItems.length === 0 ? (
+        {!read.data ? null : featuredItems.length === 0 ? (
           <div className="py-12 text-center">
             <Star className="mx-auto mb-4 h-12 w-12 text-gray-600" />
             <p className="mb-2 text-lg text-gray-400">No featured items yet</p>
@@ -395,16 +350,47 @@ export function FeaturedItemsManager() {
                 return (
                   <div
                     key={item.id}
-                    draggable
+                    draggable={!blocked}
                     onDragStart={() => handleDragStart(index)}
                     onDragOver={(e) => handleDragOver(e, index)}
-                    onDragEnd={() => void handleDragEnd()}
+                    onDragEnd={() => {
+                      if (draggedIndex !== null)
+                        void run("Saving order…", () => saveOrder(featuredItems));
+                    }}
                     className={[
                       "flex items-center gap-4 rounded border border-zinc-800/70 bg-zinc-800 p-4",
                       "cursor-move transition hover:border-zinc-700",
                       draggedIndex === index ? "opacity-50" : "",
                     ].join(" ")}
                   >
+                    <div className="flex flex-col">
+                      <button
+                        type="button"
+                        aria-label={`Move ${item.product.name} up`}
+                        disabled={blocked || index === 0}
+                        onClick={() => {
+                          const next = [...featuredItems];
+                          [next[index - 1], next[index]] = [next[index], next[index - 1]];
+                          void run("Saving order…", () => saveOrder(next));
+                        }}
+                        className="min-h-10 px-2"
+                      >
+                        ↑
+                      </button>
+                      <button
+                        type="button"
+                        aria-label={`Move ${item.product.name} down`}
+                        disabled={blocked || index === featuredItems.length - 1}
+                        onClick={() => {
+                          const next = [...featuredItems];
+                          [next[index + 1], next[index]] = [next[index], next[index + 1]];
+                          void run("Saving order…", () => saveOrder(next));
+                        }}
+                        className="min-h-10 px-2"
+                      >
+                        ↓
+                      </button>
+                    </div>
                     <GripVertical className="h-5 w-5 flex-shrink-0 text-gray-500" />
 
                     <div className="flex h-8 w-8 flex-shrink-0 items-center justify-center rounded bg-zinc-700">
@@ -443,7 +429,12 @@ export function FeaturedItemsManager() {
                     </div>
 
                     <button
-                      onClick={() => void removeFeaturedItem(item.product_id)}
+                      disabled={blocked}
+                      onClick={() =>
+                        void run("Removing featured item…", () =>
+                          removeFeaturedItem(item.product_id),
+                        )
+                      }
                       className="flex-shrink-0 rounded p-2 transition hover:bg-zinc-700"
                       title="Remove from featured"
                     >

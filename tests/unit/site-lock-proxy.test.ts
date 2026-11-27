@@ -103,6 +103,64 @@ describe("checkSiteLock", () => {
     expect(mockGetFirstTenantId).not.toHaveBeenCalled();
   });
 
+  it("checks auth, staff and lock-page exemptions before reading store settings", async () => {
+    for (const path of [
+      "/api/auth/logout",
+      "/auth/login",
+      "/admin/dashboard",
+      "/api/admin/profile",
+      "/locked",
+      "/images/logo.png",
+    ]) {
+      await expect(
+        checkSiteLock(new NextRequest("http://localhost" + path), "fixture"),
+      ).resolves.toBeNull();
+    }
+    expect(mockGetFirstTenantId).not.toHaveBeenCalled();
+  });
+
+  it("returns a recoverable unavailable response when the site lock cannot settle", async () => {
+    jest.useFakeTimers();
+    try {
+      mockGetFirstTenantId.mockReturnValueOnce(new Promise(() => {}));
+      let result: Response | null | undefined;
+      void checkSiteLock(new NextRequest("http://localhost/store"), "fixture").then(
+        (value) => {
+          result = value;
+        },
+      );
+      await jest.advanceTimersByTimeAsync(15000);
+      expect(result?.status).toBe(503);
+      expect(result?.headers.get("Retry-After")).toBe("1");
+      expect(await result?.text()).toContain("store access");
+    } finally {
+      jest.useRealTimers();
+    }
+  });
+
+  it("stops waiting for a stalled staff bypass after a confirmed lock", async () => {
+    jest.useFakeTimers();
+    try {
+      mockGetSettings.mockResolvedValueOnce({
+        siteLockEnabled: true,
+        siteUnlockAt: null,
+      });
+      mockIsSiteLocked.mockReturnValueOnce(true);
+      mockGetUser.mockReturnValueOnce(new Promise(() => {}));
+      let result: Response | null | undefined;
+      void checkSiteLock(new NextRequest("http://localhost/store"), "fixture").then(
+        (value) => {
+          result = value;
+        },
+      );
+      await jest.advanceTimersByTimeAsync(15000);
+      expect(result?.status).toBe(503);
+      expect(mockGetProfileByUserId).not.toHaveBeenCalled();
+    } finally {
+      jest.useRealTimers();
+    }
+  });
+
   it("does not lock when persisted settings disable site lock", async () => {
     mockGetSettings.mockResolvedValue({
       siteLockEnabled: false,

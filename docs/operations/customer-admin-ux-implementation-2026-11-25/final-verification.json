@@ -1,0 +1,74 @@
+{
+  "testedCommit": "b3a1d4f85d2dfa4a7570f000571cd8928f9ea45d",
+  "verifiedLocalDate": "2026-11-26",
+  "sourceTree": "7a4cf09e6f86395bee0257744cf764823c32fe1d",
+  "testsTree": "517860b7f9bf1917d98510c5881619f1bf66fd3a",
+  "branch": "codex/customer-admin-ux-implementation",
+  "checks": [
+    {
+      "name": "unit",
+      "command": "node node_modules/jest/bin/jest.js --config jest.config.ts --runInBand",
+      "exitCode": 0,
+      "suites": 130,
+      "tests": 675,
+      "localLog": "test-results/ux-implementation/completion-unit-2026-11-26.log",
+      "logSha256": "aff95aa449127652def73ceee33f8a3414b95b1b3699a85598e3978de200edc9"
+    },
+    {
+      "name": "integration",
+      "command": "node node_modules/jest/bin/jest.js --config jest.integration.config.ts --runInBand",
+      "exitCode": 0,
+      "suites": 3,
+      "tests": 21,
+      "localLog": "test-results/ux-implementation/completion-integration-2026-11-26.log",
+      "logSha256": "0feee9c593924b255753d8c290bdcae8bfd7640e062bf446f9ef58a879f136c0"
+    },
+    {
+      "name": "browser",
+      "command": "doppler run -- node tests/browser/ux-journeys.mjs",
+      "exitCode": 0,
+      "runners": 22,
+      "failed": 0,
+      "localLog": "test-results/ux-implementation/completion-browser-2026-11-26.log",
+      "logSha256": "36d3f9ea5ff5536d2b870b607a63d65b61c5acf42760555c500b1bd49c95a184"
+    },
+    {
+      "name": "build",
+      "command": "doppler run -- node node_modules/next/dist/bin/next build --webpack",
+      "exitCode": 0,
+      "generated": 88,
+      "total": 88,
+      "localLog": "test-results/ux-implementation/completion-build-2026-11-26.log",
+      "logSha256": "51a5e5a75ea10d0ae511a5c5c2f1c7f9fb5b43a4bed5620c08bd214dd84f27bd"
+    }
+  ],
+  "diagnostics": {
+    "unitErrorLogs": 6,
+    "unitWarningLogs": 3,
+    "note": "Expected exercised error/security/provider diagnostics; zero test failures."
+  },
+  "versions": {
+    "node": "v24.14.1",
+    "next": "16.3.3",
+    "react": "19.2.7",
+    "playwright": "1.56.1"
+  },
+  "review": {
+    "taskGates": 8,
+    "wholeBranchReviewedThrough": "4324dee723486ccdb36e38e544cf3a8538c211e9",
+    "subsequentFixes": [
+      "72351d2b12e9f5d82f042298780722cebc859181",
+      "4b914fc0bd3cf3044964d97b50e7229a63dd1daa",
+      "b3a1d4f85d2dfa4a7570f000571cd8928f9ea45d"
+    ],
+    "allFindingsClosed": true,
+    "decisionCount": 33
+  },
+  "earlierLocalRecoveryEvidenceRouteUnchanged": true,
+  "manualReleaseGates": [
+    "Staging host, cookies, CSP, mail delivery and provider configuration",
+    "Physical iOS/Android and assistive-technology acceptance",
+    "Native wallet/issuer flows and real payment/shipping/fulfillment outcomes"
+  ],
+  "boundaries": "Default browser runners use controlled service/SDK boundaries. Earlier actual local Next/Supabase evidence is linked separately and source-pinned. No production qualification is claimed."
+}

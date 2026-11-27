@@ -1,4 +1,4 @@
-import Link from "next/link";
+import { FeedbackLink as Link, DocumentFeedbackLink } from "@/components/ui/FeedbackLink";
 
 export function CheckoutUnavailable() {
   return (
@@ -8,9 +8,14 @@ export function CheckoutUnavailable() {
         Checkout is temporarily unavailable
       </h1>
       <p className="mx-auto mb-8 max-w-md text-sm leading-6 text-zinc-600">
-        Online payment is paused while the store transitions to a new payment and tax
-        service. Your cart is still saved.
+        We couldn’t load checkout. Try again or return to your cart.
       </p>
+      <DocumentFeedbackLink
+        href="/checkout"
+        className="mr-3 inline-flex min-h-11 items-center justify-center border border-zinc-700 px-5 py-3 text-sm font-medium"
+      >
+        Retry checkout
+      </DocumentFeedbackLink>
       <Link
         href="/cart"
         className="inline-flex min-w-48 justify-center bg-black px-6 py-3 text-sm uppercase tracking-wide text-white"

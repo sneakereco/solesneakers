@@ -1,7 +1,10 @@
 // src/components/auth/ui/AuthStyles.ts
 export const authStyles = {
+  label: "mb-2 block text-sm font-medium text-zinc-700",
+  secondaryButton:
+    "inline-flex min-h-11 items-center justify-center text-[0.98rem] text-zinc-600 transition-colors hover:text-zinc-900 disabled:opacity-50",
   input:
-    "h-14 w-full border border-zinc-300 bg-white px-5 text-[1.02rem] font-normal text-zinc-800 placeholder:text-zinc-500 transition-colors focus:border-zinc-400 focus:outline-none disabled:cursor-not-allowed disabled:bg-zinc-100 disabled:text-zinc-500 sm:h-[min(3.2vw,3.85rem)] sm:min-h-12",
+    "h-14 w-full border border-zinc-300 bg-white px-5 text-[1.02rem] font-normal text-zinc-800 placeholder:text-zinc-500 transition-colors focus:border-zinc-500 focus:outline-none focus:ring-1 focus:ring-zinc-500 disabled:cursor-not-allowed disabled:bg-zinc-100 disabled:text-zinc-500 sm:h-[min(3.2vw,3.85rem)] sm:min-h-12",
 
   inputDisabled:
     "h-14 w-full border border-zinc-300 bg-zinc-100 px-5 text-[1.02rem] text-zinc-500 cursor-not-allowed sm:h-[min(3.2vw,3.85rem)] sm:min-h-12",

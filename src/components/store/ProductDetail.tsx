@@ -1,19 +1,23 @@
 "use client";
 
+import { ActionButton } from "@/components/ui/ActionButton";
 import { useEffect, useRef, useState } from "react";
-import Image from "next/image";
-import Link from "next/link";
+import { ProductImage } from "./ProductImage";
+import { FeedbackLink } from "@/components/ui/FeedbackLink";
 import { ChevronDown } from "lucide-react";
 
 import { useCart } from "@/components/cart/CartProvider";
 import { Toast } from "@/components/ui/Toast";
 import { captureProductViewed } from "@/lib/measurement/client";
 import type { ProductWithDetails } from "@/types/domain/product";
+
 import { SpecialtyProductCard } from "@/Modules/SpecialtyProducts/Source/Features/Discovery/SpecialtyProductCard";
 
 interface ProductDetailProps {
   product: ProductWithDetails;
 }
+
+type AddFeedback = { status: "checking" | "success" | "error" };
 
 const formatPrice = (priceCents: number) =>
   new Intl.NumberFormat("en-US", {
@@ -50,7 +54,10 @@ export function ProductDetail({ product }: ProductDetailProps) {
 }
 
 function OrdinaryProductDetail({ product }: ProductDetailProps) {
-  const { addItem, items } = useCart();
+  const { addItem, items, isReady, validationStatus, retryValidation } = useCart();
+  const cartUnavailable = !isReady && validationStatus === "error";
+  const addInFlight = useRef(false);
+  const [addFeedback, setAddFeedback] = useState<AddFeedback | null>(null);
   const viewedProductId = useRef<string | null>(null);
   const initialVariant =
     product.variants.find((variant) => variant.stock > 0) ?? product.variants[0];
@@ -63,10 +70,6 @@ function OrdinaryProductDetail({ product }: ProductDetailProps) {
   const selectedSizeIdRef = useRef<string | null>(initialVariant?.size.id ?? null);
   const [selectedImageIndex, setSelectedImageIndex] = useState(initialImageIndex);
   const [showShipping, setShowShipping] = useState(false);
-  const [toast, setToast] = useState<{
-    message: string;
-    tone: "success" | "error" | "info";
-  } | null>(null);
 
   const selectedVariant =
     product.variants.find((variant) => variant.id === selectedVariantId) ??
@@ -113,33 +116,32 @@ function OrdinaryProductDetail({ product }: ProductDetailProps) {
     }
   }, [product.variants, selectedVariantId]);
 
-  const handleAddToCart = () => {
-    if (!selectedVariant) {
-      return;
-    }
+  const handleAddToCart = async () => {
+    if (addInFlight.current || !isReady || !selectedVariant || !canAddMore) return;
 
-    if (!canAddMore) {
-      setToast({
-        message: "Only limited stock is available for this size.",
-        tone: "info",
+    addInFlight.current = true;
+    setAddFeedback({ status: "checking" });
+    try {
+      const saved = await addItem({
+        productId: product.id,
+        variantId: selectedVariant.id,
+        sizeLabel: selectedVariant.size.label,
+        brand: product.brand.label,
+        name: product.name,
+        titleDisplay: product.name,
+        priceCents: selectedVariant.sale_price_cents,
+        imageUrl: primaryImage?.url || "/placeholder.png",
+        maxStock: selectedVariant.stock,
       });
-      return;
+      setAddFeedback({ status: saved ? "success" : "error" });
+    } catch {
+      setAddFeedback({ status: "error" });
+    } finally {
+      addInFlight.current = false;
     }
-
-    addItem({
-      productId: product.id,
-      variantId: selectedVariant.id,
-      sizeLabel: selectedVariant.size.label,
-      brand: product.brand.label,
-      name: product.name,
-      titleDisplay: product.name,
-      priceCents: selectedVariant.sale_price_cents,
-      imageUrl: primaryImage?.url || "/placeholder.png",
-      maxStock: selectedVariant.stock,
-    });
-
-    setToast({ message: "Added to cart.", tone: "success" });
   };
+
+  const added = addFeedback?.status === "success";
 
   return (
     <section
@@ -154,7 +156,7 @@ function OrdinaryProductDetail({ product }: ProductDetailProps) {
               aria-label="Product images"
             >
               {product.images.map((image, index) => (
-                <button
+                <ActionButton
                   key={image.id}
                   type="button"
                   onClick={() => setSelectedImageIndex(index)}
@@ -166,7 +168,7 @@ function OrdinaryProductDetail({ product }: ProductDetailProps) {
                       : "border border-transparent hover:border-zinc-400"
                   }`}
                 >
-                  <Image
+                  <ProductImage
                     src={image.url}
                     alt={`${product.name}, view ${index + 1}`}
                     fill
@@ -176,13 +178,13 @@ function OrdinaryProductDetail({ product }: ProductDetailProps) {
                     className="object-contain p-1 mix-blend-multiply"
                     quality={75}
                   />
-                </button>
+                </ActionButton>
               ))}
             </div>
           )}
 
           <div className="relative order-1 aspect-square min-w-0 flex-1 lg:order-2 lg:aspect-auto lg:min-h-[39rem]">
-            <Image
+            <ProductImage
               src={selectedImage?.url || "/placeholder.png"}
               alt={product.name}
               fill
@@ -216,7 +218,7 @@ function OrdinaryProductDetail({ product }: ProductDetailProps) {
                   variant.size.label === "N/A" ? "One size" : variant.size.label;
 
                 return (
-                  <button
+                  <ActionButton
                     key={variant.id}
                     type="button"
                     disabled={isUnavailable}
@@ -233,7 +235,7 @@ function OrdinaryProductDetail({ product }: ProductDetailProps) {
                     }`}
                   >
                     {sizeLabel}
-                  </button>
+                  </ActionButton>
                 );
               })}
             </div>
@@ -246,21 +248,35 @@ function OrdinaryProductDetail({ product }: ProductDetailProps) {
             </div>
           </div>
 
-          <button
+          <ActionButton
             type="button"
-            onClick={handleAddToCart}
-            disabled={!selectedVariant || selectedVariant.stock <= 0 || !canAddMore}
+            pending={addFeedback?.status === "checking"}
+            pendingLabel="Adding…"
+            onClick={() => void handleAddToCart()}
+            disabled={!isReady || !selectedVariant || !canAddMore}
             className="mt-7 w-full cursor-pointer bg-zinc-900 px-6 py-4 text-sm font-medium uppercase text-white transition-colors hover:bg-black disabled:cursor-not-allowed disabled:bg-zinc-400"
           >
-            {!selectedVariant || selectedVariant.stock <= 0
-              ? "Out of Stock"
-              : inCartQuantity > 0
-                ? canAddMore
-                  ? `Add Another (${inCartQuantity} in cart)`
-                  : "In Cart (Max)"
-                : "Add to Cart"}
-          </button>
+            {!isReady
+              ? cartUnavailable
+                ? "Cart unavailable"
+                : "Loading cart…"
+              : !selectedVariant || selectedVariant.stock <= 0
+                ? "Out of Stock"
+                : inCartQuantity > 0
+                  ? canAddMore
+                    ? `Add Another (${inCartQuantity} in cart)`
+                    : "In Cart (Max)"
+                  : "Add to Cart"}
+          </ActionButton>
 
+          {cartUnavailable && (
+            <div className="mt-3 text-sm">
+              <p role="alert">We could not load your cart.</p>
+              <button type="button" onClick={retryValidation} className="mt-2 underline">
+                Retry loading cart
+              </button>
+            </div>
+          )}
           {product.description && (
             <div className="mt-8 border-t border-zinc-300 pt-6">
               <h2 className="text-sm font-medium uppercase tracking-[0.02em]">
@@ -273,7 +289,7 @@ function OrdinaryProductDetail({ product }: ProductDetailProps) {
           )}
 
           <div className="mt-8 border-t border-zinc-300 pt-5">
-            <button
+            <ActionButton
               type="button"
               onClick={() => setShowShipping((current) => !current)}
               aria-expanded={showShipping}
@@ -282,9 +298,9 @@ function OrdinaryProductDetail({ product }: ProductDetailProps) {
               Shipping &amp; Returns
               <ChevronDown
                 aria-hidden="true"
-                className={`h-4 w-4 transition-transform ${showShipping ? "rotate-180" : ""}`}
+                className={`h-4 w-4 motion-safe:transition-transform ${showShipping ? "rotate-180" : ""}`}
               />
-            </button>
+            </ActionButton>
 
             {showShipping && (
               <div className="mt-4 space-y-3 text-sm leading-6 text-zinc-600">
@@ -295,12 +311,12 @@ function OrdinaryProductDetail({ product }: ProductDetailProps) {
                 </p>
                 <p>Returns are handled according to our published store policies.</p>
                 <div className="flex flex-wrap gap-x-5 gap-y-2">
-                  <Link href="/shipping" className="underline underline-offset-4">
+                  <FeedbackLink href="/shipping" className="underline underline-offset-4">
                     Shipping Policy
-                  </Link>
-                  <Link href="/refunds" className="underline underline-offset-4">
+                  </FeedbackLink>
+                  <FeedbackLink href="/refunds" className="underline underline-offset-4">
                     Returns and Refunds Policy
-                  </Link>
+                  </FeedbackLink>
                 </div>
               </div>
             )}
@@ -309,10 +325,10 @@ function OrdinaryProductDetail({ product }: ProductDetailProps) {
       </div>
 
       <Toast
-        open={Boolean(toast)}
-        message={toast?.message ?? ""}
-        tone={toast?.tone ?? "info"}
-        onClose={() => setToast(null)}
+        open={added || addFeedback?.status === "error"}
+        message={added ? "Added to cart." : "Could not add this item. Please try again."}
+        tone={added ? "success" : "error"}
+        onClose={() => setAddFeedback(null)}
       />
     </section>
   );

@@ -2,6 +2,8 @@
 "use client";
 
 import { useRouter, useSearchParams } from "next/navigation";
+import { useSession } from "@/contexts/SessionContext";
+import { postAuthJson } from "@/lib/http/post-auth-json";
 
 import { EmailCodeFlow } from "./EmailCodeFlow";
 
@@ -21,6 +23,7 @@ export function VerifyEmailForm({
   onBackToLogin,
 }: VerifyEmailFormProps) {
   const router = useRouter();
+  const { refreshSession } = useSession();
   const searchParams = useSearchParams();
   const nextUrl = searchParams.get("next") || "/";
 
@@ -32,37 +35,25 @@ export function VerifyEmailForm({
       : "Enter the code we emailed to activate your account.";
 
   async function resendVerification(targetEmail: string) {
-    const res = await fetch("/api/auth/resend-verification", {
-      method: "POST",
-      headers: { "Content-Type": "application/json" },
-      body: JSON.stringify({ email: targetEmail, flow }),
-    });
-
-    const json = await res.json();
-    if (!json.ok) {
-      throw new Error(json.error ?? "Could not resend verification email.");
-    }
+    const result = await postAuthJson(
+      "/api/auth/resend-verification",
+      { email: targetEmail, flow },
+      "Could not resend verification code.",
+    );
+    if (result.ok !== true) throw new Error("Could not resend verification code.");
   }
 
   async function verifyCode(targetEmail: string, code: string) {
-    const res = await fetch("/api/auth/verify-email", {
-      method: "POST",
-      headers: { "Content-Type": "application/json" },
-      body: JSON.stringify({
-        email: targetEmail.trim(),
-        code: code.trim(),
-        flow,
-      }),
-    });
-
-    const json = await res.json();
-
-    if (!json.ok) {
-      throw new Error(json.error ?? "Could not verify code.");
-    }
+    const json = await postAuthJson(
+      "/api/auth/verify-email",
+      { email: targetEmail.trim(), code: code.trim(), flow },
+      "Could not verify code.",
+    );
+    if (json.ok !== true) throw new Error("Could not verify code.");
 
     // After successful verification, redirect to where they came from
     const destination = json.nextPath || nextUrl;
+    void refreshSession();
     if (onVerified) {
       onVerified(destination);
     } else {

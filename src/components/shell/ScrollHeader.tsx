@@ -26,7 +26,7 @@ export function ScrollHeader({
   userEmail,
   role = null,
 }: ScrollHeaderProps) {
-  const { itemCount } = useCart();
+  const { itemCount, isReady } = useCart();
   const headerRef = useRef<HTMLElement | null>(null);
   const [showAnnouncement, setShowAnnouncement] = useState(true);
 
@@ -42,7 +42,9 @@ export function ScrollHeader({
     const stageRef = {
       current: window.scrollY <= TOP_TOLERANCE ? (2 as HeaderStage) : (1 as HeaderStage),
     };
-    let maxHeaderHeight = header.offsetHeight;
+    const getSessionRecoveryHeight = () =>
+      header.querySelector<HTMLElement>("[data-session-recovery]")?.offsetHeight ?? 0;
+    let maxHeaderHeight = header.offsetHeight - getSessionRecoveryHeight();
     let lastTouchY: number | null = null;
 
     const getNavbarHeight = () => {
@@ -61,14 +63,18 @@ export function ScrollHeader({
 
     const syncReservedHeight = () => {
       maxHeaderHeight = Math.max(maxHeaderHeight, getHeaderHeightForStage(2));
-      root.style.setProperty("--rdk-header-height", `${maxHeaderHeight}px`);
+      root.style.setProperty(
+        "--rdk-header-height",
+        `${maxHeaderHeight + getSessionRecoveryHeight()}px`,
+      );
     };
 
     const applyStage = (stage: HeaderStage, animate: boolean) => {
       stageRef.current = stage;
       const announcementVisible = stage === 2;
-      const navbarHeight = getNavbarHeight();
-      const headerHeight = getHeaderHeightForStage(stage);
+      const recoveryHeight = getSessionRecoveryHeight();
+      const navbarHeight = getNavbarHeight() + recoveryHeight;
+      const headerHeight = getHeaderHeightForStage(stage) + recoveryHeight;
       const hiddenPixels = stage === 0 ? navbarHeight : 0;
       const visibleHeight = Math.max(0, headerHeight - hiddenPixels);
 
@@ -191,6 +197,7 @@ export function ScrollHeader({
         userEmail={userEmail}
         role={role}
         cartCount={itemCount}
+        cartReady={isReady}
         showAnnouncement={showAnnouncement}
       />
     </header>

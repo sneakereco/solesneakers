@@ -13,7 +13,9 @@ describe("checkout order polling", () => {
   it("stops pending orders after 60 seconds instead of polling forever", async () => {
     global.fetch = jest
       .fn()
-      .mockImplementation(() => Promise.resolve(Response.json({ status: "pending" })));
+      .mockImplementation(() =>
+        Promise.resolve(Response.json({ id: "order-1", status: "pending" })),
+      );
     const onState = jest.fn();
     startCheckoutOrderPolling("order-1", null, onState);
     await jest.advanceTimersByTimeAsync(60_000);
@@ -21,6 +23,47 @@ describe("checkout order polling", () => {
     const requests = jest.mocked(fetch).mock.calls.length;
     await jest.advanceTimersByTimeAsync(120_000);
     expect(fetch).toHaveBeenCalledTimes(requests);
+  });
+
+  it.each([
+    {
+      id: "another",
+      status: "paid",
+      subtotal: 1,
+      tax: 0,
+      shipping: 0,
+      total: 1,
+      fulfillment: "pickup",
+    },
+    { id: "order-1", status: "paid" },
+  ])("rejects malformed or mismatched paid evidence", async (data) => {
+    global.fetch = jest.fn().mockResolvedValue(Response.json(data));
+    const state = jest.fn();
+    startCheckoutOrderPolling("order-1", null, state);
+    await jest.advanceTimersByTimeAsync(0);
+    expect(state).toHaveBeenCalledWith("error");
+  });
+
+  it.each(["review", "pending", "processing", "failed"])(
+    "rejects another order before classifying %s",
+    async (status) => {
+      global.fetch = jest
+        .fn()
+        .mockResolvedValue(Response.json({ id: "different-order", status }));
+      const state = jest.fn();
+      startCheckoutOrderPolling("order-1", null, state);
+      await jest.advanceTimersByTimeAsync(0);
+      expect(state).toHaveBeenCalledWith("error");
+    },
+  );
+
+  it("handles forbidden evidence without retrying", async () => {
+    global.fetch = jest.fn().mockResolvedValue(Response.json({}, { status: 403 }));
+    const state = jest.fn();
+    startCheckoutOrderPolling("order-1", null, state);
+    await jest.advanceTimersByTimeAsync(60_000);
+    expect(fetch).toHaveBeenCalledTimes(1);
+    expect(state).toHaveBeenCalledWith("unauthorized");
   });
 
   it("bounds a hung request and ignores a response after cancellation", async () => {
@@ -56,7 +99,7 @@ describe("checkout order polling", () => {
     };
     global.fetch = jest
       .fn()
-      .mockResolvedValueOnce(Response.json({ status: "pending" }))
+      .mockResolvedValueOnce(Response.json({ id: "order-1", status: "pending" }))
       .mockResolvedValueOnce(Response.json(paidOrder));
     const onState = jest.fn();
     startCheckoutOrderPolling("order-1", "guest-token", onState);
@@ -69,7 +112,9 @@ describe("checkout order polling", () => {
   });
 
   it("cancels polling when the page unmounts", async () => {
-    global.fetch = jest.fn().mockResolvedValue(Response.json({ status: "pending" }));
+    global.fetch = jest
+      .fn()
+      .mockResolvedValue(Response.json({ id: "order-1", status: "pending" }));
     const onState = jest.fn();
     const stop = startCheckoutOrderPolling("order-1", null, onState);
     stop();

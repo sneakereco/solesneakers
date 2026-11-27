@@ -1,5 +1,6 @@
 // app/store/[productId]/page.tsx
 
+import { withRequestDeadline } from "@/lib/http/request-deadline";
 import { unstable_cache } from "next/cache";
 import { cache } from "react";
 import { connection } from "next/server";
@@ -17,22 +18,40 @@ import { createSupabaseAdminClient } from "@/lib/supabase/service-role";
 const PRODUCT_REVALIDATE_SECONDS = 60;
 export const revalidate = 60;
 
-const getCachedProduct = (productId: string) =>
-  unstable_cache(
-    async () => {
-      const supabase = createSupabasePublicClient();
-      const repo = new ProductRepository(supabase);
-      return repo.getById(productId);
-    },
-    ["storefront", "product", productId],
-    { revalidate: PRODUCT_REVALIDATE_SECONDS, tags: [`product:${productId}`] },
-  )();
+const getCachedProduct = (productId: string, parentSignal: AbortSignal) =>
+  withRequestDeadline(
+    (signal) =>
+      unstable_cache(
+        async () => {
+          const supabase = createSupabasePublicClient();
+          const repo = new ProductRepository(supabase);
+          const product = await repo.getById(productId);
+          signal.throwIfAborted();
+          return product;
+        },
+        ["storefront", "product", productId],
+        { revalidate: PRODUCT_REVALIDATE_SECONDS, tags: [`product:${productId}`] },
+      )(),
+    parentSignal,
+  );
 
-const getLiveSpecialtyProduct = cache(async (productId: string) => {
-  // Claimed prize links need current inventory, independent of the ordinary cache.
-  await connection();
-  return getSpecialtyProductPage(createSupabaseAdminClient(), productId);
-});
+// Metadata and the page share one request-local read and one finite budget.
+const getProductPageData = cache((productId: string) =>
+  withRequestDeadline(async (signal) => {
+    const product = await getCachedProduct(productId, signal);
+    signal.throwIfAborted();
+    if (product && product.category !== "specialty") return { product, specialty: null };
+    // Recheck live inventory for claimed prize links, outside the ordinary cache.
+    await connection();
+    signal.throwIfAborted();
+    const specialty = await getSpecialtyProductPage(
+      createSupabaseAdminClient(),
+      productId,
+    );
+    signal.throwIfAborted();
+    return { product, specialty };
+  }),
+);
 
 // Generate metadata for SEO and social sharing
 export async function generateMetadata({
@@ -59,10 +78,9 @@ export async function generateMetadata({
     };
   }
 
-  const product = await getCachedProduct(productId);
+  const { product, specialty } = await getProductPageData(productId);
 
   if (!product || product.category === "specialty") {
-    const specialty = await getLiveSpecialtyProduct(productId);
     if (specialty)
       return {
         ...pageMetadata(
@@ -127,10 +145,9 @@ export default async function ProductDetailPage({
     notFound();
   }
 
-  const product = await getCachedProduct(productId);
+  const { product, specialty } = await getProductPageData(productId);
 
   if (!product || product.category === "specialty") {
-    const specialty = await getLiveSpecialtyProduct(productId);
     if (specialty) return <SpecialtyProductPage {...specialty} />;
     notFound();
   }

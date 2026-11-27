@@ -48,7 +48,7 @@ const bundle = await build({
             args.path === "next/image"
               ? `import React from 'react'; export default ({ fill, priority, quality, sizes, ...props }) =>
               React.createElement('img', { ...props, style: { ...(fill ? {position:'absolute',inset:0,width:'100%',height:'100%'} : {}), ...props.style } });`
-              : `import React from 'react'; export default ({children,href,...props}) => React.createElement('a',{href,...props},children);`,
+              : `import React from 'react'; export const useLinkStatus = () => ({ pending: false }); export default ({children,href,...props}) => React.createElement('a',{href,...props},children);`,
         }));
       },
     },

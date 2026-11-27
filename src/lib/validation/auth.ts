@@ -31,6 +31,7 @@ export const emailOnlySchema = z
 export const updatePasswordSchema = z
   .object({
     password: passwordSchema,
+    recoveryOwnerId: z.string().uuid(),
   })
   .strict();
 

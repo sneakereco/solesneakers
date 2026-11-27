@@ -8,7 +8,9 @@ import { env } from "@/config/env";
 
 export type TypedSupabaseClient = SupabaseClient<Database>;
 
-export async function createSupabaseServerClient(): Promise<TypedSupabaseClient> {
+export async function createSupabaseServerClient(
+  signal?: AbortSignal,
+): Promise<TypedSupabaseClient> {
   const cookieStore = await cookies();
 
   return createServerClient<Database>(
@@ -20,6 +22,7 @@ export async function createSupabaseServerClient(): Promise<TypedSupabaseClient>
           return cookieStore.getAll();
         },
         setAll(cookiesToSet) {
+          if (signal?.aborted) return;
           try {
             cookiesToSet.forEach(({ name, value, options }) => {
               cookieStore.set(name, value, {

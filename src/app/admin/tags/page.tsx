@@ -1,6 +1,12 @@
 "use client";
+import { adminCommand } from "@/components/admin/admin-command";
 
-import { useEffect, useState, useCallback } from "react";
+import { useState } from "react";
+import { useAdminRead } from "@/components/admin/useAdminRead";
+import { AdminReadStatus } from "@/components/admin/AdminSkeletons";
+import { fetchJsonWithDeadline } from "@/lib/http/request-deadline";
+import { useAsyncAction } from "@/components/ui/useAsyncAction";
+import { ActionButton } from "@/components/ui/ActionButton";
 
 import { AdminPage, AdminPageHeader } from "@/components/admin/AdminPage";
 
@@ -19,59 +25,73 @@ const inputClass =
 const buttonClass =
   "h-10 bg-white px-4 text-xs font-semibold uppercase tracking-wider text-black disabled:opacity-40";
 
+async function loadTags(signal: AbortSignal) {
+  const [brands, models, aliases, candidates, sizes] = await Promise.all([
+    fetchJsonWithDeadline<{ brands: Brand[] }>(
+      "/api/admin/tags/brands?includeInactive=1",
+      "Tags unavailable",
+      signal,
+    ),
+    fetchJsonWithDeadline<{ models: Model[] }>(
+      "/api/admin/tags/models?includeInactive=1",
+      "Tags unavailable",
+      signal,
+    ),
+    fetchJsonWithDeadline<{ aliases: Alias[] }>(
+      "/api/admin/tags/aliases?includeInactive=1",
+      "Tags unavailable",
+      signal,
+    ),
+    fetchJsonWithDeadline<{ candidates: Candidate[] }>(
+      "/api/admin/tags/candidates?status=new",
+      "Tags unavailable",
+      signal,
+    ),
+    fetchJsonWithDeadline<{ sizes: TagSize[] }>(
+      "/api/admin/tags/sizes?includeInactive=1",
+      "Tags unavailable",
+      signal,
+    ),
+  ]);
+  return {
+    brands: brands.brands,
+    models: models.models,
+    aliases: aliases.aliases,
+    candidates: candidates.candidates,
+    sizes: sizes.sizes,
+  };
+}
 export default function TagsPage() {
   const [activeTab, setActiveTab] = useState<ActiveTab>("brands");
-  const [brands, setBrands] = useState<Brand[]>([]);
-  const [models, setModels] = useState<Model[]>([]);
-  const [aliases, setAliases] = useState<Alias[]>([]);
-  const [candidates, setCandidates] = useState<Candidate[]>([]);
-  const [sizes, setSizes] = useState<TagSize[]>([]);
+  const read = useAdminRead(loadTags, "tag vocabulary");
+  const action = useAsyncAction();
+  const disabled = action.pending || read.pending || !!read.error;
+  const {
+    brands = [],
+    models = [],
+    aliases = [],
+    candidates = [],
+    sizes = [],
+  } = read.data ?? {};
   const [label, setLabel] = useState("");
   const [brandId, setBrandId] = useState("");
   const [entityType, setEntityType] = useState<"brand" | "model">("brand");
   const [entityId, setEntityId] = useState("");
   const [sizeType, setSizeType] = useState<TagSize["size_type"]>("shoe");
   const [message, setMessage] = useState("");
-  const [loading, setLoading] = useState(true);
-
-  const loadAll = useCallback((signal?: AbortSignal) => {
-    return Promise.all([
-      fetch("/api/admin/tags/brands?includeInactive=1", { signal }),
-      fetch("/api/admin/tags/models?includeInactive=1", { signal }),
-      fetch("/api/admin/tags/aliases?includeInactive=1", { signal }),
-      fetch("/api/admin/tags/candidates?status=new", { signal }),
-      fetch("/api/admin/tags/sizes?includeInactive=1", { signal }),
-    ])
-      .then(async (responses) => {
-        if (responses.some((response) => !response.ok)) {
-          throw new Error("Request failed");
-        }
-        const [brandData, modelData, aliasData, candidateData, sizeData] =
-          await Promise.all(responses.map((response) => response.json()));
-        if (signal?.aborted) return;
-        setBrands(brandData.brands ?? []);
-        setModels(modelData.models ?? []);
-        setAliases(aliasData.aliases ?? []);
-        setCandidates(candidateData.candidates ?? []);
-        setSizes(sizeData.sizes ?? []);
-      })
-      .catch(() => {
-        if (signal?.aborted) return;
-        setMessage("Unable to load tag vocabulary.");
-      })
-      .finally(() => {
-        if (!signal?.aborted) setLoading(false);
-      });
-  }, []);
-
-  useEffect(() => {
-    const controller = new AbortController();
-    void loadAll(controller.signal);
-    return () => controller.abort();
-  }, [loadAll]);
-
+  const run = (operation: () => Promise<void>) =>
+    action.run(async () => {
+      setMessage("Saving tag…");
+      try {
+        await operation();
+        setMessage("Tag saved.");
+        read.retry();
+      } catch {
+        setMessage("Unable to save tag. Review your changes and retry.");
+      }
+    });
   const post = async (path: string, body: unknown) => {
-    const response = await fetch(path, {
+    const { response } = await adminCommand<unknown>(path, {
       method: "POST",
       headers: { "Content-Type": "application/json" },
       body: JSON.stringify(body),
@@ -79,14 +99,10 @@ export default function TagsPage() {
     if (!response.ok) {
       throw new Error("Save failed");
     }
-    setLabel("");
-    setLoading(true);
-    setMessage("");
-    await loadAll();
   };
 
   const patch = async (path: string, body: unknown) => {
-    const response = await fetch(path, {
+    const { response } = await adminCommand<unknown>(path, {
       method: "PATCH",
       headers: { "Content-Type": "application/json" },
       body: JSON.stringify(body),
@@ -94,35 +110,28 @@ export default function TagsPage() {
     if (!response.ok) {
       throw new Error("Update failed");
     }
-    setLoading(true);
-    setMessage("");
-    await loadAll();
   };
 
   const addCurrent = async () => {
-    setMessage("");
-    try {
-      if (activeTab === "brands") {
-        await post("/api/admin/tags/brands", { canonicalLabel: label });
-      } else if (activeTab === "models") {
-        await post("/api/admin/tags/models", { brandId, canonicalLabel: label });
-      } else if (activeTab === "aliases") {
-        await post("/api/admin/tags/aliases", {
-          entityType,
-          brandId: entityType === "brand" ? entityId : null,
-          modelId: entityType === "model" ? entityId : null,
-          aliasLabel: label,
-        });
-      } else if (activeTab === "sizes") {
-        await post("/api/admin/tags/sizes", {
-          sizeType,
-          canonicalLabel: label,
-          sortOrder: sizes.filter((size) => size.size_type === sizeType).length * 10,
-        });
-      }
-    } catch {
-      setMessage("Unable to save the taxonomy record.");
+    if (activeTab === "brands") {
+      await post("/api/admin/tags/brands", { canonicalLabel: label });
+    } else if (activeTab === "models") {
+      await post("/api/admin/tags/models", { brandId, canonicalLabel: label });
+    } else if (activeTab === "aliases") {
+      await post("/api/admin/tags/aliases", {
+        entityType,
+        brandId: entityType === "brand" ? entityId : null,
+        modelId: entityType === "model" ? entityId : null,
+        aliasLabel: label,
+      });
+    } else if (activeTab === "sizes") {
+      await post("/api/admin/tags/sizes", {
+        sizeType,
+        canonicalLabel: label,
+        sortOrder: sizes.filter((size) => size.size_type === sizeType).length * 10,
+      });
     }
+    setLabel("");
   };
 
   const toggle = async (
@@ -137,15 +146,15 @@ export default function TagsPage() {
   };
 
   const rejectCandidate = async (candidate: Candidate) => {
-    const response = await fetch(`/api/admin/tags/candidates/${candidate.id}/reject`, {
-      method: "POST",
-    });
+    const { response } = await adminCommand<unknown>(
+      `/api/admin/tags/candidates/${candidate.id}/reject`,
+      {
+        method: "POST",
+      },
+    );
     if (!response.ok) {
       throw new Error("Reject failed");
     }
-    setLoading(true);
-    setMessage("");
-    await loadAll();
   };
 
   const targetOptions = entityType === "brand" ? brands : models;
@@ -163,7 +172,6 @@ export default function TagsPage() {
         title="Product tags"
         description="Manage canonical brands, models, aliases, candidates, and sizes used throughout the catalog."
       />
-
       <div
         data-admin-tabs
         className="flex gap-1 overflow-x-auto border-b border-white/10"
@@ -172,6 +180,7 @@ export default function TagsPage() {
           <button
             type="button"
             key={tab.id}
+            disabled={action.pending}
             onClick={() => setActiveTab(tab.id)}
             aria-pressed={activeTab === tab.id}
             className={`px-4 py-3 text-xs uppercase tracking-wider ${
@@ -184,10 +193,11 @@ export default function TagsPage() {
           </button>
         ))}
       </div>
-
       {activeTab !== "candidates" && (
         <div className="mb-8 grid gap-3 border border-white/10 bg-white/[0.03] p-4 sm:grid-cols-[1fr_auto_auto]">
           <input
+            disabled={action.pending}
+            aria-label="New tag label"
             className={inputClass}
             value={label}
             onChange={(event) => setLabel(event.target.value)}
@@ -195,6 +205,8 @@ export default function TagsPage() {
           />
           {activeTab === "models" && (
             <select
+              disabled={action.pending}
+              aria-label="Brand"
               className={inputClass}
               value={brandId}
               onChange={(event) => setBrandId(event.target.value)}
@@ -212,6 +224,8 @@ export default function TagsPage() {
           {activeTab === "aliases" && (
             <div className="flex gap-2">
               <select
+                disabled={action.pending}
+                aria-label="Alias type"
                 className={inputClass}
                 value={entityType}
                 onChange={(event) => {
@@ -223,6 +237,8 @@ export default function TagsPage() {
                 <option value="model">Model</option>
               </select>
               <select
+                disabled={action.pending}
+                aria-label="Alias target"
                 className={inputClass}
                 value={entityId}
                 onChange={(event) => setEntityId(event.target.value)}
@@ -240,6 +256,8 @@ export default function TagsPage() {
           )}
           {activeTab === "sizes" && (
             <select
+              disabled={action.pending}
+              aria-label="Size type"
               className={inputClass}
               value={sizeType}
               onChange={(event) =>
@@ -252,20 +270,22 @@ export default function TagsPage() {
               <option value="none">None</option>
             </select>
           )}
-          <button
+          <ActionButton
             className={buttonClass}
-            disabled={!canAdd}
-            onClick={() => void addCurrent()}
+            disabled={disabled || !canAdd}
+            onClick={() => void run(addCurrent)}
           >
             Add
-          </button>
+          </ActionButton>
         </div>
       )}
-
-      {message && <p className="mb-4 text-sm text-red-300">{message}</p>}
-      {loading ? (
-        <p className="py-12 text-sm text-white/45">Loading...</p>
-      ) : (
+      {message && (
+        <p role="status" className="mb-4 text-sm text-red-300">
+          {message}
+        </p>
+      )}
+      <AdminReadStatus read={read} label="Loading tags" />{" "}
+      {read.data && (
         <div className="divide-y divide-white/10 border-y border-white/10">
           {activeTab === "brands" &&
             brands.map((item) => (
@@ -274,7 +294,8 @@ export default function TagsPage() {
                 title={item.canonical_label}
                 meta="Brand"
                 active={item.is_active}
-                onToggle={() => void toggle("brands", item)}
+                disabled={disabled}
+                onToggle={() => void run(() => toggle("brands", item))}
               />
             ))}
           {activeTab === "models" &&
@@ -287,7 +308,8 @@ export default function TagsPage() {
                   "Unknown brand"
                 }
                 active={item.is_active}
-                onToggle={() => void toggle("models", item)}
+                disabled={disabled}
+                onToggle={() => void run(() => toggle("models", item))}
               />
             ))}
           {activeTab === "aliases" &&
@@ -297,7 +319,8 @@ export default function TagsPage() {
                 title={item.alias_label}
                 meta={`${item.entity_type} alias`}
                 active={item.is_active}
-                onToggle={() => void toggle("aliases", item)}
+                disabled={disabled}
+                onToggle={() => void run(() => toggle("aliases", item))}
               />
             ))}
           {activeTab === "sizes" &&
@@ -307,7 +330,8 @@ export default function TagsPage() {
                 title={item.canonical_label}
                 meta={`${item.size_type} / order ${item.sort_order}`}
                 active={item.is_active}
-                onToggle={() => void toggle("sizes", item)}
+                disabled={disabled}
+                onToggle={() => void run(() => toggle("sizes", item))}
               />
             ))}
           {activeTab === "candidates" &&
@@ -322,13 +346,15 @@ export default function TagsPage() {
                 <div className="flex gap-2">
                   <button
                     className="border border-white/20 px-3 py-2 text-xs"
-                    onClick={() => void rejectCandidate(item)}
+                    disabled={disabled}
+                    onClick={() => void run(() => rejectCandidate(item))}
                   >
                     Reject
                   </button>
                   <button
                     className="bg-white px-3 py-2 text-xs text-black"
-                    onClick={() => void acceptCandidate(item)}
+                    disabled={disabled}
+                    onClick={() => void run(() => acceptCandidate(item))}
                   >
                     Accept
                   </button>
@@ -342,11 +368,13 @@ export default function TagsPage() {
 }
 
 function Row({
+  disabled,
   title,
   meta,
   active,
   onToggle,
 }: {
+  disabled: boolean;
   title: string;
   meta: string;
   active: boolean;
@@ -359,6 +387,7 @@ function Row({
         <p className="mt-1 text-xs uppercase tracking-wider text-white/40">{meta}</p>
       </div>
       <button
+        disabled={disabled}
         onClick={onToggle}
         className={`min-w-20 border px-3 py-2 text-xs ${active ? "border-emerald-400/30 text-emerald-300" : "border-white/15 text-white/40"}`}
       >

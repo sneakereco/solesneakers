@@ -98,7 +98,7 @@ export class OrdersService {
           });
 
           // Found order - return it
-          return this.buildResponse(order, events);
+          return this.buildResponse(order, events, this.ordersRepo);
         }
       } catch (error) {
         log({
@@ -237,7 +237,7 @@ export class OrdersService {
             eventCount: events.length,
           });
 
-          return this.buildResponse(order, events);
+          return this.buildResponse(order, events, this.adminOrdersRepo);
         }
       } catch (error) {
         log({
@@ -292,7 +292,20 @@ export class OrdersService {
     throw new Error("Unauthorized");
   }
 
-  private buildResponse(order: OrderRow, events: OrderEvent[]): OrderStatusResponse {
+  private async buildResponse(
+    order: OrderRow,
+    events: OrderEvent[],
+    authorizedRepo: OrdersRepository,
+  ): Promise<OrderStatusResponse> {
+    const purchasedItems = await authorizedRepo.listPurchasedItems(order.id).catch(() => {
+      log({
+        level: "warn",
+        layer: "service",
+        message: "order_purchased_items_unavailable",
+        orderId: order.id,
+      });
+      return undefined;
+    });
     const pickupInstructions =
       order.fulfillment === "pickup"
         ? (order.pickup_instructions ?? PICKUP_INSTRUCTIONS.join("\n"))
@@ -300,6 +313,8 @@ export class OrdersService {
 
     return {
       id: order.id,
+      customerId: order.user_id,
+      purchasedItems,
       status: order.status ?? "pending",
       subtotal: parseFloat(order.subtotal?.toString() ?? "0"),
       shipping: parseFloat(order.shipping?.toString() ?? "0"),

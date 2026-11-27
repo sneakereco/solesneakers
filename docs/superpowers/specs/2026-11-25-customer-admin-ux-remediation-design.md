@@ -1,14 +1,14 @@
 # Customer and admin UX remediation design
 
-Date: November 25, 2026. Status: proposed, awaiting user approval.
+Date: November 25, 2026. Status: approved by the user, including the expanded mobile feedback and skeleton loading scope; implementation authorized.
 
-Scope update: the user subsequently requested consistent mobile tap feedback and skeleton loaders across all loading states. This revision adds the feedback/loading coverage below to the existing twelve-finding repair program. The user's positive response to the assessment does not establish that this expanded design has been approved.
+Scope update: the user subsequently requested consistent mobile tap feedback and skeleton loaders across all loading states. This revision adds the feedback/loading coverage below to the existing twelve-finding repair program. The user then explicitly approved the expanded plan and implementation.
 
 ## Intent and selected approach
 
 Make the existing shopping and staff tasks trustworthy and usable on mobile and desktop. The user requested assessment of available UX skills and the full customer/admin flows, then selected an assessment first followed by targeted fixes and regression checks. They requested a branch based on main; `codex/customer-admin-ux-audit` was created from freshly fetched `origin/main` at `d8ce10191a294a0974be759bb2cb43b0bd980c53`.
 
-The [assessment](../../operations/customer-admin-ux-audit-2026-11-25.md) contains twelve findings, reproduction evidence and explicit coverage limits. Its [manifest](../../operations/customer-admin-ux-audit-2026-11-25.evidence.json) pins the inspected source. This design proposes the repair scope; approval of the audit approach is not approval of this document.
+The [assessment](../../operations/customer-admin-ux-audit-2026-11-25.md) contains twelve findings, reproduction evidence and explicit coverage limits. Its [manifest](../../operations/customer-admin-ux-audit-2026-11-25.evidence.json) pins the inspected source. This document records the approved repair scope; the later explicit implementation approval is recorded below.
 
 ## Approaches
 
@@ -155,4 +155,4 @@ The audit used temporary local accounts, an address and a temporary product. The
 
 ## Approval
 
-Pending user approval after the builder check. After approval, the next step is the implementation plan under the invoked brainstorming workflow; product code must not be changed before that approval.
+The user approved this expanded design and explicitly requested planning and implementation on November 25, 2026. The implementation plan is `docs/superpowers/plans/2026-11-25-customer-admin-ux-implementation.md`. Execution proceeds without another approval question; existing deployment/provider boundaries remain unchanged.

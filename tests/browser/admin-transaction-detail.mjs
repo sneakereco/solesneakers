@@ -9,9 +9,10 @@ const bundle = await build({
     contents: `
       import { createRoot } from 'react-dom/client';
       import TransactionDetailPage from './src/app/admin/transactions/[orderId]/page';
+import { SessionProvider } from "./src/contexts/SessionContext";
       import TransactionsPage from './src/app/admin/transactions/page';
       createRoot(document.getElementById('root')).render(
-        location.pathname === '/admin/transactions' ? <TransactionsPage /> : <TransactionDetailPage />
+        location.pathname === '/admin/transactions' ? <SessionProvider initialUser={{id:"staff",email:"staff@example.test"}} initialRole="admin"><TransactionsPage /></SessionProvider> : <TransactionDetailPage />
       );
     `,
   },

@@ -1,5 +1,5 @@
 "use client";
-import { useRef, useState } from "react";
+import { useEffect, useRef, useState } from "react";
 import {
   specialtyProductWriteSchema,
   type SpecialtyProductDraft,
@@ -36,10 +36,12 @@ export function SpecialtyProductForm({
   initial,
   onSubmit,
   onCancel,
+  onActivityChange,
 }: {
   initial?: SpecialtyProductDraft;
   onSubmit(input: SpecialtyProductWrite): Promise<void>;
   onCancel(): void;
+  onActivityChange?(active: boolean): void;
 }) {
   const [name, setName] = useState(initial?.name ?? "");
   const [description, setDescription] = useState(initial?.description ?? "");
@@ -53,6 +55,9 @@ export function SpecialtyProductForm({
     [uploading, setUploading] = useState(false),
     [message, setError] = useState("");
   const pending = useRef(false);
+  useEffect(() => {
+    onActivityChange?.(busy || uploading);
+  }, [busy, uploading, onActivityChange]);
   const fieldClass =
     "mt-1 w-full rounded border border-zinc-700 bg-zinc-900 p-3 text-white";
   const labelClass = "block text-sm text-zinc-300";

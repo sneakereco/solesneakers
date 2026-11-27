@@ -3,6 +3,7 @@ import type { NextRequest } from "next/server";
 import { NextResponse } from "next/server";
 
 import { AuthService } from "@/services/auth-service";
+import { isRejectedSessionError } from "@/lib/auth/session";
 import { createSupabaseServerClient } from "@/lib/supabase/server";
 import { getRequestIdFromHeaders } from "@/lib/http/request-id";
 import { logError } from "@/lib/utils/log";
@@ -22,7 +23,7 @@ export async function POST(req: NextRequest) {
   }
 
   try {
-    const { password } = parsed.data;
+    const { password, recoveryOwnerId } = parsed.data;
     if (!isPasswordValid(password)) {
       return NextResponse.json(
         { ok: false, error: "Password does not meet the required criteria.", requestId },
@@ -30,6 +31,29 @@ export async function POST(req: NextRequest) {
       );
     }
     const supabase = await createSupabaseServerClient();
+    try {
+      const {
+        data: { user },
+        error,
+      } = await supabase.auth.getUser();
+      if (error && !isRejectedSessionError(error)) throw error;
+      if (error || user?.id !== recoveryOwnerId) {
+        return NextResponse.json(
+          {
+            ok: false,
+            error: "Your recovery session changed. Request a new reset code.",
+            requestId,
+          },
+          { status: 409, headers: { "Cache-Control": "no-store" } },
+        );
+      }
+    } catch (error) {
+      logError(error, { layer: "auth", requestId, route: "/api/auth/update-password" });
+      return NextResponse.json(
+        { ok: false, error: "Could not verify your recovery session.", requestId },
+        { status: 503, headers: { "Cache-Control": "no-store" } },
+      );
+    }
     const authService = new AuthService(supabase);
 
     await authService.updatePassword(password);
