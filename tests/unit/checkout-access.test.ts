@@ -69,12 +69,10 @@ it.each([
     jest
       .spyOn(StoreAccessSettingsService.prototype, "getSettings")
       .mockResolvedValue(unlockedSettings);
-    jest
-      .mocked(readCheckoutControls)
-      .mockResolvedValue({
-        pauseNewCheckouts: newPause,
-        pausePaymentDispatch: dispatchPause,
-      });
+    jest.mocked(readCheckoutControls).mockResolvedValue({
+      pauseNewCheckouts: newPause,
+      pausePaymentDispatch: dispatchPause,
+    });
     expect((await assertCheckoutOpen("tenant", "new_prepare")).open).toBe(!newPause);
     expect((await assertCheckoutOpen("tenant", "gateway_attempt")).open).toBe(
       !dispatchPause,
