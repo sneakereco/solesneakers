@@ -4,7 +4,10 @@ import { execFile, spawn } from "node:child_process";
 import { realpath } from "node:fs/promises";
 import { isAbsolute, relative, resolve, sep } from "node:path";
 import { promisify } from "node:util";
-import { createCheckoutGate } from "../tests/fixtures/checkout-gate.mjs";
+import {
+  createCheckoutGate,
+  rejectedStockDiagnostic,
+} from "../tests/fixtures/checkout-gate.mjs";
 import {
   localDockerSocket,
   root,
@@ -246,13 +249,14 @@ try {
     ]);
     await gate("stock-negative", run("fresh", stock), {
       env: { CHECKOUT_GATE_FAULT: "stock" },
-      expectedFailure: "stock became negative in checkout fixture",
+      expectedFailure: rejectedStockDiagnostic,
       propagateFailure: args.brokenStock,
     });
     await gate("barrier-and-relay", [
       "--test",
       "src/Modules/Checkout/Tests/Features/Operations/request-barrier.test.mjs",
       "tests/database/checkout-hardening-docker-relay.test.mjs",
+      "tests/fixtures/checkout-gate.test.mjs",
     ]);
     for (const mode of ["fresh", "populated"]) {
       const env = {

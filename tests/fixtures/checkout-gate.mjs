@@ -5,6 +5,27 @@ import { mkdtemp, writeFile } from "node:fs/promises";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 
+export const rejectedStockDiagnostic =
+  "stock stayed at 1 after the database rejected a negative balance";
+
+function hasExpectedTapFailure(output, message) {
+  const lines = output.split(/\r?\n/);
+  if (
+    !lines.includes("# fail 1") ||
+    !lines.includes("# cancelled 0") ||
+    !lines.includes("# skipped 0")
+  )
+    return false;
+  // Both fault fixtures run top-level node:test cases with the TAP reporter.
+  // Match the error field, excluding the test name, console output and stack.
+  return lines.some(
+    (line, index) =>
+      line === "  error: '" + message + "'" ||
+      line === "  error: " + message ||
+      (line === "  error: |-" && lines[index + 1] === "    " + message),
+  );
+}
+
 // Only closed gate names, counts and hashes are suitable for the CI log. Raw
 // child output and browser screenshots stay in the private ephemeral run folder.
 export async function createCheckoutGate(family) {
@@ -38,7 +59,8 @@ export async function createCheckoutGate(family) {
     const raw = Buffer.concat(chunks);
     await writeFile(join(directory, name + ".log"), raw, { mode: 0o600, flag: "wx" });
     const output = raw.toString();
-    const detected = expectedFailure && status === 1 && output.includes(expectedFailure);
+    const detected =
+      expectedFailure && status === 1 && hasExpectedTapFailure(output, expectedFailure);
     const passed = expectedFailure ? detected && !propagateFailure : status === 0;
     const counts = [
       ...output.matchAll(/(?:ℹ |# )(tests|pass|fail|skipped|cancelled) (\d+)\b/g),

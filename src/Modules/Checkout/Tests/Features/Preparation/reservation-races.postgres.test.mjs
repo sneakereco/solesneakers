@@ -210,10 +210,30 @@ test("atomic checkout allocation across independent sessions", async (t) => {
           const x = await item(),
             y = await item(),
             r = req([x]);
-          const result = await Promise.allSettled([
-            reserve(a, r),
-            reserve(b, { ...r, cartHash: "c".repeat(64), items: [y] }),
-          ]);
+          const requests = [r, { ...r, cartHash: "c".repeat(64), items: [y] }];
+          const result = await raceAtRowLock(
+            admin,
+            [a, b],
+            (c) =>
+              c.query("select pg_advisory_xact_lock(hashtextextended($1,713))", [
+                r.idempotencyKey,
+              ]),
+            (client, index) => reserve(client, requests[index]),
+            async (holder, pids) => {
+              const waiting = await holder.query(
+                `select distinct waiter.pid from pg_locks holder join pg_locks waiter
+                  using (locktype,database,classid,objid,objsubid,mode)
+                  where holder.pid=pg_backend_pid() and holder.granted and holder.locktype='advisory'
+                    and not waiter.granted and waiter.pid=any($1::int[])`,
+                [pids],
+              );
+              assert.deepEqual(
+                new Set(waiting.rows.map((row) => row.pid)),
+                new Set(pids),
+                "both reservation sessions must wait on the held idempotency key",
+              );
+            },
+          );
           const wins = result.map((v) => v.status === "fulfilled");
           assert.equal(wins.filter(Boolean).length, 1);
           assert.equal(result[wins[0] ? 1 : 0].reason.code, "PC410");

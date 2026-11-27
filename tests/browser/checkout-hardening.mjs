@@ -14,11 +14,15 @@ try {
     "-e",
     'import {chromium} from "@playwright/test"; const b=await chromium.launch(); await b.close()',
   ]);
-  await gate("original-basket-row-disappeared", ["--test", retained], {
-    env: { CHECKOUT_GATE_FAULT: "cart" },
-    expectedFailure: "original basket row disappeared before confirmation",
-    propagateFailure: flags.length > 0,
-  });
+  await gate(
+    "original-basket-row-disappeared",
+    ["--test", "--test-reporter=tap", retained],
+    {
+      env: { CHECKOUT_GATE_FAULT: "cart" },
+      expectedFailure: "original basket row disappeared before confirmation",
+      propagateFailure: flags.length > 0,
+    },
+  );
   for (const [name, file] of [
     ["retained-cart", retained],
     ["fixture", "tests/browser/checkout-hardening-fixture.test.mjs"],

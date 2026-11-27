@@ -678,7 +678,7 @@ export function barrier(parties) {
   };
 }
 
-export async function raceAtRowLock(admin, clients, lockRow, action) {
+export async function raceAtRowLock(admin, clients, lockRow, action, verifyWaiters) {
   const pids = await Promise.all(
     clients.map(
       async (c) => (await c.query("select pg_backend_pid() as pid")).rows[0].pid,
@@ -705,6 +705,7 @@ export async function raceAtRowLock(admin, clients, lockRow, action) {
       );
       await new Promise((resolve) => setTimeout(resolve, 10));
     }
+    if (verifyWaiters) await verifyWaiters(admin, pids);
   } finally {
     await admin.query("rollback");
     if (completed) await completed;
