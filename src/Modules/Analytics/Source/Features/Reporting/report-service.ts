@@ -22,6 +22,7 @@ import {
   compileAcquisitionQueries,
   readSources,
   readAcquisitionPeriod,
+  readAcquisitionSeries,
 } from "./queries/acquisition";
 import { compileProductQueries, readProductRows, readDemand } from "./queries/products";
 import { moneyValue } from "../ReportContract/money";
@@ -29,11 +30,18 @@ import { calendarBuckets } from "./queries/financial";
 import { rate, rows, count } from "./queries/commerce-source";
 import { resolveCalendarRange } from "../ReportContract/calendar-range";
 import { isTransientReportError, PostHogQueryError } from "./posthog-query";
-import { compileCommerceHealthQueries, mapHealthResult } from "./queries/commerce-health";
+import {
+  compileCommerceHealthQueries,
+  mapHealthResult,
+  readHealthPeriod,
+} from "./queries/commerce-health";
 import {
   compileFinancialQueries,
   mapPaymentsResult,
   mapSalesResult,
+  readSalesPeriod,
+  readSalesBuckets,
+  readPaymentsPeriod,
 } from "./queries/financial";
 import type { CompiledQuery, CsvExecution } from "./query-contract";
 
@@ -141,6 +149,37 @@ export async function getReport<T extends ReportId>(
 ): Promise<ReportEnvelope<ReportDataMap[T]>> {
   return getReportPeriod(request, deps, false);
 }
+
+/** On a transport failure, successful required siblings still provide evidence
+ * about whether the whole selection could be served from the transient fallback. */
+function validateRequiredSibling(
+  endpoint: CompiledQuery["endpoint"],
+  key: string,
+  raw: unknown,
+  request: ReportRequest,
+  activatedAt: string,
+  through: string | null,
+) {
+  switch (endpoint) {
+    case "sole_analytics_sales":
+      return readSalesPeriod(raw);
+    case "sole_analytics_sales_series":
+      return readSalesBuckets(raw, request, key === "comparisonSeries", activatedAt);
+    case "sole_analytics_payments":
+      return readPaymentsPeriod(raw, request);
+    case "sole_analytics_health":
+      return readHealthPeriod(raw, request);
+    case "sole_analytics_acquisition":
+    case "sole_analytics_discovery":
+      return readSources(raw, request, through !== null);
+    case "sole_analytics_acquisition_series":
+    case "sole_analytics_discovery_series":
+      return readAcquisitionSeries(raw, request, activatedAt, through);
+    default:
+      throw new RangeError("Required reporting result could not be verified.");
+  }
+}
+
 async function getReportPeriod<T extends ReportId>(
   request: ReportRequest & { report: T },
   deps: ReportingDependencies,
@@ -227,6 +266,7 @@ async function getReportPeriod<T extends ReportId>(
     ]);
     const executionFailed = Symbol("executionFailed");
     const transientFailures = new Set<string>();
+    const requiredFailures: Array<{ error: unknown }> = [];
     function unavailableSections(keys: string[], message: string) {
       const attempted = keys.filter((key) => Object.hasOwn(queries, key));
       if (
@@ -255,7 +295,10 @@ async function getReportPeriod<T extends ReportId>(
           try {
             return [k, await execute(q)] as const;
           } catch (error) {
-            if (!optionalSections.has(k)) throw error;
+            if (!optionalSections.has(k)) {
+              requiredFailures.push({ error });
+              return [k, executionFailed] as const;
+            }
             if (isTransientReportError(error)) transientFailures.add(k);
             coverage.push({
               code: "component-unavailable",
@@ -267,6 +310,29 @@ async function getReportPeriod<T extends ReportId>(
         }),
       ),
     );
+    if (requiredFailures.length) {
+      const configuration = requiredFailures.find(
+        ({ error }) =>
+          error instanceof PostHogQueryError &&
+          error.category === "configuration-failure",
+      );
+      const permanent =
+        configuration ??
+        requiredFailures.find(({ error }) => !isTransientReportError(error));
+      if (permanent) throw permanent.error;
+      for (const [key, q] of Object.entries(queries)) {
+        if (!optionalSections.has(key) && values[key] !== executionFailed)
+          validateRequiredSibling(
+            q.endpoint,
+            key,
+            values[key],
+            request,
+            dataset.activatedAt,
+            base.behaviorThrough,
+          );
+      }
+      throw requiredFailures[0].error;
+    }
     const financialResults = { ...values, request, activatedAt: dataset.activatedAt };
     function optional<Value>(key: string, parse: (raw: unknown) => Value): Value | null {
       if (!Object.hasOwn(values, key) || values[key] === executionFailed) return null;

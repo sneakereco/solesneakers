@@ -285,7 +285,7 @@ function net(
     exact(v[key + "_missing"], v[deduction + "_missing"]),
   );
 }
-function buckets(
+export function readSalesBuckets(
   raw: unknown,
   request: ReportRequest,
   comparison: boolean,
@@ -359,7 +359,7 @@ export function calendarBuckets<T>(
   }
   return result;
 }
-function salesPeriod(raw: unknown): SalesPeriod {
+export function readSalesPeriod(raw: unknown): SalesPeriod {
   const summaries = rows(raw, salesColumns, 1);
   if (summaries.length !== 1) throw new RangeError("Missing sales summary.");
   const { period, v } = readSales(summaries[0]);
@@ -446,11 +446,11 @@ function salesPeriod(raw: unknown): SalesPeriod {
 export function mapSalesResult(raw: unknown): SalesData {
   const input = reportInput.parse(raw);
   return {
-    ...salesPeriod(input.summary),
-    comparison: hasComparison(input) ? salesPeriod(input.comparison) : null,
-    series: buckets(input.series, input.request, false, input.activatedAt),
+    ...readSalesPeriod(input.summary),
+    comparison: hasComparison(input) ? readSalesPeriod(input.comparison) : null,
+    series: readSalesBuckets(input.series, input.request, false, input.activatedAt),
     comparisonSeries: input.request.compare
-      ? buckets(input.comparisonSeries, input.request, true, input.activatedAt)
+      ? readSalesBuckets(input.comparisonSeries, input.request, true, input.activatedAt)
       : null,
   };
 }
@@ -469,7 +469,7 @@ const paymentColumns = [
   "failed",
   "pending",
 ];
-function paymentsPeriod(raw: unknown, request: ReportRequest): PaymentsPeriod {
+export function readPaymentsPeriod(raw: unknown, request: ReportRequest): PaymentsPeriod {
   const allRows = rows(
     raw,
     [...paymentColumns, "eligible_orders", "attributed_orders"],
@@ -552,9 +552,9 @@ function paymentsPeriod(raw: unknown, request: ReportRequest): PaymentsPeriod {
 export function mapPaymentsResult(raw: unknown): PaymentsData {
   const input = reportInput.parse(raw);
   return {
-    ...paymentsPeriod(input.summary, input.request),
+    ...readPaymentsPeriod(input.summary, input.request),
     comparison: hasComparison(input)
-      ? paymentsPeriod(input.comparison, input.request)
+      ? readPaymentsPeriod(input.comparison, input.request)
       : null,
   };
 }

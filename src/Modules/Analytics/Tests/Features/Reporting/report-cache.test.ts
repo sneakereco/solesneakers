@@ -7,8 +7,145 @@ import { PostHogQueryError } from "../../../Source/Features/Reporting/posthog-qu
 import { getReport } from "../../../Source/Features/Reporting/report-service";
 import { makeAudienceFixture } from "./audience-fixture";
 import { request, scope } from "./commerce-fixture";
+import {
+  createReportStore,
+  reserveReportProject,
+} from "../../../Source/Features/Reporting/report-store";
+import type { CompiledQuery } from "../../../Source/Features/Reporting/query-contract";
 
 jest.mock("server-only", () => ({}), { virtual: true });
+test.each(
+  ["invalid-response", "invalid-aggregate", "invalid-summary"].flatMap((fault) =>
+    [false, true].map((transientFirst) => ({ fault, transientFirst })),
+  ),
+)(
+  "multiple required outcomes are decisive regardless of order: $fault, transient first $transientFirst",
+  async ({ fault, transientFirst }) => {
+    const { deps, tick } = setup();
+    deps.history = { ...deps.history, observation: null };
+    const r = request("sales");
+    expect((await loadAnalyticsReport(r, deps)).data).not.toBeNull();
+    tick(301);
+    const transient = Promise.withResolvers<unknown>(),
+      invalid = Promise.withResolvers<unknown>();
+    const both = Promise.withResolvers<void>();
+    let calls = 0;
+    deps.execute = (q) => {
+      if (++calls === 2) both.resolve();
+      return (q.endpoint === "sole_analytics_sales_series") ===
+        (fault === "invalid-summary")
+        ? transient.promise
+        : invalid.promise;
+    };
+    const pending = loadAnalyticsReport(r, deps);
+    await both.promise;
+    const failTransient = () =>
+      transient.reject(
+        new PostHogQueryError({ status: "retryable", reason: "provider-unavailable" }),
+      );
+    const failOther = () =>
+      fault === "invalid-response"
+        ? invalid.reject(
+            new PostHogQueryError({ status: "retryable", reason: "invalid-response" }),
+          )
+        : invalid.resolve({ columns: ["bad"], results: [[1]], hasMore: false });
+    (transientFirst ? failTransient : failOther)();
+    await new Promise((resolve) => setImmediate(resolve));
+    (transientFirst ? failOther : failTransient)();
+    expect(await pending).toMatchObject({ state: "unavailable", data: null });
+    expect(calls).toBe(2);
+  },
+);
+test.each(["acknowledged", "timeout"])(
+  "subsecond initial shared 429 transition is attempted within deadline: %s",
+  async (outcome) => {
+    const { deps } = setup(),
+      store = deps.store!;
+    const timeout = outcome === "timeout" ? 45 : 800;
+    const original = global.fetch;
+    const aborted = jest.fn();
+    const received = jest.fn();
+    global.fetch = jest.fn((input, init) => {
+      received(input);
+      if (outcome === "acknowledged")
+        return Promise.resolve(Response.json({ result: 1 }));
+      return new Promise<Response>((_, reject) => {
+        init?.signal?.addEventListener(
+          "abort",
+          () => {
+            aborted();
+            reject(Error("stopped"));
+          },
+          { once: true },
+        );
+      });
+    });
+    try {
+      const live = createReportStore();
+      store.cooldown = jest.fn(live.cooldown);
+      const gate = reserveReportProject(
+        "short-budget-" + outcome,
+        store,
+        performance.now() + timeout,
+      )!;
+      const start = performance.now();
+      try {
+        await gate.rateLimited("permit", 30000);
+        expect(gate.isBlocked()).toBe(true);
+      } finally {
+        gate.close();
+      }
+      expect(received).toHaveBeenCalledTimes(1);
+      expect(store.cooldown).toHaveBeenCalledTimes(1);
+      const args = jest.mocked(store.cooldown).mock.calls[0];
+      expect(args[3]).toBeGreaterThan(0);
+      expect(args[3]).toBeLessThanOrEqual(timeout);
+      if (outcome === "timeout") {
+        expect(aborted).toHaveBeenCalledTimes(1);
+        expect(performance.now() - start).toBeLessThan(700);
+      }
+    } finally {
+      global.fetch = original;
+    }
+  },
+);
+test.each([
+  ["payments", "sole_analytics_payments"],
+  ["health", "sole_analytics_health"],
+  ["acquisition", "sole_analytics_discovery"],
+  ["acquisition", "sole_analytics_discovery_series"],
+] as const)(
+  "a malformed fulfilled %s sibling %s vetoes fallback",
+  async (report, endpoint) => {
+    const { deps, f, tick } = setup();
+    deps.history = { ...deps.history, observation: null };
+    const r = request(report, "compare=true");
+    expect((await loadAnalyticsReport(r, deps)).data).not.toBeNull();
+    tick(301);
+    deps.execute = (q: CompiledQuery) => {
+      if (
+        report === "acquisition"
+          ? q.endpoint === "sole_analytics_acquisition"
+          : q.endpoint === endpoint &&
+            q.variables.start_inclusive === r.range.startInclusive
+      )
+        return Promise.reject(
+          new PostHogQueryError({ status: "retryable", reason: "provider-unavailable" }),
+        );
+      if (q.endpoint === endpoint)
+        return Promise.resolve({
+          columns: ["malformed"],
+          results: [[0]],
+          hasMore: false,
+        });
+      return f.execute(q);
+    };
+    expect(await loadAnalyticsReport(r, deps)).toMatchObject({
+      state: "unavailable",
+      data: null,
+    });
+  },
+);
 let fixtureProject = 0;
 function setup() {
   const f = makeAudienceFixture();

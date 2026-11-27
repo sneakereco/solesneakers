@@ -70,7 +70,7 @@ export function compileCommerceHealthQueries(
     },
   };
 }
-function healthPeriod(raw: unknown, request: ReportRequest): HealthPeriod {
+export function readHealthPeriod(raw: unknown, request: ReportRequest): HealthPeriod {
   const values = rows(
     raw,
     [
@@ -198,9 +198,9 @@ function healthPeriod(raw: unknown, request: ReportRequest): HealthPeriod {
 export function mapHealthResult(raw: unknown): HealthData {
   const input = reportInput.parse(raw);
   return {
-    ...healthPeriod(input.summary, input.request),
+    ...readHealthPeriod(input.summary, input.request),
     comparison: hasComparison(input)
-      ? healthPeriod(input.comparison, input.request)
+      ? readHealthPeriod(input.comparison, input.request)
       : null,
   };
 }

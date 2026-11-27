@@ -8,7 +8,12 @@ export interface ReportStore {
   finish(key: string, owner: string, value: string | null): Promise<void>;
   admit(project: string, id: string): Promise<"ok" | "busy" | "limited">;
   release(project: string, id: string): Promise<void>;
-  cooldown(project: string, permit: string, milliseconds: number): Promise<void>;
+  cooldown(
+    project: string,
+    permit: string,
+    milliseconds: number,
+    timeoutMs: number,
+  ): Promise<void>;
 }
 
 type Cooldown = {
@@ -38,10 +43,17 @@ export function reserveReportProject(key: string, store: ReportStore, deadline: 
       for (let attempt = 0; attempt < attempts; attempt++) {
         const at = performance.now(),
           remaining = Math.ceil(block.until - at);
-        // Each Upstash operation is bounded to 1 second.
-        if (remaining <= 0 || deadline - at < 1000) break;
+        const timeout = Math.min(1000, Math.floor(deadline - at));
+        // Give the initial 429 transition the time left in this request. A
+        // retry or recovery attempt requires the full normal operation budget.
+        if (
+          remaining <= 0 ||
+          timeout < 1 ||
+          ((attempt > 0 || attempts === 1) && timeout < 1000)
+        )
+          break;
         try {
-          await store.cooldown(key, block.permit, remaining);
+          await store.cooldown(key, block.permit, remaining, timeout);
           block.confirmed = true;
           break;
         } catch {
@@ -103,17 +115,20 @@ const extendCooldown = `
  redis.call('ZREM',KEYS[2],ARGV[2])
  return 1`;
 
-let client: Redis | undefined;
-export function createReportStore(): ReportStore {
-  const redis = (client ??= new Redis({
+function reportRedis(signal: AbortSignal | (() => AbortSignal)) {
+  return new Redis({
     url: env.UPSTASH_REDIS_REST_URL,
     token: env.UPSTASH_REDIS_REST_TOKEN,
     retry: false,
-    signal: () => AbortSignal.timeout(1000),
+    signal,
     cache: "no-store",
     automaticDeserialization: false,
     enableAutoPipelining: false,
-  }));
+  });
+}
+let client: Redis | undefined;
+export function createReportStore(): ReportStore {
+  const redis = (client ??= reportRedis(() => AbortSignal.timeout(1000)));
   return {
     read: (key) => redis.get<string>(key),
     lock: async (key, owner) =>
@@ -130,8 +145,10 @@ export function createReportStore(): ReportStore {
     release: async (project, id) => {
       await redis.zrem(project + ":slots", id);
     },
-    cooldown: async (project, permit, ms) => {
-      await redis.eval(
+    cooldown: async (project, permit, ms, timeoutMs) => {
+      const writer =
+        timeoutMs < 1000 ? reportRedis(AbortSignal.timeout(timeoutMs)) : redis;
+      await writer.eval(
         extendCooldown,
         [project + ":cooldown", project + ":slots"],
         [ms, permit],

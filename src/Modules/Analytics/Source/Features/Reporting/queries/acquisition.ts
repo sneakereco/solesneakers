@@ -154,6 +154,18 @@ export function readAcquisitionPeriod(
   activatedAt: string,
   through: string | null,
 ): AttributionBreakdown & { invalidEvents: number } {
+  return {
+    ...readSources(table, request, through !== null),
+    series: readAcquisitionSeries(series, request, activatedAt, through),
+  };
+}
+
+export function readAcquisitionSeries(
+  series: unknown,
+  request: ReportRequest,
+  activatedAt: string,
+  through: string | null,
+): AttributionBreakdown["series"] {
   const entries = rows(
     series,
     [
@@ -169,25 +181,22 @@ export function readAcquisitionPeriod(
     2000,
   );
   const buckets = new Map(entries.map((r) => [r.period, r]));
-  return {
-    ...readSources(table, request, through !== null),
-    series: calendarBuckets(request, false, (date, startInclusive, endExclusive) => {
-      const r = buckets.get(date),
-        active = Date.parse(endExclusive) > Date.parse(activatedAt);
-      const observed =
-        active && through !== null && Date.parse(startInclusive) < Date.parse(through);
-      return {
-        startInclusive,
-        endExclusive,
-        confirmedOrders: active ? count(r?.orders ?? 0) : null,
-        netMerchandise: active
-          ? r
-            ? net(r.net, r.known_amounts, r.missing_amounts)
-            : moneyValue(0)
-          : moneyValue(null),
-        visitors: observed ? count(r?.visitors ?? 0) : null,
-        sessions: observed ? count(r?.traffic ?? 0) : null,
-      };
-    }),
-  };
+  return calendarBuckets(request, false, (date, startInclusive, endExclusive) => {
+    const r = buckets.get(date),
+      active = Date.parse(endExclusive) > Date.parse(activatedAt);
+    const observed =
+      active && through !== null && Date.parse(startInclusive) < Date.parse(through);
+    return {
+      startInclusive,
+      endExclusive,
+      confirmedOrders: active ? count(r?.orders ?? 0) : null,
+      netMerchandise: active
+        ? r
+          ? net(r.net, r.known_amounts, r.missing_amounts)
+          : moneyValue(0)
+        : moneyValue(null),
+      visitors: observed ? count(r?.visitors ?? 0) : null,
+      sessions: observed ? count(r?.traffic ?? 0) : null,
+    };
+  });
 }
