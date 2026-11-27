@@ -58,7 +58,7 @@ function run(
   return result.status;
 }
 it("accepts matching enabled build and runtime", () => expect(run(build, build)).toBe(0));
-it("accepts Vercel's sensitive-value marker only for private keys, with live verification following deployment", () => {
+it("requires Secret synchronization when the CLI sees private redactions", () => {
   const runtime = { ...build };
   for (const key of [
     "POSTHOG_API_HOST",
@@ -67,15 +67,13 @@ it("accepts Vercel's sensitive-value marker only for private keys, with live ver
     "ANALYTICS_IDENTITY_SECRET",
   ] as const)
     runtime[key] = "[SENSITIVE]";
-  expect(run(build, runtime)).toBe(0);
-  expect(run(build, { ...runtime, NEXT_PUBLIC_POSTHOG_PROJECT_KEY: "[SENSITIVE]" })).toBe(
-    1,
-  );
+  expect(run(build, runtime)).toBe(1);
 });
 it.each([
   ["NEXT_PUBLIC_POSTHOG_ENABLED", "false"],
   ["NEXT_PUBLIC_MEASUREMENT_ENVIRONMENT", "production"],
   ["NEXT_PUBLIC_POSTHOG_PROJECT_KEY", "phc_syntheticotherproject7654321"],
+  ["NEXT_PUBLIC_POSTHOG_PROJECT_KEY", "[SENSITIVE]"],
   ["NEXT_PUBLIC_POSTHOG_HOST", "https://eu.i.posthog.com"],
   ["POSTHOG_QUERY_API_KEY", "synthetic-private-different"],
   ["POSTHOG_OPERATOR_API_KEY", "synthetic-private-operator"],

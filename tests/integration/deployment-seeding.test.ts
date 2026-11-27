@@ -116,9 +116,9 @@ describe("deployment configuration", () => {
   );
 
   it("builds PRs with schema-valid placeholders and no deployment credentials", () => {
-    const envBlock = ciWorkflow.split("    env:")[1].split("    steps:")[0];
+    const envBlock = ciWorkflow.split(/\r?\nenv:\r?\n/)[1].split(/\r?\njobs:\r?\n/)[0];
     const placeholders = Object.fromEntries(
-      [...envBlock.matchAll(/^      ([A-Z_]+): (.+)$/gm)].map(([, key, value]) => [
+      [...envBlock.matchAll(/^  ([A-Z_]+): (.+)$/gm)].map(([, key, value]) => [
         key,
         value.trim(),
       ]),

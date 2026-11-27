@@ -13,6 +13,7 @@ const privateSettings = [
   "POSTHOG_QUERY_API_KEY",
   "ANALYTICS_IDENTITY_SECRET",
 ];
+const sensitiveValue = "[SENSITIVE]";
 const projects = {
   staging: "prj_1WYPAufHsDO7qrv5FOhSynqeZski",
   production: "prj_ROOpjgDuPj2405JzeR1yG4iRtFMf",
@@ -65,10 +66,16 @@ export function checkDeployment(environment, env, deployed) {
   // Server delivery also reads the capture settings from the Vercel runtime.
   for (const key of [...publicSettings, ...privateSettings]) {
     const protectedValue =
-      !key.startsWith("NEXT_PUBLIC_") && deployed[key] === "[SENSITIVE]";
-    if (!env[key] || (!protectedValue && deployed[key] !== env[key])) throw Error();
+      privateSettings.includes(key) && deployed[key] === sensitiveValue;
+    if (
+      !env[key] ||
+      env[key] === sensitiveValue ||
+      (!protectedValue && deployed[key] !== env[key])
+    )
+      throw Error();
   }
-  // Both release workflows verify protected runtime and compiled public settings.
+  // Sensitive values cannot be downloaded. Both release workflows verify the
+  // running private configuration and compiled public settings after deploy.
 }
 
 function productionSecret(row) {
@@ -98,8 +105,10 @@ export async function checkAndSyncDeployment(
   deployed,
   { project, fetch: send = globalThis.fetch } = {},
 ) {
-  const missing = privateSettings.filter((key) => !Object.hasOwn(deployed, key));
-  if (deployed.NEXT_PUBLIC_POSTHOG_ENABLED !== "true" || missing.length === 0) {
+  const unreadable = privateSettings.filter(
+    (key) => !Object.hasOwn(deployed, key) || deployed[key] === sensitiveValue,
+  );
+  if (deployed.NEXT_PUBLIC_POSTHOG_ENABLED !== "true" || unreadable.length === 0) {
     checkDeployment(environment, env, deployed);
     return;
   }
@@ -107,7 +116,7 @@ export async function checkAndSyncDeployment(
   // Validate the planned configuration before contacting the write-only store.
   checkDeployment(environment, env, {
     ...deployed,
-    ...Object.fromEntries(missing.map((key) => [key, env[key]])),
+    ...Object.fromEntries(unreadable.map((key) => [key, env[key]])),
   });
   const linked = project ?? JSON.parse(readFileSync(".vercel/project.json", "utf8"));
   if (
@@ -148,7 +157,7 @@ export async function checkAndSyncDeployment(
     (row) => !Array.isArray(row.target) || row.target.includes("production"),
   );
   if (runtime.some(({ key }) => operatorOnly.includes(key))) throw Error();
-  const records = missing.map((key) => {
+  const records = unreadable.map((key) => {
     const matches = runtime.filter((row) => row.key === key);
     if (matches.length !== 1 || !productionSecret(matches[0])) throw Error();
     return matches[0];

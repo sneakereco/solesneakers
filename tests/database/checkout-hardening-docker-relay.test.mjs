@@ -65,6 +65,49 @@ test("only the owned database publish address is narrowed to IPv4 loopback", () 
   assert.equal(result.HostConfig.PortBindings["5432/tcp"][0].HostPort, "56123");
 });
 
+test("a refused startup request retains its validation cause for bounded diagnostics", async () => {
+  const workspace = await mkdtemp(join(tmpdir(), "checkout-relay-cause-"));
+  const projectId = "checkout-hardening-test-" + randomBytes(7).toString("hex");
+  try {
+    await assert.rejects(
+      withLoopbackPublishing(
+        { directory: workspace, projectId, token: "synthetic-owner" },
+        56123,
+        join(workspace, "unused-upstream.sock"),
+        async ({ DOCKER_HOST }) => {
+          const socketPath =
+            process.platform === "win32"
+              ? DOCKER_HOST.slice("npipe://".length).replaceAll("/", "\\")
+              : DOCKER_HOST.slice("unix://".length);
+          const status = await new Promise((resolve, reject) => {
+            const req = request(
+              { socketPath, path: "/volumes/create", method: "POST" },
+              (res) => {
+                res.resume();
+                res.once("end", () => resolve(res.statusCode));
+              },
+            );
+            req.once("error", reject);
+            req.end(
+              JSON.stringify({
+                Name: "synthetic-foreign-volume",
+                Labels: { "com.supabase.cli.project": projectId },
+              }),
+            );
+          });
+          assert.equal(status, 400);
+          throw Error("synthetic startup failure");
+        },
+      ),
+      (error) =>
+        error.cause instanceof assert.AssertionError &&
+        error.cause.code === "ERR_ASSERTION",
+    );
+  } finally {
+    await rmdir(workspace);
+  }
+});
+
 test("startup relay refuses foreign names, labels, ports and mutations", () => {
   assert.throws(() => create("supabase_db_existing_app"));
   assert.throws(() =>
