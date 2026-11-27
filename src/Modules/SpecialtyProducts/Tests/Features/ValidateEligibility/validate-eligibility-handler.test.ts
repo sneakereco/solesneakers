@@ -4,6 +4,7 @@ import {
 } from "@/Modules/SpecialtyProducts/Source/Features/ValidateEligibility/validate-eligibility-handler";
 import { getIdentityKeyFingerprint } from "@/Modules/SpecialtyProducts/Source/Features/Claim/normalize-identity";
 import { verifyEligibilityToken } from "@/Modules/SpecialtyProducts/Source/Features/Claim/validation-token";
+import { validateEligibilityAddress } from "@/Modules/SpecialtyProducts/Source/Features/ValidateEligibility/address-provider";
 
 const secret = "specialty-handler-test-secret-at-least-32-characters";
 const now = 1_800_000_000_000;
@@ -39,6 +40,25 @@ function dependencies(): EligibilityDependencies {
   };
 }
 describe("specialty eligibility validation", () => {
+  test("issues a signed proof for provider-valid unchanged input without a recommendation", async () => {
+    const deps = dependencies();
+    deps.validateAddress = (value) =>
+      validateEligibilityAddress(value, {
+        token: "fixture-token",
+        fetcher: jest
+          .fn()
+          .mockResolvedValue(
+            Response.json({ analysis: { validation_result: { value: "valid" } } }),
+          ),
+      });
+    const response = await validateEligibilityHandler(request(), deps);
+    expect(response.status).toBe(200);
+    const data = await response.json();
+    expect(data.status).toBe("valid");
+    const proof = verifyEligibilityToken(data.validationToken, context, secret, now);
+    expect(proof?.address).toEqual(address);
+    expect(proof?.normalizationVersion).toBe(1);
+  });
   test("bounds eligibility request bytes before JSON parsing", async () => {
     const response = await validateEligibilityHandler(
       new Request("https://example.com", {

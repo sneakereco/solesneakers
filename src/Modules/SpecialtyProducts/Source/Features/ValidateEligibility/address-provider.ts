@@ -29,7 +29,13 @@ export async function validateEligibilityAddress(
     if (verdict !== "valid" && verdict !== "partially_valid")
       return { status: "invalid" };
     const recommended = result.recommended_address;
-    if (!recommended) return { status: verdict === "valid" ? "unavailable" : "invalid" };
+    if (!recommended) {
+      if (verdict !== "valid") return { status: "invalid" };
+      // Shippo omits a recommendation when the validated input needs no changes.
+      // Keep the same identity checks, including conflicting-unit rejection.
+      canonicalAddressIdentity(input.data);
+      return { status: "valid", address: input.data };
+    }
     const parsed = eligibilityAddressSchema.safeParse({
       line1: recommended.address_line_1,
       line2: recommended.address_line_2 ?? null,
