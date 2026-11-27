@@ -38,12 +38,13 @@
 - [x] Add the template, fixed recipient, audited service method, dispatcher/schema kind, and three-job prompt admission.
 - [x] Add the migration that extends the kind constraint and replaces the paid-order enqueue function, preserving customer jobs and event-key idempotency. No historical sends are backfilled.
 - [x] Run focused tests and real local SQL checks, then full unit/integration suites, lint, formatting, typecheck and build. Render the email locally for visual inspection.
-- [ ] Obtain one final independent review and resolve material issues with regression tests.
-- [ ] Commit/push to PR #51, update its description with the migration and verification, and report deployment status accurately.
+- [x] Obtain one final independent review and resolve material issues with regression tests.
+- [x] Commit/push to PR #51, update its description with the migration and verification, and report deployment status accurately.
 
 ## Verification
 
 - Observed five dispatch failures, a prompt-capacity failure, and missing SQL reseller jobs before implementation. Additional compatibility checks reproduced old workers claiming unsupported reseller jobs before the versioned RPC repair.
-- Full unit suite: 870 tests passed across 159 suites. Integration: 21 passed. Disposable PostgreSQL: 12 passed, including old/new worker compatibility, actual service-role execution, denied customer-role execution, order/lease isolation, and actual audit-schema insertion.
+- Final full unit suite: 873 tests passed across 160 suites. Integration: 21 passed. Disposable PostgreSQL: 13 passed, including old/new worker compatibility, actual service-role execution, denied customer-role execution, order/lease isolation, null scoped IDs, and actual audit-schema insertion.
 - Production build, standalone typecheck, changed-file lint and formatting, and whitespace checks passed.
 - Rendered and inspected the email at 375px and 700px with no horizontal overflow. No real messages sent; no live migration or data changes performed. Hosted delivery remains a release verification step.
+- Independent review found two important issues. Both were reproduced before repair: slow SMTP acceptance could be abandoned by an application timer, and a null legacy scoped order ID became a global claim. Transport-level timeouts now allow the send to settle, and the legacy scoped wrapper preserves its empty null-ID result. All final suites passed after the fixes; no minor findings were deferred.

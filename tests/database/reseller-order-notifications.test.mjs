@@ -158,6 +158,24 @@ test("upgraded claims preserve order scoping, limits, and active leases", async 
   );
 });
 
+test("a null legacy order ID cannot lease unrelated order notifications", async () => {
+  const id = await createOrder();
+  await status(id, "paid");
+  const result = (
+    await db.query("select public.claim_checkout_notifications_for_order(null,3) result")
+  ).rows[0].result;
+  assert.deepEqual(result, []);
+  assert.equal(
+    (
+      await db.query(
+        "select count(*)::int n from public.checkout_notification_outbox where order_id=$1 and status='pending'",
+        [id],
+      )
+    ).rows[0].n,
+    2,
+  );
+});
+
 test("the service role can claim the reseller job", async () => {
   const id = await createOrder();
   await status(id, "paid");

@@ -16,6 +16,11 @@ subtotal, shipping, tax, total, fulfillment method, customer email when availabl
 and an authenticated `/admin/transactions/<orderId>` link. Customer access tokens
 are not included.
 
+SMTP attempts await the transport result under Nodemailer's documented
+[connection, greeting, and socket idle timeouts](https://nodemailer.com/smtp).
+An application timer does not discard an acceptance that arrives while a send is
+still running; definite transport rejections retain the existing retry behavior.
+
 The prompt worker admits three jobs per order, covering pickup instructions,
 customer confirmation, and reseller notification. Existing cron processing and
 retry scheduling remain the fallback. Each message has its own notification ID,

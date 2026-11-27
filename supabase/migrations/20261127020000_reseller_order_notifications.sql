@@ -60,7 +60,8 @@ $function$;
 create or replace function public.claim_checkout_notifications_for_order(p_order_id uuid, p_limit integer)
 returns jsonb language sql security definer set search_path = ''
 as $function$
-  select public.claim_checkout_notifications_v2(p_limit, p_order_id, false);
+  select case when p_order_id is null then '[]'::jsonb
+    else public.claim_checkout_notifications_v2(p_limit, p_order_id, false) end;
 $function$;
 
 create or replace function public.queue_paid_order_confirmation()
