@@ -182,6 +182,7 @@ export function makeAudienceFixture(
   }
   return {
     ...f,
+    execute,
     deps,
     event,
     sid,

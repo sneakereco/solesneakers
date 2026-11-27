@@ -24,11 +24,13 @@ import {
   instant,
   centsField as amount,
   textField,
+  observedDimension,
 } from "./commerce-source";
 import {
   sessionSql,
   observationSql,
   devicePredicate,
+  invalidTimingCount,
   segmentPredicate,
 } from "./behavior-source";
 import { localBucket, decomposed } from "./financial";
@@ -67,17 +69,29 @@ const stepColumns = [
   "ordered",
 ] as const;
 const aggregates = `count(DISTINCT session_visitor) AS visitors,count(*) AS sessions,count(viewed_at) AS viewed,count(added_at) AS added,count(checkout_at) AS checkout,count(purchase_at) AS purchasing,count(CASE WHEN purchase_at>=checkout_at THEN 1 END) AS ordered`;
+const activeEndpoint = (scope: DatasetScope) =>
+  endpoint(
+    "sole_analytics_active",
+    `WITH ${observationSql({ ...scope, behaviorArchiveCutoff: null })} SELECT count(DISTINCT visitor) AS visitors,${invalidTimingCount(devicePredicate + " AND " + segmentPredicate("session"))} AS invalid_events FROM valid_events WHERE ${devicePredicate} AND ${segmentPredicate("session")}`,
+  );
+export function compileActiveQuery(
+  request: ReportRequest,
+  scope: DatasetScope,
+  now: Date,
+) {
+  const query = compileEndpoint(activeEndpoint(scope), request, scope, { limit: 1, now });
+  query.variables.start_inclusive = new Date(now.getTime() - 300000).toISOString();
+  query.variables.end_exclusive = now.toISOString();
+  return query;
+}
 export function visitorEndpoints(scope: DatasetScope) {
   const session = sessionSql(scope);
   return [
     endpoint(
       "sole_analytics_sessions",
-      `${session} SELECT 'total' AS segment,${aggregates},(SELECT count(*) FROM observed WHERE substring(toString(session_id),15,1)!='7' OR occurred_at<entered_at OR occurred_at>=addHours(entered_at,24)) AS invalid_events FROM steps UNION ALL SELECT coalesce(device,'unknown') AS segment,${aggregates},0 AS invalid_events FROM steps GROUP BY segment`,
+      `${session} SELECT 'total' AS segment,${aggregates},${invalidTimingCount(devicePredicate + " AND " + segmentPredicate("session"))} AS invalid_events FROM steps UNION ALL SELECT ${observedDimension("device")} AS segment,${aggregates},0 AS invalid_events FROM steps GROUP BY segment`,
     ),
-    endpoint(
-      "sole_analytics_active",
-      `WITH ${observationSql({ ...scope, behaviorArchiveCutoff: null })} SELECT count(DISTINCT visitor) AS visitors FROM valid_events WHERE ${devicePredicate} AND ${segmentPredicate("session")}`,
-    ),
+    activeEndpoint(scope),
     endpoint(
       "sole_analytics_visitor_series",
       `${session} SELECT ${localBucket.replaceAll("report_at", "entered_at")} AS period,count(DISTINCT session_visitor) AS visitors,count(*) AS sessions FROM sessions GROUP BY period ORDER BY period`,
@@ -91,7 +105,7 @@ export function compileVisitorQueries(
   scope: DatasetScope,
   now = new Date(),
 ): CompiledReportQueries {
-  const [steps, active, series, buyers, cohorts] = visitorEndpoints(scope);
+  const [steps, , series, buyers, cohorts] = visitorEndpoints(scope);
   const make = (def: typeof steps, limit: number, comparison = false) =>
     compileEndpoint(def, request, scope, { limit, comparison, now });
   const queries: CompiledReportQueries["queries"] = { sessions: make(steps, 5) };
@@ -104,11 +118,7 @@ export function compileVisitorQueries(
   if (request.report === "customers") {
     queries.customers = make(buyers, 1);
     queries.cohorts = make(cohorts, 2000);
-    queries.active = make(active, 1);
-    queries.active.variables.start_inclusive = new Date(
-      now.getTime() - 300000,
-    ).toISOString();
-    queries.active.variables.end_exclusive = now.toISOString();
+    queries.active = compileActiveQuery(request, scope, now);
   }
   return { queries };
 }

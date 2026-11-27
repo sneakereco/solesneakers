@@ -3,7 +3,6 @@ import type { DatasetScope } from "../../CommerceFacts/contract";
 import type {
   ReportRequest,
   ProductRow,
-  ProductsData,
   ProductBreakdownRow,
 } from "../../ReportContract/types";
 import { moneyValue } from "../../ReportContract/money";
@@ -20,10 +19,16 @@ import {
   textField as str,
   attributionSql,
   attribution,
-  instant,
 } from "./commerce-source";
 import { evidenceSql, unknownReturn } from "./financial";
-import { observationSql, devicePredicate, segmentPredicate } from "./behavior-source";
+import {
+  observationSql,
+  devicePredicate,
+  segmentPredicate,
+  invalidTimingCount,
+  purchaseInSession,
+  eligibleSessionEntry,
+} from "./behavior-source";
 import type { CompiledReportQueries } from "../query-contract";
 
 const ids = ["product", "variant", "brand", "category", "size"] as const;
@@ -41,6 +46,11 @@ const snapshotLabels = ["productName", "brandLabel", "categoryLabel", "sizeLabel
 );
 const factsSql = `${commerceSourceSql}${evidenceSql}, originals AS (
  SELECT order_id AS line_order,${str("lineId")} AS original_id,payload AS snapshot FROM facts WHERE kind='line'
+ ), missing_allocation AS (
+ SELECT count(DISTINCT CASE WHEN b.kind='order' AND (b.incomplete_original_lines=1 OR b.order_id IN (SELECT line_order FROM originals WHERE ${str("productId", "snapshot")} IS NULL)) THEN b.order_id END) AS unassigned_orders,
+ count(DISTINCT CASE WHEN (${unknownReturn}) OR (b.kind='refund' AND ${amount("merchandiseCents")} IS NULL) OR
+ (b.kind='refund_line' AND nullIf(o.original_id,'') IS NULL) THEN concat(b.order_id,':',${str("refundId", "b.payload")}) END) AS unassigned_returns
+ FROM basis b LEFT JOIN originals o ON b.kind='refund_line' AND b.order_id=o.line_order AND ${str("lineId", "b.payload")}=o.original_id AND ${str("productId", "o.snapshot")} IS NOT NULL
  ), line_flows AS (
  SELECT b.*,o.snapshot AS snapshot,'sale' AS action FROM basis b JOIN originals o ON b.order_id=o.line_order AND ${str("lineId", "b.payload")}=o.original_id WHERE b.kind='line'
  UNION ALL SELECT b.*,o.snapshot,'return' FROM basis b JOIN originals o ON b.order_id=o.line_order AND ${str("lineId", "b.payload")}=o.original_id WHERE b.kind='refund_line'
@@ -59,12 +69,12 @@ const factsSql = `${commerceSourceSql}${evidenceSql}, originals AS (
  )`;
 function productSql(scope: DatasetScope) {
   const source = `${factsSql},${observationSql(scope)}, measured AS (SELECT * FROM valid_events WHERE ${devicePredicate} AND ${segmentPredicate("session")} AND ${idFilters(["product_id", "variant_id", "NULL", "NULL", "NULL"])}),
- views AS (SELECT product_id,toString(session_id) AS sid,min(occurred_at) AS first_view,count(*) AS views FROM measured WHERE event_name='product_viewed' GROUP BY product_id,sid),
- purchased_sessions AS (SELECT p.product_id,toString(l.session_id) AS sid,max(p.confirmed_at) AS bought_at FROM purchased p JOIN ranked_links l ON p.order_id=toString(l.order_id) AND l.active=1 AND l.link_rank=1 WHERE action='sale' AND p.confirmed_at<${instant("{variables.behavior_end}")} GROUP BY p.product_id,sid),
+ views AS (SELECT product_id,toString(session_id) AS sid,min(occurred_at) AS first_view,min(entered_at) AS entry_time,count(*) AS views FROM measured WHERE event_name='product_viewed' GROUP BY product_id,sid),
+ purchased_sessions AS (SELECT p.product_id,toString(l.session_id) AS sid,max(p.confirmed_at) AS bought_at FROM purchased p JOIN ranked_links l ON p.order_id=toString(l.order_id) AND l.active=1 AND l.link_rank=1 JOIN session_entries anchor ON toString(anchor.session_id)=toString(l.session_id) WHERE action='sale' AND ${purchaseInSession("p.confirmed_at", "anchor.entered_at")} GROUP BY p.product_id,sid),
  activity AS (SELECT product_id,variant_id,brand_id,category_id,size_id,name_label,brand_label,category_label,size_label,
  CASE WHEN action='sale' THEN order_id ELSE NULL END AS oid,units,returned,revenue,missing_revenue,missing_units,NULL AS view_sid,0 AS views,NULL AS bought_sid,NULL AS stock,NULL AS stock_time,NULL AS demand,CASE WHEN action!='incomplete' AND revenue IS NOT NULL THEN 1 ELSE 0 END AS known_revenue
  FROM purchased
- UNION ALL SELECT v.product_id,NULL,NULL,NULL,NULL,NULL,NULL,NULL,NULL,NULL,0,0,0,0,0,v.sid,v.views,CASE WHEN p.bought_at>=v.first_view THEN v.sid ELSE NULL END,NULL,NULL,NULL,0
+ UNION ALL SELECT v.product_id,NULL,NULL,NULL,NULL,NULL,NULL,NULL,NULL,NULL,0,0,0,0,0,CASE WHEN ${eligibleSessionEntry("v.entry_time")} THEN v.sid ELSE NULL END,v.views,CASE WHEN p.bought_at>=v.first_view THEN v.sid ELSE NULL END,NULL,NULL,NULL,0
  FROM views v LEFT JOIN purchased_sessions p ON v.product_id=p.product_id AND v.sid=p.sid
  UNION ALL SELECT product_id,variant_id,NULL,NULL,NULL,NULL,NULL,NULL,NULL,NULL,0,0,0,0,0,NULL,0,NULL,stock,recorded_at,NULL,0 FROM inventory
  UNION ALL SELECT product_id,variant_id,NULL,NULL,NULL,NULL,NULL,NULL,NULL,NULL,0,0,0,0,0,NULL,0,NULL,NULL,NULL,event_name,0 FROM measured WHERE event_name IN ('product_added_to_cart','variant_selected','unavailable_size_requested','out_of_stock_viewed')
@@ -81,10 +91,10 @@ function productSql(scope: DatasetScope) {
  totals AS (SELECT axis,count(*) AS total FROM grouped GROUP BY axis)
  SELECT a.axis AS axis,nullIf(r.item,'') AS item,r.label AS label,r.pid AS pid,r.brand AS brand,r.brand_name AS brand_name,r.category AS category,r.category_name AS category_name,r.size AS size,r.size_name AS size_name,
  r.orders AS orders,r.sold AS sold,r.net_units AS net_units,toString(r.net) AS net,r.missing AS missing,r.unknown_units AS unknown_units,r.views AS views,r.viewed AS viewed,r.converted AS converted,r.stock AS stock,r.known_money AS known_money,r.additions AS additions,r.selections AS selections,r.requests AS requests,r.stockouts AS stockouts,
- coalesce(t.total,0) AS total,${attributionSql} FROM axes a LEFT JOIN totals t ON a.axis=t.axis LEFT JOIN ranked r ON a.axis=r.axis AND r.ranking>toInt({variables.page_start}) AND r.ranking<=toInt({variables.page_end}) ORDER BY a.axis,r.ranking`;
+ coalesce(t.total,0) AS total,${attributionSql},(SELECT unassigned_orders FROM missing_allocation) AS unassigned_orders,(SELECT unassigned_returns FROM missing_allocation) AS unassigned_returns,${invalidTimingCount(devicePredicate + " AND " + segmentPredicate("session") + " AND " + idFilters(["product_id", "variant_id", "NULL", "NULL", "NULL"]))} AS invalid_events FROM axes a LEFT JOIN totals t ON a.axis=t.axis LEFT JOIN ranked r ON a.axis=r.axis AND r.ranking>toInt({variables.page_start}) AND r.ranking<=toInt({variables.page_end}) ORDER BY a.axis,r.ranking`;
   const signals = `${factsSql},${observationSql(scope)}, measured AS (SELECT * FROM valid_events WHERE ${devicePredicate} AND ${segmentPredicate("session")} AND ${idFilters(["product_id", "variant_id", "NULL", "NULL", "NULL"])}),
  stock AS (SELECT count(*) AS variants,count(stock) AS known,sum(stock) AS units,count(CASE WHEN stock>0 THEN 1 END) AS in_stock,count(CASE WHEN stock=0 THEN 1 END) AS out_stock,max(recorded_at) AS last_stock FROM inventory)
- SELECT variants,known,units,in_stock,out_stock,toString(last_stock) AS last_stock,
+ SELECT variants,known,units,in_stock,out_stock,toString(last_stock) AS last_stock,${invalidTimingCount(devicePredicate + " AND " + segmentPredicate("session") + " AND " + idFilters(["product_id", "variant_id", "NULL", "NULL", "NULL"]))} AS invalid_events,
  ${["out_of_stock_viewed", "unavailable_size_requested", "variant_selected", "catalog_search_results"].map((k, i) => "(SELECT count(*) FROM measured WHERE event_name='" + k + "') AS " + ["stockouts", "unavailable", "selections", "searches"][i]).join(",")},
  (SELECT count(*) FROM measured WHERE event_name='catalog_search_results' AND result_count=0) AS no_results FROM stock`;
   return { source, signals };
@@ -139,6 +149,9 @@ const names = [
   "total",
   "eligible_orders",
   "attributed_orders",
+  "unassigned_orders",
+  "unassigned_returns",
+  "invalid_events",
 ];
 export function readProductRows(raw: unknown, request: ReportRequest, behavior: boolean) {
   const records = rows(raw, names, request.pageSize * 5);
@@ -165,9 +178,7 @@ export function readProductRows(raw: unknown, request: ReportRequest, behavior: 
         ? rate(count(r.converted), count(r.viewed))
         : rate(null, null),
       netMerchandise: moneyValue(
-        count(r.missing) && !count(r.known_money)
-          ? null
-          : decimalText(r.net ?? "0", true),
+        count(r.known_money) ? decimalText(r.net, true) : count(r.missing) ? null : 0,
         count(r.missing),
       ),
     };
@@ -200,6 +211,9 @@ export function readProductRows(raw: unknown, request: ReportRequest, behavior: 
     return { ...metrics(r), id: String(r.item), label: String(r.label ?? "Unknown") };
   }
   return {
+    invalidEvents: count(records[0].invalid_events),
+    unassignedOrders: count(records[0].unassigned_orders),
+    unassignedReturns: count(records[0].unassigned_returns),
     attribution: attribution(records[0]),
     products: page("product", product),
     variants: page("variant", product),
@@ -208,11 +222,7 @@ export function readProductRows(raw: unknown, request: ReportRequest, behavior: 
     sizes: page("size", breakdown),
   };
 }
-export function readDemand(
-  raw: unknown,
-  request: ReportRequest,
-  behavior: boolean,
-): Pick<ProductsData, "inventory" | "unmetDemand"> {
+export function readDemand(raw: unknown, request: ReportRequest, behavior: boolean) {
   const [r] = rows(
     raw,
     [
@@ -222,6 +232,7 @@ export function readDemand(
       "in_stock",
       "out_stock",
       "last_stock",
+      "invalid_events",
       "stockouts",
       "unavailable",
       "selections",
@@ -239,8 +250,9 @@ export function readDemand(
   const applicable =
     behavior && !request.brandId && !request.categoryId && !request.sizeId;
   return {
+    invalidEvents: count(r.invalid_events),
     inventory: {
-      scope: "recorded-variants",
+      scope: "recorded-variants" as const,
       recordedVariants,
       missingStockVariants: recordedVariants - knownStockVariants,
       catalogVariants: null,

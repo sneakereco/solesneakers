@@ -13,6 +13,7 @@ import type { HistoryEvidence } from "../EventDelivery/history-source";
 import { resolveReportCoverage } from "./report-coverage";
 import {
   compileVisitorQueries,
+  compileActiveQuery,
   readSessions,
   readBuyers,
   readCohorts,
@@ -176,7 +177,8 @@ async function getReportPeriod<T extends ReportId>(
         ),
       );
     if (report === "health") include(compileCommerceHealthQueries(request, dataset));
-    if (report === "overview" || report === "customers" || report === "health")
+    if (result.liveOnly) queries.active = compileActiveQuery(request, dataset, now);
+    else if (report === "overview" || report === "customers" || report === "health")
       include(compileVisitorQueries(request, dataset, now));
     const ranked = report === "overview" ? { ...request, page: 1, pageSize: 5 } : request;
     if (report === "overview" || report === "acquisition")
@@ -201,10 +203,6 @@ async function getReportPeriod<T extends ReportId>(
       delete queries.comparisonSessions;
       delete queries.comparisonVisitorSeries;
     }
-    if (result.liveOnly) {
-      delete queries.customers;
-      delete queries.cohorts;
-    }
     if (!activeWindow) delete queries.active;
     else if (queries.active) {
       queries.active.variables.start_inclusive = activeWindow.start;
@@ -216,8 +214,13 @@ async function getReportPeriod<T extends ReportId>(
       "visitorSeries",
       "comparisonVisitorSeries",
       "active",
-      ...(report === "overview" ? ["purchaseSession", "products"] : []),
+      "cohorts",
+      "signals",
+      "products",
+      "customers",
+      ...(report === "overview" ? ["purchaseSession"] : []),
     ]);
+    const executionFailed = Symbol("executionFailed");
     const values: Record<string, unknown> = Object.fromEntries(
       await Promise.all(
         Object.entries(queries).map(async ([k, q]) => {
@@ -242,14 +245,14 @@ async function getReportPeriod<T extends ReportId>(
               metric: k,
               message: "This report section is temporarily unavailable.",
             });
-            return [k, null] as const;
+            return [k, executionFailed] as const;
           }
         }),
       ),
     );
     const financialResults = { ...values, request, activatedAt: dataset.activatedAt };
     function optional<Value>(key: string, parse: (raw: unknown) => Value): Value | null {
-      if (!values[key]) return null;
+      if (!Object.hasOwn(values, key) || values[key] === executionFailed) return null;
       try {
         return parse(values[key]);
       } catch {
@@ -265,13 +268,35 @@ async function getReportPeriod<T extends ReportId>(
     const comparison = optional("comparisonSessions", (raw) =>
       readSessions(raw, request),
     );
-    if (sessions?.invalidEvents)
-      coverage.push({
-        code: "incomplete-coverage",
-        metric: "sessions",
-        missingCount: sessions.invalidEvents,
-        message: "Observations with invalid native session timing were excluded.",
-      });
+    function reportTiming(metric: string, invalidEvents: number | undefined) {
+      if (invalidEvents)
+        coverage.push({
+          code: "incomplete-coverage",
+          metric,
+          missingCount: invalidEvents,
+          message: "Observations with invalid native session timing were excluded.",
+        });
+    }
+    function parseProductTable(raw: unknown, tableRequest: ReportRequest) {
+      const p = readProductRows(raw, tableRequest, behavior);
+      reportTiming("productBehavior", p.invalidEvents);
+      for (const [metric, missingCount] of [
+        ["productOrders", p.unassignedOrders],
+        ["productReturns", p.unassignedReturns],
+      ] as const) {
+        if (missingCount)
+          coverage.push({
+            code: "incomplete-coverage",
+            metric,
+            missingCount,
+            message:
+              "Purchase or return evidence could not be assigned to an original product line.",
+          });
+      }
+      return p;
+    }
+    reportTiming("sessions", sessions?.invalidEvents);
+    reportTiming("comparison.sessions", comparison?.invalidEvents);
     let data: ReportDataMap[ReportId];
     let empty = false;
     if (report === "payments") {
@@ -290,16 +315,26 @@ async function getReportPeriod<T extends ReportId>(
         !p.outcomes.length &&
         sessions?.sessions === 0;
     } else if (report === "customers") {
-      const p = result.liveOnly ? null : readBuyers(values.customers);
+      const p = optional("customers", readBuyers);
+      const cohorts = optional("cohorts", (raw) => readCohorts(raw, now));
       if (p) setAttribution(p.attribution);
-      const live = optional("active", (raw) =>
-        count(rows(raw, ["visitors"], 1)[0]?.visitors),
-      );
+      const live = optional("active", (raw) => {
+        const [row] = rows(raw, ["visitors", "invalid_events"], 1);
+        const invalid = count(row?.invalid_events);
+        reportTiming("activeFiveMinuteVisitors", invalid);
+        return invalid ? null : count(row?.visitors);
+      });
       if (result.liveOnly && live === null)
         return fail(
           "unavailable",
           "component-unavailable",
           "Recent activity could not be verified.",
+        );
+      if (!p && !sessions && cohorts === null && live === null)
+        return fail(
+          "unavailable",
+          "component-unavailable",
+          "Customer report sections are unavailable.",
         );
       const c: CustomersData = {
         ...(p ?? {
@@ -316,48 +351,73 @@ async function getReportPeriod<T extends ReportId>(
         visitors: sessions?.visitors ?? null,
         sessions: sessions?.sessions ?? null,
         activeFiveMinuteVisitors: live,
-        cohorts: result.liveOnly ? null : readCohorts(values.cohorts, now),
+        cohorts,
         devices: sessions?.devices ?? null,
       };
       empty = c.buyers === 0 && c.missingBuyerOrders === 0 && c.sessions === 0;
       data = c;
     } else if (report === "acquisition") {
-      const purchaseSession = readAcquisitionPeriod(
-        values.purchaseSession,
-        values.purchaseSeries,
-        request,
-        dataset.activatedAt,
-        base.behaviorThrough,
-      );
-      const discovery = readAcquisitionPeriod(
+      const { invalidEvents: purchaseInvalid, ...purchaseSession } =
+        readAcquisitionPeriod(
+          values.purchaseSession,
+          values.purchaseSeries,
+          request,
+          dataset.activatedAt,
+          base.behaviorThrough,
+        );
+      const { invalidEvents: discoveryInvalid, ...discovery } = readAcquisitionPeriod(
         values.discovery,
         values.discoverySeries,
         request,
         dataset.activatedAt,
         base.behaviorThrough,
       );
+      reportTiming("purchaseSession", purchaseInvalid);
+      reportTiming("discovery", discoveryInvalid);
       setAttribution(purchaseSession.attribution);
       data = { purchaseSession, discovery, comparison: null };
       empty =
         behavior &&
+        !purchaseInvalid &&
+        !discoveryInvalid &&
         purchaseSession.sources.totalCount === 0 &&
         discovery.sources.totalCount === 0;
     } else if (report === "products") {
-      const p = readProductRows(values.products, request, behavior);
-      setAttribution(p.attribution);
-      const demand = readDemand(values.signals, request, behavior);
-      if (!comparisonOnly && demand.inventory.availableUnits === null)
+      const p = optional("products", (raw) => parseProductTable(raw, request));
+      const demand = optional("signals", (raw) => readDemand(raw, request, behavior));
+      if (!p && !demand)
+        return fail(
+          "unavailable",
+          "component-unavailable",
+          "Product report sections are unavailable.",
+        );
+      if (p) setAttribution(p.attribution);
+      if (!p) reportTiming("productBehavior", demand?.invalidEvents);
+      if (!comparisonOnly && demand?.inventory.availableUnits === null)
         coverage.push({
           code: "component-unavailable",
           metric: "inventory",
           message:
             "Current stock requires recorded inventory observations for matching variants.",
         });
-      data = { ...p, ...demand, comparison: null };
+      data = {
+        attribution: p?.attribution ?? null,
+        products: p?.products ?? null,
+        variants: p?.variants ?? null,
+        brands: p?.brands ?? null,
+        categories: p?.categories ?? null,
+        sizes: p?.sizes ?? null,
+        inventory: demand?.inventory ?? null,
+        unmetDemand: demand?.unmetDemand ?? null,
+        comparison: null,
+      };
       empty =
         behavior &&
-        p.products.totalCount === 0 &&
-        demand.unmetDemand.searches === 0 &&
+        p?.products.totalCount === 0 &&
+        !p.invalidEvents &&
+        !p.unassignedOrders &&
+        !p.unassignedReturns &&
+        demand?.unmetDemand.searches === 0 &&
         demand.unmetDemand.unavailableSizeSelections === 0;
     } else {
       const sales = mapSalesResult(financialResults);
@@ -420,15 +480,14 @@ async function getReportPeriod<T extends ReportId>(
             components.map((k) => [k, sales[k]]),
           ) as OverviewData["components"],
           leadingSources:
-            optional(
-              "purchaseSession",
-              (raw) => readSources(raw, ranked, behavior).sources.rows,
-            ) ?? [],
+            optional("purchaseSession", (raw) => {
+              const source = readSources(raw, ranked, behavior);
+              reportTiming("purchaseSession", source.invalidEvents);
+              return source.sources.rows;
+            }) ?? [],
           leadingProducts:
-            optional(
-              "products",
-              (raw) => readProductRows(raw, ranked, behavior).products.rows,
-            ) ?? [],
+            optional("products", (raw) => parseProductTable(raw, ranked).products.rows) ??
+            [],
         };
         data = overview;
         empty = empty && sessions?.sessions === 0;

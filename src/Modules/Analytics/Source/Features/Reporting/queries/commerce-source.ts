@@ -21,6 +21,8 @@ export const centsField = (key: string, column = "payload") =>
 export const instant = (value: string) =>
   `parseDateTime64BestEffortOrNull(${value},6,'UTC')`;
 const variable = (key: string) => `{variables.${key}}`;
+export const observedDimension = (column: string) =>
+  `coalesce(nullIf(${column},''),'unknown')`;
 const filter = (key: string, column: string) =>
   `(${variable(key)} = '' OR ${column} = ${variable(key)})`;
 const productFilters = [
@@ -64,7 +66,7 @@ export function commerceSourceFor(attributionColumn: "discovery" | "purchase_ses
  SELECT DISTINCT order_id AS matching_order FROM facts WHERE kind='line' AND ${productFilters.map((k) => filter(k.toLowerCase(), textField(k))).join(" AND ")}
 ), order_dimensions AS (
  SELECT o.*, l.active AS attributed,
- CASE WHEN ${filter("device", "l.device")} AND ${["source", "channel", "campaign"].map((k) => filter(k, textField(k, "l." + attributionColumn))).join(" AND ")}
+ CASE WHEN ${filter("device", observedDimension("l.device"))} AND ${["source", "channel", "campaign"].map((k) => filter(k, observedDimension(textField(k, "l." + attributionColumn)))).join(" AND ")}
  AND (${["device", "source", "channel", "campaign"].map((k) => variable(k) + "=''").join(" AND ")} OR l.active=1)
  THEN 1 ELSE 0 END AS matches_segment
  FROM orders o LEFT JOIN ranked_links l ON o.oid=toString(l.order_id) AND l.link_rank=1 AND l.active=1
@@ -113,7 +115,8 @@ export function compileEndpoint(
   if (
     !datasetScopeSchema.safeParse(scope).success ||
     DATASET_IDS[scope.environment] !== scope.datasetId ||
-    !financialHistorySource(scope.financialSource)
+    (def.name !== "sole_analytics_active" &&
+      !financialHistorySource(scope.financialSource))
   )
     throw new RangeError("Trusted warehouse reporting is unavailable.");
   const values: Record<string, string> = {

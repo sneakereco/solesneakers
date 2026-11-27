@@ -258,3 +258,115 @@ it("keeps buyer evidence when behavioral history has a hole", async () => {
   expect(r.data).toMatchObject({ buyers: 1, sessions: null, visitors: null });
   expect(r.coverage.some((c) => c.code === "incomplete-coverage")).toBe(true);
 });
+it("review: isolates a failed cohort result from independent buyer and visitor data", async () => {
+  const f = makeAudienceFixture();
+  f.journey();
+  const req = { ...request("customers"), report: "customers" as const };
+  for (const malformed of [false, true, null]) {
+    const r = await service.getReport(req, {
+      ...f.deps,
+      execute: (q) => {
+        if (q.endpoint === "sole_analytics_customer_cohorts") {
+          if (malformed !== false) return Promise.resolve(malformed ? {} : null);
+          throw Error("private failure");
+        }
+        return f.deps.execute(q);
+      },
+    });
+    expect(r.data).toMatchObject({ buyers: 1, sessions: 2, cohorts: null });
+    expect(r.coverage.some((c) => c.metric === "cohorts")).toBe(true);
+  }
+});
+it("review: preserves native-only recent activity on an events-backed canonical dataset", async () => {
+  const f = makeAudienceFixture();
+  const calls: string[] = [];
+  f.event(1, "public_page_viewed", 0, f.sid(1), "2026-07-01T04:00:00.000Z");
+  const req = parseReportRequest(
+    new URLSearchParams("from=2025-06-01&to=2025-06-01&report=customers"),
+    f.deps.now,
+  );
+  const deps = {
+    ...f.deps,
+    dataset: { ...f.deps.dataset!, financialSource: "events" as const },
+    execute: (q: Parameters<typeof f.execute>[0]) => {
+      calls.push(q.endpoint);
+      return f.execute(q);
+    },
+  };
+  const live = await service.getReport({ ...req, report: "customers" }, deps);
+  expect(live.data).toMatchObject({
+    activeFiveMinuteVisitors: 1,
+    buyers: null,
+    cohorts: null,
+  });
+  expect(calls).toEqual(["sole_analytics_active"]);
+  const finance = await service.getReport({ ...request("sales"), report: "sales" }, deps);
+  expect(finance.data).toBeNull();
+  expect(calls).toHaveLength(1);
+});
+it("review: reports invalid timing independently for live, products, acquisition and preceding sessions", async () => {
+  const f = makeAudienceFixture();
+  for (const at of [
+    "2026-06-09T12:00:00.000Z",
+    "2026-06-10T12:00:00.000Z",
+    "2026-07-01T04:00:00.000Z",
+  ])
+    f.event(1, "product_viewed", 0, f.sid(1), at);
+  f.db.exec(
+    "update events set properties=json_set(properties,'$.$session_id','11111111-1111-4111-8111-111111111111')",
+  );
+  f.sale("o", "guest");
+  const req = parseReportRequest(
+    new URLSearchParams("from=2025-06-01&to=2025-06-01&report=customers"),
+    f.deps.now,
+  );
+  const live = await service.getReport({ ...req, report: "customers" }, f.deps);
+  expect(live.data).toBeNull();
+  expect(live.coverage).toContainEqual(
+    expect.objectContaining({ metric: "activeFiveMinuteVisitors", missingCount: 1 }),
+  );
+  for (const [report, metric] of [
+    ["products", "productBehavior"],
+    ["acquisition", "purchaseSession"],
+    ["overview", "sessions"],
+  ] as const) {
+    const r = await service.getReport(
+      { ...request(report, "compare=true"), report },
+      f.deps,
+    );
+    expect(r.data).not.toBeNull();
+    expect(r.coverage).toEqual(
+      expect.arrayContaining(
+        [metric, "comparison." + metric].map((m) =>
+          expect.objectContaining({ metric: m, missingCount: 1 }),
+        ),
+      ),
+    );
+  }
+});
+it("review: retains coverage from Overview leaders when the session section fails", async () => {
+  const f = makeAudienceFixture();
+  f.sale("order-without-lines", "guest");
+  f.event(1, "product_viewed");
+  f.db.exec(
+    "update events set properties=json_set(properties,'$.$session_id','11111111-1111-4111-8111-111111111111')",
+  );
+  const r = await service.getReport(
+    { ...request("overview"), report: "overview" },
+    {
+      ...f.deps,
+      execute: (q) => {
+        if (q.endpoint === "sole_analytics_sessions") throw Error("session unavailable");
+        return f.execute(q);
+      },
+    },
+  );
+  expect(r.data?.summary.confirmedOrders).toBe(1);
+  expect(r.coverage).toEqual(
+    expect.arrayContaining(
+      ["productOrders", "productBehavior", "purchaseSession"].map((metric) =>
+        expect.objectContaining({ metric, missingCount: 1 }),
+      ),
+    ),
+  );
+});

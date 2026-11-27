@@ -324,19 +324,19 @@ export type AcquisitionData = AcquisitionPeriod & {
 export type ProductBreakdownRow = ProductMetrics & TaxonomyReference;
 
 export type ProductPeriod = {
-  attribution: SalesPeriod["attribution"];
-  products: PaginatedRows<ProductRow>;
-  variants: PaginatedRows<ProductRow>;
-  brands: PaginatedRows<ProductBreakdownRow>;
-  categories: PaginatedRows<ProductBreakdownRow>;
-  sizes: PaginatedRows<ProductBreakdownRow>;
+  attribution: SalesPeriod["attribution"] | null;
+  products: PaginatedRows<ProductRow> | null;
+  variants: PaginatedRows<ProductRow> | null;
+  brands: PaginatedRows<ProductBreakdownRow> | null;
+  categories: PaginatedRows<ProductBreakdownRow> | null;
+  sizes: PaginatedRows<ProductBreakdownRow> | null;
   unmetDemand: {
     stockoutSignals: number | null;
     unavailableSizeSelections: number | null;
     searchesWithNoResults: number | null;
     searches: number | null;
     variantSelections: number | null;
-  };
+  } | null;
 };
 
 export type ProductsData = ProductPeriod & {
@@ -349,7 +349,7 @@ export type ProductsData = ProductPeriod & {
     availableUnits: number | null;
     inStockVariants: number | null;
     outOfStockVariants: number | null;
-  };
+  } | null;
   comparison: ProductPeriod | null;
 };
 export type PaymentsPeriod = {

@@ -102,7 +102,7 @@ export function resolveReportCoverage(
         "This period ends before analytics activation.",
       ),
     };
-  if (dataset.financialSource !== "warehouse")
+  if (!liveOnly && dataset.financialSource !== "warehouse")
     return {
       kind: "failure" as const,
       envelope: fail(
