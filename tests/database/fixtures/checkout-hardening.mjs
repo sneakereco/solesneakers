@@ -19,6 +19,7 @@ import { fileURLToPath } from "node:url";
 import { promisify } from "node:util";
 import { Client } from "pg";
 import { runLabel, withLoopbackPublishing } from "./checkout-hardening-docker-relay.mjs";
+import { withPostgrest } from "./checkout-postgrest.mjs";
 
 const run = promisify(execFile);
 export const root = fileURLToPath(new URL("../../../", import.meta.url));
@@ -677,6 +678,47 @@ export function barrier(parties) {
   };
 }
 
+export async function raceAtRowLock(admin, clients, lockRow, action) {
+  const pids = await Promise.all(
+    clients.map(
+      async (c) => (await c.query("select pg_backend_pid() as pid")).rows[0].pid,
+    ),
+  );
+  assert.equal(new Set(pids).size, clients.length);
+  let completed;
+  await admin.query("begin");
+  try {
+    await lockRow(admin);
+    completed = Promise.allSettled(clients.map(action));
+    const until = Date.now() + 5000;
+    while (true) {
+      const {
+        rows: [{ waiting }],
+      } = await admin.query(
+        "select count(*)::int as waiting from unnest($1::int[]) p where cardinality(pg_blocking_pids(p))>0",
+        [pids],
+      );
+      if (waiting === clients.length) break;
+      assert.ok(
+        Date.now() < until,
+        "both independent sessions must reach a PostgreSQL lock",
+      );
+      await new Promise((resolve) => setTimeout(resolve, 10));
+    }
+  } finally {
+    await admin.query("rollback");
+    if (completed) await completed;
+  }
+  return completed;
+}
+
+export function completedValues(results) {
+  return results.map((result) => {
+    if (result.status === "rejected") throw result.reason;
+    return result.value;
+  });
+}
+
 async function seedOwner(client) {
   const owner = (await client.query("select id from public.tenants")).rows[0];
   if (owner) return owner.id;
@@ -885,6 +927,7 @@ async function withAttachedFixture(lease, runTest) {
       seedOrder: (options) => seedOrder(admin, options),
       barrier,
       populated: lease.populated,
+      withPostgrest: (work) => withPostgrest(lease, work),
     });
   } finally {
     await Promise.all(clients.map((client) => client.end()));

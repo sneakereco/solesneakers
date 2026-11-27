@@ -2,6 +2,11 @@
 // Real checkout components and browser validation; only external services are replaced.
 import assert from "node:assert/strict";
 import { readFile, mkdir } from "node:fs/promises";
+import { join } from "node:path";
+const outputDir = join(
+  process.env.CHECKOUT_BROWSER_OUTPUT ?? "test-results",
+  "checkout-ui",
+);
 import { build } from "esbuild";
 import { chromium } from "@playwright/test";
 import postcss from "postcss";
@@ -150,9 +155,9 @@ try {
     await page
       .getByText("Enter a valid card number", { exact: true })
       .waitFor({ state: "hidden" });
-    await mkdir("test-results/checkout-ui", { recursive: true });
+    await mkdir(outputDir, { recursive: true });
     await page.locator('[aria-labelledby="payment-heading"]').screenshot({
-      path: "test-results/checkout-ui/square-error.png",
+      path: join(outputDir, "square-error.png"),
       animations: "disabled",
     });
     await number.fill("4111111111111111");
@@ -175,14 +180,14 @@ try {
     assert.equal((await number.inputValue()).replace(/\s/g, ""), "4111111111111111");
     await page.getByRole("radio", { name: "Afterpay", exact: true }).click();
     await page.locator('[aria-labelledby="payment-heading"]').screenshot({
-      path: "test-results/checkout-ui/afterpay.png",
+      path: join(outputDir, "afterpay.png"),
       animations: "disabled",
     });
     await page.getByRole("radio", { name: "Credit card", exact: true }).click();
     // No payment requests: UI inspection uses only published Sandbox test card data.
-    await mkdir("test-results/checkout-ui", { recursive: true });
+    await mkdir(outputDir, { recursive: true });
     await page.screenshot({
-      path: "test-results/checkout-ui/square-live-desktop.png",
+      path: join(outputDir, "square-live-desktop.png"),
       fullPage: true,
       animations: "disabled",
     });
@@ -191,12 +196,12 @@ try {
       await number.waitFor({ state: "visible" });
     }
     await page.screenshot({
-      path: "test-results/checkout-ui/square-live-mobile.png",
+      path: join(outputDir, "square-live-mobile.png"),
       fullPage: true,
       animations: "disabled",
     });
     await page.locator('[aria-labelledby="payment-heading"]').screenshot({
-      path: "test-results/checkout-ui/square-payment-mobile.png",
+      path: join(outputDir, "square-payment-mobile.png"),
       animations: "disabled",
     });
     assert.deepEqual(errors, []);
@@ -335,15 +340,15 @@ try {
     assert.equal(await page.getByLabel("Address", { exact: true }).count(), 0);
     await page.getByRole("button", { name: "Ship", exact: true }).click();
     assert.equal(await page.evaluate(() => window.checkoutTest.created), 1);
-    await mkdir("test-results/checkout-ui", { recursive: true });
+    await mkdir(outputDir, { recursive: true });
     await page.screenshot({
-      path: "test-results/checkout-ui/desktop.png",
+      path: join(outputDir, "desktop.png"),
       fullPage: true,
       animations: "disabled",
     });
     await page.setViewportSize({ width: 390, height: 844 });
     await page.screenshot({
-      path: "test-results/checkout-ui/mobile.png",
+      path: join(outputDir, "mobile.png"),
       fullPage: true,
       animations: "disabled",
     });

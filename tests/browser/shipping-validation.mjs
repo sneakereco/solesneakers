@@ -5,6 +5,11 @@ import { build } from "esbuild";
 import { chromium } from "@playwright/test";
 import { expect } from "@playwright/test";
 import { readFile, mkdir } from "node:fs/promises";
+import { join } from "node:path";
+const outputDir = join(
+  process.env.CHECKOUT_BROWSER_OUTPUT ?? "test-results",
+  "shipping-validation",
+);
 import postcss from "postcss";
 import tailwindcss from "tailwindcss";
 
@@ -249,10 +254,8 @@ try {
   releaseAddressValidation();
   await page.getByRole("button", { name: "Accept suggested address" }).waitFor();
   reviewMessages.push(await page.getByRole("dialog").innerText());
-  await mkdir("test-results/shipping-validation", { recursive: true });
-  await page
-    .getByRole("dialog")
-    .screenshot({ path: "test-results/shipping-validation/correction.png" });
+  await mkdir(outputDir, { recursive: true });
+  await page.getByRole("dialog").screenshot({ path: join(outputDir, "correction.png") });
   assert.equal(await page.evaluate(() => window.test.tokenized), 0);
   assert.equal(payCalls, 0);
   assert.equal(await page.getByRole("button", { name: "Edit address" }).count(), 0);
@@ -376,7 +379,7 @@ try {
   assert.equal(prepares.at(-1).billingAddress.postalCode, "20001");
   await page
     .getByRole("dialog")
-    .screenshot({ path: "test-results/shipping-validation/express-processing.png" });
+    .screenshot({ path: join(outputDir, "express-processing.png") });
   formattingOnly = true;
   await finishPayment();
   assert.equal(payCalls, 1);

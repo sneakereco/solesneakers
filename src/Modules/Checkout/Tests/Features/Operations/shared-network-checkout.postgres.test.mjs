@@ -4,6 +4,7 @@ import { randomUUID } from "node:crypto";
 import { createRequire } from "node:module";
 import { createInterface } from "node:readline";
 import test from "node:test";
+import { atRequestBarrier } from "./request-barrier.mjs";
 import { withCheckoutDatabase } from "../../../../../../tests/database/fixtures/checkout-hardening.mjs";
 
 const require = createRequire(import.meta.url);
@@ -43,7 +44,13 @@ Object.assign(process.env, {
 async function withRedis(work) {
   const docker = (...args) =>
     execFileSync("docker", args, { encoding: "utf8", timeout: 30000 }).trim();
-  const image = docker("image", "inspect", "--format", "{{.Id}}", "redis:7.4-alpine");
+  const image = docker(
+    "image",
+    "inspect",
+    "--format",
+    "{{.Id}}",
+    "redis@sha256:7f7d30b7fdd09467bac58198a1f166dd69789d348d4fe859cccb20e0cf287fbe",
+  );
   assert.match(image, /^sha256:[a-f0-9]{64}$/);
   const owner = randomUUID(),
     name = "checkout-network-" + owner;
@@ -213,7 +220,7 @@ function localDatabase(sql, session) {
 
 test("twenty verified shoppers sharing a network prepare, pay once and observe their original paid orders", async () => {
   await withCheckoutDatabase(
-    "fresh",
+    process.env.CHECKOUT_LEDGER_MODE ?? "fresh",
     async ({ admin, seedCatalog, seedOrder, connect }) =>
       withRedis(async (redis) => {
         const service = await connect("service_role");
@@ -467,6 +474,34 @@ test("twenty verified shoppers sharing a network prepare, pay once and observe t
             );
             const permit = await issue.json();
             assert.equal(issue.status, 201, JSON.stringify(permit));
+            if (index === 0) {
+              // Bytes persisted by the previous issuer. The old browser sends only
+              // its bearer and source. Its old random key cannot own the new attempt.
+              const legacy = await new PaymentPermitStore(redis).issue({
+                tenantId,
+                orderId,
+                cartHash: (
+                  await admin.query("select cart_hash from orders where id=$1", [orderId])
+                ).rows[0].cart_hash,
+                totalCents: totals.totalCents,
+                method: "card",
+                deviceSessionId,
+                normalizedEmailHash: "f".repeat(64),
+                squareIdempotencyKey: randomUUID(),
+              });
+              const observation = await createDirectPaymentHandler(
+                req("/api/checkout/pay", {
+                  permit: legacy.token,
+                  sourceId: "fixture-legacy",
+                }),
+                { ...createDirectPaymentDependencies("fixture"), ...common },
+              );
+              const observed = await observation.json();
+              assert.equal(observation.status, 202);
+              assert.equal(observed.orderId, orderId);
+              assert.equal(observed.status, "UNKNOWN");
+              assert.equal(counts.pay, 0);
+            }
             const response = await createDirectPaymentHandler(
               req("/api/checkout/pay", {
                 permit: permit.permit,
@@ -497,6 +532,12 @@ test("twenty verified shoppers sharing a network prepare, pay once and observe t
             const paid = await response.json();
             assert.equal(response.status, 202, JSON.stringify(paid));
             assert.equal(paid.status, "COMPLETED", JSON.stringify(paid));
+            if (index === 0)
+              assert.equal(
+                counts.pay,
+                1,
+                "legacy and new permits must result in one dispatch",
+              );
             const status = await GET(req("/api/orders/" + orderId), {
               params: Promise.resolve({ orderId }),
             });
@@ -604,39 +645,35 @@ test("twenty verified shoppers sharing a network prepare, pay once and observe t
               },
             ),
           );
-          const responses = Promise.all(pending);
-          try {
-            await Promise.race([
-              blocked.promise,
-              responses.then(() => {
-                throw Error("pay returned before reaching the refusal barrier");
-              }),
-            ]);
-            const independent = localDatabase(
-              await connect("service_role"),
-              () => session,
-            );
-            const snapshot = await new FinancialProjectionRepository(
-              independent,
-              new Date().toISOString(),
-            ).recordTerminalCapture(first.id, order.squareOrderId, first.id, "card", {
-              kind: "payment",
-              providerId: paymentId,
-              paymentId,
-              orderId: order.orderId,
-              providerVersion: "captured",
-              status: "COMPLETED",
-              amountCents: order.totalCents,
-              currency: "USD",
-              expectedTotalCents: order.totalCents,
-              fulfillmentStatus: "unfulfilled",
-            });
-            assert.equal(snapshot.capturedCents, 1580);
-            assert.equal(snapshot.reviewReason, "square_terminal_capture_conflict");
-          } finally {
-            resume.resolve();
-          }
-          for (const response of await responses) {
+          await atRequestBarrier({
+            arrived: blocked.promise,
+            pending,
+            resume: resume.resolve,
+            inspect: async () => {
+              const independent = localDatabase(
+                await connect("service_role"),
+                () => session,
+              );
+              const snapshot = await new FinancialProjectionRepository(
+                independent,
+                new Date().toISOString(),
+              ).recordTerminalCapture(first.id, order.squareOrderId, first.id, "card", {
+                kind: "payment",
+                providerId: paymentId,
+                paymentId,
+                orderId: order.orderId,
+                providerVersion: "captured",
+                status: "COMPLETED",
+                amountCents: order.totalCents,
+                currency: "USD",
+                expectedTotalCents: order.totalCents,
+                fulfillmentStatus: "unfulfilled",
+              });
+              assert.equal(snapshot.capturedCents, 1580);
+              assert.equal(snapshot.reviewReason, "square_terminal_capture_conflict");
+            },
+          });
+          for (const response of await Promise.all(pending)) {
             const observed = await response.json();
             assert.equal(response.status, 202, JSON.stringify(observed));
             assert.equal(observed.status, "UNKNOWN");

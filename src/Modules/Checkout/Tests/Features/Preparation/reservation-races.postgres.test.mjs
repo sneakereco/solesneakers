@@ -14,7 +14,11 @@ const {
   CheckoutPreparationRepository,
 } = require("../../../Source/Features/Preparation/reservation-repository.ts");
 import { randomUUID } from "node:crypto";
-import { withCheckoutDatabase } from "../../../../../../tests/database/fixtures/checkout-hardening.mjs";
+import {
+  completedValues,
+  raceAtRowLock,
+  withCheckoutDatabase,
+} from "../../../../../../tests/database/fixtures/checkout-hardening.mjs";
 
 test("atomic checkout allocation across independent sessions", async (t) => {
   await withCheckoutDatabase(
@@ -89,6 +93,16 @@ test("atomic checkout allocation across independent sessions", async (t) => {
       const reserve = async (c, r) =>
         (await c.query("select reserve_checkout_inventory_v2($1) decision", [r])).rows[0]
           .decision;
+      const contend = (variant, requests) =>
+        raceAtRowLock(
+          admin,
+          [a, b],
+          (c) =>
+            c.query("select id from product_variants where id=$1 for update", [
+              variant.variantId,
+            ]),
+          (client, index) => reserve(client, requests[index]),
+        );
       const stock = async (i) =>
         (
           await admin.query(
@@ -110,9 +124,7 @@ test("atomic checkout allocation across independent sessions", async (t) => {
               ...req(basket),
               ownerBinding: "guest:" + (index ? "a" : "b").repeat(64),
             }));
-          const results = await Promise.allSettled(
-            requests.map((r, i) => reserve(i ? b : a, r)),
-          );
+          const results = await contend(scarce, requests);
           const loser = results.findIndex((r) => r.status === "rejected");
           assert.equal(results.filter((r) => r.status === "fulfilled").length, 1);
           assert.equal(results[loser].reason.code, "PC409");
@@ -144,10 +156,7 @@ test("atomic checkout allocation across independent sessions", async (t) => {
       await t.test("reversed overlapping baskets lock consistently", async () => {
         const x = await item(),
           y = await item();
-        const res = await Promise.allSettled([
-          reserve(a, req([x, y])),
-          reserve(b, req([y, x])),
-        ]);
+        const res = await contend(x, [req([x, y]), req([y, x])]);
         assert.deepEqual(
           res.map((r) => (r.status === "rejected" ? r.reason.code : r.value.kind)).sort(),
           ["PC409", "reserved"],
@@ -160,7 +169,7 @@ test("atomic checkout allocation across independent sessions", async (t) => {
         async () => {
           const x = await item(),
             r = req([x]);
-          const res = await Promise.all([reserve(a, r), reserve(b, r)]);
+          const res = completedValues(await contend(x, [r, r]));
           assert.deepEqual(res.map((v) => v.reused).sort(), [false, true]);
           assert.equal(res[0].orderId, res[1].orderId);
           const id = res[0].orderId;

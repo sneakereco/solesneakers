@@ -16,10 +16,11 @@ jobs:
   validate:
     # Playwright 1.56.1 supports Ubuntu 24.04 browser dependencies.
     runs-on: ubuntu-24.04
-    timeout-minutes: 20
+    timeout-minutes: 90
     env:
       NEXT_PUBLIC_SITE_URL: http://localhost:3000
-      NEXT_PUBLIC_SUPABASE_URL: https://example.supabase.co
+      NEXT_PUBLIC_SUPABASE_URL: http://127.0.0.1:54321
+      NEXT_TELEMETRY_DISABLED: "1"
       NEXT_PUBLIC_SUPABASE_PUBLISHABLE_KEY: ci-public-key
       SUPABASE_SECRET_KEY: ci-secret-key
       SUPABASE_DB_URL: postgresql://postgres:postgres@127.0.0.1:5432/ci
@@ -66,17 +67,45 @@ jobs:
       - name: Typecheck
         run: npm run typecheck
 
+      - name: Prepare private run diagnostics
+        run: |
+          umask 077
+          cat > "$RUNNER_TEMP/checkout-check" <<'CHECK'
+          #!/usr/bin/env bash
+          set -u
+          umask 077
+          name="$1"
+          shift
+          log="$(mktemp "$RUNNER_TEMP/$name.XXXXXXXX")"
+          "$@" >"$log" 2>&1
+          status=$?
+          printf '%s exit=%d sha256=%s\n' "$name" "$status" "$(sha256sum "$log" | cut -d' ' -f1)"
+          exit "$status"
+          CHECK
+          chmod 700 "$RUNNER_TEMP/checkout-check"
+
       - name: Unit tests
-        run: npm run test:jest:unit -- --runInBand
+        run: '"$RUNNER_TEMP/checkout-check" unit npm run test:jest:unit -- --runInBand'
 
       - name: Integration tests
-        run: npm run test:jest:integration -- --runInBand
+        run: '"$RUNNER_TEMP/checkout-check" integration npm run test:jest:integration -- --runInBand'
 
-      - name: Install browser for measurement tests
-        run: npx playwright install --with-deps chromium
+      - name: Install the locked Playwright Chromium runtime
+        run: ./node_modules/.bin/playwright install --with-deps chromium
+
+      - name: Cache exact fixture images on the ephemeral runner
+        run: |
+          docker pull redis@sha256:7f7d30b7fdd09467bac58198a1f166dd69789d348d4fe859cccb20e0cf287fbe
+          docker pull postgrest/postgrest@sha256:e9490aa503a5fb07d8e8c80da46e5c0c193894e583b59ed9077e74c4101ffae2
+
+      - name: Isolated checkout database gates
+        run: npm run test:checkout:db
+
+      - name: Checkout Chromium gates
+        run: npm run test:checkout:browser
 
       - name: Measurement browser suites
-        run: npm run test:measurement:browser
+        run: '"$RUNNER_TEMP/checkout-check" measurement npm run test:measurement:browser'
 
       - name: Build without deployment credentials
-        run: npx next build
+        run: '"$RUNNER_TEMP/checkout-check" fixture-build ./node_modules/.bin/next build'

@@ -1,12 +1,22 @@
 import assert from "node:assert/strict";
 import test from "node:test";
 import { randomUUID } from "node:crypto";
-import { withCheckoutDatabase } from "../../../../../../tests/database/fixtures/checkout-hardening.mjs";
+import { createRequire } from "node:module";
+import {
+  completedValues,
+  raceAtRowLock,
+  withCheckoutDatabase,
+} from "../../../../../../tests/database/fixtures/checkout-hardening.mjs";
+const require = createRequire(import.meta.url);
+require("tsx/cjs");
+const {
+  readOrderFinancialEvidence,
+} = require("../../../../Orders/Source/Features/OrderStatus/financial-evidence.ts");
 
 test("verified settlement, fulfillment and distinct refund obligations", async (t) => {
   await withCheckoutDatabase(
     process.env.CHECKOUT_LEDGER_MODE ?? "fresh",
-    async ({ admin, connect, seedOrder, seedCatalog, populated }) => {
+    async ({ admin, connect, seedOrder, seedCatalog, populated, withPostgrest }) => {
       const { orderId, userId } = await seedOrder();
       const { variantId, productId } = await seedCatalog({ stock: 1 });
       const paymentId = "payment-" + randomUUID();
@@ -286,7 +296,7 @@ test("verified settlement, fulfillment and distinct refund obligations", async (
             true,
           );
         });
-      await rollbackCase(
+      await t.test(
         "replayed decline preserves later captured order and payment binding",
         async () => {
           const localId = randomUUID(),
@@ -343,12 +353,40 @@ test("verified settlement, fulfillment and distinct refund obligations", async (
               orderId: localId,
               status,
             };
+            if (state === "succeeded") {
+              const refundFirst = await apply(service, {
+                ...fact,
+                kind: "refund",
+                providerId: "before-" + localId,
+                amountCents: 125,
+              });
+              assert.equal(refundFirst.capturedCents, 0);
+              assert.equal(refundFirst.refundedCents, 125);
+              await withPostgrest(async (http) => {
+                const order = (
+                  await admin.query("select * from orders where id=$1", [localId])
+                ).rows[0];
+                assert.deepEqual(
+                  (await readOrderFinancialEvidence(order, http)).financial,
+                  { source: "ledger", snapshot: refundFirst },
+                );
+              });
+            }
             await apply(service, fact);
             replay.push(fact);
           }
           const result = await apply(service, replay[0]);
           assert.equal(result.capturedCents, 1000);
-          assert.equal(result.financialState, "paid");
+          assert.equal(result.financialState, "partially_refunded");
+          await withPostgrest(async (http) => {
+            const order = (
+              await admin.query("select * from orders where id=$1", [localId])
+            ).rows[0];
+            assert.deepEqual((await readOrderFinancialEvidence(order, http)).financial, {
+              source: "ledger",
+              snapshot: result,
+            });
+          });
           assert.equal(
             (
               await service.query(
@@ -440,16 +478,34 @@ test("verified settlement, fulfillment and distinct refund obligations", async (
       });
       const partial = await apply(service, refund("r2", 600));
       assert.equal(partial.financialState, "partially_refunded");
-      const [first, second] = await Promise.all([
-        apply(service, refund("r1", 400)),
-        apply(observer, refund("r1", 400)),
-      ]);
+      const lockedOrder = (operation) =>
+        raceAtRowLock(
+          admin,
+          [service, observer],
+          (c) => c.query("select id from orders where id=$1 for update", [orderId]),
+          operation,
+        );
+      const [first, second] = completedValues(
+        await lockedOrder((c) => apply(c, refund("r1", 400))),
+      );
       assert.equal(first.refundedCents, 1000);
       assert.equal(second.refundedCents, 1000);
       const replay = await apply(observer, { ...initial, providerVersion: "a" });
       assert.equal(replay.financialState, "refunded");
       assert.equal(replay.fulfillmentStatus, "shipped");
       assert.equal(replay.reviewReason, null);
+      await t.test(
+        "the HTTP reader matches distinct refund and capture facts on the shipped order",
+        async () => {
+          const order = (await admin.query("select * from orders where id=$1", [orderId]))
+            .rows[0];
+          await withPostgrest(async (http) => {
+            const result = await readOrderFinancialEvidence(order, http);
+            assert.deepEqual(result.financial, { source: "ledger", snapshot: replay });
+            assert.equal(result.order.refundCount[0].count, 2);
+          });
+        },
+      );
       const order = (
         await observer.query(
           "select status,refund_amount,fulfillment_status from public.orders where id=$1",
@@ -483,8 +539,8 @@ test("verified settlement, fulfillment and distinct refund obligations", async (
         updatedAt: receiveAt,
         dueAt: null,
       };
-      await Promise.all(
-        [service, observer].map((client) =>
+      completedValues(
+        await lockedOrder((client) =>
           client.query("select public.apply_checkout_dispute_receipt($1,$2,$3)", [
             disputeEvent,
             orderId,
@@ -529,6 +585,41 @@ test("verified settlement, fulfillment and distinct refund obligations", async (
         { kind: "order_confirmation", n: 1 },
         { kind: "refund_confirmation", n: 2 },
       ]);
+      await t.test(
+        "actual counted HTTP relations detect truncation and preserve legacy-only refund floors",
+        async () => {
+          await withPostgrest(async (http) => {
+            const order = (
+              await admin.query("select * from orders where id=$1", [orderId])
+            ).rows[0];
+            for (let i = 0; i < 9; i++)
+              await apply(service, { ...initial, providerVersion: "bounded-" + i });
+            const partial = await readOrderFinancialEvidence(order, http);
+            assert.equal(partial.order.facts.length, 8);
+            assert.ok(partial.order.factCount[0].count > 8);
+            assert.deepEqual(partial.financial, { source: "unavailable" });
+            const { orderId: legacy } = await seedOrder({ status: "refunded" });
+            const historical = (
+              await admin.query(
+                "update orders set checkout_attempt_guarded=false,refund_amount=1000 where id=$1 returning *",
+                [legacy],
+              )
+            ).rows[0];
+            const floor = await readOrderFinancialEvidence(historical, http);
+            assert.equal(floor.financial.snapshot.refundedCents, 1000);
+            const guarded = (
+              await admin.query(
+                "insert into orders(tenant_id,user_id,status,subtotal,shipping,total,currency,fulfillment,expires_at,refund_amount,checkout_attempt_guarded) select tenant_id,user_id,status,subtotal,shipping,total,currency,fulfillment,expires_at,refund_amount,true from orders where id=$1 returning *",
+                [legacy],
+              )
+            ).rows[0];
+            assert.deepEqual(
+              (await readOrderFinancialEvidence(guarded, http)).financial,
+              { source: "unavailable" },
+            );
+          });
+        },
+      );
     },
   );
 });

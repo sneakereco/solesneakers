@@ -38,7 +38,8 @@ const callables = [
 ];
 
 test("checkout authority on the replayed schema", async (t) => {
-  await withCheckoutDatabase(mode, async ({ admin, connect, seedOrder }) => {
+  await withCheckoutDatabase(mode, async (fixture) => {
+    const { admin, connect, seedOrder, withPostgrest } = fixture;
     const owned = await seedOrder({ status: "paid" });
     const other = await seedOrder();
     const customer = await connect("authenticated");
@@ -276,6 +277,48 @@ test("checkout authority on the replayed schema", async (t) => {
           );
           assert.deepEqual(rows, [{ type: status, created_by: other.userId }]);
         }
+      },
+    );
+    await t.test(
+      "authorized staff adapters record pickup and shipping through the staged RPC grants",
+      async () => {
+        const { createRequire } = await import("node:module");
+        const require = createRequire(import.meta.url);
+        require("tsx/cjs");
+        const {
+          writeTrustedOrder,
+        } = require("../../../Source/Features/TrustedMutations/trusted-order-write.ts");
+        const {
+          OrderWriteRepository,
+        } = require("../../../Source/Features/TrustedMutations/order-write-repository.ts");
+        await withPostgrest(async (http) => {
+          for (const action of ["fulfill", "pickup"]) {
+            const { orderId } = await seedOrder({ status: "paid" });
+            if (action === "fulfill")
+              await admin.query(
+                "update orders set fulfillment='ship',fulfillment_status='ready_to_ship' where id=$1",
+                [orderId],
+              );
+            const result = await writeTrustedOrder(
+              { orderId, action },
+              { userId: other.userId, role: "admin" },
+              new OrderWriteRepository(http),
+            );
+            assert.equal(
+              result.order.fulfillment_status,
+              action === "pickup" ? "picked_up" : "shipped",
+            );
+            assert.deepEqual(
+              (
+                await admin.query(
+                  "select created_by from order_events where order_id=$1",
+                  [orderId],
+                )
+              ).rows,
+              [{ created_by: other.userId }],
+            );
+          }
+        });
       },
     );
   });

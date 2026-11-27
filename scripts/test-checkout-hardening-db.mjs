@@ -4,6 +4,7 @@ import { execFile, spawn } from "node:child_process";
 import { realpath } from "node:fs/promises";
 import { isAbsolute, relative, resolve, sep } from "node:path";
 import { promisify } from "node:util";
+import { createCheckoutGate } from "../tests/fixtures/checkout-gate.mjs";
 import {
   localDockerSocket,
   root,
@@ -19,6 +20,8 @@ function parseArgs(args) {
     throw new Error("Database targets are allocated by the harness");
   }
   if (args.length === 1 && args[0] === "--self-test") return { selfTest: true };
+  if (["--acceptance", "--acceptance --break-stock"].includes(args.join(" ")))
+    return { acceptance: true, brokenStock: args.length === 2 };
   let mode = "fresh";
   let testPath;
   while (args.length) {
@@ -75,7 +78,7 @@ function scrub(text) {
 
 async function nodeTest(file, fixture, extraEnv = {}) {
   return new Promise((resolveTest, reject) => {
-    const child = spawn(process.execPath, ["--test", file], {
+    const child = spawn(process.execPath, ["--test", "--test-reporter=tap", file], {
       cwd: root,
       env: {
         ...process.env,
@@ -225,15 +228,71 @@ async function selfTest() {
 
 try {
   const args = parseArgs(process.argv.slice(2));
-  if (args.selfTest) {
+  if (args.acceptance) {
+    const gate = await createCheckoutGate("database");
+    const operations = "src/Modules/Checkout/Tests/Features/";
+    const stock = "tests/database/checkout-hardening-acceptance.test.mjs";
+    const run = (mode, file) => [
+      "scripts/test-checkout-hardening-db.mjs",
+      "--mode",
+      mode,
+      "--test",
+      file,
+    ];
+    await gate("owned-runtime", [
+      "--input-type=module",
+      "-e",
+      'import {localDockerSocket} from "./tests/database/fixtures/checkout-hardening.mjs"; import {execFileSync} from "node:child_process"; await localDockerSocket(); execFileSync("docker",["version","--format","{{.Server.Version}}"],{timeout:10000});',
+    ]);
+    await gate("stock-negative", run("fresh", stock), {
+      env: { CHECKOUT_GATE_FAULT: "stock" },
+      expectedFailure: "stock became negative in checkout fixture",
+      propagateFailure: args.brokenStock,
+    });
+    await gate("barrier-and-relay", [
+      "--test",
+      "src/Modules/Checkout/Tests/Features/Operations/request-barrier.test.mjs",
+      "tests/database/checkout-hardening-docker-relay.test.mjs",
+    ]);
+    for (const mode of ["fresh", "populated"]) {
+      const env = {
+        CHECKOUT_HARDENING_SELF_TEST_MODE: mode,
+        CHECKOUT_AUTHORITY_MODE: mode,
+        CHECKOUT_LEDGER_MODE: mode,
+        CHECKOUT_WORK_STORAGE_MODE: mode,
+      };
+      for (const [name, file] of [
+        ["fixture", "tests/database/checkout-hardening-fixture.test.mjs"],
+        ["stock", stock],
+        [
+          "authority",
+          "src/Modules/Orders/Tests/Features/TrustedMutations/authority.postgres.test.mjs",
+        ],
+        ...[
+          "Payments/attempt-ledger",
+          "Payments/financial-projection",
+          "Preparation/reservation-races",
+          "Recovery/work-storage",
+          "Recovery/recovery-fairness",
+          "Recovery/expiry-races",
+          "Operations/checkout-controls",
+          "Operations/checkout-health",
+          "Operations/shared-network-checkout",
+        ].map((p) => [p.split("/")[1], operations + p + ".postgres.test.mjs"]),
+      ])
+        await gate(mode + "-" + name, run(mode, file), { env });
+    }
+  } else if (args.selfTest) {
     await selfTest();
   } else {
     const file = await resolveTestPath(args.testPath);
+    let result;
     await withCheckoutProject(args.mode, async (fixture) => {
       report(fixture);
-      checkTestResult(await nodeTest(file, fixture));
+      result = await nodeTest(file, fixture);
     });
     console.log("Verified owned checkout project cleanup");
+    checkTestResult(result);
   }
 } catch (error) {
   console.error(scrub(error.message));

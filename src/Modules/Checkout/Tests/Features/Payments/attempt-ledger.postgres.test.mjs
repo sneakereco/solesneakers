@@ -1,13 +1,21 @@
 import assert from "node:assert/strict";
 import { randomUUID } from "node:crypto";
 import test from "node:test";
-import { dispatchPayment } from "../../../Source/Features/Payments/dispatch-payment.ts";
-import { withCheckoutDatabase } from "../../../../../../tests/database/fixtures/checkout-hardening.mjs";
+import { createRequire } from "node:module";
+import {
+  completedValues,
+  raceAtRowLock,
+  withCheckoutDatabase,
+} from "../../../../../../tests/database/fixtures/checkout-hardening.mjs";
+const require = createRequire(import.meta.url);
+require("tsx/cjs");
+const {
+  dispatchPayment,
+} = require("../../../Source/Features/Payments/dispatch-payment.ts");
 
 const digest = "a".repeat(64);
 const source = "b".repeat(64);
 const other = "c".repeat(64);
-const mode = process.env.CHECKOUT_LEDGER_MODE ?? "fresh";
 async function rpc(client, call, args) {
   return (await client.query("select public." + call + " as result", args)).rows[0]
     .result;
@@ -46,8 +54,8 @@ function payment(order, paymentId, status) {
 
 test("one durable payment attempt per order", async (t) => {
   await withCheckoutDatabase(
-    mode,
-    async ({ admin, connect, seedOrder, seedCatalog, barrier }) => {
+    process.env.CHECKOUT_LEDGER_MODE ?? "fresh",
+    async ({ admin, connect, seedOrder, seedCatalog }) => {
       const svc = await connect("service_role");
       async function order({ guarded = true, guest = false } = {}) {
         const { orderId, userId } = await seedOrder(guest ? { userId: null } : {});
@@ -82,43 +90,13 @@ test("one durable payment attempt per order", async (t) => {
           connect("service_role"),
           connect("service_role"),
         ]);
-        const pids = await Promise.all(
-          clients.map(
-            async (c) => (await c.query("select pg_backend_pid() as pid")).rows[0].pid,
-          ),
+        const results = await raceAtRowLock(
+          admin,
+          clients,
+          (c) => c.query("select id from orders where id=$1 for update", [orderId]),
+          action,
         );
-        assert.notEqual(...pids);
-        await admin.query("begin");
-        await admin.query("select id from public.orders where id=$1 for update", [
-          orderId,
-        ]);
-        const start = barrier(2);
-        const pending = clients.map(async (c) => {
-          await start.wait();
-          return action(c);
-        });
-        const completed = Promise.allSettled(pending);
-        start.release();
-        try {
-          const deadline = Date.now() + 5000;
-          let waiting = 0;
-          do {
-            waiting = (
-              await admin.query(
-                "select count(*)::int as n from unnest($1::int[]) p where cardinality(pg_blocking_pids(p))>0",
-                [pids],
-              )
-            ).rows[0].n;
-            if (waiting < 2) await new Promise((resolve) => setTimeout(resolve, 10));
-          } while (waiting < 2 && Date.now() < deadline);
-          assert.equal(waiting, 2, "both database sessions must reach the order lock");
-        } finally {
-          await admin.query("rollback");
-        }
-        return (await completed).map((result) => {
-          if (result.status === "rejected") throw result.reason;
-          return result.value;
-        });
+        return completedValues(results);
       }
       await t.test(
         "guarded owner identity is fixed from preparation through observation",

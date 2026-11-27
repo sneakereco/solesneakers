@@ -10,11 +10,15 @@ const {
   runCheckoutRecovery,
 } = require("../../../Source/Features/Recovery/recovery-worker.ts");
 import { randomUUID } from "node:crypto";
-import { withCheckoutDatabase } from "../../../../../../tests/database/fixtures/checkout-hardening.mjs";
+import {
+  completedValues,
+  raceAtRowLock,
+  withCheckoutDatabase,
+} from "../../../../../../tests/database/fixtures/checkout-hardening.mjs";
 test("expiry fences dispatch and conserves stock across independently committed financial decisions", async (t) => {
   await withCheckoutDatabase(
     process.env.CHECKOUT_LEDGER_MODE ?? "fresh",
-    async ({ admin, connect, seedOrder, seedCatalog }) => {
+    async ({ admin, connect, seedOrder, seedCatalog, withPostgrest }) => {
       const a = await connect("service_role"),
         b = await connect("service_role");
       const rpc = async (c, sql, args) =>
@@ -567,6 +571,13 @@ test("expiry fences dispatch and conserves stock across independently committed 
               from: () => read,
             });
             assert.deepEqual(financial, { source: "ledger", snapshot: snap });
+            await withPostgrest(async (http) => {
+              const actual = await readOrderFinancialEvidence(order, http);
+              assert.deepEqual(actual.financial, { source: "ledger", snapshot: snap });
+              assert.equal(actual.order.attemptCount[0].count, allAttempts.length);
+              assert.equal(actual.order.factCount[0].count, observations.length);
+              assert.equal(actual.order.refundCount[0].count, refunds.length);
+            });
             assert.equal(
               await readPurchasedLines(
                 {
@@ -750,7 +761,14 @@ test("expiry fences dispatch and conserves stock across independently committed 
             await rpc(a, "finish_checkout_expiry($1,$2)", [o.id, "foreign-square"]),
             "released",
           );
-          const results = await Promise.all([finish(a, o), finish(b, o)]);
+          const results = completedValues(
+            await raceAtRowLock(
+              admin,
+              [a, b],
+              (c) => c.query("select id from orders where id=$1 for update", [o.id]),
+              (c) => finish(c, o),
+            ),
+          );
           assert.deepEqual(results.sort(), ["released", "unchanged"]);
           assert.equal(await stock(o), 1);
         },
