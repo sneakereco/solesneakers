@@ -19,7 +19,7 @@ export function useAdminOrderQueue<Order, Tab extends { key: string }>(
   page: number,
   pageSize: number,
 ) {
-  const { user, role, isIdentityCurrent } = useSession();
+  const { user, role, isLoading, isSessionUnavailable, isIdentityCurrent } = useSession();
   const [accessRevision, recheckAccess] = useState(0);
   const userId = user?.id ?? null;
   const owner = useMemo(
@@ -105,17 +105,20 @@ export function useAdminOrderQueue<Order, Tab extends { key: string }>(
       active.current = null;
     };
   }, [scope, writable]);
-  const isCurrent = () =>
-    active.current?.scope === scope &&
+  const ownerAvailable = !denied && !isLoading && !isSessionUnavailable;
+  const isOwnerCurrent = () =>
+    active.current?.scope.owner === owner &&
     revoked.current !== owner &&
     !denied &&
     isIdentityCurrent(userId);
+  const isCurrent = () => active.current?.scope === scope && isOwnerCurrent();
   const access: QueueAccess = {
     writable,
     isCurrent,
     canCommand: () => isCurrent() && active.current?.writable === true,
   };
   return {
+    ownerAccess: { scope: owner, available: ownerAvailable, isCurrent: isOwnerCurrent },
     selectionScope: denied ? null : scope,
     access,
     list: retained && list.error ? { ...list, error: list.error + " " + showing } : list,

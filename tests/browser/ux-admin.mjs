@@ -34,13 +34,14 @@ if(location.search==="?hydrate") {
       {
         name: "fixture-next",
         setup(build) {
-          // Hold a previously admitted label callback at the action boundary.
+          // Hold a Shipping callback at the action boundary to exercise stale admission.
           build.onResolve({ filter: /^@\/components\/ui\/useAsyncAction$/ }, (args) =>
-            args.importer.endsWith("CreateLabelForm.tsx")
-              ? { path: args.path, namespace: "label-command" }
+            args.importer.endsWith("CreateLabelForm.tsx") ||
+            /[\\/]app[\\/]admin[\\/]shipping[\\/]page\.tsx$/.test(args.importer)
+              ? { path: args.path, namespace: "shipping-command" }
               : null,
           );
-          build.onLoad({ filter: /.*/, namespace: "label-command" }, () => ({
+          build.onLoad({ filter: /.*/, namespace: "shipping-command" }, () => ({
             loader: "js",
             resolveDir: process.cwd(),
             contents: `
@@ -48,9 +49,9 @@ if(location.search==="?hydrate") {
             export function useAsyncAction(){
               const action=useRealAction();
               return {...action,run:operation=>action.run(()=>{
-                if(!window.holdLabelCommand)return operation();
-                window.holdLabelCommand=false;
-                return new Promise((resolve,reject)=>{window.releaseLabelCommand=()=>operation().then(resolve,reject);});
+                if(!window.holdShippingCommand)return operation();
+                window.holdShippingCommand=false;
+                return new Promise((resolve,reject)=>{window.releaseShippingCommand=()=>operation().then(resolve,reject);});
               })};
             }
           `,
@@ -135,6 +136,116 @@ function deferred() {
   return { promise, release };
 }
 try {
+  for (const mode of ["list 503", "held list retry", "count denial", "owner change"]) {
+    await check("origin guard " + mode, async (page) => {
+      const gate = deferred(),
+        replacement = deferred();
+      const address = {
+        name: "Private origin",
+        company: "Store",
+        line1: "12 Fixture Street",
+        city: "Columbia",
+        state: "SC",
+        postal_code: "29201",
+        country: "US",
+      };
+      let reads = 0,
+        changed = false;
+      const writes = [];
+      await page.route("**/api/admin/**", async (route) => {
+        const url = new URL(route.request().url());
+        if (url.pathname.endsWith("/origin")) {
+          if (route.request().method() === "POST") {
+            const draft = route.request().postDataJSON();
+            writes.push(draft);
+            return route.fulfill({ json: { origin: draft } });
+          }
+          if (changed) await replacement.promise;
+          return route.fulfill({
+            json: {
+              origin: changed ? { ...address, name: "Replacement owner" } : address,
+            },
+          });
+        }
+        if (url.pathname.endsWith("/defaults"))
+          return route.fulfill({ json: { defaults: [] } });
+        if (url.searchParams.get("limit") === "1") {
+          if (mode === "count denial") {
+            await gate.promise;
+            return route.fulfill({ status: 403, json: {} });
+          }
+          return route.fulfill({ json: { count: 0 } });
+        }
+        reads++;
+        if (mode === "held list retry" && reads > 1) await gate.promise;
+        if (mode === "list 503" || mode === "held list retry")
+          return route.fulfill({ status: 503, json: {} });
+        return route.fulfill({ json: { count: 0, orders: [] } });
+      });
+      try {
+        await openUxHarness(page, bundle, "https://ux.test/shipping");
+        if (mode === "list 503" || mode === "held list retry") {
+          await expect(
+            page.getByText("Unable to load orders.", { exact: true }),
+          ).toBeVisible();
+          if (mode === "held list retry") {
+            await page.getByRole("button", { name: "Retry", exact: true }).click();
+            await expect.poll(() => reads).toBe(2);
+          }
+        }
+        const launcher = page.getByRole("button", {
+          name: "Change origin address",
+          exact: true,
+        });
+        await expect(launcher).toBeEnabled();
+        await launcher.click();
+        const dialog = page.getByRole("dialog", { name: "Change origin address" });
+        const name = dialog.getByLabel("Contact name");
+        await expect(name).toHaveValue("Private origin");
+        await name.fill("Updated fixture");
+        const invalidates = mode === "count denial" || mode === "owner change";
+        if (invalidates) await page.evaluate(() => (window.holdShippingCommand = true));
+        await dialog.getByRole("button", { name: "Save origin" }).click();
+        if (invalidates) {
+          await page.waitForFunction(() => !!window.releaseShippingCommand);
+          if (mode === "count denial") {
+            gate.release();
+            await expect(
+              page
+                .getByText("Admin access could not be verified.", { exact: true })
+                .first(),
+            ).toBeAttached();
+          } else {
+            changed = true;
+            await page.evaluate(() => window.changeStaff("second"));
+          }
+          await expect(dialog).toHaveCount(0);
+          await expect(launcher).toBeDisabled();
+          await expect(page.locator("[data-admin-toolbar]")).not.toContainText(
+            "Private origin",
+          );
+          await page.evaluate(() => window.releaseShippingCommand());
+          expect(writes).toHaveLength(0);
+          if (changed) {
+            replacement.release();
+            await expect(launcher).toBeEnabled();
+            await launcher.click();
+            await expect(name).toHaveValue("Replacement owner");
+          }
+        } else {
+          await expect(dialog).toHaveCount(0);
+          await expect(page.locator("[data-admin-toolbar]")).toContainText(
+            "Updated fixture",
+          );
+          expect(writes).toHaveLength(1);
+          expect(writes[0].name).toBe("Updated fixture");
+        }
+      } finally {
+        gate.release();
+        replacement.release();
+      }
+    });
+  }
   for (const action of [
     "rates",
     "purchase",
@@ -237,14 +348,14 @@ try {
       );
       const get = dialog.getByRole("button", { name: /get shipping rates/i });
       if (action !== "rates") await get.click();
-      if (!submitted) await page.evaluate(() => (window.holdLabelCommand = true));
+      if (!submitted) await page.evaluate(() => (window.holdShippingCommand = true));
       await (
         action === "rates"
           ? get
           : dialog.getByRole("button", { name: "Purchase shipping label" })
       ).click();
       if (submitted) await expect.poll(() => buys).toBe(1);
-      else await page.waitForFunction(() => !!window.releaseLabelCommand);
+      else await page.waitForFunction(() => !!window.releaseShippingCommand);
       try {
         counts.release();
         await expect(
@@ -252,7 +363,7 @@ try {
         ).toBeAttached();
         if (!submitted)
           await page.evaluate(() => {
-            void window.releaseLabelCommand();
+            void window.releaseShippingCommand();
           });
         else
           expect(

@@ -9,7 +9,7 @@ import { fetchJsonWithDeadline } from "@/lib/http/request-deadline";
 
 import Image from "next/image";
 
-import { Fragment, useEffect, useMemo, useRef, useState } from "react";
+import { Fragment, useEffect, useLayoutEffect, useMemo, useRef, useState } from "react";
 import { ChevronDown, ExternalLink, AlertCircle } from "lucide-react";
 
 import { AdminPage, AdminPageHeader } from "@/components/admin/AdminPage";
@@ -279,7 +279,6 @@ const loadSetup = async (signal: AbortSignal) => {
   };
 };
 export default function ShippingPage() {
-  const setup = useAdminRead(loadSetup, "shipping configuration");
   const fulfill = useAsyncAction();
   const originAction = useAsyncAction();
   const activeTabButton = useRef<HTMLButtonElement>(null);
@@ -289,7 +288,6 @@ export default function ShippingPage() {
   const [activeTab, setActiveTab] = useState<TabKey>("label");
   const [expandedItems, setExpandedItems] = useState<Record<string, boolean>>({});
   const [expandedDetails, setExpandedDetails] = useState<Record<string, boolean>>({});
-  const shippingDefaults = setup.data?.defaults;
   const [pageByTab, setPageByTab] = useState<Record<TabKey, number>>({
     label: 1,
     ready: 1,
@@ -307,15 +305,14 @@ export default function ShippingPage() {
   const [originMessage, setOriginMessage] = useState("");
   const [originError, setOriginError] = useState("");
   const [originFieldErrors, setOriginFieldErrors] = useState<OriginErrors>({});
-  const [savingOrigin, setSavingOrigin] = useState(false);
 
   const [labelOrder, setLabelOrder] = useState<ShippingOrder | null>(null);
 
   const [savedOrigin, setSavedOrigin] = useState<ShippingOrigin | null>(null);
-  const originAddress = savedOrigin ?? setup.data?.origin ?? null;
   const currentPage = pageByTab[activeTab];
   const {
     selectionScope,
+    ownerAccess,
     access,
     list,
     listLabel,
@@ -331,6 +328,35 @@ export default function ShippingPage() {
     currentPage,
     PAGE_SIZE,
   );
+  const setup = useAdminRead(loadSetup, "shipping configuration", ownerAccess.scope);
+  const configuration = ownerAccess.available ? setup.data : undefined;
+  const originScope = useMemo(
+    () => (configuration ? { owner: ownerAccess.scope, configuration } : null),
+    [ownerAccess.scope, configuration],
+  );
+  const shippingDefaults = configuration?.defaults;
+  const originAddress = configuration ? (savedOrigin ?? configuration.origin) : null;
+  const activeOriginScope = useRef(originScope);
+  useLayoutEffect(() => {
+    activeOriginScope.current = originScope;
+    return () => {
+      activeOriginScope.current = null;
+    };
+  }, [originScope]);
+  const canEditOrigin = () =>
+    originScope !== null &&
+    activeOriginScope.current === originScope &&
+    ownerAccess.isCurrent();
+  const [previousOriginScope, setPreviousOriginScope] = useState(originScope);
+  if (previousOriginScope !== originScope) {
+    setPreviousOriginScope(originScope);
+    setOriginModalOpen(false);
+    setOriginAddress(null);
+    setSavedOrigin(null);
+    setOriginError("");
+    setOriginMessage("");
+    setOriginFieldErrors({});
+  }
   const [previousScope, setPreviousScope] = useState(selectionScope);
   if (previousScope !== selectionScope) {
     setPreviousScope(selectionScope);
@@ -422,6 +448,7 @@ export default function ShippingPage() {
   };
 
   const handleOriginChange = (field: keyof ShippingOrigin, value: string) => {
+    if (!canEditOrigin()) return;
     setOriginAddress((prev) => ({ ...(prev ?? EMPTY_ORIGIN), [field]: value }));
     if (originFieldErrors[field]) {
       setOriginFieldErrors((prev) => {
@@ -436,8 +463,8 @@ export default function ShippingPage() {
   };
 
   const handleSaveOrigin = async () => {
+    if (!canEditOrigin()) return;
     const payload = originDraft ?? EMPTY_ORIGIN;
-    setSavingOrigin(true);
     setOriginError("");
     setOriginMessage("");
     setOriginFieldErrors({});
@@ -446,7 +473,6 @@ export default function ShippingPage() {
     if (Object.keys(validationErrors).length > 0) {
       setOriginFieldErrors(validationErrors);
       setOriginError("Please fix the highlighted fields.");
-      setSavingOrigin(false);
       return;
     }
 
@@ -460,6 +486,7 @@ export default function ShippingPage() {
         headers: { "Content-Type": "application/json" },
         body: JSON.stringify(payload),
       });
+      if (!canEditOrigin()) return;
       if (!response.ok) {
         const fieldErrors = extractOriginErrors(data?.issues);
         if (Object.keys(fieldErrors).length > 0) {
@@ -473,10 +500,9 @@ export default function ShippingPage() {
       setOriginMessage("Origin address updated.");
       setOriginModalOpen(false);
     } catch (error: unknown) {
+      if (!canEditOrigin()) return;
       const message = error instanceof Error ? error.message : "Failed to save origin.";
       setOriginError(message);
-    } finally {
-      setSavingOrigin(false);
     }
   };
 
@@ -1066,14 +1092,14 @@ export default function ShippingPage() {
       >
         <div className="text-gray-400">
           <span className="text-gray-500">Origin:</span>{" "}
-          {setup.data ? originLine || "Not set" : "—"}
+          {configuration ? originLine || "Not set" : "—"}
         </div>
         <button
           type="button"
           aria-haspopup="dialog"
-          disabled={!setup.data}
+          disabled={!originScope}
           onClick={(event) => {
-            if (!access.canCommand()) return;
+            if (!canEditOrigin()) return;
             setModalInvoker(event.currentTarget);
             setOriginError("");
             setOriginMessage("");
@@ -1204,9 +1230,9 @@ export default function ShippingPage() {
         originError={originError}
         originMessage={originMessage}
         originFieldErrors={originFieldErrors}
-        savingOrigin={savingOrigin}
+        savingOrigin={originAction.pending}
         onClose={() => {
-          if (!savingOrigin) setOriginModalOpen(false);
+          if (!originAction.pending) setOriginModalOpen(false);
         }}
         onChange={handleOriginChange}
         onSave={() => {
