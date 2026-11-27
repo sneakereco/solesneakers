@@ -2,6 +2,7 @@ import assert from "node:assert/strict";
 import { test } from "node:test";
 import {
   checkAndSyncDeployment,
+  checkDeployment,
   pairingFingerprint,
 } from "../../scripts/check-analytics-deployment.mjs";
 
@@ -21,6 +22,9 @@ const privateEnv = {
   POSTHOG_QUERY_API_KEY: "fixture-query-key",
   ANALYTICS_IDENTITY_SECRET: 'fixture-"identity"-key',
 };
+const protectedEnv = Object.fromEntries(
+  Object.keys(privateEnv).map((key) => [key, "[SENSITIVE]"]),
+);
 const env = {
   ...publicEnv,
   ...privateEnv,
@@ -55,22 +59,31 @@ function provider(rows = records, write = (row) => Response.json(row)) {
   return { fetch, calls };
 }
 
-test("writes exact missing Doppler values to existing production Secret IDs", async () => {
-  const { fetch, calls } = provider();
-  await checkAndSyncDeployment("production", env, publicEnv, { project, fetch });
-  assert.equal(calls.length, 5);
-  assert.equal(calls[0].url.pathname, "/v10/projects/" + project.projectId + "/env");
-  assert.equal(calls[0].url.searchParams.get("decrypt"), "false");
-  for (const [index, row] of records.entries()) {
-    const { url, init } = calls[index + 1];
-    assert.equal(url.origin, "https://api.vercel.com");
-    assert.equal(url.pathname, "/v9/projects/" + project.projectId + "/env/" + row.id);
-    assert.equal(url.searchParams.get("teamId"), project.orgId);
-    assert.equal(init.method, "PATCH");
-    assert.equal(init.redirect, "error");
-    assert.deepEqual(JSON.parse(init.body), { value: privateEnv[row.key] });
-    assert.equal(url.href.includes(privateEnv[row.key]), false);
-  }
+for (const [name, deployed] of [
+  ["omitted", publicEnv],
+  ["redacted", { ...publicEnv, ...protectedEnv }],
+]) {
+  test(`writes exact Doppler values to existing production Secret IDs for ${name} private values`, async () => {
+    const { fetch, calls } = provider();
+    await checkAndSyncDeployment("production", env, deployed, { project, fetch });
+    assert.equal(calls.length, 5);
+    assert.equal(calls[0].url.pathname, "/v10/projects/" + project.projectId + "/env");
+    assert.equal(calls[0].url.searchParams.get("decrypt"), "false");
+    for (const [index, row] of records.entries()) {
+      const { url, init } = calls[index + 1];
+      assert.equal(url.origin, "https://api.vercel.com");
+      assert.equal(url.pathname, "/v9/projects/" + project.projectId + "/env/" + row.id);
+      assert.equal(url.searchParams.get("teamId"), project.orgId);
+      assert.equal(init.method, "PATCH");
+      assert.equal(init.redirect, "error");
+      assert.deepEqual(JSON.parse(init.body), { value: privateEnv[row.key] });
+      assert.equal(url.href.includes(privateEnv[row.key]), false);
+    }
+  });
+}
+
+test("accepts Vercel redactions for private settings in the pairing check", () => {
+  checkDeployment("production", env, { ...publicEnv, ...protectedEnv });
 });
 
 test("keeps readable and disabled configurations on the existing verification path", async () => {
@@ -101,6 +114,24 @@ for (const [name, candidateEnv, deployed, linked] of [
     "public mismatch",
     env,
     { ...publicEnv, NEXT_PUBLIC_POSTHOG_HOST: "https://wrong.example.com" },
+    project,
+  ],
+  [
+    "public redaction",
+    env,
+    { ...publicEnv, ...protectedEnv, NEXT_PUBLIC_POSTHOG_PROJECT_KEY: "[SENSITIVE]" },
+    project,
+  ],
+  [
+    "readable private mismatch alongside redactions",
+    env,
+    { ...publicEnv, ...protectedEnv, POSTHOG_QUERY_API_KEY: "wrong" },
+    project,
+  ],
+  [
+    "redacted Doppler value",
+    { ...env, POSTHOG_QUERY_API_KEY: "[SENSITIVE]" },
+    publicEnv,
     project,
   ],
   ["wrong linked project", env, publicEnv, { ...project, projectId: "prj_wrong" }],

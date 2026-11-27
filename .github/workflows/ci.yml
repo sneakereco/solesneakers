@@ -107,6 +107,7 @@ jobs:
           tests/operations/admin-analytics-observer-clock.test.mjs tests/operations/checkout-validation-scope.test.mjs
           tests/fixtures/checkout-gate.test.mjs tests/operations/ci-parallel-validation.test.mjs
           tests/operations/checkout-browser-runner.test.mjs
+          tests/operations/analytics-runtime-verification.test.mjs
       - name: Build without deployment credentials
         run: '"$RUNNER_TEMP/checkout-check" fixture-build ./node_modules/.bin/next build'
 

@@ -8,6 +8,7 @@ import { CheckoutDependencyLeaseRepository } from "@/Modules/Checkout/Source/Fea
 import { SquareFinancialInquiry } from "@/Modules/Checkout/Source/Features/Payments/square-financial-inquiry";
 import type { AdminSupabaseClient } from "@/lib/supabase/service-role";
 import { scheduleCheckoutNotifications } from "@/lib/checkout/checkout-notification-scheduler";
+import { log, logError } from "@/lib/utils/log";
 import {
   createSquareShippingSyncDependencies,
   synchronizeSquareShippingAddress,
@@ -37,6 +38,51 @@ export function createSquareFinancialInquiry(
     },
     !signal,
   );
+}
+
+// Dispatch already committed a durable recovery job. Prompt the same verified
+// inquiry after the response so an accepted payment need not wait for cron.
+export function promptSquareAttempt(
+  db: AdminSupabaseClient,
+  orderId: string,
+  attemptId: string,
+): void {
+  const reportFailure = (error: unknown) =>
+    logError(error, {
+      layer: "job",
+      route: "/api/checkout/pay",
+      orderId,
+      attemptId,
+      event: "square_payment_reconciliation_failed",
+    });
+  try {
+    after(async () => {
+      try {
+        const result = await withDependency(
+          new CheckoutDependencyLeaseRepository(db),
+          "square",
+          Date.now() + 10000,
+          (signal) =>
+            createSquareFinancialInquiry(db, signal).recoverAttempt(orderId, attemptId),
+        );
+        log({
+          level: result?.value === "done" ? "info" : "warn",
+          layer: "job",
+          message: "checkout_worker",
+          route: "/api/checkout/pay",
+          operation: "recovery",
+          outcome: result?.value ?? "retry",
+          orderId,
+          attemptId,
+        });
+        if (result?.value === "done") scheduleAnalyticsDrain();
+      } catch (error) {
+        reportFailure(error);
+      }
+    });
+  } catch (error) {
+    reportFailure(error);
+  }
 }
 
 // A prompt can process only this newly stored event. Durable work remains for
