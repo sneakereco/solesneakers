@@ -1,14 +1,21 @@
 "use client";
+import { BasketAccessNotice, type ValidationOrder } from "@/Modules/Cart/Source/Client";
 
-import { getCheckoutTrackingContext } from "@/Modules/Analytics/Source/Features/VisitorMeasurement/client";
-
-import { useEffect, useMemo, useRef, useState } from "react";
-import { FeedbackLink as Link, DocumentFeedbackLink } from "@/components/ui/FeedbackLink";
+import { useEffect, useLayoutEffect, useMemo, useRef, useState } from "react";
+import { useRouter } from "next/navigation";
 import { useSession } from "@/contexts/SessionContext";
+import { useCheckoutOwnerAccess } from "@/Modules/Checkout/Source/Features/Preparation/use-checkout-owner-access";
+import {
+  lookupOriginalPaymentRetry,
+  originalPaymentRetryContext,
+} from "@/Modules/Checkout/Source/Features/Outcomes/original-order-recovery";
+import { FeedbackLink as Link, DocumentFeedbackLink } from "@/components/ui/FeedbackLink";
 import { CheckoutSkeleton } from "./CheckoutSkeletons";
 import { postCheckoutJson } from "@/lib/square/web-payments";
 import { withRequestDeadline } from "@/lib/http/request-deadline";
 
+import { inventoryConflict } from "@/Modules/Checkout/Source/Features/Preparation/reservation-contract";
+import { provenConflictMessage, needsBasketReview } from "@/Modules/Cart/Source/Client";
 import { useCart } from "@/components/cart/CartProvider";
 import { CheckoutContactSection } from "@/components/checkout/CheckoutContactSection";
 import { CheckoutDeliverySection } from "@/components/checkout/CheckoutDeliverySection";
@@ -19,7 +26,6 @@ import {
   type CheckoutQuoteState,
 } from "@/components/checkout/CheckoutOrderSummary";
 import {
-  CheckoutCartUnavailable,
   SquarePaymentMethods,
   type CheckoutPreparationContext,
   type CheckoutPaymentAddress,
@@ -29,21 +35,26 @@ import {
   type WalletShippingDestination,
 } from "@/components/checkout/SquarePaymentMethods";
 import {
-  clearCheckoutAttempt,
-  rememberPendingCheckoutAttempt,
   getOrCreateCheckoutDeviceSessionId,
-  getOrCreateCheckoutIdempotencyKey,
-  storeGuestOrderAccess,
-} from "@/lib/checkout/client-session";
+  capturePreparedAttempt,
+  readGuestOrderAccess,
+  needsOriginalRecovery,
+  recoverOriginalOrder,
+  useCheckoutRegistration,
+  useProcessingCredential,
+} from "@/Modules/Checkout/Source/Client";
 import type {
   CheckoutBillingAddress,
   CheckoutPickupContact,
   CheckoutQuoteRequest,
   CheckoutQuoteResponse,
+  CheckoutTotals,
   PaymentPermitRequest,
+  PrepareCheckoutRequest,
 } from "@/lib/checkout/checkout-request";
 import {
   checkoutPickupContactSchema,
+  checkoutQuoteDestinationSchema,
   checkoutShippingAddressSchema,
 } from "@/lib/checkout/checkout-request";
 import type {
@@ -51,10 +62,27 @@ import type {
   CheckoutPageData,
 } from "@/lib/checkout/checkout-page-data";
 import { ShippingAddressValidationError } from "@/lib/checkout/shipping-address-validation";
+import { z } from "zod";
+import { getCheckoutTrackingContext } from "@/Modules/Analytics/Source/Features/VisitorMeasurement/client";
 import { useCheckoutStart } from "@/Modules/Analytics/Source/Features/VisitorMeasurement/use-checkout-start";
 import { hasUsableCheckout } from "@/Modules/Analytics/Source/Features/VisitorMeasurement/triggers";
 
 type Fulfillment = "ship" | "pickup";
+type OriginalRetry = NonNullable<Awaited<ReturnType<typeof lookupOriginalPaymentRetry>>>;
+
+function retryDetailsKey(
+  details: Pick<
+    PrepareCheckoutRequest,
+    "buyerEmail" | "fulfillment" | "shippingAddress" | "pickupContact"
+  >,
+) {
+  return JSON.stringify([
+    details.buyerEmail,
+    details.fulfillment,
+    details.shippingAddress,
+    details.pickupContact ?? null,
+  ]);
+}
 
 function normalizedAddress(address: CheckoutAddressForm): CheckoutPaymentAddress | null {
   const parsed = checkoutShippingAddressSchema.safeParse({
@@ -113,6 +141,7 @@ type CheckoutPreparePayload = {
   quoteFingerprint: string;
   shippingConfirmation?: string;
   shippingAddressOverride?: boolean;
+  recoveryOnly?: true;
   idempotencyKey: string;
   deviceSessionId: string;
   trackingContext?: ReturnType<typeof getCheckoutTrackingContext>;
@@ -125,53 +154,88 @@ export function buildCheckoutPreparePayload(
 }
 
 export function CheckoutClient({ initialData }: { initialData: CheckoutPageData }) {
-  const [activeData, setActiveData] = useState<CheckoutPageData | null>(null);
-  const data = activeData ?? initialData;
+  const { status, user } = useSession();
+  const router = useRouter();
+  const ownerId = user?.id ?? null;
+  const mismatch =
+    status === "ready" &&
+    (initialData.ownerId !== ownerId || initialData.isGuest !== (ownerId === null));
+  useEffect(() => {
+    if (mismatch) router.refresh();
+  }, [mismatch, ownerId, router]);
+  if (mismatch)
+    return (
+      <>
+        <CheckoutPaymentDialog open={false} />
+        <section role="status" className="p-6 text-center">
+          <p>Updating your checkout details…</p>
+          <button
+            type="button"
+            className="mt-3 underline"
+            onClick={() => router.refresh()}
+          >
+            Refresh checkout
+          </button>
+          <DocumentFeedbackLink className="ml-3 underline" href="/checkout">
+            Reload checkout
+          </DocumentFeedbackLink>
+        </section>
+      </>
+    );
   return (
-    <CheckoutForm
-      key={JSON.stringify([data.isGuest, data.customer.ownerId])}
-      initialData={data}
-      paymentPending={Boolean(activeData)}
-      setPaymentPending={(pending) => setActiveData(pending ? data : null)}
+    <OwnerCheckout
+      key={initialData.ownerId === null ? "guest" : "account:" + initialData.ownerId}
+      initialData={initialData}
+      verified={status === "ready"}
     />
   );
 }
 
-function CheckoutForm({
+function OwnerCheckout({
   initialData,
-  paymentPending,
-  setPaymentPending,
+  verified,
 }: {
   initialData: CheckoutPageData;
-  paymentPending: boolean;
-  setPaymentPending: (pending: boolean) => void;
+  verified: boolean;
 }) {
-  const {
-    items,
-    isReady,
-    hasCartView,
-    validationStatus,
-    retryValidation,
-    writePending,
-    writeError,
-    captureCheckoutSnapshot,
-    bindCheckoutSnapshot,
-  } = useCart();
-  const { user, isLoading, isSessionUnavailable, isIdentityCurrent, refreshSession } =
-    useSession();
-  const owner = initialData.isGuest ? null : initialData.customer.ownerId;
-  const sameOwner =
-    owner !== undefined &&
-    (initialData.isGuest || owner !== null) &&
-    owner === (user?.id ?? null);
-  const ready =
-    sameOwner &&
-    isReady &&
-    !isLoading &&
-    !isSessionUnavailable &&
-    !writePending &&
-    validationStatus !== "error" &&
-    validationStatus !== "loading";
+  const cart = useCart();
+  const { items, isReady: cartReady, scopeValidationToOrder, boundBasketGuard } = cart;
+  const router = useRouter();
+  const scopes = useCheckoutRegistration();
+  const remember = useProcessingCredential();
+  const credential = useRef(remember);
+  useLayoutEffect(() => {
+    credential.current = remember;
+  }, [remember]);
+  const activeAttempt = useRef<AbortController | null>(null);
+  useLayoutEffect(() => () => activeAttempt.current?.abort(), []);
+  const isReady =
+    verified &&
+    cartReady &&
+    !cart.writePending &&
+    cart.validationStatus !== "error" &&
+    cart.validationStatus !== "loading";
+  // An owned prepare can finish during a visibility check; attach its reference
+  // through the newly verified connection when that continuation resumes.
+  const pendingScope = useRef<ValidationOrder | null>(null);
+  const readyScopeAction = useRef<typeof scopeValidationToOrder | null>(null);
+  useLayoutEffect(() => {
+    readyScopeAction.current = isReady ? scopeValidationToOrder : null;
+    function register(order: ValidationOrder, action: typeof scopeValidationToOrder) {
+      const release = action(order);
+      scopes?.register(order.orderId, order.guestAccessToken ?? null, release);
+    }
+    if (readyScopeAction.current && pendingScope.current) {
+      register(pendingScope.current, readyScopeAction.current);
+      pendingScope.current = null;
+    }
+    return () => {
+      readyScopeAction.current = null;
+    };
+  }, [isReady, scopeValidationToOrder, initialData.ownerId, scopes]);
+  const { isCurrent } = useSession();
+  const [hasOpened, setHasOpened] = useState(false);
+  if (isReady && items.length && !hasOpened) setHasOpened(true);
   const [isRedirecting, setIsRedirecting] = useState(false);
   const [email, setEmail] = useState(initialData.customer.email);
   const [fulfillment, setFulfillment] = useState<Fulfillment>("ship");
@@ -179,10 +243,46 @@ function CheckoutForm({
   const [quoteState, setQuoteState] = useState<CheckoutQuoteState>({
     status: "loading",
   });
-  const [resolvedQuoteKey, setResolvedQuoteKey] = useState<string | null>(null);
-  if (!ready && resolvedQuoteKey !== null) setResolvedQuoteKey(null);
+  const [resolvedQuote, setResolvedQuote] = useState<{
+    key: string;
+    observation: () => boolean;
+  } | null>(null);
   const [quoteRevision, setQuoteRevision] = useState(0);
   const requestSequence = useRef(0);
+  const lastQuote = useRef<{ current: () => boolean; fingerprint: string | null } | null>(
+    null,
+  );
+  const [needsRecovery, setNeedsRecovery] = useState(() =>
+    needsOriginalRecovery(initialData.ownerId),
+  );
+  const [recoveryLookup, setRecoveryLookup] = useState<"idle" | "checking" | "failed">(
+    "idle",
+  );
+  const lookupFlight = useRef<AbortController | null>(null);
+  useLayoutEffect(() => () => lookupFlight.current?.abort(), []);
+  const stockBlocked = items.some(needsBasketReview);
+  const basketKey = JSON.stringify(
+    items.map((i) => [
+      i.productId,
+      i.variantId,
+      i.quantity,
+      i.priceCents,
+      i.availability,
+      i.previousPriceCents,
+    ]),
+  );
+  const currentBasket = useRef(basketKey);
+  const latestCart = useRef(cart);
+  const captureView = useRef(cart.captureForCheckout);
+  useLayoutEffect(() => {
+    if (verified && cartReady) {
+      captureView.current = cart.captureForCheckout;
+      latestCart.current = cart;
+    }
+  }, [verified, cartReady, cart]);
+  useLayoutEffect(() => {
+    if (verified && cartReady) currentBasket.current = basketKey;
+  }, [basketKey, verified, cartReady]);
   const checkoutItems = useMemo(
     () =>
       items.map((item) => ({
@@ -193,29 +293,190 @@ function CheckoutForm({
     [items],
   );
   useCheckoutStart(
-    hasUsableCheckout({ cartReady: ready, itemCount: items.length, isRedirecting }),
-    JSON.stringify(checkoutItems),
+    hasUsableCheckout({
+      cartReady: isReady,
+      itemCount: items.length,
+      isRedirecting: isRedirecting || needsRecovery || stockBlocked,
+    }),
+    cart.hasCartView ? JSON.stringify(checkoutItems) : null,
+    isCurrent,
   );
   const shippingAddress = useMemo(
     () => (fulfillment === "ship" ? normalizedAddress(address) : null),
     [address, fulfillment],
   );
+  const [retryRevision, setRetryRevision] = useState(0);
+  const [retryEvidence, setRetryEvidence] = useState<{
+    original: OriginalRetry;
+    basketKey: string;
+    observation: () => boolean;
+    bound: () => boolean;
+  } | null>(null);
+  const retryDestination = JSON.stringify(shippingAddress);
+  const retryEmail = email.trim().toLowerCase();
+  const retryFormKey = retryDetailsKey({
+    buyerEmail: retryEmail,
+    fulfillment,
+    shippingAddress,
+    pickupContact:
+      fulfillment === "pickup"
+        ? checkoutPickupContactSchema.safeParse({
+            name: address.name,
+            phone: address.phone,
+          }).data
+        : null,
+  });
+  const currentRetryForm = useRef(retryFormKey);
+  useLayoutEffect(() => {
+    currentRetryForm.current = retryFormKey;
+  }, [retryFormKey]);
+  const qualifiedRetry =
+    isReady &&
+    stockBlocked &&
+    !needsRecovery &&
+    retryEvidence?.observation === isCurrent &&
+    retryEvidence.basketKey === basketKey &&
+    retryEvidence.original.expiresAt > Date.now() &&
+    retryEvidence.original.current()
+      ? retryEvidence.original
+      : null;
+  const originalRetry =
+    qualifiedRetry && retryDetailsKey(qualifiedRetry.payload) === retryFormKey
+      ? qualifiedRetry
+      : null;
+  const originalDetails =
+    qualifiedRetry && !originalRetry ? qualifiedRetry.payload : null;
+
+  useEffect(() => {
+    if (
+      !isReady ||
+      !stockBlocked ||
+      needsRecovery ||
+      items.some((line) => line.availability || line.previousPriceCents !== undefined) ||
+      (activeAttempt.current && retryRevision === 0)
+    )
+      return;
+    const original = originalPaymentRetryContext(initialData.ownerId);
+    if (
+      !original ||
+      JSON.stringify(original.payload.items) !== JSON.stringify(checkoutItems)
+    )
+      return;
+    const controller = new AbortController();
+    let expiration: number | undefined;
+    const bound = boundBasketGuard(original.scope, items, true);
+    void (async () => {
+      const current = await bound;
+      if (controller.signal.aborted || !isCurrent() || !current()) return;
+      const result = await lookupOriginalPaymentRetry(original, controller.signal);
+      if (
+        controller.signal.aborted ||
+        !result ||
+        !isCurrent() ||
+        !current() ||
+        result.lines.length !== items.length ||
+        !items.every((item) =>
+          result.lines.some(
+            (line) =>
+              line.productId === item.productId &&
+              line.variantId === item.variantId &&
+              line.quantity === item.quantity &&
+              line.unitPriceCents === item.priceCents,
+          ),
+        )
+      )
+        return;
+      setRetryEvidence({
+        original: result,
+        basketKey,
+        observation: isCurrent,
+        bound: current,
+      });
+      expiration = window.setTimeout(
+        () => {
+          setRetryEvidence((saved) => (saved?.original === result ? null : saved));
+        },
+        Math.max(0, result.expiresAt - Date.now()),
+      );
+    })().catch(() => {});
+    return () => {
+      controller.abort();
+      window.clearTimeout(expiration);
+      setRetryEvidence((saved) => (saved?.observation === isCurrent ? null : saved));
+    };
+  }, [
+    isReady,
+    stockBlocked,
+    needsRecovery,
+    items,
+    checkoutItems,
+    basketKey,
+    isCurrent,
+    retryRevision,
+    initialData.ownerId,
+    boundBasketGuard,
+  ]);
+
+  function onDefinitiveDecline() {
+    setRetryEvidence(null);
+    void latestCart.current
+      .recheckAvailability()
+      .catch(() => false)
+      .finally(() => {
+        setRetryRevision((revision) => revision + 1);
+      });
+  }
+
+  function isQualifiedRetryCurrent(original: OriginalRetry) {
+    return (
+      readyScopeAction.current !== null &&
+      isCurrent() &&
+      original.current() &&
+      original.expiresAt > Date.now() &&
+      currentBasket.current === basketKey &&
+      currentRetryForm.current === retryFormKey &&
+      retryEvidence?.bound()
+    );
+  }
+  const assertOriginalRetryCurrent = () => {
+    if (!originalRetry || !isQualifiedRetryCurrent(originalRetry))
+      throw Error("Your checkout changed. Review your original order before paying.");
+  };
+
+  function restoreOriginalDetails() {
+    if (!qualifiedRetry || !originalDetails || !isQualifiedRetryCurrent(qualifiedRetry))
+      return;
+    const {
+      buyerEmail,
+      fulfillment: originalFulfillment,
+      shippingAddress: originalShipping,
+      pickupContact,
+    } = originalDetails;
+    setEmail(buyerEmail ?? "");
+    setFulfillment(originalFulfillment);
+    if (originalShipping)
+      setAddress({ ...originalShipping, line2: originalShipping.line2 ?? "" });
+    else if (pickupContact) setAddress((current) => ({ ...current, ...pickupContact }));
+  }
   const quoteKey = JSON.stringify({
     items: checkoutItems,
     fulfillment,
     shippingAddress,
     quoteRevision,
+    basketKey,
+    stockBlocked,
+    needsRecovery,
   });
 
   useEffect(() => {
-    if (!ready || checkoutItems.length === 0) {
+    if (!isReady || checkoutItems.length === 0 || stockBlocked || needsRecovery) {
       return;
     }
     const requestId = ++requestSequence.current;
     const controller = new AbortController();
     const delay = fulfillment === "ship" && shippingAddress ? 300 : 0;
     const timer = window.setTimeout(() => {
-      if (!isIdentityCurrent(owner ?? null)) return;
+      if (!isCurrent()) return;
       setQuoteState((current) => ({
         status: "loading",
         quote: current.quote,
@@ -230,7 +491,11 @@ function CheckoutForm({
       )
         .then((quote) => {
           if (!controller.signal.aborted && requestSequence.current === requestId) {
-            setResolvedQuoteKey(quoteKey);
+            setResolvedQuote({ key: quoteKey, observation: isCurrent });
+            lastQuote.current = {
+              current: isCurrent,
+              fingerprint: quote.quoteFingerprint,
+            };
             setQuoteState({ status: "ready", quote });
           }
         })
@@ -238,7 +503,8 @@ function CheckoutForm({
           if (controller.signal.aborted || requestSequence.current !== requestId) {
             return;
           }
-          setResolvedQuoteKey(quoteKey);
+          setResolvedQuote({ key: quoteKey, observation: isCurrent });
+          lastQuote.current = { current: isCurrent, fingerprint: null };
           setQuoteState({
             status: "error",
             message:
@@ -255,38 +521,72 @@ function CheckoutForm({
     };
     // quoteKey is the canonical trigger and prevents stale address responses.
   }, [
-    ready,
+    isReady,
+    isCurrent,
     quoteKey,
     checkoutItems,
     fulfillment,
     shippingAddress,
-    isIdentityCurrent,
-    owner,
+    stockBlocked,
+    needsRecovery,
   ]);
 
+  // A matching basket can return before the quote from its new observation does.
+  const quotePending =
+    !isReady ||
+    resolvedQuote?.key !== quoteKey ||
+    resolvedQuote.observation !== isCurrent ||
+    quoteState.status === "loading";
+  const requireOwner = useCheckoutOwnerAccess(
+    initialData.ownerId,
+    quotePending && !stockBlocked && !needsRecovery,
+  );
   const quoteReady =
-    ready && quoteState.status === "ready" && resolvedQuoteKey === quoteKey;
+    !!originalRetry ||
+    (!stockBlocked && !needsRecovery && !quotePending && quoteState.status === "ready");
   const exactQuote =
-    quoteReady && quoteState.quote.completeness === "exact" ? quoteState.quote : null;
-  const currentQuote = quoteState.quote ?? null;
+    originalRetry?.quote ??
+    (quoteReady &&
+    quoteState.status === "ready" &&
+    quoteState.quote.completeness === "exact"
+      ? quoteState.quote
+      : null);
+  const activeOwnHold =
+    stockBlocked &&
+    items.every((i) => !i.availability && i.previousPriceCents === undefined);
+  // Keep the prepared wallet attached for its existing interaction. A new
+  // authorization against scoped stock requires qualification of the original.
+  const currentQuote =
+    originalRetry?.quote ??
+    ((stockBlocked && !activeOwnHold) || needsRecovery
+      ? null
+      : (quoteState.quote ?? null));
 
   function updateAddress(field: keyof CheckoutAddressForm, value: string) {
     setAddress((current) => ({ ...current, [field]: value }));
   }
 
-  function requireCurrentCheckout() {
-    if (!ready || !isIdentityCurrent(owner ?? null))
-      throw new CheckoutCartUnavailable(
-        "Your checkout changed. Review your cart before paying.",
-      );
-  }
   async function quoteWalletShippingDestination(nextAddress: WalletShippingDestination) {
-    requireCurrentCheckout();
+    await requireOwner();
+    if (originalRetry) {
+      assertOriginalRetryCurrent();
+      const originalAddress = originalRetry.payload.shippingAddress;
+      const destination = checkoutQuoteDestinationSchema.parse(nextAddress);
+      if (
+        !originalAddress ||
+        originalAddress.state !== destination.state ||
+        originalAddress.postalCode !== destination.postalCode ||
+        originalAddress.country !== destination.country
+      )
+        throw Error("Use the original shipping address for this payment.");
+      return { quote: originalRetry.quote };
+    }
     const nextQuote = await requestCheckoutQuote({
       items: checkoutItems,
       fulfillment: "ship",
       shippingAddress: nextAddress,
     });
+    await requireOwner();
     if (nextQuote.completeness !== "exact") {
       throw new Error("Unable to calculate shipping for this destination.");
     }
@@ -297,12 +597,27 @@ function CheckoutForm({
     nextAddress: CheckoutPaymentAddress,
     walletEmail?: string,
   ): Promise<WalletCheckoutContext> {
-    requireCurrentCheckout();
+    await requireOwner();
+    if (originalRetry) {
+      assertOriginalRetryCurrent();
+      if (
+        JSON.stringify(checkoutShippingAddressSchema.parse(nextAddress)) !==
+          retryDestination ||
+        (initialData.isGuest && walletEmail?.trim().toLowerCase() !== retryEmail)
+      )
+        throw Error("Use the original delivery and contact details for this payment.");
+      return {
+        quote: originalRetry.quote,
+        shippingAddress: nextAddress,
+        buyerEmail: walletEmail,
+      };
+    }
     const nextQuote = await requestCheckoutQuote({
       items: checkoutItems,
       fulfillment: "ship",
       shippingAddress: nextAddress,
     });
+    await requireOwner();
     if (nextQuote.completeness !== "exact") {
       throw new Error("Unable to calculate an exact total for this address.");
     }
@@ -317,6 +632,18 @@ function CheckoutForm({
     method: PaymentMethod,
     context?: CheckoutPreparationContext,
   ): Promise<PreparedCheckout> {
+    await requireOwner();
+    const basketChanged = "Your cart changed. Review your items before paying.";
+    const assertRenderedBasket = () => {
+      if (basketKey !== currentBasket.current) throw new Error(basketChanged);
+    };
+    assertRenderedBasket();
+    if (needsOriginalRecovery(initialData.ownerId)) {
+      setNeedsRecovery(true);
+      throw Error("Check your original order status before trying another payment.");
+    }
+    if ((stockBlocked && !originalRetry) || needsRecovery)
+      throw new Error("Review your cart and check your order status before paying.");
     const buyerEmail = (initialData.isGuest ? (context?.buyerEmail ?? email) : email)
       .trim()
       .toLowerCase();
@@ -340,31 +667,107 @@ function CheckoutForm({
       throw new Error("Enter a complete US shipping address before paying.");
     }
 
-    requireCurrentCheckout();
-    let snapshot;
-    try {
-      snapshot = captureCheckoutSnapshot();
-    } catch {
-      throw new CheckoutCartUnavailable(
-        "Your cart changed or is unavailable. Review your cart before paying.",
+    const fingerprint = (original: readonly (typeof checkoutItems)[number][]) =>
+      JSON.stringify({
+        items: original,
+        fulfillment,
+        buyerEmail,
+        paymentMethod: method,
+        shippingAddress: selectedShippingAddress,
+        billingAddress: selectedBillingAddress,
+        pickupContact: selectedPickupContact,
+        quoteFingerprint: selectedQuote.quoteFingerprint,
+      });
+    if (originalRetry) {
+      const original = originalRetry;
+      assertOriginalRetryCurrent();
+      const assertFinancialAttempt = () => {
+        if (!original.current())
+          throw Error("Your checkout changed. Review your current order.");
+      };
+      if (
+        fingerprint(checkoutItems) !== original.fingerprint ||
+        Object.entries(original.quote.totals).some(
+          ([key, value]) => selectedQuote.totals[key as keyof CheckoutTotals] !== value,
+        ) ||
+        original.expiresAt <= Date.now()
+      )
+        throw Error("Your checkout changed. Review your original order before paying.");
+      assertFinancialAttempt();
+      const current = await latestCart.current.boundBasketGuard(
+        original.scope,
+        items,
+        true,
       );
+      await requireOwner();
+      const assertCurrentBasket = () => {
+        assertFinancialAttempt();
+        assertRenderedBasket();
+        if (
+          !current() ||
+          original.expiresAt <= Date.now() ||
+          currentRetryForm.current !== retryFormKey
+        )
+          throw Error(basketChanged);
+      };
+      assertCurrentBasket();
+      return {
+        ...original.scope,
+        deviceSessionId: original.payload.deviceSessionId,
+        totals: original.quote.totals,
+        assertCurrentBasket,
+        assertFinancialAttempt,
+        onDefinitiveDecline,
+      };
     }
-    const cartFingerprint = JSON.stringify({
-      items: checkoutItems,
-      fulfillment,
-      buyerEmail,
-      paymentMethod: method,
-      shippingAddress: selectedShippingAddress,
-      billingAddress: selectedBillingAddress,
-      pickupContact: selectedPickupContact,
-      quoteFingerprint: selectedQuote.quoteFingerprint,
-    });
     const deviceSessionId = getOrCreateCheckoutDeviceSessionId();
-    const idempotencyKey = getOrCreateCheckoutIdempotencyKey(cartFingerprint);
+    activeAttempt.current?.abort();
+    const lifetime = new AbortController();
+    activeAttempt.current = lifetime;
+    const renderedCapture = latestCart.current.captureForCheckout;
+    const attempt = await capturePreparedAttempt(
+      {
+        ...latestCart.current,
+        bindPreparedOrder: async (id, order, signal) => {
+          await requireOwner({ waitForQuote: true });
+          return latestCart.current.bindPreparedOrder(id, order, signal, true);
+        },
+      },
+      checkoutItems,
+      fingerprint,
+      lifetime.signal,
+      () => setQuoteRevision((n) => n + 1),
+      () =>
+        captureView.current === renderedCapture && currentBasket.current === basketKey,
+      initialData.ownerId,
+    );
+    const attemptKey = attempt.key;
+    await requireOwner();
+    assertRenderedBasket();
+    if (!attempt.current() || lifetime.signal.aborted)
+      throw Error("Your checkout changed. Review your current order.");
+    if (attempt.recoveryOnly) {
+      attempt.requireRecovery();
+      setNeedsRecovery(true);
+      if (attempt.discoverOriginal) {
+        const original = await recoverOriginalOrder(
+          initialData.ownerId,
+          requireOwner,
+          lifetime.signal,
+        );
+        if (lifetime.signal.aborted || !attempt.current())
+          throw Error("Your checkout changed. Review your current order.");
+        onProcessing(original.orderId, original.transientGuestAccessToken);
+        router.replace(
+          "/checkout/processing?orderId=" + encodeURIComponent(original.orderId),
+        );
+        throw Error("Checking your original order status.");
+      }
+    }
     const { response, data } = await postCheckoutJson(
       "/api/checkout/prepare",
       buildCheckoutPreparePayload({
-        items: checkoutItems,
+        items: attempt.items,
         fulfillment,
         paymentMethod: method,
         buyerEmail,
@@ -372,16 +775,102 @@ function CheckoutForm({
         billingAddress: selectedBillingAddress,
         pickupContact: selectedPickupContact,
         quoteFingerprint: selectedQuote.quoteFingerprint,
-        shippingConfirmation: context?.shippingConfirmation,
-        shippingAddressOverride: context?.shippingAddressOverride,
-        idempotencyKey,
+        shippingConfirmation: attempt.recoveryOnly
+          ? undefined
+          : context?.shippingConfirmation,
+        shippingAddressOverride: attempt.recoveryOnly
+          ? undefined
+          : context?.shippingAddressOverride,
+        ...(attempt.recoveryOnly ? { recoveryOnly: true as const } : {}),
+        idempotencyKey: attemptKey,
         deviceSessionId,
-        trackingContext: getCheckoutTrackingContext(),
+        ...(!attempt.recoveryOnly && isCurrent()
+          ? { trackingContext: getCheckoutTrackingContext() }
+          : {}),
       }),
-    ).catch(() => {
-      throw new Error("Order preparation is unavailable. Please try again.");
-    });
-    if (!response.ok) {
+    );
+    await requireOwner();
+    if (lifetime.signal.aborted || !attempt.current())
+      throw Error(
+        data?.code === "INVENTORY_CONFLICT"
+          ? "Your cart changed. Review your items before paying."
+          : "Your checkout changed. Review your current order.",
+      );
+    const reverified = !isCurrent();
+    // A successful prepare may have already reserved our last unit. Its scoped
+    // validation below must establish the original lines before a permit can issue.
+    if (!response.ok || !reverified) assertRenderedBasket();
+    const observeOnly =
+      data?.code === "CHECKOUT_RECOVERY_REQUIRED" &&
+      z.uuid().safeParse(data?.orderId).success;
+    if (!response.ok && !observeOnly) {
+      if (
+        attempt.recoveryOnly ||
+        (attempt.resumed &&
+          response.status === 409 &&
+          data?.code !== "INVENTORY_CONFLICT" &&
+          data?.code !== "CHECKOUT_RECOVERY_REQUIRED")
+      ) {
+        setNeedsRecovery(true);
+        attempt.requireRecovery();
+        throw Error(
+          "Check your order status in your account or through your secure order link before trying another payment.",
+        );
+      }
+      if (
+        data?.code === "INVENTORY_CONFLICT" ||
+        data?.code === "CHECKOUT_RECOVERY_REQUIRED"
+      ) {
+        const pending =
+          "Check your order status in your account or through your secure order link before trying another payment.";
+        if (
+          attempt.resumed &&
+          (data?.code === "CHECKOUT_RECOVERY_REQUIRED" ||
+            data?.paymentState !== "not_submitted")
+        )
+          attempt.requireRecovery();
+        const sameAttempt = () => !lifetime.signal.aborted && attempt.current();
+        if (!sameAttempt())
+          throw new Error("Your cart changed. Review your items before paying.");
+        const conflicts = inventoryConflict.array().nonempty().safeParse(data.conflicts);
+        if (
+          data.code === "INVENTORY_CONFLICT" &&
+          response.status === 409 &&
+          conflicts.success
+        ) {
+          if (data.paymentState !== "not_submitted") {
+            // Recovery belongs to the verified financial pair even if its Cart
+            // connection has retired or its optional stock update cannot persist.
+            setNeedsRecovery(true);
+            void attempt.applyStockConflicts?.(conflicts.data, true, sameAttempt);
+            throw new Error(pending);
+          }
+          const saved = await attempt.applyStockConflicts?.(
+            conflicts.data,
+            false,
+            sameAttempt,
+          );
+          await requireOwner();
+          if (saved?.status === "saved" && sameAttempt()) {
+            const message = conflicts.data
+              .map((c) =>
+                provenConflictMessage(
+                  items.find(
+                    (i) => i.productId === c.productId && i.variantId === c.variantId,
+                  )!,
+                  c.reason,
+                  c.availableQuantity,
+                ),
+              )
+              .join(" ");
+            attempt.reject();
+            throw new Error(message);
+          }
+          throw new Error("Your cart changed. Review your items before paying.");
+        }
+        setNeedsRecovery(true);
+        throw new Error(pending);
+      }
       if (
         selectedShippingAddress &&
         [
@@ -407,13 +896,13 @@ function CheckoutForm({
         );
       }
       if (response.status === 409) {
-        clearCheckoutAttempt(idempotencyKey);
+        attempt.reject();
         setQuoteRevision((value) => value + 1);
       }
       throw new Error(data?.error || "Unable to prepare checkout");
     }
     if (
-      typeof data?.orderId !== "string" ||
+      !z.uuid().safeParse(data?.orderId).success ||
       ![
         data?.totals?.subtotalCents,
         data?.totals?.shippingCents,
@@ -423,148 +912,300 @@ function CheckoutForm({
     ) {
       throw new Error("Checkout returned invalid payment details");
     }
-    if (data.reused === false) await bindCheckoutSnapshot(data.orderId, snapshot);
-    if (typeof data.guestAccessToken === "string" && data.guestAccessToken) {
-      storeGuestOrderAccess(data.orderId, data.guestAccessToken);
+    const token =
+      initialData.isGuest && typeof data.guestAccessToken === "string"
+        ? data.guestAccessToken
+        : undefined;
+    if (observeOnly) attempt.requireRecovery(data.orderId);
+    const bound = await attempt.prepared(data.orderId, token, observeOnly);
+    await requireOwner();
+    if (
+      lifetime.signal.aborted ||
+      !attempt.current() ||
+      (initialData.isGuest && !attempt.credentialCurrent())
+    )
+      throw Error("Your checkout changed. Review your current order.");
+    const stored = initialData.isGuest ? readGuestOrderAccess(data.orderId) : null;
+    const guestAccessToken = token || stored || undefined;
+    const transientGuestAccessToken = token && token !== stored ? token : undefined;
+    if (!bound) {
+      attempt.requireRecovery(data.orderId);
+      onProcessing(data.orderId, transientGuestAccessToken);
+      router.replace("/checkout/processing?orderId=" + encodeURIComponent(data.orderId));
+      throw Error("Checking your original order status.");
     }
+    const orderScope = { orderId: data.orderId, guestAccessToken };
+    const registerScope = reverified
+      ? latestCart.current.scopeValidationToOrder
+      : readyScopeAction.current;
+    if (registerScope) {
+      const release = registerScope(orderScope);
+      scopes?.register(data.orderId, guestAccessToken ?? null, release);
+    } else pendingScope.current = orderScope;
+    const boundBasketCurrent = await latestCart.current.boundBasketGuard(
+      orderScope,
+      items,
+      reverified,
+    );
+    await requireOwner();
+    if (!boundBasketCurrent()) {
+      attempt.requireRecovery(data.orderId);
+      setNeedsRecovery(true);
+      throw new Error(basketChanged);
+    }
+    if (reverified) {
+      const refreshedQuote = lastQuote.current;
+      if (
+        (refreshedQuote?.current() &&
+          refreshedQuote.fingerprint !== selectedQuote.quoteFingerprint) ||
+        Object.entries(selectedQuote.totals).some(
+          ([key, cents]) => data.totals[key] !== cents,
+        )
+      ) {
+        attempt.requireRecovery(data.orderId);
+        setNeedsRecovery(true);
+        throw new Error(
+          "Checkout totals changed. Check your original order before paying.",
+        );
+      }
+    }
+    const assertFinancialAttempt = () => {
+      if (
+        lifetime.signal.aborted ||
+        !attempt.current() ||
+        (initialData.isGuest && !attempt.credentialCurrent())
+      )
+        throw Error("Your checkout changed. Review your current order.");
+    };
     return {
+      assertCurrentBasket: () => {
+        if (!boundBasketCurrent()) throw new Error(basketChanged);
+        assertFinancialAttempt();
+      },
+      assertFinancialAttempt,
+      onDefinitiveDecline,
       orderId: data.orderId,
-      idempotencyKey,
-      guestAccessToken: data.guestAccessToken,
+      guestAccessToken,
+      transientGuestAccessToken,
       deviceSessionId,
       totals: data.totals,
     };
   }
 
-  if (isRedirecting) {
-    return <CheckoutPaymentDialog open />;
+  async function checkOriginalOrder() {
+    if (lookupFlight.current) return;
+    const controller = new AbortController();
+    lookupFlight.current = controller;
+    setRecoveryLookup("checking");
+    try {
+      const reference = await recoverOriginalOrder(
+        initialData.ownerId,
+        requireOwner,
+        controller.signal,
+      );
+      if (controller.signal.aborted) return;
+      onProcessing(reference.orderId, reference.transientGuestAccessToken);
+      router.replace(
+        "/checkout/processing?orderId=" + encodeURIComponent(reference.orderId),
+      );
+    } catch {
+      if (!controller.signal.aborted) setRecoveryLookup("failed");
+    } finally {
+      if (lookupFlight.current === controller) lookupFlight.current = null;
+    }
   }
-  const failed = isSessionUnavailable || validationStatus === "error";
-  const retryCheckout = () => {
-    if (isSessionUnavailable) void refreshSession();
-    else retryValidation();
-  };
-  const recovery = (
-    <div className="mx-auto max-w-3xl space-y-2 px-5 py-4">
-      <p role={failed ? "alert" : "status"}>
-        {failed
-          ? "We could not verify your checkout."
-          : writePending
-            ? "Saving your cart…"
-            : "Checking your checkout…"}
+  function onProcessing(orderId: string, token?: string) {
+    credential.current?.(orderId, token);
+    setIsRedirecting(true);
+  }
+
+  const canCheckOriginalOrder =
+    verified && needsRecovery && needsOriginalRecovery(initialData.ownerId);
+  const checkoutNotice = (
+    <div role="status">
+      <p>
+        {needsRecovery
+          ? "Check your order status before trying another payment."
+          : "Review the items in your cart before paying."}
       </p>
-      {failed && (
-        <button type="button" className="underline" onClick={retryCheckout}>
+      {canCheckOriginalOrder && (
+        <button
+          type="button"
+          disabled={recoveryLookup === "checking"}
+          className="mr-3 underline"
+          onClick={() => void checkOriginalOrder()}
+        >
+          {recoveryLookup === "checking"
+            ? "Checking original order…"
+            : "Check original order"}
+        </button>
+      )}
+      {needsRecovery && recoveryLookup === "failed" && (
+        <p>
+          We could not find your original order. Try checking again or open your secure
+          order link.
+        </p>
+      )}
+      {needsRecovery && (
+        <a className="mr-3 underline" href="/account">
+          Check order status
+        </a>
+      )}
+      <a className="underline" href="/cart">
+        Review cart
+      </a>
+    </div>
+  );
+  const originalRecipient =
+    originalDetails?.shippingAddress ?? originalDetails?.pickupContact;
+  const unavailableNotice = !isReady && (
+    <>
+      {cart.access !== "ready" && <BasketAccessNotice />}
+      {cart.access === "ready" && cart.validationStatus === "error" && (
+        <button type="button" onClick={cart.retryValidation}>
           Retry checkout
         </button>
       )}
-      <Link className="ml-3 underline" href="/cart">
-        Review your cart
-      </Link>
-    </div>
+      {cart.writeError && <p role="alert">{cart.writeError}</p>}
+      {canCheckOriginalOrder && checkoutNotice}
+    </>
   );
-  if (!paymentPending) {
-    if (!sameOwner && !isLoading && !isSessionUnavailable)
-      return (
-        <main className="mx-auto max-w-2xl px-5 py-16">
-          <CheckoutPaymentDialog open={false} />
-          <p>Your checkout account changed. Reload checkout to continue.</p>
-          <DocumentFeedbackLink className="underline" href="/checkout">
-            Reload checkout
-          </DocumentFeedbackLink>
-        </main>
-      );
-    if (!sameOwner || (!isReady && (!hasCartView || items.length === 0)))
-      return (
-        <>
-          <CheckoutPaymentDialog open={false} />
-          {failed ? recovery : <CheckoutSkeleton />}
-        </>
-      );
-    if (isReady && !items.length)
-      return (
-        <main className="mx-auto max-w-2xl px-5 py-16">
-          <CheckoutPaymentDialog open={false} />
-          <h1>Your cart is empty</h1>
-          <Link className="underline" href="/store">
-            Continue shopping
-          </Link>
-        </main>
-      );
-  }
-  const summaryState: CheckoutQuoteState = failed
-    ? { status: "error", message: "Totals unavailable until checkout is verified." }
-    : ready && resolvedQuoteKey === quoteKey
-      ? quoteState
-      : { status: "loading" };
-  return (
-    <div data-checkout className="min-h-screen bg-[#f3f3f3]">
-      <CheckoutHeader />
-      {!ready && sameOwner && recovery}
-      {writeError && sameOwner && <p role="alert">{writeError}</p>}
-      <main
-        style={!sameOwner ? { display: "none" } : undefined}
-        className="grid min-h-[calc(100vh-7rem)] w-full grid-cols-1 bg-[#f3f3f3] text-zinc-950 lg:grid-cols-[53.4%_46.6%]"
-      >
-        <CheckoutOrderSummary
-          className="order-1 lg:order-2"
-          items={items}
-          quoteState={summaryState}
-          onRetry={ready ? () => setQuoteRevision((n) => n + 1) : undefined}
-        />
-
-        <section className="order-2 px-5 py-10 sm:px-8 lg:order-1 lg:ml-auto lg:w-full lg:max-w-[36.25rem] lg:px-10 lg:py-16">
-          <h1 className="sr-only">Checkout</h1>
-          <div className="flex flex-col">
-            <SquarePaymentMethods
-              reviewOwner={{
-                verified: sameOwner && !isLoading && !isSessionUnavailable,
-                isCurrent: () => sameOwner && isIdentityCurrent(owner ?? null),
-              }}
-              paymentConfig={initialData.paymentConfig}
-              quote={currentQuote}
-              quoteReady={quoteReady}
-              fulfillment={fulfillment}
-              buyerEmail={email}
-              shippingAddress={shippingAddress}
-              pickupContact={
-                fulfillment === "pickup"
-                  ? { name: address.name, phone: address.phone }
-                  : null
-              }
-              isGuest={initialData.isGuest}
-              quoteWalletShippingDestination={quoteWalletShippingDestination}
-              resolveWalletShippingContact={resolveWalletShippingContact}
-              prepare={prepare}
-              onPaymentPending={setPaymentPending}
-              onPaymentSubmitted={(checkout, outcome) => {
-                setIsRedirecting(true);
-                if (checkout.idempotencyKey) {
-                  if (outcome === "unknown")
-                    rememberPendingCheckoutAttempt(
-                      checkout.orderId,
-                      checkout.idempotencyKey,
-                    );
-                  else clearCheckoutAttempt(checkout.idempotencyKey);
-                }
-              }}
-            >
-              <CheckoutContactSection
-                email={email}
-                isGuest={initialData.isGuest}
-                onEmailChange={setEmail}
-              />
-
-              <CheckoutDeliverySection
-                fulfillment={fulfillment}
-                address={address}
-                onFulfillmentChange={setFulfillment}
-                onAddressChange={updateAddress}
-              />
-            </SquarePaymentMethods>
-          </div>
-        </section>
+  if (isRedirecting) return <CheckoutPaymentDialog open={verified} />;
+  if (isReady && items.length === 0 && !needsRecovery)
+    return (
+      <main className="mx-auto max-w-2xl px-5 py-16">
+        <CheckoutPaymentDialog open={false} />
+        <h1>Your cart is empty</h1>
+        <Link className="underline" href="/store">
+          Continue shopping
+        </Link>
       </main>
-    </div>
+    );
+  if (!isReady && !hasOpened) {
+    return (
+      <>
+        <CheckoutPaymentDialog open={false} />
+        {unavailableNotice}
+        {cart.access === "checking" && <CheckoutSkeleton />}
+      </>
+    );
+  }
+
+  return (
+    <>
+      {unavailableNotice}
+      <div
+        hidden={!isReady}
+        inert={!isReady}
+        data-checkout
+        className="min-h-screen bg-[#f3f3f3]"
+      >
+        <CheckoutHeader />
+        <main className="grid min-h-[calc(100vh-7rem)] w-full grid-cols-1 bg-[#f3f3f3] text-zinc-950 lg:grid-cols-[53.4%_46.6%]">
+          <CheckoutOrderSummary
+            className="order-1 lg:order-2"
+            items={items}
+            quoteState={
+              originalRetry
+                ? { status: "ready", quote: originalRetry.quote }
+                : quotePending
+                  ? { status: "loading" }
+                  : quoteState
+            }
+            onRetry={() => setQuoteRevision((n) => n + 1)}
+          />
+
+          <section className="order-2 px-5 py-10 sm:px-8 lg:order-1 lg:ml-auto lg:w-full lg:max-w-[36.25rem] lg:px-10 lg:py-16">
+            <h1 className="sr-only">Checkout</h1>
+            <div className="flex flex-col">
+              {isReady &&
+                ((stockBlocked && !originalRetry) || needsRecovery) &&
+                (originalDetails ? (
+                  <section className="mb-4" aria-labelledby="original-checkout-details">
+                    <h2 id="original-checkout-details" className="font-semibold">
+                      Original checkout details
+                    </h2>
+                    <p>Restore these details to retry payment for your original order.</p>
+                    <p>{originalDetails.buyerEmail}</p>
+                    <p>
+                      {originalDetails.fulfillment === "ship"
+                        ? "Shipping"
+                        : "Store pickup"}
+                    </p>
+                    <p>{originalRecipient?.name}</p>
+                    <p>{originalRecipient?.phone}</p>
+                    {originalDetails.shippingAddress && (
+                      <>
+                        <p>{originalDetails.shippingAddress.line1}</p>
+                        {originalDetails.shippingAddress.line2 && (
+                          <p>{originalDetails.shippingAddress.line2}</p>
+                        )}
+                        <p>
+                          {originalDetails.shippingAddress.city},{" "}
+                          {originalDetails.shippingAddress.state}{" "}
+                          {originalDetails.shippingAddress.postalCode},{" "}
+                          {originalDetails.shippingAddress.country}
+                        </p>
+                      </>
+                    )}
+                    <button
+                      type="button"
+                      className="mt-2 underline"
+                      onClick={restoreOriginalDetails}
+                    >
+                      Restore original details
+                    </button>
+                  </section>
+                ) : (
+                  checkoutNotice
+                ))}
+              <SquarePaymentMethods
+                reviewOwner={{ verified, isCurrent }}
+                accessSuspended={!isReady}
+                recoveryRequired={needsRecovery}
+                requireOwner={requireOwner}
+                paymentConfig={initialData.paymentConfig}
+                quote={currentQuote}
+                quoteReady={quoteReady}
+                originalRetry={
+                  originalRetry
+                    ? {
+                        method: originalRetry.payload.paymentMethod,
+                        assertCurrent: assertOriginalRetryCurrent,
+                      }
+                    : undefined
+                }
+                fulfillment={fulfillment}
+                buyerEmail={email}
+                shippingAddress={shippingAddress}
+                pickupContact={
+                  fulfillment === "pickup"
+                    ? { name: address.name, phone: address.phone }
+                    : null
+                }
+                isGuest={initialData.isGuest}
+                quoteWalletShippingDestination={quoteWalletShippingDestination}
+                resolveWalletShippingContact={resolveWalletShippingContact}
+                prepare={prepare}
+                onProcessing={onProcessing}
+              >
+                <CheckoutContactSection
+                  email={email}
+                  isGuest={initialData.isGuest}
+                  onEmailChange={setEmail}
+                />
+
+                <CheckoutDeliverySection
+                  fulfillment={fulfillment}
+                  address={address}
+                  onFulfillmentChange={setFulfillment}
+                  onAddressChange={updateAddress}
+                />
+              </SquarePaymentMethods>
+            </div>
+          </section>
+        </main>
+      </div>
+    </>
   );
 }

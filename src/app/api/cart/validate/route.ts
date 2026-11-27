@@ -1,3 +1,4 @@
+import { observeCheckoutRequest } from "@/Modules/Checkout/Source/Features/Operations/request-metrics";
 import type { NextRequest } from "next/server";
 import { NextResponse } from "next/server";
 
@@ -8,11 +9,22 @@ import { getRequestIdFromHeaders } from "@/lib/http/request-id";
 import { logError } from "@/lib/utils/log";
 import type { CartItem } from "@/types/domain/cart";
 
-const PLACEHOLDER_IMAGE = "/placeholder.png";
+import {
+  basketImage,
+  type LineState,
+  type LegacyRemoval,
+  type CartValidationV2,
+} from "@/Modules/Cart/Source/Features/ValidateBasket/validation-contract";
+import { readOwnHolds } from "@/Modules/Cart/Source/Features/ValidateBasket/own-hold";
 
-export async function POST(request: NextRequest) {
+export function POST(request: NextRequest) {
   const requestId = getRequestIdFromHeaders(request.headers);
 
+  return observeCheckoutRequest("/api/cart/validate", "POST", requestId, () =>
+    validate(request, requestId),
+  );
+}
+async function validate(request: NextRequest, requestId: string) {
   try {
     const body = await request.json().catch(() => null);
     const parsed = cartValidateSchema.safeParse(body ?? {});
@@ -27,7 +39,7 @@ export async function POST(request: NextRequest) {
     const items = parsed.data.items ?? [];
     if (items.length === 0) {
       return NextResponse.json(
-        { items: [], removed: [] },
+        { contractVersion: 2, lineState: [], items: [], removed: [] },
         { headers: { "Cache-Control": "no-store" } },
       );
     }
@@ -39,10 +51,45 @@ export async function POST(request: NextRequest) {
     const variantMap = new Map(variants.map((variant) => [variant.variantId, variant]));
 
     const nextItems: CartItem[] = [];
-    const removed: Array<{ productId: string; variantId: string; reason: string }> = [];
+    const removed: LegacyRemoval[] = [];
 
+    const holds = parsed.data.order ? await readOwnHolds(parsed.data.order) : undefined;
+    const lineState: LineState[] = [];
     for (const item of items) {
       const variant = variantMap.get(item.variantId);
+      const match = variant?.productId === item.productId ? variant : null;
+      const hold = holds?.get(item.variantId);
+      const eligible = match?.isActive && (!match.isOutOfStock || match.stock === 0);
+      const availableQuantity =
+        eligible && !hold?.recovery
+          ? Math.max(0, match.stock) + (hold?.quantity ?? 0)
+          : 0;
+      // The catalog read cannot attribute a shortage to a competing shopper.
+      // Preparation supplies that reason from the locked allocation transaction.
+      const availability =
+        availableQuantity >= item.quantity ? "available" : "unavailable";
+      lineState.push({
+        productId: item.productId,
+        variantId: item.variantId,
+        requestedQuantity: item.quantity,
+        availableQuantity,
+        availability,
+        reason: availability,
+        ...(hold && (hold.recovery || hold.quantity > 0) ? { orderScoped: true } : {}),
+        ...(match
+          ? {
+              facts: {
+                sizeLabel: match.sizeLabel,
+                brand: match.brand,
+                name: match.name,
+                titleDisplay:
+                  match.titleDisplay || [match.brand, match.name].join(" ").trim(),
+                priceCents: match.priceCents,
+                imageUrl: basketImage(match.imageUrl),
+              },
+            }
+          : {}),
+      });
       if (!variant || variant.productId !== item.productId) {
         removed.push({
           productId: item.productId,
@@ -81,18 +128,24 @@ export async function POST(request: NextRequest) {
         name: variant.name,
         titleDisplay: variant.titleDisplay || `${variant.brand} ${variant.name}`.trim(),
         priceCents: variant.priceCents,
-        imageUrl: variant.imageUrl ?? PLACEHOLDER_IMAGE,
+        imageUrl: basketImage(variant.imageUrl),
         quantity,
         maxStock,
       });
     }
 
     return NextResponse.json(
-      { items: nextItems, removed },
+      {
+        contractVersion: 2,
+        lineState,
+        items: nextItems,
+        removed,
+      } satisfies CartValidationV2,
       { headers: { "Cache-Control": "no-store" } },
     );
   } catch (error: unknown) {
-    logError(new Error("cart_validation_upstream_unavailable"), {
+    logError(error, {
+      event: "cart_validation_upstream_unavailable",
       layer: "api",
       requestId,
       route: "/api/cart/validate",

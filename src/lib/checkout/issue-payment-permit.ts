@@ -1,4 +1,4 @@
-import { randomUUID } from "node:crypto";
+import type { CheckoutPaymentAttemptRepository } from "@/Modules/Checkout/Source/Features/Payments/attempt-repository";
 
 import type { NextRequest } from "next/server";
 
@@ -14,6 +14,8 @@ import type { PaymentCheckout } from "@/repositories/checkout-reservation-repo";
 type CheckoutSession = { user: { id: string; email: string } } | null;
 
 export type IssuePaymentPermitDependencies = {
+  refusalDisposition(order: PaymentCheckout): Promise<"refuse" | "observe" | "deny">;
+  getOrCreateAttempt: CheckoutPaymentAttemptRepository["getOrCreateAttempt"];
   findTenantId(): Promise<string | null>;
   getAccess(tenantId: string): Promise<CheckoutAccessDecision>;
   verifyBrowser(): Promise<CheckoutBotVerdict>;
@@ -26,11 +28,12 @@ export type IssuePaymentPermitDependencies = {
     tenantId: string;
     orderId: string;
     clientIp: string;
-    deviceSessionId: string;
-    normalizedEmailHash: string;
+    shopperBinding: string;
   }): Promise<CheckoutAttemptDecision>;
   hashEmail(email: string): string;
-  issuePermit(payload: PaymentPermitPayload): Promise<{
+  issuePermit(
+    payload: PaymentPermitPayload & { attemptId: string; ownerBinding: string },
+  ): Promise<{
     token: string;
     expiresInSeconds: number;
   }>;
@@ -56,6 +59,33 @@ function isUsable(order: PaymentCheckout, now: Date): boolean {
   );
 }
 
+function originalOrderStatus(order: PaymentCheckout): Response {
+  return json(
+    {
+      code: "CHECKOUT_RECOVERY_REQUIRED",
+      error: "Check the original order status for the latest payment information.",
+      orderId: order.orderId,
+      statusUrl: "/checkout/processing?orderId=" + encodeURIComponent(order.orderId),
+    },
+    409,
+  );
+}
+
+async function admissionRefusal(
+  order: PaymentCheckout,
+  deps: IssuePaymentPermitDependencies,
+  refusal: Response,
+): Promise<Response> {
+  try {
+    const disposition = await deps.refusalDisposition(order);
+    if (disposition === "refuse") return refusal;
+    if (disposition === "deny") return json({ error: "Order access denied" }, 403);
+  } catch {
+    deps.reportError(new Error("checkout_permit_evidence_unavailable"));
+  }
+  return originalOrderStatus(order);
+}
+
 export async function issuePaymentPermitHandler(
   request: NextRequest,
   deps: IssuePaymentPermitDependencies,
@@ -65,11 +95,6 @@ export async function issuePaymentPermitHandler(
     if (!tenantId) {
       return json({ error: "Checkout is temporarily unavailable" }, 503);
     }
-    const access = await deps.getAccess(tenantId);
-    if (!access.open) {
-      return json({ error: access.message }, 503);
-    }
-
     const bot = await deps.verifyBrowser();
     if (!bot.allowed) {
       return json(
@@ -96,9 +121,6 @@ export async function issuePaymentPermitHandler(
     if (!order || order.tenantId !== tenantId) {
       return json({ error: "Order not found" }, 404);
     }
-    if (!isUsable(order, deps.now())) {
-      return json({ error: "Checkout is no longer payable" }, 409);
-    }
     if (order.deviceSessionId !== parsed.data.deviceSessionId) {
       return json({ error: "Checkout verification failed" }, 403);
     }
@@ -113,28 +135,20 @@ export async function issuePaymentPermitHandler(
       return json({ error: "Order access denied" }, 403);
     }
 
+    if (order.financialReview) return originalOrderStatus(order);
+    // assertCheckoutOpen converts control/configuration read failures to a closed decision.
+    const access = await deps.getAccess(tenantId);
+    if (!access.open) {
+      return admissionRefusal(order, deps, json({ error: access.message }, 503));
+    }
+
+    if (!isUsable(order, deps.now()))
+      return json({ error: "Checkout is no longer payable" }, 409);
     const email = order.guestEmail ?? session?.user.email;
     if (!email) {
       throw new Error("checkout_payment_email_missing");
     }
     const normalizedEmailHash = deps.hashEmail(normalizeCheckoutEmail(email));
-    const attempt = await deps.checkPaymentAttempt({
-      tenantId,
-      orderId: order.orderId,
-      clientIp,
-      deviceSessionId: parsed.data.deviceSessionId,
-      normalizedEmailHash,
-    });
-    if (!attempt.allowed) {
-      return json(
-        { error: "Too many payment attempts; please try again later" },
-        429,
-        attempt.retryAfterSeconds
-          ? { "Retry-After": String(attempt.retryAfterSeconds) }
-          : undefined,
-      );
-    }
-
     if (isGuest) {
       const token = parsed.data.turnstileToken;
       if (!token) {
@@ -149,7 +163,51 @@ export async function issuePaymentPermitHandler(
       }
     }
 
+    const ownerBinding = isGuest
+      ? `order:${order.orderId}`
+      : `account:${session!.user.id}`;
+    let attempt: CheckoutAttemptDecision;
+    try {
+      attempt = await deps.checkPaymentAttempt({
+        tenantId,
+        orderId: order.orderId,
+        clientIp,
+        shopperBinding: order.userId
+          ? "account:" + order.userId
+          : order.guestContextHash
+            ? "guest:" + order.guestContextHash
+            : "order:" + order.orderId,
+      });
+    } catch {
+      deps.reportError(new Error("checkout_payment_permit_unavailable"));
+      return admissionRefusal(
+        order,
+        deps,
+        json({ error: "Checkout is temporarily unavailable" }, 503),
+      );
+    }
+    if (!attempt.allowed) {
+      return admissionRefusal(
+        order,
+        deps,
+        json(
+          { error: "Too many payment attempts; please try again later" },
+          429,
+          attempt.retryAfterSeconds
+            ? { "Retry-After": String(attempt.retryAfterSeconds) }
+            : undefined,
+        ),
+      );
+    }
+
+    const financialAttempt = await deps.getOrCreateAttempt({
+      orderId: order.orderId,
+      method: parsed.data.method,
+      ownerBinding,
+    });
     const permit = await deps.issuePermit({
+      attemptId: financialAttempt.id,
+      ownerBinding,
       tenantId,
       orderId: order.orderId,
       cartHash: order.cartHash,
@@ -157,7 +215,7 @@ export async function issuePaymentPermitHandler(
       method: parsed.data.method,
       deviceSessionId: parsed.data.deviceSessionId,
       normalizedEmailHash,
-      squareIdempotencyKey: randomUUID(),
+      squareIdempotencyKey: financialAttempt.squareIdempotencyKey,
     });
     return json(
       {
@@ -168,8 +226,8 @@ export async function issuePaymentPermitHandler(
       },
       201,
     );
-  } catch (error) {
-    deps.reportError(error);
+  } catch {
+    deps.reportError(new Error("checkout_payment_permit_unavailable"));
     return json({ error: "Checkout is temporarily unavailable" }, 503);
   }
 }

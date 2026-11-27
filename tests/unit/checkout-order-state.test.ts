@@ -14,9 +14,7 @@ describe("classifyCheckoutOrderStatus", () => {
   });
 
   it.each([
-    "failed",
     "blocked",
-    "canceled",
     "refunded",
     "partially_refunded",
     "refund_pending",

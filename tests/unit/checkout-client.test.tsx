@@ -21,7 +21,7 @@ jest.mock("@/components/cart/CartProvider", () => ({
 }));
 
 jest.mock("@/contexts/SessionContext", () => ({
-  useSession: () => ({ user: { id: "user-1" } }),
+  useSession: () => ({ user: { id: "user-1" }, status: "ready", isCurrent: () => true }),
 }));
 
 import {
@@ -72,6 +72,7 @@ describe("CheckoutClient", () => {
     const html = renderToStaticMarkup(
       <CheckoutClient
         initialData={{
+          ownerId: "user-1",
           isGuest: false,
           customer: {
             ownerId: "user-1",

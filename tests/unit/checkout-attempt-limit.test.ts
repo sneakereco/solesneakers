@@ -1,17 +1,18 @@
-import {
-  CheckoutAttemptLimiter,
-  type CheckoutAttemptIdentity,
-} from "@/lib/checkout/checkout-attempt-limit";
+import { CheckoutAttemptLimiter } from "@/lib/checkout/checkout-attempt-limit";
+import { parseCheckoutAdmissionBudgets } from "@/Modules/Checkout/Source/Features/Operations/admission";
 import { hashNormalizedCheckoutEmail } from "@/lib/checkout/checkout-identity";
-
-const identity: CheckoutAttemptIdentity = {
-  tenantId: "tenant-1",
-  clientIp: "203.0.113.10",
-  userId: "user-1",
-  normalizedEmailHash: "email-hmac",
-  deviceSessionId: "device-session-1",
+const config = {
+  version: 1 as const,
+  revision: "local-fixture",
+  ipPerMinute: 120,
+  globalPerMinute: 400,
+  providers: { square: 2, shippo: 2 },
 };
-
+const identity = {
+  clientIp: "203.0.113.1",
+  shopperBinding: "account:fixture",
+  eventId: "key-1",
+};
 describe("checkout identity", () => {
   it("normalizes and HMACs email without exposing it", () => {
     const first = hashNormalizedCheckoutEmail(" Buyer@Example.COM ", "secret-value");
@@ -23,103 +24,49 @@ describe("checkout identity", () => {
   });
 });
 
-describe("CheckoutAttemptLimiter", () => {
-  it("atomically consumes the prepare IP and identity quotas", async () => {
-    const evalScript = jest.fn().mockResolvedValue([1, 0]);
-    const limiter = new CheckoutAttemptLimiter({ eval: evalScript }, () => 1000);
-
-    await expect(limiter.check(identity)).resolves.toEqual({
-      allowed: true,
-      retryAfterSeconds: null,
-    });
-
-    const [, keys, args] = evalScript.mock.calls[0] ?? [];
-    expect(keys).toEqual([
-      "rdk:checkout:tenant:tenant-1:email:email-hmac",
-      "rdk:checkout:tenant:tenant-1:user:user-1",
-      "rdk:checkout:tenant:tenant-1:device:device-session-1",
-      "rdk:checkout:tenant:tenant-1:ip:203.0.113.10",
-    ]);
-    expect(args).toEqual(expect.arrayContaining(["5", "5", "10", "1800000", "3"]));
-  });
-
-  it("returns the provider retry time when a daily identity quota is full", async () => {
-    const limiter = new CheckoutAttemptLimiter(
-      { eval: jest.fn().mockResolvedValue([0, 125001]) },
-      () => 1000,
-    );
-
-    await expect(limiter.check(identity)).resolves.toEqual({
-      allowed: false,
-      retryAfterSeconds: 126,
-    });
-  });
-
-  it("fails closed when Upstash is unavailable", async () => {
-    const limiter = new CheckoutAttemptLimiter({
-      eval: jest.fn().mockRejectedValue(new Error("redis unavailable")),
-    });
-
-    await expect(limiter.check(identity)).rejects.toThrow(
-      "checkout_protection_unavailable",
-    );
-  });
-
-  it("limits payment permits by order and trusted IP in their own windows", async () => {
-    const evalScript = jest.fn().mockResolvedValue([1, 0]);
-    const limiter = new CheckoutAttemptLimiter({ eval: evalScript }, () => 1000);
-
-    await expect(
-      limiter.checkPaymentAttempt({
-        tenantId: "tenant-1",
-        orderId: "order-1",
-        clientIp: "203.0.113.10",
-        deviceSessionId: "device-session-1",
-        normalizedEmailHash: "email-hash",
-      }),
-    ).resolves.toEqual({ allowed: true, retryAfterSeconds: null });
-
-    const [, keys, args] = evalScript.mock.calls[0] ?? [];
-    expect(keys).toEqual([
-      "rdk:checkout:tenant:tenant-1:payment:order:order-1",
-      "rdk:checkout:tenant:tenant-1:payment:ip:203.0.113.10",
-      "rdk:checkout:tenant:tenant-1:payment:device:device-session-1",
-      "rdk:checkout:tenant:tenant-1:payment:email:email-hash",
-    ]);
-    expect(args).toEqual(expect.arrayContaining(["1800000", "3", "3600000", "10"]));
-  });
-
-  it("records and limits hourly device declines", async () => {
-    const evalScript = jest.fn().mockResolvedValue([0, 60000]);
-    const limiter = new CheckoutAttemptLimiter({ eval: evalScript }, () => 1000);
-
-    await expect(
-      limiter.recordDecline({
-        tenantId: "tenant-1",
-        deviceSessionId: "device-session-1",
-      }),
-    ).resolves.toEqual({ allowed: false, retryAfterSeconds: 60 });
-
-    const [, keys, args] = evalScript.mock.calls[0] ?? [];
-    expect(keys).toEqual([
-      "rdk:checkout:tenant:tenant-1:payment:decline:device:device-session-1",
-    ]);
-    expect(args).toEqual(expect.arrayContaining(["3600000", "5"]));
-  });
+test("rejects missing, malformed, unsupported and unbounded runtime budgets", () => {
+  for (const raw of [
+    undefined,
+    "{}",
+    "{bad",
+    JSON.stringify({ ...config, version: 2 }),
+    JSON.stringify({ ...config, revision: "" }),
+    JSON.stringify({ ...config, providers: { square: 5, shippo: 1 } }),
+  ])
+    expect(parseCheckoutAdmissionBudgets(raw)).toBeNull();
+  expect(parseCheckoutAdmissionBudgets(JSON.stringify(config))).toEqual(config);
 });
-
-it("uses separate address-validation quotas without consuming reservation or payment quotas", async () => {
-  const evalScript = jest.fn().mockResolvedValue([1, 0]);
-  const limiter = new CheckoutAttemptLimiter({ eval: evalScript }, () => 1000);
-  await expect(limiter.checkAddressValidation(identity)).resolves.toEqual({
-    allowed: true,
-    retryAfterSeconds: null,
-  });
-  const [, keys, args] = evalScript.mock.calls[0];
+test("admission uses an atomic Redis call and reports rounded retry seconds", async () => {
+  const redis = { eval: jest.fn().mockResolvedValue([0, 125001]) };
+  await expect(
+    new CheckoutAttemptLimiter(redis, config).check(identity),
+  ).resolves.toEqual({ allowed: false, retryAfterSeconds: 126 });
+  const [, keys, args] = redis.eval.mock.calls[0];
   expect(keys).toEqual([
-    "rdk:checkout:tenant:tenant-1:address:ip:203.0.113.10",
-    "rdk:checkout:tenant:tenant-1:address:email:email-hmac",
-    "rdk:checkout:tenant:tenant-1:address:device:device-session-1",
+    "rdk:checkout:{admission}:ip:203.0.113.1",
+    "rdk:checkout:{admission}:global",
+    "rdk:checkout:{admission}:prepare:account:fixture",
   ]);
-  expect(args.slice(2)).toEqual(["1800000", "30", "1800000", "20", "1800000", "20"]);
+  expect(args.slice(-3)).toEqual(["600000", "5", "key-1"]);
+});
+test("fails closed on Redis outage, invalid response or missing budgets", async () => {
+  for (const redis of [
+    { eval: jest.fn().mockRejectedValue(Error()) },
+    { eval: jest.fn().mockResolvedValue([5, 1]) },
+  ]) {
+    await expect(
+      new CheckoutAttemptLimiter(redis, config).check(identity),
+    ).rejects.toThrow("checkout_protection_unavailable");
+  }
+  const redis = { eval: jest.fn() };
+  await expect(new CheckoutAttemptLimiter(redis, null).check(identity)).rejects.toThrow();
+  expect(redis.eval).not.toHaveBeenCalled();
+});
+test("address checking spends its own bounded shopper allowance", async () => {
+  const redis = { eval: jest.fn().mockResolvedValue([1, 0]) };
+  await new CheckoutAttemptLimiter(redis, config).checkAddressValidation(identity);
+  expect(redis.eval.mock.calls[0][1]).toContain(
+    "rdk:checkout:{admission}:address:account:fixture",
+  );
+  expect(redis.eval.mock.calls[0][1].join()).not.toContain("prepare:");
 });

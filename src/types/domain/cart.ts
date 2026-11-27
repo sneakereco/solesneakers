@@ -1,15 +1,4 @@
-// src/types/views/cart.ts
-export interface CartItem {
-  productId: string;
-  variantId: string;
-  sizeLabel: string;
-  brand: string;
-  name: string;
-  titleDisplay: string;
-  priceCents: number;
-  imageUrl: string;
-  quantity: number;
-  maxStock?: number;
-}
+import type { CartItem } from "@/Modules/Cart/Source/Contracts/Basket";
+export type { CartItem } from "@/Modules/Cart/Source/Contracts/Basket";
 
 export type CartLineIdentity = Pick<CartItem, "productId" | "variantId">;

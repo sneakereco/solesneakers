@@ -1,13 +1,15 @@
 import { getRateLimitPolicyForRequest } from "@/proxy/rate-limit";
 
 describe("checkout proxy rate-limit ownership", () => {
-  it("does not duplicate the dedicated checkout controls in the proxy limiter", () => {
+  it("retains coarse request protection for checkout routes", () => {
     for (const path of [
       "/api/checkout/prepare",
       "/api/checkout/payment-permit",
       "/api/checkout/pay",
     ]) {
-      expect(getRateLimitPolicyForRequest(path, "POST")).toBeNull();
+      expect(getRateLimitPolicyForRequest(path, "POST")).toMatchObject({
+        bucket: "checkout_traffic",
+      });
     }
   });
 
@@ -19,10 +21,10 @@ describe("checkout proxy rate-limit ownership", () => {
     });
   });
 
-  it("keeps non-mutating checkout quotes behind the general API write limit", () => {
+  it("keeps non-mutating checkout quotes behind the coarse checkout policy", () => {
     expect(getRateLimitPolicyForRequest("/api/checkout/quote", "POST")).toEqual({
-      bucket: "api_write",
-      maxRequests: 30,
+      bucket: "checkout_traffic",
+      maxRequests: 300,
       window: "1 m",
     });
   });

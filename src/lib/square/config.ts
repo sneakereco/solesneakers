@@ -52,3 +52,12 @@ export function parseSquareConfig(
 export function getSquareConfig(): SquareConfig {
   return parseSquareConfig(process.env);
 }
+
+export function getSquareMerchantId(): string {
+  const parsed = z
+    .string()
+    .regex(/^[A-Za-z0-9_-]{1,128}$/)
+    .safeParse(process.env.SQUARE_MERCHANT_ID);
+  if (!parsed.success) throw new Error("square_merchant_configuration_invalid");
+  return parsed.data;
+}

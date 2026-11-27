@@ -10,6 +10,8 @@
     "test:jest": "npm run test:jest:unit && npm run test:jest:integration",
     "test:jest:unit": "jest --config jest.config.ts",
     "test:jest:integration": "jest --config jest.integration.config.ts",
+    "test:checkout:db": "node scripts/test-checkout-hardening-db.mjs --acceptance",
+    "test:checkout:browser": "node tests/browser/checkout-hardening.mjs",
     "test:analytics:browser": "node tests/browser/admin-analytics.mjs",
     "test:analytics:operations": "node --test tests/database/admin-analytics-migration-order.test.mjs tests/operations/admin-analytics-provision.test.mjs tests/operations/admin-analytics-observers.test.mjs",
     "analytics:provision": "node scripts/provision-admin-analytics.mjs",
@@ -28,7 +30,7 @@
     "start": "doppler run -- next start",
     "gen:types": "npx supabase gen types typescript --local --schema public > src/types/db/database.types.ts",
     "test:store-lock:database": "node --test --test-concurrency=1 tests/database/site-lock-registration.test.mjs",
-    "test:reseller-orders:database": "node --test --test-concurrency=1 tests/database/reseller-order-notifications.test.mjs"
+    "test:reseller-orders:database": "node scripts/test-checkout-hardening-db.mjs --mode fresh --test tests/database/reseller-order-notifications.test.mjs"
   },
   "dependencies": {
     "@date-fns/tz": "1.5.0",

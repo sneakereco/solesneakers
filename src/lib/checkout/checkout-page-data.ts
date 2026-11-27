@@ -35,6 +35,7 @@ export type CheckoutAddressForm = {
 };
 
 export type CheckoutPageData = {
+  ownerId: string | null;
   isGuest: boolean;
   customer: { ownerId?: string | null; email: string; address: CheckoutAddressForm };
   paymentConfig: {
@@ -87,6 +88,7 @@ export async function loadCheckoutPageData(
   const profile = session ? await deps.getShippingProfile(session.user.id) : null;
 
   return {
+    ownerId: session?.user.id ?? null,
     isGuest: !session,
     customer: {
       ownerId: session?.user.id ?? null,

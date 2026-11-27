@@ -1,4 +1,9 @@
 "use client";
+import {
+  BasketAccessNotice,
+  BasketRepairNotice,
+  BasketLineReview,
+} from "@/Modules/Cart/Source/Client";
 
 import { ActionButton } from "@/components/ui/ActionButton";
 import Image from "next/image";
@@ -34,6 +39,8 @@ function CartContent() {
     removeItem,
     updateQuantity,
     total,
+    access,
+    hasUnreadableItems,
     isReady,
     hasCartView,
     validationStatus,
@@ -43,9 +50,11 @@ function CartContent() {
   if (!isReady && !hasCartView)
     return validationStatus === "error" ? null : <CartSkeleton />;
 
+  if (access !== "ready") return <BasketAccessNotice />;
   if (items.length === 0) {
     return (
       <div className="flex min-h-[36rem] flex-col items-center justify-center bg-[var(--storefront-surface)] px-5 pb-24 text-center text-black">
+        {hasUnreadableItems && <BasketRepairNotice />}
         <ShoppingBag className="h-10 w-10" strokeWidth={1.5} />
         <h1 className="mt-5 text-3xl font-normal uppercase tracking-[0.02em]">
           Your cart is empty
@@ -69,6 +78,7 @@ function CartContent() {
 
       <div className="mx-auto mt-14 grid max-w-[90rem] grid-cols-1 items-start gap-10 lg:grid-cols-[minmax(0,1fr)_24rem] lg:gap-14">
         <section aria-label="Cart items" className="border-t border-zinc-300">
+          {hasUnreadableItems && <BasketRepairNotice />}
           {items.map((item) => {
             const canIncrease =
               typeof item.maxStock === "number" ? item.quantity < item.maxStock : true;
@@ -104,7 +114,9 @@ function CartContent() {
                       )}
                     </FeedbackLink>
                     <p className="shrink-0 text-sm font-medium sm:text-base">
-                      {formatPrice(item.priceCents * item.quantity)}
+                      {item.availability
+                        ? "Unavailable"
+                        : formatPrice(item.priceCents * item.quantity)}
                     </p>
                   </div>
 
@@ -112,16 +124,15 @@ function CartContent() {
                     Size: {item.sizeLabel === "N/A" ? "One size" : item.sizeLabel}
                   </p>
 
+                  <BasketLineReview item={item} />
                   <div className="mt-auto flex flex-wrap items-end justify-between gap-x-3 gap-y-2 pt-5">
                     <div className="inline-grid grid-cols-3 border border-zinc-300">
                       <ActionButton
                         type="button"
                         onClick={() =>
-                          void updateQuantity(
-                            item.productId,
-                            item.variantId,
-                            item.quantity - 1,
-                          )
+                          void updateQuantity(item.productId, item.variantId, {
+                            adjustBy: -1,
+                          })
                         }
                         className="flex h-10 w-10 cursor-pointer items-center justify-center hover:bg-white"
                         disabled={!isReady || writePending}
@@ -135,11 +146,9 @@ function CartContent() {
                       <ActionButton
                         type="button"
                         onClick={() =>
-                          void updateQuantity(
-                            item.productId,
-                            item.variantId,
-                            item.quantity + 1,
-                          )
+                          void updateQuantity(item.productId, item.variantId, {
+                            adjustBy: 1,
+                          })
                         }
                         disabled={!isReady || writePending || !canIncrease}
                         className="flex h-10 w-10 cursor-pointer items-center justify-center hover:bg-white disabled:cursor-not-allowed disabled:text-zinc-300"

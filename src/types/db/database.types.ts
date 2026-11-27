@@ -259,16 +259,87 @@ export type Database = {
           },
         ]
       }
+      checkout_dependency_leases: {
+        Row: {
+          dependency: string
+          lease_expires_at: string | null
+          lease_token: string | null
+          slot: number
+        }
+        Insert: {
+          dependency: string
+          lease_expires_at?: string | null
+          lease_token?: string | null
+          slot: number
+        }
+        Update: {
+          dependency?: string
+          lease_expires_at?: string | null
+          lease_token?: string | null
+          slot?: number
+        }
+        Relationships: []
+      }
+      checkout_financial_facts: {
+        Row: {
+          amount_cents: number
+          currency: string
+          kind: string
+          order_id: string
+          payment_id: string
+          provider_id: string
+          provider_time: string
+          provider_version: string
+          status: string
+        }
+        Insert: {
+          amount_cents: number
+          currency: string
+          kind: string
+          order_id: string
+          payment_id: string
+          provider_id: string
+          provider_time: string
+          provider_version: string
+          status: string
+        }
+        Update: {
+          amount_cents?: number
+          currency?: string
+          kind?: string
+          order_id?: string
+          payment_id?: string
+          provider_id?: string
+          provider_time?: string
+          provider_version?: string
+          status?: string
+        }
+        Relationships: [
+          {
+            foreignKeyName: "checkout_financial_facts_order_id_fkey"
+            columns: ["order_id"]
+            isOneToOne: false
+            referencedRelation: "orders"
+            referencedColumns: ["id"]
+          },
+        ]
+      }
       checkout_notification_outbox: {
         Row: {
           attempts: number
           created_at: string
+          delivery_failures: number
           event_key: string
+          handoff_started_at: string | null
           id: string
           kind: string
+          lease_expires_at: string | null
+          lease_token: string | null
           next_attempt_at: string
           order_id: string
           payload: Json
+          smtp_phase: string | null
+          smtp_reply: number | null
           status: string
           tenant_id: string
           updated_at: string
@@ -276,12 +347,18 @@ export type Database = {
         Insert: {
           attempts?: number
           created_at?: string
+          delivery_failures?: number
           event_key: string
+          handoff_started_at?: string | null
           id?: string
           kind: string
+          lease_expires_at?: string | null
+          lease_token?: string | null
           next_attempt_at?: string
           order_id: string
           payload?: Json
+          smtp_phase?: string | null
+          smtp_reply?: number | null
           status?: string
           tenant_id: string
           updated_at?: string
@@ -289,12 +366,18 @@ export type Database = {
         Update: {
           attempts?: number
           created_at?: string
+          delivery_failures?: number
           event_key?: string
+          handoff_started_at?: string | null
           id?: string
           kind?: string
+          lease_expires_at?: string | null
+          lease_token?: string | null
           next_attempt_at?: string
           order_id?: string
           payload?: Json
+          smtp_phase?: string | null
+          smtp_reply?: number | null
           status?: string
           tenant_id?: string
           updated_at?: string
@@ -315,6 +398,211 @@ export type Database = {
             referencedColumns: ["id"]
           },
         ]
+      }
+      checkout_operational_controls: {
+        Row: {
+          pause_new_checkouts: boolean
+          pause_payment_dispatch: boolean
+          singleton: boolean
+        }
+        Insert: {
+          pause_new_checkouts?: boolean
+          pause_payment_dispatch?: boolean
+          singleton?: boolean
+        }
+        Update: {
+          pause_new_checkouts?: boolean
+          pause_payment_dispatch?: boolean
+          singleton?: boolean
+        }
+        Relationships: []
+      }
+      checkout_payment_attempt_history: {
+        Row: {
+          attempt_id: string
+          id: number
+          reason: string
+          recorded_at: string
+          state: string
+          verified_facts: Json | null
+        }
+        Insert: {
+          attempt_id: string
+          id?: never
+          reason: string
+          recorded_at?: string
+          state: string
+          verified_facts?: Json | null
+        }
+        Update: {
+          attempt_id?: string
+          id?: never
+          reason?: string
+          recorded_at?: string
+          state?: string
+          verified_facts?: Json | null
+        }
+        Relationships: [
+          {
+            foreignKeyName: "checkout_payment_attempt_history_attempt_id_fkey"
+            columns: ["attempt_id"]
+            isOneToOne: false
+            referencedRelation: "checkout_payment_attempts"
+            referencedColumns: ["id"]
+          },
+        ]
+      }
+      checkout_payment_attempts: {
+        Row: {
+          amount_cents: number
+          cart_hash: string | null
+          created_at: string
+          currency: string
+          device_session_id: string | null
+          dispatched_at: string | null
+          id: string
+          method: string
+          order_id: string
+          owner_key: string
+          provider_payment_id: string | null
+          reason: string | null
+          request_digest: string | null
+          sequence: number
+          source_digest: string | null
+          square_idempotency_key: string
+          square_order_id: string | null
+          state: string
+          terminal_capture: Json | null
+          updated_at: string
+        }
+        Insert: {
+          amount_cents: number
+          cart_hash?: string | null
+          created_at?: string
+          currency: string
+          device_session_id?: string | null
+          dispatched_at?: string | null
+          id?: string
+          method: string
+          order_id: string
+          owner_key: string
+          provider_payment_id?: string | null
+          reason?: string | null
+          request_digest?: string | null
+          sequence: number
+          source_digest?: string | null
+          square_idempotency_key?: string
+          square_order_id?: string | null
+          state: string
+          terminal_capture?: Json | null
+          updated_at?: string
+        }
+        Update: {
+          amount_cents?: number
+          cart_hash?: string | null
+          created_at?: string
+          currency?: string
+          device_session_id?: string | null
+          dispatched_at?: string | null
+          id?: string
+          method?: string
+          order_id?: string
+          owner_key?: string
+          provider_payment_id?: string | null
+          reason?: string | null
+          request_digest?: string | null
+          sequence?: number
+          source_digest?: string | null
+          square_idempotency_key?: string
+          square_order_id?: string | null
+          state?: string
+          terminal_capture?: Json | null
+          updated_at?: string
+        }
+        Relationships: [
+          {
+            foreignKeyName: "checkout_payment_attempts_order_id_fkey"
+            columns: ["order_id"]
+            isOneToOne: false
+            referencedRelation: "orders"
+            referencedColumns: ["id"]
+          },
+        ]
+      }
+      checkout_recovery_jobs: {
+        Row: {
+          attempts: number
+          event_id: string | null
+          id: string
+          kind: string
+          lease_expires_at: string | null
+          lease_token: string | null
+          next_attempt_at: string
+          order_id: string | null
+          reason: string | null
+          status: string
+          unique_key: string
+          unresolved_observations: number
+        }
+        Insert: {
+          attempts?: number
+          event_id?: string | null
+          id?: string
+          kind: string
+          lease_expires_at?: string | null
+          lease_token?: string | null
+          next_attempt_at: string
+          order_id?: string | null
+          reason?: string | null
+          status?: string
+          unique_key: string
+          unresolved_observations?: number
+        }
+        Update: {
+          attempts?: number
+          event_id?: string | null
+          id?: string
+          kind?: string
+          lease_expires_at?: string | null
+          lease_token?: string | null
+          next_attempt_at?: string
+          order_id?: string | null
+          reason?: string | null
+          status?: string
+          unique_key?: string
+          unresolved_observations?: number
+        }
+        Relationships: [
+          {
+            foreignKeyName: "checkout_recovery_jobs_event_id_fkey"
+            columns: ["event_id"]
+            isOneToOne: true
+            referencedRelation: "square_webhook_events"
+            referencedColumns: ["square_event_id"]
+          },
+          {
+            foreignKeyName: "checkout_recovery_jobs_order_id_fkey"
+            columns: ["order_id"]
+            isOneToOne: false
+            referencedRelation: "orders"
+            referencedColumns: ["id"]
+          },
+        ]
+      }
+      checkout_worker_heartbeats: {
+        Row: {
+          completed_at: string
+          worker: string
+        }
+        Insert: {
+          completed_at: string
+          worker: string
+        }
+        Update: {
+          completed_at?: string
+          worker?: string
+        }
+        Relationships: []
       }
       contact_messages: {
         Row: {
@@ -808,6 +1096,10 @@ export type Database = {
         Row: {
           actual_shipping_cost_cents: number | null
           cart_hash: string | null
+          checkout_attempt_guarded: boolean
+          checkout_expiry_marked_at: string | null
+          checkout_financial_review: string | null
+          checkout_guest_context_hash: string | null
           checkout_protection_evidence: Json
           created_at: string | null
           currency: string | null
@@ -848,6 +1140,10 @@ export type Database = {
         Insert: {
           actual_shipping_cost_cents?: number | null
           cart_hash?: string | null
+          checkout_attempt_guarded?: boolean
+          checkout_expiry_marked_at?: string | null
+          checkout_financial_review?: string | null
+          checkout_guest_context_hash?: string | null
           checkout_protection_evidence?: Json
           created_at?: string | null
           currency?: string | null
@@ -888,6 +1184,10 @@ export type Database = {
         Update: {
           actual_shipping_cost_cents?: number | null
           cart_hash?: string | null
+          checkout_attempt_guarded?: boolean
+          checkout_expiry_marked_at?: string | null
+          checkout_financial_review?: string | null
+          checkout_guest_context_hash?: string | null
           checkout_protection_evidence?: Json
           created_at?: string | null
           currency?: string | null
@@ -1694,6 +1994,7 @@ export type Database = {
           currency: string
           due_at: string | null
           order_id: string
+          provider_updated_at: string | null
           reason: string
           square_created_at: string | null
           square_dispute_id: string
@@ -1707,6 +2008,7 @@ export type Database = {
           currency: string
           due_at?: string | null
           order_id: string
+          provider_updated_at?: string | null
           reason: string
           square_created_at?: string | null
           square_dispute_id: string
@@ -1720,6 +2022,7 @@ export type Database = {
           currency?: string
           due_at?: string | null
           order_id?: string
+          provider_updated_at?: string | null
           reason?: string
           square_created_at?: string | null
           square_dispute_id?: string
@@ -1748,6 +2051,7 @@ export type Database = {
       square_refunds: {
         Row: {
           amount_cents: number
+          checkout_status_conflict: boolean
           currency: string
           order_id: string
           reason: string | null
@@ -1760,6 +2064,7 @@ export type Database = {
         }
         Insert: {
           amount_cents: number
+          checkout_status_conflict?: boolean
           currency: string
           order_id: string
           reason?: string | null
@@ -1772,6 +2077,7 @@ export type Database = {
         }
         Update: {
           amount_cents?: number
+          checkout_status_conflict?: boolean
           currency?: string
           order_id?: string
           reason?: string | null
@@ -1808,6 +2114,7 @@ export type Database = {
           payload_sha256: string
           processed_at: string | null
           received_at: string
+          recovery_receipt: boolean
           square_created_at: string | null
           square_event_id: string
         }
@@ -1819,6 +2126,7 @@ export type Database = {
           payload_sha256: string
           processed_at?: string | null
           received_at?: string
+          recovery_receipt?: boolean
           square_created_at?: string | null
           square_event_id: string
         }
@@ -1830,6 +2138,7 @@ export type Database = {
           payload_sha256?: string
           processed_at?: string | null
           received_at?: string
+          recovery_receipt?: boolean
           square_created_at?: string | null
           square_event_id?: string
         }
@@ -2250,6 +2559,22 @@ export type Database = {
         Args: { accepted_label: string; candidate_id: string }
         Returns: Json
       }
+      acquire_checkout_dependency_lease: {
+        Args: { p_dependency: string; p_lease_seconds: number; p_limit: number }
+        Returns: string
+      }
+      apply_checkout_dispute_receipt: {
+        Args: { p_dispute: Json; p_event_id: string; p_order_id: string }
+        Returns: undefined
+      }
+      apply_checkout_payment_with_analytics: {
+        Args: { p_fact: Json; p_provider_time: string; p_source: Json; p_review?: string }
+        Returns: Json
+      }
+      apply_checkout_financial_fact: {
+        Args: { p_fact: Json; p_provider_time: string; p_review?: string }
+        Returns: Json
+      }
       analytics_append_fact: { Args: { p_fact: Json }; Returns: string }
       analytics_claim_batch: {
         Args: { p_dataset_id: string; p_lease_seconds: number; p_limit: number }
@@ -2338,13 +2663,42 @@ export type Database = {
         }
         Returns: boolean
       }
+      begin_checkout_mail_handoff: {
+        Args: { p_id: string; p_token: string }
+        Returns: boolean
+      }
+      begin_checkout_payment_dispatch: {
+        Args: {
+          p_attempt_id: string
+          p_owner_binding: string
+          p_request_digest: string
+          p_source_digest: string
+        }
+        Returns: Json
+      }
+      checkout_financial_admission: {
+        Args: { p_kind: string; p_order_id: string; p_shopper_binding: string }
+        Returns: number
+      }
+      claim_checkout_mail: {
+        Args: { p_limit: number; p_order_id?: string }
+        Returns: Json
+      }
       claim_checkout_notifications: { Args: { p_limit: number }; Returns: Json }
       claim_checkout_notifications_for_order: {
         Args: { p_limit: number; p_order_id: string }
         Returns: Json
       }
       claim_checkout_notifications_v2: {
-        Args: { p_limit: number; p_order_id?: string; p_include_reseller?: boolean }
+        Args: {
+          p_include_reseller?: boolean
+          p_limit: number
+          p_order_id?: string
+        }
+        Returns: Json
+      }
+      claim_checkout_recovery: {
+        Args: { p_lease_seconds: number; p_limit: number; p_now: string }
         Returns: Json
       }
       consume_square_checkout_reservation:
@@ -2360,15 +2714,66 @@ export type Database = {
             }
             Returns: boolean
           }
+      enqueue_checkout_recovery: {
+        Args: {
+          p_due_at: string
+          p_event_id?: string
+          p_kind: string
+          p_order_id?: string
+          p_reason?: string
+          p_unique_key: string
+        }
+        Returns: undefined
+      }
+      finish_checkout_expiry: {
+        Args: { p_canceled_square_order_id?: string; p_order_id: string }
+        Returns: string
+      }
+      finish_checkout_mail: {
+        Args: {
+          p_id: string
+          p_outcome: string
+          p_phase?: string
+          p_reply?: number
+          p_token: string
+        }
+        Returns: boolean
+      }
+      finish_checkout_mail_disposition: {
+        Args: {
+          p_id: string
+          p_outcome: string
+          p_phase?: string
+          p_reply?: number
+          p_token: string
+        }
+        Returns: string
+      }
       finish_checkout_notification: {
         Args: { p_notification_id: string; p_succeeded: boolean }
         Returns: boolean
+      }
+      finish_checkout_recovery: {
+        Args: {
+          p_id: string
+          p_lease_token: string
+          p_next_attempt_at?: string
+          p_reason?: string
+          p_result: string
+        }
+        Returns: boolean
+      }
+      get_or_create_checkout_payment_attempt: {
+        Args: { p_method: string; p_order_id: string; p_owner_binding: string }
+        Returns: Json
       }
       get_store_access_settings: { Args: never; Returns: Json }
       is_admin: { Args: never; Returns: boolean }
       is_admin_for_tenant: { Args: { target_tenant: string }; Returns: boolean }
       is_dev: { Args: never; Returns: boolean }
       is_super_admin: { Args: never; Returns: boolean }
+      mark_checkout_expiry: { Args: { p_order_id: string }; Returns: Json }
+      oldest_checkout_recovery_due_ms: { Args: never; Returns: number }
       process_square_dispute_event: {
         Args: {
           p_amount_cents: number
@@ -2423,6 +2828,7 @@ export type Database = {
         }
         Returns: Json
       }
+      read_checkout_health: { Args: never; Returns: Json }
       read_specialty_claim_result: {
         Args: { p_attempt_id: string; p_recovery_hash: string }
         Returns: Json
@@ -2430,6 +2836,39 @@ export type Database = {
       read_specialty_claim_result_with_context: {
         Args: { p_attempt_id: string; p_recovery_hash: string }
         Returns: Json
+      }
+      receive_checkout_square_event: {
+        Args: {
+          p_event_id: string
+          p_kind: string
+          p_payload: Json
+          p_payload_hash: string
+        }
+        Returns: string
+      }
+      record_checkout_payment_outcome: {
+        Args: {
+          p_attempt_id: string
+          p_provider_payment_id?: string
+          p_state?: string
+          p_verified_facts?: Json
+        }
+        Returns: Json
+      }
+      record_checkout_terminal_capture: {
+        Args: {
+          p_attempt_id: string
+          p_fact: Json
+          p_method: string
+          p_provider_time: string
+          p_reference_id: string
+          p_square_order_id: string
+        }
+        Returns: Json
+      }
+      record_checkout_worker_heartbeat: {
+        Args: { p_worker: string }
+        Returns: undefined
       }
       record_shippo_tracking_update: {
         Args: {
@@ -2451,9 +2890,25 @@ export type Database = {
         }
         Returns: undefined
       }
+      reject_checkout_quote_before_attach: {
+        Args: { p_order_id: string; p_owner_binding: string }
+        Returns: boolean
+      }
+      release_checkout_dependency_lease: {
+        Args: { p_token: string }
+        Returns: undefined
+      }
       release_square_checkout_reservation: {
         Args: { p_order_id: string; p_reason: string }
         Returns: boolean
+      }
+      reserve_checkout_inventory_v2_with_analytics: {
+        Args: { p_request: Json; p_analytics: Json }
+        Returns: Json
+      }
+      reserve_checkout_inventory_v2: {
+        Args: { p_request: Json }
+        Returns: Json
       }
       reserve_square_checkout_inventory:
         | {
@@ -2572,6 +3027,7 @@ export type Database = {
         }
         Returns: Json
       }
+      sweep_checkout_recovery: { Args: { p_limit: number }; Returns: undefined }
       update_specialty_claim_status: {
         Args: {
           p_actor_id: string
@@ -2589,6 +3045,65 @@ export type Database = {
           p_site_unlock_at: string
         }
         Returns: Json
+      }
+      write_staff_order_fulfillment: {
+        Args: {
+          p_action: string
+          p_actor_id: string
+          p_carrier?: string
+          p_order_id: string
+          p_tracking_number?: string
+        }
+        Returns: {
+          actual_shipping_cost_cents: number | null
+          cart_hash: string | null
+          checkout_attempt_guarded: boolean
+          checkout_expiry_marked_at: string | null
+          checkout_financial_review: string | null
+          checkout_guest_context_hash: string | null
+          checkout_protection_evidence: Json
+          created_at: string | null
+          currency: string | null
+          customer_state: string | null
+          expires_at: string | null
+          failure_reason: string | null
+          fulfillment: string | null
+          fulfillment_status: string | null
+          guest_email: string | null
+          id: string
+          idempotency_key: string | null
+          label_created_at: string | null
+          label_created_by: string | null
+          label_url: string | null
+          payment_transaction_id: string | null
+          pickup_instructions: string | null
+          pickup_location_id: string | null
+          pickup_name: string | null
+          pickup_phone: string | null
+          refund_amount: number | null
+          refunded_at: string | null
+          shipped_at: string | null
+          shipping: number
+          shipping_carrier: string | null
+          square_order_id: string | null
+          square_order_version: number | null
+          status: string | null
+          subtotal: number
+          tax_amount: number | null
+          tax_calculation_id: string | null
+          tenant_id: string | null
+          total: number
+          tracking_number: string | null
+          tracking_url: string | null
+          updated_at: string | null
+          user_id: string | null
+        }[]
+        SetofOptions: {
+          from: "*"
+          to: "orders"
+          isOneToOne: false
+          isSetofReturn: true
+        }
       }
     }
     Enums: {

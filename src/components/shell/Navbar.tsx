@@ -1,6 +1,6 @@
 "use client";
+import { publishSessionChange } from "@/contexts/session-change";
 
-import { notifySessionUpdate } from "@/lib/auth/session-events";
 import { useAsyncAction } from "@/components/ui/useAsyncAction";
 import { RequestError } from "@/components/ui/RequestError";
 import { LoadingState, Skeleton } from "@/components/ui/Skeleton";
@@ -39,11 +39,8 @@ interface NavbarProps {
 }
 
 export function Navbar({
-  isAuthenticated = false,
-  userEmail,
   cartCount = 0,
   cartReady = true,
-  role = null,
   showAnnouncement = true,
 }: NavbarProps) {
   const pathname = usePathname();
@@ -53,7 +50,6 @@ export function Navbar({
     isAuthenticated: sessionIsAuthenticated,
     isLoading,
     isSessionUnavailable,
-    hasRefreshed,
     refreshSession,
   } = useSession();
   const [menuInvoker, setMenuInvoker] = useState<HTMLButtonElement | null>(null);
@@ -86,19 +82,17 @@ export function Navbar({
         const response = await withRequestDeadline((signal) =>
           fetch("/api/auth/logout", { method: "POST", signal }),
         );
-        if (!response.ok) throw new Error("Could not sign out");
-        notifySessionUpdate();
+        if (!response.ok || (await response.json()).ok !== true)
+          throw new Error("Could not sign out");
+        publishSessionChange();
         window.location.href = "/";
       })
       .catch(() => setLogoutError(true));
   };
 
-  const useInitialHeaderIdentity = !hasRefreshed && !isSessionUnavailable;
-  const effectiveIsAuthenticated =
-    sessionIsAuthenticated || (useInitialHeaderIdentity && isAuthenticated);
-  const effectiveUserEmail =
-    user?.email ?? (useInitialHeaderIdentity ? userEmail : undefined);
-  const effectiveRole = sessionRole ?? (useInitialHeaderIdentity ? role : null);
+  const effectiveIsAuthenticated = sessionIsAuthenticated;
+  const effectiveUserEmail = user?.email;
+  const effectiveRole = sessionRole;
   const showAdminDashboardLink =
     typeof effectiveRole === "string" && isAdminRole(effectiveRole);
   const showAuthButtons =

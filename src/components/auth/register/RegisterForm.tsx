@@ -1,4 +1,5 @@
 "use client";
+import { publishSessionChange } from "@/contexts/session-change";
 
 import { useState, type FormEvent } from "react";
 import { useSearchParams } from "next/navigation";
@@ -53,6 +54,7 @@ export function RegisterForm() {
         if (result.ok !== true)
           throw new Error("Could not create your account. Please try again.");
 
+        publishSessionChange();
         setContinuing(true);
         const verifyUrl = `/auth/login?flow=verify-email&verifyFlow=signup&email=${encodeURIComponent(email)}${nextUrl !== "/" ? `&next=${encodeURIComponent(nextUrl)}` : ""}`;
         navigateAfterAuth(verifyUrl);

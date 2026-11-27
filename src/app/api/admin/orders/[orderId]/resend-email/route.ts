@@ -68,10 +68,10 @@ export async function POST(
         items:order_items(
           product_name, brand, model, category, variant_sku, size_label,
           quantity, unit_price, line_total,
-          product:products(name, brand, model, category, images:product_images(url, is_primary, sort_order)),
+          product:products(name, category, images:product_images(url, is_primary, sort_order)),
           variant:product_variants(sku)
         ),
-        shipping:order_shipping(*)
+        shippingAddress:order_shipping(*)
         `,
       )
       .eq("id", orderId)
@@ -87,9 +87,7 @@ export async function POST(
       );
     }
 
-    // eslint-disable-next-line @typescript-eslint/no-explicit-any
-    const orderAny = order as any;
-    const recipientEmail = orderAny.profiles?.email ?? orderAny.guest_email ?? null;
+    const recipientEmail = order.profiles?.email ?? order.guest_email ?? null;
 
     if (!recipientEmail) {
       return NextResponse.json(
@@ -98,15 +96,15 @@ export async function POST(
       );
     }
 
-    const tenantId = orderAny.tenant_id ?? null;
+    const tenantId = order.tenant_id ?? null;
     const emailService = new OrderEmailService(admin, tenantId);
     const refundNotifications = new RefundNotificationService(admin);
 
-    const shippingRaw = orderAny.shipping;
+    const shippingRaw = order.shippingAddress;
     const shippingAddr = Array.isArray(shippingRaw) ? shippingRaw[0] : shippingRaw;
     let guestOrderUrl: string | null = null;
 
-    if (!order.user_id && orderAny.guest_email) {
+    if (!order.user_id && order.guest_email) {
       const { token } = await accessTokenService.createToken({ orderId: order.id });
       guestOrderUrl = `${env.NEXT_PUBLIC_SITE_URL}/order-status/${order.id}?token=${encodeURIComponent(token)}`;
     }
@@ -117,13 +115,13 @@ export async function POST(
           to: recipientEmail,
           order: {
             orderId: order.id,
-            createdAt: orderAny.created_at ?? new Date().toISOString(),
-            fulfillment: (orderAny.fulfillment as "ship" | "pickup") ?? "ship",
+            createdAt: order.created_at ?? new Date().toISOString(),
+            fulfillment: (order.fulfillment as "ship" | "pickup") ?? "ship",
             currency: "USD",
-            subtotal: Number(orderAny.subtotal ?? 0),
-            tax: Number(orderAny.tax_amount ?? 0),
-            shipping: 0,
-            total: Number(orderAny.total ?? 0),
+            subtotal: Number(order.subtotal ?? 0),
+            tax: Number(order.tax_amount ?? 0),
+            shipping: Number(order.shipping ?? 0),
+            total: Number(order.total ?? 0),
             shippingAddress: shippingAddr
               ? {
                   name: shippingAddr.name ?? null,
@@ -136,7 +134,7 @@ export async function POST(
                 }
               : null,
           },
-          itemsDetailed: orderAny.items ?? [],
+          itemsDetailed: order.items ?? [],
         });
         break;
       }
@@ -151,8 +149,8 @@ export async function POST(
         await emailService.sendOrderLabelCreated({
           to: recipientEmail,
           orderId: order.id,
-          carrier: orderAny.shipping_carrier ?? null,
-          trackingNumber: orderAny.tracking_number ?? null,
+          carrier: order.shipping_carrier ?? null,
+          trackingNumber: order.tracking_number ?? null,
           orderUrl: guestOrderUrl,
         });
         break;
@@ -161,8 +159,8 @@ export async function POST(
         await emailService.sendOrderInTransit({
           to: recipientEmail,
           orderId: order.id,
-          carrier: orderAny.shipping_carrier ?? null,
-          trackingNumber: orderAny.tracking_number ?? null,
+          carrier: order.shipping_carrier ?? null,
+          trackingNumber: order.tracking_number ?? null,
           orderUrl: guestOrderUrl,
         });
         break;
@@ -171,8 +169,8 @@ export async function POST(
         await emailService.sendOrderDelivered({
           to: recipientEmail,
           orderId: order.id,
-          carrier: orderAny.shipping_carrier ?? null,
-          trackingNumber: orderAny.tracking_number ?? null,
+          carrier: order.shipping_carrier ?? null,
+          trackingNumber: order.tracking_number ?? null,
           orderUrl: guestOrderUrl,
         });
         break;
@@ -183,7 +181,7 @@ export async function POST(
         );
         const refundAmountCents =
           latestRefund?.refundAmountCents ??
-          Math.max(0, Math.round(Number(orderAny.refund_amount ?? 0)));
+          Math.max(0, Math.round(Number(order.refund_amount ?? 0)));
 
         if (refundAmountCents <= 0) {
           return NextResponse.json(

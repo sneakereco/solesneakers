@@ -18,13 +18,14 @@ const bundle = await build({
     contents: `
       import React from "react";
       import {SessionProvider,useSession as useRootSession} from "./src/contexts/SessionContext";
+      import {publishSessionChange} from "./src/contexts/session-change";
       function SessionProbe(){const session=useRootSession();return <output data-session-user={session.user?.id??"guest"} data-session-available={String(session.sessionAvailable)} />;}
       import {MeasurementProvider} from "./src/Modules/Analytics/Source/Features/VisitorMeasurement/MeasurementProvider";
       import {ClientShell} from "./src/components/shell/ClientShell";
       import { createRoot } from "react-dom/client";
       import posthog from "posthog-js";
       import { configuredMeasurement,isApprovedMeasurementHostname } from "./src/Modules/Analytics/Source/Features/VisitorMeasurement/host-gate";
-      import { ViewGrant } from "./src/Modules/Analytics/Source/Features/VisitorMeasurement/view-grant";
+      import { CheckoutMeasurement, ViewGrant } from "./src/Modules/Analytics/Source/Features/VisitorMeasurement/view-grant";
       import { CartProvider, useCart } from "./src/components/cart/CartProvider";
       import { CheckoutClient } from "./src/components/checkout/CheckoutClient";
       import {captureCheckoutStarted} from "./src/Modules/Analytics/Source/Features/VisitorMeasurement/triggers";
@@ -44,6 +45,7 @@ const bundle = await build({
       const productId = "123e4567-e89b-42d3-a456-426614174000";
       const variantId = "123e4567-e89b-42d3-a456-426614174001";
       const initialData = {
+        ownerId: null,
         isGuest: true,
         customer: {
           email: "",
@@ -101,9 +103,10 @@ const bundle = await build({
           posthog.init=(token,options,name)=>init(token,{...options,opt_out_useragent_filter:true,disable_compression:true},name);
           if(window.fixtureMode==="lifecycle"){
             const user=window.initialAccount?{id:window.initialAccount,email:""}:null;
+            window.changeSession=publishSessionChange;
             window.observe=()=>capture({event:"public_page_viewed"});
             const renderLifecycle=(showCheckout)=>root.render(<SessionProvider initialUser={user} initialRole={user?"customer":null}><MeasurementProvider><SessionProbe/>
-              {showCheckout ? <CartProvider userId={user?.id}><LifecycleCheckout data={{...initialData,isGuest:!user,customer:{...initialData.customer,ownerId:user?.id??null}}}/></CartProvider> : <div>Store</div>}
+              {showCheckout ? <CartProvider userId={user?.id}><LifecycleCheckout data={{...initialData,isGuest:!user,ownerId:user?.id??null,customer:initialData.customer}}/></CartProvider> : <div>Store</div>}
             </MeasurementProvider></SessionProvider>);
             window.leaveCheckout=()=>renderLifecycle(false);
             renderLifecycle(window.location.pathname==="/checkout");
@@ -182,7 +185,7 @@ const bundle = await build({
           imageUrl: "/shoe.png",
           maxStock: 1,
         });
-        if (!saved) throw new Error("Fixture cart write did not complete");
+        if (saved.status !== "saved") throw new Error("Fixture cart write did not complete");
         test.persistedCart = JSON.parse(sessionStorage.getItem("rdk_cart_session") || "[]");
 
         root.unmount();
@@ -190,7 +193,7 @@ const bundle = await build({
         rootElement.innerHTML = "";
         root = createRoot(rootElement);
         history.replaceState(null, "", "/checkout");
-        root.render(<CartProvider><CheckoutClient initialData={initialData} /></CartProvider>);
+        root.render(<ViewGrant.Provider value={accepted.receiptId}><CheckoutMeasurement.Provider value="ready"><CartProvider><CheckoutClient initialData={initialData} /></CartProvider></CheckoutMeasurement.Provider></ViewGrant.Provider>);
         for (let attempt = 0; attempt < 50; attempt += 1) {
           test.checkoutRendered = Boolean(
             document.querySelector("[data-contact]") &&
@@ -244,12 +247,12 @@ const bundle = await build({
           ],
           [
             "next/navigation",
-            "export const useRouter = () => ({ push() {} }); export const usePathname = () => window.location.pathname;",
+            "export const useRouter = () => ({ push() {}, refresh() {} }); export const usePathname = () => window.location.pathname; export const useSearchParams = () => new URLSearchParams(window.location.search);",
           ],
           ["@/components/ui/Toast", "export const Toast = () => null;"],
           [
             "@/contexts/SessionContext",
-            `import {useSession as real} from "./src/contexts/SessionContext"; const guest={user:null,role:null,isLoading:false,isIdentityCurrent:owner=>owner===null}; export const useSession=()=>window.fixtureMode==="lifecycle"?real():(window.fixtureSession??guest);`,
+            `import {useSession as real} from "./src/contexts/SessionContext"; const guest={user:null,role:null,status:"ready",isLoading:false,isCurrent:()=>true,refreshSession:async()=>{},isIdentityCurrent:owner=>owner===null}; export const useSession=()=>window.fixtureMode==="lifecycle"?real():(window.fixtureSession??guest);`,
           ],
           [
             "@/components/checkout/CheckoutContactSection",
@@ -282,10 +285,6 @@ const bundle = await build({
               export const getOrCreateCheckoutIdempotencyKey = () => "idempotency";
               export const rememberPendingCheckoutAttempt = () => {}; export const clearCheckoutAttempt = () => {}; export const storeGuestOrderAccess = () => {};
             `,
-          ],
-          [
-            "@/lib/checkout/idempotency",
-            "export const clearIdempotencyKeyFromStorage = () => {};",
           ],
         ]);
         builder.onResolve({ filter: /.*/ }, (args) =>
@@ -379,6 +378,7 @@ try {
       status: 200,
       contentType: "application/json",
       body: JSON.stringify({
+        removed: [],
         items: [
           {
             productId: "123e4567-e89b-42d3-a456-426614174000",

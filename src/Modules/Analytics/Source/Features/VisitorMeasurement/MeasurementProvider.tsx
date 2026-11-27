@@ -36,6 +36,7 @@ export function MeasurementProvider({ children }: { children: ReactNode }) {
     sessionRevision = 0,
     sessionAvailable = true,
     refreshSession,
+    isIdentityCurrent,
   } = useSession();
   const userId = user?.id ?? null;
   const pathname = usePathname();
@@ -166,7 +167,12 @@ export function MeasurementProvider({ children }: { children: ReactNode }) {
       lastPage.current = "";
       return;
     }
-    if (isLoading || !sessionAvailable) return;
+    if (
+      isLoading ||
+      !sessionAvailable ||
+      (isIdentityCurrent && !isIdentityCurrent(userId))
+    )
+      return;
     setMeasurementAccount(userId, false);
     initializeMeasurement(config, state);
     let timer: number | undefined;
@@ -187,7 +193,15 @@ export function MeasurementProvider({ children }: { children: ReactNode }) {
       current = false;
       window.clearTimeout(timer);
     };
-  }, [allowed, isLoading, sessionAvailable, sessionRevision, state, userId]);
+  }, [
+    allowed,
+    isLoading,
+    sessionAvailable,
+    sessionRevision,
+    state,
+    userId,
+    isIdentityCurrent,
+  ]);
   useEffect(() => {
     if (!allowed || isLoading || !grant) return;
     const page = grant + pathname;

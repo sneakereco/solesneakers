@@ -38,6 +38,10 @@ describe("CheckoutReservationRepository", () => {
     const maybeSingle = jest.fn().mockResolvedValue({
       data: {
         id: "order-1",
+        user_id: null,
+        checkout_guest_context_hash: null,
+        checkout_attempt_guarded: false,
+        checkout_protection_evidence: {},
         cart_hash: "cart-hash",
         status: "pending",
         expires_at: "2026-08-28T03:00:00.000Z",
@@ -85,6 +89,7 @@ describe("CheckoutReservationRepository", () => {
           user_id: null,
           guest_email: "buyer@example.com",
           cart_hash: "cart-hash",
+          checkout_financial_review: null,
           status: "pending",
           expires_at: "2026-09-06T12:15:00.000Z",
           subtotal: 100,

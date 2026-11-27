@@ -185,57 +185,6 @@ export class OrdersRepository {
     return data ?? [];
   }
 
-  async markRefunded(orderId: string, amount: number): Promise<OrderRow> {
-    const { data, error } = await this.supabase
-      .from("orders")
-      .update({
-        status: "refunded",
-        refund_amount: amount,
-        refunded_at: new Date().toISOString(),
-      })
-      .eq("id", orderId)
-      .select()
-      .single();
-
-    if (error) {
-      throw error;
-    }
-    return data as OrderRow;
-  }
-
-  async setFulfillmentStatus(orderId: string, status: string): Promise<void> {
-    const { error } = await this.supabase
-      .from("orders")
-      .update({ fulfillment_status: status })
-      .eq("id", orderId);
-
-    if (error) {
-      throw error;
-    }
-  }
-
-  async markFulfilled(
-    orderId: string,
-    input: { carrier?: string | null; trackingNumber?: string | null },
-  ): Promise<OrderRow> {
-    const { data, error } = await this.supabase
-      .from("orders")
-      .update({
-        fulfillment_status: "shipped",
-        shipping_carrier: input.carrier ?? null,
-        tracking_number: input.trackingNumber ?? null,
-        shipped_at: new Date().toISOString(),
-      })
-      .eq("id", orderId)
-      .select()
-      .single();
-
-    if (error) {
-      throw error;
-    }
-    return data as OrderRow;
-  }
-
   async markReadyToShip(
     orderId: string,
     input: {

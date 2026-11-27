@@ -10,6 +10,7 @@ jest.mock("@/lib/utils/log", () => ({
   logError: jest.fn(),
 }));
 
+import { AuthSessionMissingError } from "@supabase/supabase-js";
 import { DynamicServerError } from "next/dist/client/components/hooks-server-context";
 
 import { readServerSession, getServerSession } from "@/lib/auth/session";
@@ -120,5 +121,23 @@ describe("getServerSession", () => {
       },
       role: "admin",
     });
+  });
+});
+
+describe("session observation route", () => {
+  it.each([
+    [new AuthSessionMissingError(), 200],
+    [{ code: "session_expired", status: 401 }, 200],
+    [{ name: "AuthRetryableFetchError", status: 503 }, 503],
+    [{ message: "transport failed" }, 503],
+  ])("distinguishes signed out from upstream errors %j", async (error, status) => {
+    mockCreateSupabaseServerClient.mockResolvedValue({
+      auth: { getUser: jest.fn().mockResolvedValue({ data: { user: null }, error }) },
+    } as never);
+    const { GET } = await import("@/app/api/auth/session/route");
+    const response = await GET(new Request("https://fixture.invalid/api/auth/session"));
+    expect(response.status).toBe(status);
+    if (status === 200) expect(await response.json()).toEqual({ user: null, role: null });
+    else expect(await response.text()).not.toContain("transport failed");
   });
 });

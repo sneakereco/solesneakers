@@ -3,10 +3,13 @@ import type { NextRequest } from "next/server";
 import { NextResponse } from "next/server";
 import { z } from "zod";
 
-import { createSupabaseServerClient } from "@/lib/supabase/server";
-import { requireAdminApi } from "@/lib/auth/session";
-import { OrdersService } from "@/services/orders-service";
-import { OrderEventsRepository } from "@/repositories/order-events-repo";
+import { createSupabaseAdminClient } from "@/lib/supabase/service-role";
+import {
+  OrderWriteError,
+  OrderWriteRepository,
+} from "@/Modules/Orders/Source/Features/TrustedMutations/order-write-repository";
+import { writeTrustedOrder } from "@/Modules/Orders/Source/Features/TrustedMutations/trusted-order-write";
+import { AuthError, requireAdminApi } from "@/lib/auth/session";
 import { getRequestIdFromHeaders } from "@/lib/http/request-id";
 import { logError } from "@/lib/utils/log";
 
@@ -29,9 +32,6 @@ export async function POST(
 
   try {
     const session = await requireAdminApi();
-    const supabase = await createSupabaseServerClient();
-    const service = new OrdersService(supabase);
-
     const { orderId } = await params;
     const paramsParsed = paramsSchema.safeParse({ orderId });
     if (!paramsParsed.success) {
@@ -50,52 +50,19 @@ export async function POST(
       );
     }
 
-    // Fetch existing order
-    const existing = await service.getOrderById(paramsParsed.data.orderId);
-    if (!existing) {
+    const { order } = await writeTrustedOrder(
+      { orderId: paramsParsed.data.orderId, action: "fulfill", ...parsed.data },
+      { userId: session.user.id, role: "admin" },
+      new OrderWriteRepository(createSupabaseAdminClient()),
+    );
+    return NextResponse.json({ order }, { headers: { "Cache-Control": "no-store" } });
+  } catch (error) {
+    if (error instanceof AuthError || error instanceof OrderWriteError) {
       return NextResponse.json(
-        { error: "Order not found", requestId },
-        { status: 404, headers: { "Cache-Control": "no-store" } },
+        { error: error.message, requestId },
+        { status: error.status, headers: { "Cache-Control": "no-store" } },
       );
     }
-
-    // Mark as shipped (fulfillment_status: shipped)
-    const updated = await service.markFulfilled(paramsParsed.data.orderId, {
-      carrier: parsed.data.carrier ?? null,
-      trackingNumber: parsed.data.trackingNumber ?? null,
-    });
-
-    try {
-      const eventsRepo = new OrderEventsRepository(supabase);
-      const hasEvent = await eventsRepo.hasEvent(updated.id, "shipped");
-      if (!hasEvent) {
-        await eventsRepo.insertEvent({
-          orderId: updated.id,
-          type: "shipped",
-          message: "Order marked as shipped.",
-          createdBy: session.user.id,
-        });
-      }
-    } catch (eventError) {
-      logError(eventError, {
-        layer: "api",
-        requestId,
-        route: "/api/admin/orders/:orderId/fulfill",
-        message: "Failed to create order event",
-        orderId: updated.id,
-      });
-    }
-
-    // NOTE: We do NOT send email here
-    // The "in transit" email will be sent by the EasyPost webhook
-    // when the carrier first scans the package
-    // This ensures customers get notified when package actually starts moving
-
-    return NextResponse.json(
-      { order: updated },
-      { headers: { "Cache-Control": "no-store" } },
-    );
-  } catch (error) {
     logError(error, {
       layer: "api",
       requestId,

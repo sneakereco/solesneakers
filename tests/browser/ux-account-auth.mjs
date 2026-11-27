@@ -1120,7 +1120,7 @@ try {
   );
 
   await check(
-    "session 503 preserves known identity, and the actual header offers a retry",
+    "session 503 masks the previous account until a successful retry",
     async (page) => {
       let requests = 0;
       await page.route("**/api/auth/session", (route) =>
@@ -1137,7 +1137,7 @@ try {
       await expect(page.getByRole("button", { name: "Account" })).toBeVisible();
       await sessionUpdate(page);
       await expect(page.getByRole("alert")).toContainText(/account/i);
-      await expect(page.getByText("customer@example.test")).toBeVisible();
+      await expect(page.getByText("customer@example.test")).toHaveCount(0);
       await expect(page.getByRole("link", { name: "Login" })).toHaveCount(0);
       await page.getByRole("button", { name: "Retry" }).click();
       await expect(page.getByText("next@example.test")).toBeVisible();
@@ -1231,7 +1231,7 @@ try {
         }),
       );
       await expect(page.getByRole("alert")).toBeVisible();
-      await expect(page.getByText("server@example.test")).toBeVisible();
+      await expect(page.getByText("server@example.test")).toHaveCount(0);
       await page.evaluate(() =>
         window.updateServerSession({
           user: null,
@@ -1255,11 +1255,11 @@ try {
       await pending.received;
       await page.clock.fastForward(15_001);
       await expect(page.getByRole("alert")).toBeVisible();
-      await expect(page.getByText("customer@example.test")).toBeVisible();
+      await expect(page.getByText("customer@example.test")).toHaveCount(0);
       await expect(page.getByRole("button", { name: "Retry" })).toBeEnabled();
       pending.release(json({ user: null, role: null }));
       await pending.finished;
-      await expect(page.getByText("customer@example.test")).toBeVisible();
+      await expect(page.getByText("customer@example.test")).toHaveCount(0);
     },
   );
 } finally {

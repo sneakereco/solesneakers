@@ -6,6 +6,10 @@ jest.mock("@/lib/supabase/service-role", () => ({
   createSupabaseAdminClient: jest.fn(),
 }));
 
+jest.mock("@/Modules/Checkout/Source/Features/Operations/checkout-controls", () => ({
+  readCheckoutControls: jest.fn(),
+}));
+import { readCheckoutControls } from "@/Modules/Checkout/Source/Features/Operations/checkout-controls";
 const mockCreateSupabaseAdminClient = jest.mocked(createSupabaseAdminClient);
 
 const unlockedSettings = {
@@ -53,3 +57,26 @@ describe("assertCheckoutOpen", () => {
     });
   });
 });
+
+it.each([
+  [true, false],
+  [false, true],
+  [true, true],
+  [false, false],
+])(
+  "applies independent allocation and dispatch switches (%s, %s)",
+  async (newPause, dispatchPause) => {
+    jest
+      .spyOn(StoreAccessSettingsService.prototype, "getSettings")
+      .mockResolvedValue(unlockedSettings);
+    jest.mocked(readCheckoutControls).mockResolvedValue({
+      pauseNewCheckouts: newPause,
+      pausePaymentDispatch: dispatchPause,
+    });
+    expect((await assertCheckoutOpen("tenant", "new_prepare")).open).toBe(!newPause);
+    expect((await assertCheckoutOpen("tenant", "gateway_attempt")).open).toBe(
+      !dispatchPause,
+    );
+    expect((await assertCheckoutOpen("tenant", "resume")).open).toBe(true);
+  },
+);

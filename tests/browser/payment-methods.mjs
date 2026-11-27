@@ -53,7 +53,7 @@ const result = await build({
         test.change = (next) => setProps(old => ({ ...old, ...next }));
         return <SquarePaymentMethods {...props} paymentConfig={{ applicationId: 'sandbox-test', locationId: 'test', environment: 'sandbox' }}
           isGuest={false} prepare={async (...args) => { test.prepareCalls++; test.lastPrepare = args; if (test.holdPrepare) return new Promise((resolve, reject) => { test.resolvePrepare = resolve; test.rejectPrepare = reject; }); throw new Error('test boundary'); }}
-          onPaymentSubmitted={() => {}} quoteWalletShippingDestination={async () => { throw new Error('unused'); }}
+          onProcessing={() => {}} quoteWalletShippingDestination={async () => { throw new Error('unused'); }}
           resolveWalletShippingContact={async () => { throw new Error('unused'); }} />;
       }
       createRoot(document.getElementById('root')).render(<StrictMode><CheckoutPaymentProvider><Harness /></CheckoutPaymentProvider></StrictMode>);

@@ -1,0 +1,474 @@
+import type { SquareClient } from "square";
+import { z } from "zod";
+import type { AdminSupabaseClient } from "@/lib/supabase/service-role";
+import { verifyPaymentInquiry, verifyRefundInquiry } from "@/lib/square/verified-inquiry";
+import { CheckoutPaymentAttemptRepository } from "./attempt-repository";
+import { FinancialProjectionRepository } from "./projection-repository";
+import { squareEventReceipt, type SquareEventReceiptInput } from "./webhook-inbox";
+import {
+  recordSquarePaymentDetails,
+  squarePaymentDetails,
+  squareSourceEvidence,
+} from "@/lib/square/payment-details";
+import type { SquarePaymentEventResult } from "@/lib/square/payment-event";
+
+type Identity = { merchantId: string; locationId: string };
+type Effects = {
+  syncShipping: (result: SquarePaymentEventResult) => Promise<unknown>;
+  scheduleNotifications: (orderId: string) => void;
+};
+type ProofInput = {
+  paymentId: string;
+  squareOrderId?: string;
+  localOrderId?: string;
+  expectedAttemptId?: string;
+};
+
+import { SquareEvidenceConflict, SquareTerminalCaptureConflict } from "./payment-facts";
+// Callers may pass only a local job's order or an independently correlated provider order.
+export async function rejectSquareEvidence(
+  db: AdminSupabaseClient,
+  orderId?: string,
+): Promise<never> {
+  if (orderId) {
+    const { error } = await db
+      .from("orders")
+      .update({ checkout_financial_review: "square_evidence_conflict" })
+      .eq("id", orderId)
+      .is("checkout_financial_review", null);
+    if (error) throw error;
+  }
+  throw new SquareEvidenceConflict();
+}
+export class SquareFinancialInquiry {
+  constructor(
+    private readonly db: AdminSupabaseClient,
+    private readonly square: Pick<
+      SquareClient,
+      "orders" | "payments" | "locations" | "refunds" | "disputes"
+    >,
+    private readonly identity: Identity,
+    private readonly effects: Effects,
+    private readonly allowLegacyReviewCreation = true,
+  ) {}
+
+  private async rejectEvidence(orderId?: string): Promise<never> {
+    return rejectSquareEvidence(this.db, orderId);
+  }
+
+  private async validateEvidence<T>(
+    orderId: string | undefined,
+    read: () => T,
+  ): Promise<T> {
+    try {
+      return read();
+    } catch (error) {
+      if (error instanceof SquareEvidenceConflict || error instanceof z.ZodError)
+        return this.rejectEvidence(orderId);
+      throw error;
+    }
+  }
+
+  async processStoredSquareEvent(eventId: string): Promise<void> {
+    try {
+      const { data, error } = await this.db
+        .from("square_webhook_events")
+        .select(
+          "square_event_id,event_type,payload_sha256,event_data,processed_at,recovery_receipt",
+        )
+        .eq("square_event_id", eventId)
+        .single();
+      if (error || !data.recovery_receipt) throw new Error("Missing stored receipt");
+      if (data.processed_at) return;
+      const parsed = squareEventReceipt.safeParse({
+        eventId: data.square_event_id,
+        kind: data.event_type,
+        payloadHash: data.payload_sha256,
+        payload: data.event_data,
+      });
+      if (!parsed.success) throw new SquareEvidenceConflict();
+      const receipt = parsed.data;
+      if (
+        receipt.payload.merchantId !== this.identity.merchantId ||
+        receipt.payload.locationId !== this.identity.locationId
+      )
+        throw new SquareEvidenceConflict();
+      // Older refund receipts placed the return order in squareOrderId. The
+      // exact authenticated payment supplies the original sale order.
+      const lookup = receipt.payload.refundId
+        ? { paymentId: receipt.payload.paymentId }
+        : receipt.payload;
+      await this.apply(lookup, receipt);
+      if (!receipt.payload.disputeId) {
+        const { error: markError } = await this.db
+          .from("square_webhook_events")
+          .update({ processed_at: new Date().toISOString() })
+          .eq("square_event_id", eventId)
+          .eq("recovery_receipt", true)
+          .is("processed_at", null);
+        if (markError) throw markError;
+      }
+    } catch (error) {
+      if (
+        error instanceof SquareTerminalCaptureConflict ||
+        error instanceof SquareEvidenceConflict
+      )
+        throw error;
+      throw new Error("square_receipt_processing_pending");
+    }
+  }
+
+  async reconcileOrder(orderId: string): Promise<"skipped" | "processed"> {
+    try {
+      const { data: o, error } = await this.db
+        .from("orders")
+        .select(
+          "id,status,square_order_id,payment_transaction_id,checkout_attempt_guarded",
+        )
+        .eq("id", orderId)
+        .single();
+      if (error) throw error;
+      if (!o.square_order_id || o.status !== "pending") return "skipped";
+      let paymentId = o.payment_transaction_id;
+      if (!paymentId && o.checkout_attempt_guarded) {
+        const { order } = await this.square.orders.get({ orderId: o.square_order_id });
+        if (
+          order?.referenceId !== o.id ||
+          order.id !== o.square_order_id ||
+          order.locationId !== this.identity.locationId
+        )
+          throw new Error("Invalid order");
+        const ids = [
+          ...new Set(
+            order.tenders?.map((t) => t.paymentId).filter((id): id is string => !!id),
+          ),
+        ];
+        if (ids.length === 1) paymentId = ids[0];
+      }
+      if (!paymentId) return "skipped";
+      await this.apply({
+        paymentId,
+        localOrderId: o.id,
+        squareOrderId: o.square_order_id,
+      });
+      return "processed";
+    } catch {
+      throw new Error("square_payment_inquiry_pending");
+    }
+  }
+
+  // Durable recovery binds a job to its own sequence. A later attempt's
+  // tender cannot complete the earlier obligation.
+  async recoverAttempt(
+    orderId: string,
+    attemptId: string,
+    cancelApproved = false,
+  ): Promise<"done" | "retry" | "review"> {
+    const { data: a, error } = await this.db
+      .from("checkout_payment_attempts")
+      .select(
+        "id,order_id,state,dispatched_at,square_order_id,provider_payment_id,reason",
+      )
+      .eq("order_id", orderId)
+      .eq("id", attemptId)
+      .single();
+    if (error || !a) throw Error("missing_recovery_attempt");
+    if (!a.provider_payment_id && !a.dispatched_at)
+      return a.state === "ready" ||
+        (a.state === "canceled" &&
+          ["expiry_not_dispatched", "unused_method_changed"].includes(a.reason ?? ""))
+        ? "done"
+        : "review";
+    if (!a.square_order_id) return "review";
+    let id = a.provider_payment_id;
+    if (!id) {
+      const { order } = await this.square.orders.get({ orderId: a.square_order_id });
+      if (
+        order?.id !== a.square_order_id ||
+        order.referenceId !== orderId ||
+        order.locationId !== this.identity.locationId
+      )
+        return this.rejectEvidence(orderId);
+      for (const tender of order.tenders ?? []) {
+        if (!tender.paymentId) continue;
+        const { payment } = await this.square.payments.get({
+          paymentId: tender.paymentId,
+        });
+        if (payment?.id === tender.paymentId && payment.referenceId === attemptId) {
+          if (id && id !== payment.id) return this.rejectEvidence(orderId);
+          id = payment.id;
+        }
+      }
+    }
+    if (!id)
+      return a.state === "declined" && a.reason === "verified_square_decline"
+        ? "done"
+        : "retry";
+    const applied = await this.apply({
+      paymentId: id,
+      localOrderId: orderId,
+      squareOrderId: a.square_order_id,
+      expectedAttemptId: attemptId,
+    });
+    if (cancelApproved && applied.paymentStatus === "APPROVED") {
+      await this.square.payments.cancel({ paymentId: id });
+      return this.recoverAttempt(orderId, attemptId, false);
+    }
+    return ["COMPLETED", "FAILED", "CANCELED"].includes(applied.paymentStatus)
+      ? "done"
+      : "retry";
+  }
+
+  async reconcileVerifiedPayment(
+    paymentId: string,
+    squareOrderId: string,
+  ): Promise<SquarePaymentEventResult> {
+    try {
+      return await this.apply({ paymentId, squareOrderId });
+    } catch {
+      throw new Error("square_payment_inquiry_pending");
+    }
+  }
+
+  private async apply(input: ProofInput, receipt?: SquareEventReceiptInput) {
+    const { payment } = await this.square.payments.get({ paymentId: input.paymentId });
+    if (
+      !payment?.id ||
+      payment.id !== input.paymentId ||
+      !payment.orderId ||
+      (input.squareOrderId && input.squareOrderId !== payment.orderId)
+    )
+      return this.rejectEvidence(input.localOrderId);
+    const squareOrderId = payment.orderId;
+    const { order } = await this.square.orders.get({ orderId: squareOrderId });
+    const { location } = await this.square.locations.get({
+      locationId: this.identity.locationId,
+    });
+    const { data: local, error } = await this.db
+      .from("orders")
+      .select(
+        "id,square_order_id,checkout_attempt_guarded,payment_transaction_id,fulfillment_status,user_id",
+      )
+      .eq("square_order_id", squareOrderId)
+      .maybeSingle();
+    if (error) throw error;
+    if (!local) throw new SquareEvidenceConflict();
+    if (!order || !location || (input.localOrderId && input.localOrderId !== local.id))
+      return this.rejectEvidence(input.localOrderId);
+    // A raw receipt cannot choose whose financial review is changed.
+    const trustedOrder =
+      input.localOrderId ??
+      (order.id === local.square_order_id &&
+      order.referenceId === local.id &&
+      order.locationId === this.identity.locationId &&
+      payment.locationId === this.identity.locationId &&
+      location.id === this.identity.locationId &&
+      location.merchantId === this.identity.merchantId
+        ? local.id
+        : undefined);
+    const attempts = new CheckoutPaymentAttemptRepository(this.db);
+    const lookup = () =>
+      this.db
+        .from("checkout_payment_attempts")
+        .select(
+          "id,order_id,square_order_id,amount_cents,currency,method,state,provider_payment_id,dispatched_at",
+        )
+        .eq("order_id", local.id);
+    if (
+      local.checkout_attempt_guarded &&
+      !z.uuid().safeParse(payment.referenceId).success
+    )
+      return this.rejectEvidence(trustedOrder);
+    const read = () =>
+      local.checkout_attempt_guarded
+        ? lookup().eq("id", payment.referenceId!).maybeSingle()
+        : lookup().eq("provider_payment_id", payment.id!).maybeSingle();
+    let attempt = await read();
+    if (attempt.error) throw attempt.error;
+    if (
+      this.allowLegacyReviewCreation &&
+      !attempt.data &&
+      !local.checkout_attempt_guarded &&
+      local.payment_transaction_id === payment.id &&
+      order.referenceId === local.id &&
+      location.merchantId === this.identity.merchantId &&
+      location.id === this.identity.locationId &&
+      payment.locationId === location.id &&
+      order.locationId === location.id
+    ) {
+      // False-guard issuance creates only the original review row. Its database
+      // identity is immutable, and this inquiry never submits a Square payment.
+      const details = squarePaymentDetails(payment);
+      await attempts.getOrCreateAttempt({
+        orderId: local.id,
+        method:
+          details.payment_method === "afterpay"
+            ? "afterpay"
+            : details.payment_method === "cashAppPay"
+              ? "cashAppPay"
+              : "card",
+        ownerBinding: local.user_id ? "account:" + local.user_id : "order:" + local.id,
+      });
+      attempt = await read();
+    }
+    if (attempt.error) throw attempt.error;
+    if (
+      !attempt.data ||
+      (input.expectedAttemptId && input.expectedAttemptId !== attempt.data.id)
+    )
+      return this.rejectEvidence(trustedOrder);
+    const boundAttempt = attempt.data;
+    const { fact, review, createdAt, providerMethod } = await this.validateEvidence(
+      trustedOrder,
+      () =>
+        verifyPaymentInquiry({
+          ...this.identity,
+          merchantLocation: location,
+          payment,
+          order,
+          local,
+          attempt: boundAttempt,
+        }),
+    );
+    const status = z
+      .enum(["APPROVED", "PENDING", "COMPLETED", "FAILED", "CANCELED"])
+      .parse(fact.status);
+    const state = (
+      {
+        APPROVED: "pending",
+        PENDING: "pending",
+        COMPLETED: "succeeded",
+        FAILED: "declined",
+        CANCELED: "canceled",
+      } as const
+    )[status];
+    const repo = new FinancialProjectionRepository(this.db, createdAt, review);
+    const terminalConflict =
+      status === "COMPLETED" && ["declined", "canceled"].includes(attempt.data.state);
+    if (terminalConflict) {
+      if (!providerMethod) return this.rejectEvidence(trustedOrder);
+      await repo.recordTerminalCapture(
+        attempt.data.id,
+        squareOrderId,
+        payment.referenceId ?? "",
+        providerMethod,
+        fact,
+      );
+    } else
+      await attempts.recordAttemptOutcome({
+        attemptId: attempt.data.id,
+        providerPaymentId: payment.id,
+        state,
+        verifiedFacts: {
+          kind: "square_payment",
+          orderId: local.id,
+          squareOrderId,
+          paymentId: payment.id,
+          amountCents: fact.expectedTotalCents,
+          currency: "USD",
+          status,
+        },
+      });
+    const refundId = receipt?.payload.refundId;
+    if (refundId) {
+      const { refund } = await this.square.refunds.get({ refundId });
+      const verified = await this.validateEvidence(trustedOrder, () =>
+        verifyRefundInquiry(refund, refundId, fact, this.identity.locationId),
+      );
+      await new FinancialProjectionRepository(
+        this.db,
+        refund!.updatedAt!,
+      ).applyFinancialFact(verified);
+      const { data: stored, error: refundError } = await this.db
+        .from("square_refunds")
+        .select("checkout_status_conflict,amount_cents")
+        .eq("square_refund_id", refundId)
+        .eq("order_id", local.id)
+        .eq("square_payment_id", payment.id)
+        .single();
+      if (refundError || !stored) throw new Error("Missing verified refund");
+      if (stored.checkout_status_conflict) {
+        // A fresh provider read can corroborate completed money. Uncertainty
+        // leaves this receipt pending, and historical conflict remains visible.
+        const { refund: refreshed } = await this.square.refunds.get({ refundId });
+        const confirmed = await this.validateEvidence(trustedOrder, () =>
+          verifyRefundInquiry(refreshed, refundId, fact, this.identity.locationId),
+        );
+        if (
+          confirmed.status !== "COMPLETED" ||
+          confirmed.amountCents !== stored.amount_cents
+        )
+          throw new Error("refund_refresh_required");
+        await new FinancialProjectionRepository(
+          this.db,
+          refreshed!.updatedAt!,
+        ).applyFinancialFact(confirmed);
+      }
+    }
+    const snapshot = await repo.applyFinancialFact(fact, squareSourceEvidence(payment));
+    const details = squarePaymentDetails(payment);
+    await recordSquarePaymentDetails(this.db, {
+      squareOrderId,
+      paymentId: payment.id,
+      status,
+      amountCents: fact.amountCents,
+      currency: "USD",
+      details: {
+        source_type: details.source_type,
+        payment_method: details.payment_method,
+      },
+    });
+    if (terminalConflict) throw new SquareTerminalCaptureConflict();
+    if (status === "COMPLETED" && !refundId && !receipt?.payload.disputeId) {
+      await this.effects.syncShipping({
+        duplicate: false,
+        fulfillmentAuthorized:
+          snapshot.reviewReason === null && snapshot.financialState === "paid",
+        orderId: local.id,
+        paymentStatus: status,
+        squareOrderId,
+      });
+      this.effects.scheduleNotifications(local.id);
+    }
+    const disputeId = receipt?.payload.disputeId;
+    if (receipt && disputeId) {
+      const { dispute: d } = await this.square.disputes.get({ disputeId });
+      if (
+        d?.id !== disputeId ||
+        d.locationId !== this.identity.locationId ||
+        d.disputedPayment?.paymentId !== payment.id ||
+        d.amountMoney?.currency !== "USD" ||
+        !d.updatedAt ||
+        !d.state ||
+        !d.reason
+      )
+        return this.rejectEvidence(trustedOrder);
+      const { error: disputeError } = await this.db.rpc(
+        "apply_checkout_dispute_receipt",
+        {
+          p_event_id: receipt.eventId,
+          p_order_id: local.id,
+          p_dispute: {
+            id: disputeId,
+            paymentId: payment.id,
+            amountCents: Number(d.amountMoney.amount),
+            currency: "USD",
+            state: d.state,
+            reason: d.reason,
+            updatedAt: d.updatedAt,
+            dueAt: d.dueAt ?? null,
+          },
+        },
+      );
+      if (disputeError) throw disputeError;
+    }
+    return {
+      duplicate: false,
+      fulfillmentAuthorized:
+        snapshot.financialState === "paid" && snapshot.reviewReason === null,
+      orderId: local.id,
+      paymentStatus: status,
+      squareOrderId,
+    };
+  }
+}

@@ -93,10 +93,8 @@ export default function PrivacyPage() {
               use marketing or advertising cookies.
             </p>
             <p className="mt-2">
-              We use Cloudflare Web Analytics to understand page views and website
-              performance. Cloudflare states that this service does not collect or use
-              visitors&apos; personal data. Cloudflare security services may also process
-              technical signals to distinguish people from automated abuse.
+              Cloudflare security services may process technical signals to distinguish
+              people from automated abuse.
             </p>
           </section>
 

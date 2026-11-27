@@ -1,7 +1,7 @@
 // src/components/account/AccountProfile.tsx
 "use client";
+import { publishSessionChange } from "@/contexts/session-change";
 
-import { notifySessionUpdate } from "@/lib/auth/session-events";
 import { useLayoutEffect, useRef, useState, type FormEvent } from "react";
 import { useRouter } from "next/navigation";
 import { Eye, EyeOff } from "lucide-react";
@@ -731,9 +731,10 @@ function AccountDetails({
         const response = await withRequestDeadline((signal) =>
           fetch("/api/auth/logout", { method: "POST", signal }),
         );
-        if (!response.ok) throw new Error("Sign out failed");
+        if (!response.ok || (await response.json()).ok !== true)
+          throw new Error("Sign out failed");
         setSignedOut(true);
-        notifySessionUpdate();
+        publishSessionChange();
         router.replace("/");
         router.refresh();
       } catch {

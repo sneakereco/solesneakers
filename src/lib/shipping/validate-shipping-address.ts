@@ -48,7 +48,10 @@ export async function requestAddressValidation(
       cache: "no-store",
       signal: AbortSignal.timeout(timeoutMs),
     });
-    if (!response.ok) return null;
+    if (!response.ok) {
+      await response.body?.cancel();
+      return null;
+    }
     const parsed = shippoResponse.safeParse(await response.json());
     return parsed.success ? parsed.data : null;
   } catch {

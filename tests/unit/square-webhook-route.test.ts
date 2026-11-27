@@ -1,123 +1,129 @@
-jest.mock("@/Modules/Analytics/Source/Features/EventDelivery/delivery-runtime", () => ({
-  scheduleAnalyticsDrain: jest.fn(),
-}));
-import { scheduleAnalyticsDrain } from "@/Modules/Analytics/Source/Features/EventDelivery/delivery-runtime";
-jest.mock("@/lib/square/config", () => ({
-  getSquareConfig: jest.fn(() => ({
-    environment: "sandbox",
-    accessToken: "token",
-    locationId: "location-1",
-    webhookSignatureKey: "signature-key",
-    webhookNotificationUrl: "https://shop.example.com/api/webhooks/square",
-  })),
-}));
-
-jest.mock("@/lib/square/webhook", () => ({
-  verifySquareWebhookSignature: jest.fn(),
-}));
-
-jest.mock("@/lib/supabase/service-role", () => ({
-  createSupabaseAdminClient: jest.fn(() => ({})),
-}));
-
-jest.mock("@/lib/square/shipping-address-sync", () => ({
-  createSquareShippingSyncDependencies: jest.fn(() => ({ kind: "sync-deps" })),
-  synchronizeSquareShippingAddress: jest.fn(),
-}));
-
-import { SquarePaymentEventProcessor } from "@/lib/square/payment-event";
-import {
-  createSquareShippingSyncDependencies,
-  synchronizeSquareShippingAddress,
-} from "@/lib/square/shipping-address-sync";
-import { verifySquareWebhookSignature } from "@/lib/square/webhook";
-
+import { createHash, createHmac } from "node:crypto";
 import { POST } from "../../src/app/api/webhooks/square/route";
-
-const mockVerifySignature = jest.mocked(verifySquareWebhookSignature);
-const mockCreateSyncDependencies = jest.mocked(createSquareShippingSyncDependencies);
-const mockSynchronizeShippingAddress = jest.mocked(synchronizeSquareShippingAddress);
-
-function webhookRequest(body: string, signature = "signature"): Request {
-  return new Request("https://shop.example.com/api/webhooks/square", {
-    method: "POST",
-    headers: { "x-square-hmacsha256-signature": signature },
-    body,
-  });
+const mockPrompt = jest.fn();
+jest.mock("@/lib/square/financial-inquiry-dependencies", () => ({
+  promptSquareReceipt: (...args: unknown[]) => mockPrompt(...args),
+}));
+const mockRpc = jest.fn();
+jest.mock("@/lib/supabase/service-role", () => ({
+  createSupabaseAdminClient: () => ({ rpc: mockRpc }),
+}));
+jest.mock("@/lib/square/config", () => ({
+  getSquareConfig: () => ({
+    locationId: "loc",
+    webhookSignatureKey: "fixture-key",
+    webhookNotificationUrl: "https://fixture.invalid/api/webhooks/square",
+  }),
+  getSquareMerchantId: () => "merchant",
+}));
+const url = "https://fixture.invalid/api/webhooks/square";
+const event = {
+  type: "payment.updated",
+  merchant_id: "merchant",
+  event_id: "event-1",
+  created_at: "2026-11-25T10:00:00Z",
+  data: {
+    type: "payment",
+    id: "pay",
+    object: {
+      payment: {
+        id: "pay",
+        location_id: "loc",
+        order_id: "sq",
+        card_details: { private: "sentinel" },
+        amount_money: { amount: 1000, currency: "USD" },
+      },
+    },
+  },
+};
+function post(
+  raw: string,
+  signature = createHmac("sha256", "fixture-key")
+    .update(url + raw)
+    .digest("base64"),
+) {
+  return POST(
+    new Request(url, {
+      method: "POST",
+      headers: { "x-square-hmacsha256-signature": signature },
+      body: raw,
+    }),
+  );
 }
-
-describe("POST /api/webhooks/square", () => {
-  beforeEach(() => {
-    jest.restoreAllMocks();
-    jest.mocked(scheduleAnalyticsDrain).mockClear();
-    mockSynchronizeShippingAddress.mockResolvedValue("synced");
-  });
-
-  it("rejects an invalid signature before parsing or writing", async () => {
-    mockVerifySignature.mockResolvedValue(false);
-    const process = jest.spyOn(SquarePaymentEventProcessor.prototype, "process");
-
-    const response = await POST(webhookRequest('{"event_id":"event-1"}'));
-
-    expect(response.status).toBe(401);
-    expect(process).not.toHaveBeenCalled();
-    expect(scheduleAnalyticsDrain).not.toHaveBeenCalled();
-  });
-
-  it("acknowledges a verified and durably processed event", async () => {
-    mockVerifySignature.mockResolvedValue(true);
-    const processed = {
-      duplicate: false,
-      fulfillmentAuthorized: true,
-      orderId: "order-1",
-      paymentStatus: "COMPLETED",
-      squareOrderId: "square-order-1",
-    } as const;
-    jest
-      .spyOn(SquarePaymentEventProcessor.prototype, "process")
-      .mockResolvedValue(processed);
-    const body = '{"event_id":"event-1"}';
-
-    const response = await POST(webhookRequest(body));
-
-    expect(response.status).toBe(200);
-    expect(scheduleAnalyticsDrain).toHaveBeenCalledTimes(1);
-    expect(SquarePaymentEventProcessor.prototype.process).toHaveBeenCalledWith(body);
-    expect(mockCreateSyncDependencies).toHaveBeenCalledWith(expect.anything());
-    expect(mockSynchronizeShippingAddress).toHaveBeenCalledWith(processed, {
-      kind: "sync-deps",
+beforeEach(() => {
+  mockRpc.mockReset();
+  mockPrompt.mockReset();
+});
+it.each(["stored", "duplicate"])(
+  "acknowledges a signed %s receipt with only bounded provider references",
+  async (result) => {
+    mockRpc.mockResolvedValue({ data: result, error: null });
+    const raw = JSON.stringify(event);
+    expect((await post(raw)).status).toBe(200);
+    expect(mockPrompt).toHaveBeenCalledTimes(result === "stored" ? 1 : 0);
+    expect(mockRpc).toHaveBeenCalledWith("receive_checkout_square_event", {
+      p_event_id: "event-1",
+      p_kind: "payment.updated",
+      p_payload_hash: createHash("sha256").update(raw).digest("hex"),
+      p_payload: {
+        merchantId: "merchant",
+        locationId: "loc",
+        paymentId: "pay",
+        squareOrderId: "sq",
+        createdAt: event.created_at,
+      },
     });
-    await expect(response.json()).resolves.toEqual({ ok: true });
+  },
+);
+it("returns retryable failure if the receipt cannot be committed", async () => {
+  mockRpc.mockResolvedValue({ error: { message: "private fixture" }, data: null });
+  const res = await post(JSON.stringify(event));
+  expect(res.status).toBe(503);
+  expect(mockPrompt).not.toHaveBeenCalled();
+  expect(await res.text()).not.toContain("private");
+});
+it("rejects malformed, oversized, unsigned and foreign supported events before storage", async () => {
+  expect((await post("{")).status).toBe(400);
+  expect((await post("x".repeat(300000))).status).toBe(413);
+  expect((await post(JSON.stringify(event), "bad")).status).toBe(401);
+  expect((await post(JSON.stringify({ ...event, merchant_id: "other" }))).status).toBe(
+    403,
+  );
+  expect(mockRpc).not.toHaveBeenCalled();
+});
+it("acknowledges an unsupported signed kind without storage", async () => {
+  expect((await post(JSON.stringify({ type: "invoice.updated" }))).status).toBe(200);
+  expect(mockRpc).not.toHaveBeenCalled();
+});
+it("stores a signed linked-refund payment reference independently of the return order", async () => {
+  mockRpc.mockResolvedValue({ data: "stored", error: null });
+  const raw = JSON.stringify({
+    ...event,
+    type: "refund.updated",
+    data: {
+      type: "refund",
+      id: "r",
+      object: {
+        refund: {
+          id: "r",
+          location_id: "loc",
+          order_id: "return-order",
+          payment_id: "pay",
+        },
+      },
+    },
   });
-
-  it("returns a retryable error when the Square address cannot be synchronized", async () => {
-    mockVerifySignature.mockResolvedValue(true);
-    jest.spyOn(SquarePaymentEventProcessor.prototype, "process").mockResolvedValue({
-      duplicate: false,
-      fulfillmentAuthorized: true,
-      orderId: "order-1",
-      paymentStatus: "COMPLETED",
-      squareOrderId: "square-order-1",
-    });
-    mockSynchronizeShippingAddress.mockRejectedValue(
-      new Error("square_shipping_address_unavailable"),
-    );
-
-    const response = await POST(webhookRequest('{"event_id":"event-1"}'));
-
-    expect(response.status).toBe(500);
-    expect(scheduleAnalyticsDrain).not.toHaveBeenCalled();
-  });
-
-  it("returns a retryable error when durable processing fails", async () => {
-    mockVerifySignature.mockResolvedValue(true);
-    jest
-      .spyOn(SquarePaymentEventProcessor.prototype, "process")
-      .mockRejectedValue(new Error("database unavailable"));
-
-    const response = await POST(webhookRequest('{"event_id":"event-1"}'));
-
-    expect(response.status).toBe(500);
-    expect(scheduleAnalyticsDrain).not.toHaveBeenCalled();
-  });
+  expect((await post(raw)).status).toBe(200);
+  expect(mockRpc).toHaveBeenCalledWith(
+    "receive_checkout_square_event",
+    expect.objectContaining({
+      p_payload: {
+        merchantId: "merchant",
+        locationId: "loc",
+        createdAt: event.created_at,
+        paymentId: "pay",
+        refundId: "r",
+      },
+    }),
+  );
 });
