@@ -59,7 +59,10 @@ export type PrepareCheckoutDependencies = {
   shippingConfirmationSecret(): string;
   validateShippingAddress(address: ShippingAddress): Promise<ShippingValidationResult>;
   findTenantId(): Promise<string | null>;
-  getAccess(tenantId: string, scope: "new_prepare"): Promise<CheckoutAccessDecision>;
+  getAccess(
+    tenantId: string,
+    scope: "new_prepare" | "resume",
+  ): Promise<CheckoutAccessDecision>;
   verifyBrowser(): Promise<CheckoutBotVerdict>;
   getClientIp(request: NextRequest): string | null;
   getSession(): Promise<CheckoutSession>;
@@ -271,6 +274,10 @@ export async function prepareCheckoutHandler(
       }
     }
 
+    if (existing && !existing.squareOrderId) {
+      const merchant = await deps.getAccess(tenantId, "resume");
+      if (!merchant.open) return json({ error: merchant.message }, 503);
+    }
     if (existing) {
       const admission = await deps.checkResume({
         shopperBinding: ownerBinding,
@@ -289,6 +296,11 @@ export async function prepareCheckoutHandler(
       const access = await deps.getAccess(tenantId, "new_prepare");
       if (!access.open) return json({ error: access.message }, 503);
     }
+    const admissionRequest: CheckoutAttemptIdentity = {
+      clientIp,
+      shopperBinding: ownerBinding,
+      eventId: parsed.data.idempotencyKey,
+    };
     const normalizedEmailHash = deps.hashEmail(buyerEmail);
     const confirmationScope = parsed.data.shippingAddress
       ? {
@@ -316,11 +328,8 @@ export async function prepareCheckoutHandler(
       parsed.data.paymentMethod !== "applePay" &&
       !confirmed
     ) {
-      const validationAttempt = await deps.checkAddressValidationAttempt({
-        clientIp,
-        shopperBinding: ownerBinding,
-        eventId: parsed.data.idempotencyKey,
-      });
+      const validationAttempt =
+        await deps.checkAddressValidationAttempt(admissionRequest);
       if (!validationAttempt.allowed) {
         return json(
           { error: "Too many address checks; please try again later" },
@@ -367,11 +376,7 @@ export async function prepareCheckoutHandler(
     }
 
     if (!existing) {
-      const attempt = await deps.checkAttempt({
-        clientIp,
-        shopperBinding: ownerBinding,
-        eventId: parsed.data.idempotencyKey,
-      });
+      const attempt = await deps.checkAttempt(admissionRequest);
       if (!attempt.allowed) {
         return json(
           { error: "Too many checkout attempts; please try again later" },

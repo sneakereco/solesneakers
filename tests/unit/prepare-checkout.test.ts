@@ -172,6 +172,26 @@ describe("prepareCheckoutHandler", () => {
     return { deps, body, existing };
   }
 
+  it("requires merchant access for an unattached ordinary resume while allocation pause still permits completion", async () => {
+    for (const locked of [true, false]) {
+      const { deps } = await existingCheckout(3, {
+        squareOrderId: null,
+        squareOrderVersion: null,
+      });
+      deps.getAccess.mockImplementation((_tenant, scope) =>
+        Promise.resolve(
+          scope === "new_prepare" || locked
+            ? { open: false, message: "Merchant closed" }
+            : { open: true },
+        ),
+      );
+      const response = await prepareCheckoutHandler(request(), deps);
+      expect(response.status).toBe(locked ? 503 : 200);
+      expect(deps.createSquareOrder).toHaveBeenCalledTimes(locked ? 0 : 1);
+      expect(deps.calculateSquareOrder).toHaveBeenCalledTimes(locked ? 0 : 1);
+    }
+  });
+
   it("discovers the authorized original while new allocation is paused", async () => {
     const { deps, body } = await existingCheckout(3);
     deps.getAccess.mockResolvedValue({ open: false, message: "Allocation paused" });

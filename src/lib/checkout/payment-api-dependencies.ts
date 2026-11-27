@@ -1,3 +1,4 @@
+import { canReportNegativeCheckout } from "@/Modules/Orders/Source/Features/OrderStatus/financial-evidence";
 import { deadlineFetch } from "@/Modules/Checkout/Source/Features/Recovery/recovery-worker";
 import { CheckoutProviderCapacity } from "@/lib/checkout/checkout-attempt-limit";
 import { checkoutAdmissionBudgets } from "@/Modules/Checkout/Source/Features/Operations/admission";
@@ -103,6 +104,17 @@ export function createDirectPaymentDependencies(
   return {
     getSession: getServerSession,
     getAccess: (tenantId) => assertCheckoutOpen(tenantId, "gateway_attempt"),
+    canReportNegative: (order, attempt) =>
+      canReportNegativeCheckout(
+        {
+          id: order.orderId,
+          user_id: order.userId,
+          tenant_id: order.tenantId,
+          checkout_guest_context_hash: order.guestContextHash ?? null,
+        },
+        attempt,
+        supabase,
+      ),
     readCurrentAttempt: (orderId) => readCurrentPaymentAttempt(supabase, orderId),
     beginDispatch: (input) => attempts.beginDispatch(input),
     recordAttemptOutcome: (input) => attempts.recordAttemptOutcome(input),

@@ -1,3 +1,5 @@
+import { CheckoutProviderCapacity } from "@/lib/checkout/checkout-attempt-limit";
+import { deadlineFetch } from "@/Modules/Checkout/Source/Features/Recovery/recovery-worker";
 import { validateShippingAddress } from "@/lib/shipping/validate-shipping-address";
 
 const address = {
@@ -160,4 +162,46 @@ describe("Shippo shipping validation", () => {
       ),
     ).resolves.toEqual({ status: "unavailable" });
   });
+});
+
+it("retains the leased Shippo slot until a non-success response body cancels", async () => {
+  let held = false;
+  const rpc = jest.fn((name: string) => {
+    if (name === "release_checkout_dependency_lease") {
+      held = false;
+      return Promise.resolve({ error: null, data: null });
+    }
+    const token = held ? null : "dddddddd-dddd-4ddd-8ddd-dddddddddddd";
+    held = true;
+    return Promise.resolve({ error: null, data: token });
+  });
+  const cap = new CheckoutProviderCapacity({ rpc } as never, {
+    version: 1,
+    revision: "local",
+    ipPerMinute: 50,
+    globalPerMinute: 100,
+    providers: { square: 1, shippo: 1 },
+  });
+  let finish!: () => void;
+  const settled = new Promise<void>((r) => {
+    finish = r;
+  });
+  const cancel = jest.fn(() => settled);
+  const transport = jest
+    .fn()
+    .mockResolvedValue(new Response(new ReadableStream({ cancel }), { status: 503 }));
+  const result = cap.run("shippo", (signal) =>
+    validateShippingAddress(address, "fixture", deadlineFetch(signal, transport)),
+  );
+  try {
+    await new Promise((r) => setTimeout(r, 0));
+    expect(cancel).toHaveBeenCalledTimes(1);
+    await expect(cap.acquire("shippo")).rejects.toThrow("checkout_provider_busy");
+  } finally {
+    finish();
+    await result;
+  }
+  expect((await result).status).toBe("unavailable");
+  const next = await cap.acquire("shippo");
+  await next.release();
 });

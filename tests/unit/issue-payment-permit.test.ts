@@ -55,6 +55,7 @@ function dependencies() {
 describe("issuePaymentPermitHandler", () => {
   it("directs the authorized shopper to status when money is independently under review", async () => {
     const deps = dependencies();
+    deps.getAccess.mockResolvedValue({ open: false, message: "Dispatch paused" });
     const original = await deps.loadOrder();
     deps.loadOrder.mockResolvedValue({
       ...original,

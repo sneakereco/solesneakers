@@ -9,6 +9,7 @@ import {
 import type { AdminSupabaseClient } from "@/lib/supabase/service-role";
 import {
   coarseWindows,
+  preparationWindow,
   admitCheckout,
   financialAdmission,
   slidingWindowsScript,
@@ -28,6 +29,7 @@ type RedisEvalClient = {
 };
 
 export class CheckoutAttemptLimiter {
+  private readonly admittedAddressRequests = new WeakSet<CheckoutAttemptIdentity>();
   constructor(
     private readonly redis: RedisEvalClient,
     private readonly budgets: CheckoutAdmissionBudgets | null = checkoutAdmissionBudgets,
@@ -45,6 +47,9 @@ export class CheckoutAttemptLimiter {
     return this.consume(coarseWindows(ip, this.budgets));
   }
   check(identity: CheckoutAttemptIdentity) {
+    if (this.admittedAddressRequests.delete(identity)) {
+      return this.consume([preparationWindow(identity.shopperBinding, identity.eventId)]);
+    }
     return this.admit({
       kind: "new_prepare",
       shopperBinding: identity.shopperBinding,
@@ -52,9 +57,9 @@ export class CheckoutAttemptLimiter {
       eventId: identity.eventId,
     });
   }
-  checkAddressValidation(identity: CheckoutAttemptIdentity) {
+  async checkAddressValidation(identity: CheckoutAttemptIdentity) {
     if (!this.budgets) throw Error("checkout_protection_unavailable");
-    return this.consume([
+    const decision = await this.consume([
       {
         key: "address:" + identity.shopperBinding,
         limit: 20,
@@ -63,6 +68,10 @@ export class CheckoutAttemptLimiter {
       },
       ...coarseWindows(identity.clientIp, this.budgets),
     ]);
+    // The same server-owned request may proceed to its distinct preparation allowance
+    // after address validation, even if a new coarse window has since opened.
+    if (decision.allowed) this.admittedAddressRequests.add(identity);
+    return decision;
   }
   private async consume(windows: Window[]): Promise<AdmissionDecision> {
     try {

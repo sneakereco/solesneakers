@@ -67,11 +67,6 @@ export async function issuePaymentPermitHandler(
     if (!tenantId) {
       return json({ error: "Checkout is temporarily unavailable" }, 503);
     }
-    const access = await deps.getAccess(tenantId);
-    if (!access.open) {
-      return json({ error: access.message }, 503);
-    }
-
     const bot = await deps.verifyBrowser();
     if (!bot.allowed) {
       return json(
@@ -122,6 +117,11 @@ export async function issuePaymentPermitHandler(
         },
         409,
       );
+    const access = await deps.getAccess(tenantId);
+    if (!access.open) {
+      return json({ error: access.message }, 503);
+    }
+
     if (!isUsable(order, deps.now()))
       return json({ error: "Checkout is no longer payable" }, 409);
     const email = order.guestEmail ?? session?.user.email;

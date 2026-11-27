@@ -57,6 +57,7 @@ function dependencies() {
     requestDigest: null,
   };
   return {
+    canReportNegative: jest.fn().mockResolvedValue(true),
     getClientIp: jest.fn().mockReturnValue("203.0.113.3"),
     acquireGateway: jest.fn().mockResolvedValue({ allowed: true, release: jest.fn() }),
     getSession: jest.fn().mockResolvedValue({ user: { id: "account-1" } }),
@@ -731,3 +732,32 @@ it("preserves a provider cancellation without reading confirmed-decline admissio
   );
   expect(deps.recordDecline).not.toHaveBeenCalled();
 });
+
+it.each(["pause", "quota", "sql-pause", "unavailable"])(
+  "keeps the original order under observation when new money or review becomes known during %s",
+  async (refusal) => {
+    const deps = dependencies();
+    deps.canReportNegative.mockResolvedValue(false);
+    if (refusal === "pause")
+      deps.getAccess.mockResolvedValue({ open: false, message: "Paused" });
+    else if (refusal === "quota")
+      deps.acquireGateway.mockResolvedValue({ allowed: false, retryAfterSeconds: 60 });
+    else
+      deps.beginDispatch.mockRejectedValue({
+        code: "P0001",
+        message: "checkout_dispatch_paused",
+      });
+    if (refusal === "unavailable")
+      deps.canReportNegative.mockRejectedValue(Error("read unavailable"));
+    const response = await createDirectPaymentHandler(request(), deps);
+    expect(response.status).toBe(202);
+    const body = await response.json();
+    expect(body).toMatchObject({
+      orderId: "order-1",
+      status: "UNKNOWN",
+      statusUrl: "/checkout/processing?orderId=order-1",
+    });
+    expect(body.code).toBeUndefined();
+    expect(deps.createPayment).not.toHaveBeenCalled();
+  },
+);

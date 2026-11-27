@@ -54,6 +54,16 @@ export function coarseWindows(ip: string, budgets: CheckoutAdmissionBudgets): Wi
   ];
 }
 
+export function preparationWindow(shopperBinding: string, eventId?: string): Window {
+  if (!eventId) throw Error("checkout_preparation_key_missing");
+  return {
+    key: "prepare:" + shopperBinding,
+    limit: 5,
+    windowMs: 600000,
+    member: eventId,
+  };
+}
+
 export async function admitCheckout(
   input: AdmissionInput,
   deps: Dependencies,
@@ -73,15 +83,8 @@ export async function admitCheckout(
       : allowed;
   if (!deps.budgets) throw Error("checkout_protection_unavailable");
   const windows = coarseWindows(input.ip, deps.budgets);
-  if (input.kind === "new_prepare") {
-    if (!input.eventId) throw Error("checkout_preparation_key_missing");
-    windows.push({
-      key: "prepare:" + input.shopperBinding,
-      limit: 5,
-      windowMs: 600000,
-      member: input.eventId,
-    });
-  }
+  if (input.kind === "new_prepare")
+    windows.push(preparationWindow(input.shopperBinding, input.eventId));
   const coarse = await deps.consume(windows);
   if (!coarse.allowed || input.kind !== "gateway_attempt") return coarse;
   if (!input.orderId || !deps.financial)

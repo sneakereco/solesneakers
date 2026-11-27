@@ -300,11 +300,12 @@ function project(order: Order): ReceiptFinancialEvidence {
   };
 }
 
-export async function readOrderFinancialEvidence(
-  authorized: Order,
-  admin?: AdminSupabaseClient,
-): Promise<{ order: Order; financial: ReceiptFinancialEvidence }> {
-  if (!admin) return { order: authorized, financial: unavailable };
+type OrderOwner = Pick<
+  Order,
+  "id" | "tenant_id" | "user_id" | "checkout_guest_context_hash"
+>;
+
+async function readBoundEvidence(authorized: OrderOwner, admin: AdminSupabaseClient) {
   const { data, error } = await admin
     .from("orders")
     .select(
@@ -312,7 +313,7 @@ export async function readOrderFinancialEvidence(
     )
     .eq("id", authorized.id)
     .maybeSingle();
-  if (error) return { order: authorized, financial: unavailable };
+  if (error) return null;
   if (
     !data ||
     data.id !== authorized.id ||
@@ -322,4 +323,40 @@ export async function readOrderFinancialEvidence(
   )
     throw Error("Unauthorized");
   return { order: data, financial: project(data) };
+}
+
+export async function readOrderFinancialEvidence(
+  authorized: Order,
+  admin?: AdminSupabaseClient,
+): Promise<{ order: Order; financial: ReceiptFinancialEvidence }> {
+  if (!admin) return { order: authorized, financial: unavailable };
+  return (
+    (await readBoundEvidence(authorized, admin)) ?? {
+      order: authorized,
+      financial: unavailable,
+    }
+  );
+}
+
+// Only a complete, owner-bound snapshot may turn a dispatch refusal into
+// an actionable retry. The newest workflow row alone cannot exclude an older capture.
+export async function canReportNegativeCheckout(
+  authorized: OrderOwner,
+  observedAttempt: { id: string; state: string },
+  admin: AdminSupabaseClient,
+): Promise<boolean> {
+  const current = await readBoundEvidence(authorized, admin);
+  if (!current || current.financial.source !== "ledger") return false;
+  const { snapshot } = current.financial;
+  const latest = current.order.attempts.reduce<
+    (typeof current.order.attempts)[number] | undefined
+  >((newest, a) => (!newest || a.sequence > newest.sequence ? a : newest), undefined);
+  return (
+    latest?.id === observedAttempt.id &&
+    latest.state === observedAttempt.state &&
+    snapshot.financialState === "unpaid" &&
+    snapshot.capturedCents === 0 &&
+    snapshot.refundedCents === 0 &&
+    snapshot.reviewReason === null
+  );
 }

@@ -306,6 +306,7 @@ it("two newly issued guest bearers share the committed call and the persisted ke
     return result;
   });
   const payDeps = {
+    canReportNegative: () => Promise.resolve(true),
     getClientIp: () => "203.0.113.3",
     acquireGateway: () =>
       Promise.resolve({ allowed: true as const, release: () => Promise.resolve() }),

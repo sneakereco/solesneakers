@@ -37,6 +37,7 @@ export type CreateDirectPaymentDependencies = DispatchOperations & {
     payment: DirectPaymentResult,
     method: ConsumedPaymentPermit["method"],
   ): Promise<void>;
+  canReportNegative(order: PaymentCheckout, attempt: PaymentAttempt): Promise<boolean>;
   getClientIp(request: NextRequest): string | null;
   acquireGateway(input: {
     shopperBinding: string;
@@ -257,6 +258,11 @@ export async function createDirectPaymentHandler(
     ).finally(async () => {
       if (release) await release();
     });
+    if (
+      result.kind !== "observe" &&
+      !(await deps.canReportNegative(order, projection.observed))
+    )
+      return json(observation, 202);
     if (result.kind === "not_submitted") {
       const response = json(
         { error: result.message, code: result.code },

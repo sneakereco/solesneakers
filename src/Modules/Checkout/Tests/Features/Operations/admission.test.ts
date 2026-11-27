@@ -15,7 +15,7 @@ const fixtureBudgets = {
   globalPerMinute: 500,
   providers: { square: 3, shippo: 2 },
 };
-function fixture() {
+function fixture(budgets = fixtureBudgets) {
   let now = 1000;
   const counters = new Map<string, Map<string, number>>();
   // The separate isolated Redis evidence runs the actual script. This deterministic
@@ -39,7 +39,7 @@ function fixture() {
       return Promise.resolve([1, 0]);
     },
   };
-  const limiter = new CheckoutAttemptLimiter(redis, fixtureBudgets);
+  const limiter = new CheckoutAttemptLimiter(redis, budgets);
   return {
     limiter,
     advance: (ms: number) => {
@@ -153,4 +153,36 @@ test("foreground Square does not wait through retry-after beyond the held slot",
   } finally {
     transport.mockRestore();
   }
+});
+
+test("the last coarse request can complete both shipping address admission and new preparation", async () => {
+  const { limiter } = fixture({ ...fixtureBudgets, ipPerMinute: 1, globalPerMinute: 1 });
+  const identity = {
+    clientIp: "203.0.113.1",
+    shopperBinding: "account:buyer",
+    eventId: "key",
+  };
+  expect((await limiter.checkAddressValidation(identity)).allowed).toBe(true);
+  expect((await limiter.check(identity)).allowed).toBe(true);
+  expect((await limiter.checkAddressValidation({ ...identity })).allowed).toBe(false);
+});
+
+test("a delayed shipping preparation does not spend another coarse allowance after the window rolls over", async () => {
+  const { limiter, advance } = fixture({
+    ...fixtureBudgets,
+    ipPerMinute: 1,
+    globalPerMinute: 1,
+  });
+  const first = {
+    clientIp: "203.0.113.1",
+    shopperBinding: "account:delayed",
+    eventId: "key-1",
+  };
+  expect((await limiter.checkAddressValidation(first)).allowed).toBe(true);
+  advance(60000);
+  expect(
+    (await limiter.check({ ...first, shopperBinding: "account:next", eventId: "key-2" }))
+      .allowed,
+  ).toBe(true);
+  expect((await limiter.check(first)).allowed).toBe(true);
 });

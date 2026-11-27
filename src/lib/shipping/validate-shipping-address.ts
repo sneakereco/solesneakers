@@ -55,6 +55,7 @@ export async function validateShippingAddress(
       signal: AbortSignal.timeout(10000),
     });
     if (!response.ok) {
+      await response.body?.cancel();
       return { status: "unavailable" };
     }
     const parsed = shippoResponse.safeParse(await response.json());
