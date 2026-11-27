@@ -21,7 +21,11 @@ import {
   type CsvExecution,
 } from "./query-contract";
 import { checkRankedExport } from "./csv-export";
-import { isTransientReportError, PostHogQueryError } from "./posthog-query";
+import {
+  isTransientReportError,
+  PostHogQueryError,
+  QUERY_TIMEOUT_MS,
+} from "./posthog-query";
 import { reserveReportProject, type ReportStore } from "./report-store";
 
 type Envelope = ReportEnvelope<ReportDataMap[ReportId]>;
@@ -170,7 +174,7 @@ function execution(
         if (localProject.isBlocked()) throw temporary();
         const remaining = Math.floor(deadline - performance.now());
         if (stopped || remaining < 1) throw deadlineError();
-        const raw = await deps.execute(q, Math.min(8000, remaining));
+        const raw = await deps.execute(q, Math.min(QUERY_TIMEOUT_MS, remaining));
         if (deps.mode === CSV_EXECUTION) checkRankedExport(q, raw);
         return raw;
       } catch (error) {

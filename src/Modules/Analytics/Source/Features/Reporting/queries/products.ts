@@ -53,9 +53,9 @@ const factsSql = `${commerceSourceSql}${evidenceSql}, originals AS (
  (b.kind='refund_line' AND nullIf(o.original_id,'') IS NULL) THEN concat(b.order_id,':',${str("refundId", "b.payload")}) END) AS unassigned_returns
  FROM basis b LEFT JOIN originals o ON b.kind='refund_line' AND b.order_id=o.line_order AND ${str("lineId", "b.payload")}=o.original_id AND ${str("productId", "o.snapshot")} IS NOT NULL
  ), line_flows AS (
- SELECT b.*,o.snapshot AS snapshot,'sale' AS action FROM basis b JOIN originals o ON b.order_id=o.line_order AND ${str("lineId", "b.payload")}=o.original_id WHERE b.kind='line'
- UNION ALL SELECT b.*,o.snapshot,'return' FROM basis b JOIN originals o ON b.order_id=o.line_order AND ${str("lineId", "b.payload")}=o.original_id WHERE b.kind='refund_line'
- UNION ALL SELECT b.*,o.snapshot,'incomplete' FROM basis b JOIN originals o ON b.order_id=o.line_order WHERE ${unknownReturn}
+ SELECT b.*,o.snapshot AS snapshot,CASE b.kind WHEN 'line' THEN 'sale' WHEN 'refund_line' THEN 'return' ELSE 'incomplete' END AS action
+ FROM basis b JOIN originals o ON b.order_id=o.line_order
+ WHERE (b.kind IN ('line','refund_line') AND ${str("lineId", "b.payload")}=o.original_id) OR (${unknownReturn})
  ), purchased AS (
  SELECT ${snapshotIds.map((s, i) => s + " AS " + ids[i] + "_id").join(",")},${snapshotLabels.map((s, i) => s + " AS " + ["name", "brand", "category", "size"][i] + "_label").join(",")}, order_id,confirmed_at,action,report_at,
  CASE WHEN action='sale' THEN ${amount("quantity")} ELSE 0 END AS units,

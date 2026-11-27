@@ -1,9 +1,14 @@
 import {
+  createObservationQueryBudget,
   loadAnalyticsReport,
   reportCacheKey,
   type ReportLoaderDependencies,
 } from "../../../Source/Features/Reporting/report-cache";
-import { PostHogQueryError } from "../../../Source/Features/Reporting/posthog-query";
+import {
+  executePostHogQuery,
+  PostHogQueryError,
+} from "../../../Source/Features/Reporting/posthog-query";
+import { readServerAnalyticsConfig } from "../../../Source/Features/Configuration/server-config";
 import { getReport } from "../../../Source/Features/Reporting/report-service";
 import { makeAudienceFixture } from "./audience-fixture";
 import { request, scope } from "./commerce-fixture";
@@ -12,6 +17,7 @@ import {
   reserveReportProject,
 } from "../../../Source/Features/Reporting/report-store";
 import type { CompiledQuery } from "../../../Source/Features/Reporting/query-contract";
+import { mockFetch, validEnv } from "../Configuration/config-fixture";
 
 jest.mock("server-only", () => ({}), { virtual: true });
 test.each(
@@ -192,6 +198,62 @@ function setup() {
     },
   };
 }
+test("a slow provider response can finish before the shared report deadline", async () => {
+  jest.useFakeTimers();
+  const { deps } = setup();
+  const query: CompiledQuery = {
+    endpoint: "sole_analytics_sales",
+    version: 1,
+    variables: { dataset_id: "sole-staging" },
+    limit: 1,
+    offset: 0,
+  };
+  const payload = {
+    name: query.endpoint,
+    execution_id: "02ca5b65-a269-4c45-8d4a-0c74ff3ae670",
+    endpoint_version: 1,
+    columns: ["confirmed_orders"],
+    results: [[4]],
+    hasMore: false,
+  };
+  const fetch = mockFetch().mockImplementation(
+    (_url, init) =>
+      new Promise<Response>((resolve) => {
+        const timer = setTimeout(() => resolve(Response.json(payload)), 10_500);
+        init?.signal?.addEventListener("abort", () => clearTimeout(timer), {
+          once: true,
+        });
+      }),
+  );
+  const config = readServerAnalyticsConfig(validEnv);
+  const budget = createObservationQueryBudget(
+    {
+      ...deps,
+      execute: (query, timeoutMs) =>
+        executePostHogQuery(query, { config, fetch, timeoutMs }),
+    },
+    performance.now() + 20_000,
+  );
+  try {
+    const first = budget.execute(query);
+    void first.catch(() => {});
+    await jest.advanceTimersByTimeAsync(10_500);
+    await expect(first).resolves.toMatchObject({ results: [[4]] });
+
+    const second = budget.execute(query);
+    void second.catch(() => {});
+    await jest.advanceTimersByTimeAsync(9_499);
+    expect(fetch.mock.calls[1]?.[1]?.signal?.aborted).toBe(false);
+    await jest.advanceTimersByTimeAsync(1);
+    expect(fetch.mock.calls[1]?.[1]?.signal?.aborted).toBe(true);
+    await expect(second).rejects.toMatchObject({ reason: "timeout" });
+  } finally {
+    await jest.runOnlyPendingTimersAsync();
+    await budget.close();
+    jest.useRealTimers();
+  }
+});
+
 test("the canonical request partitions every scope and joins identical concurrent loaders", async () => {
   const { deps, entries } = setup();
   const r = request("payments");
