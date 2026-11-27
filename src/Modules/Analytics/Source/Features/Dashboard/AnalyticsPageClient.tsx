@@ -4,9 +4,11 @@ import { Download } from "lucide-react";
 import { useEffect, useEffectEvent, useRef, useState } from "react";
 import {
   REPORT_IDS,
+  type AcquisitionData,
+  type CustomersData,
   type OverviewData,
+  type ProductsData,
   type ReportEnvelope,
-  type ReportId,
   type SalesData,
 } from "../ReportContract/types";
 import { DataCoverage } from "./DataCoverage";
@@ -18,8 +20,12 @@ import {
 } from "./report-client";
 import { ReportFilters } from "./ReportFilters";
 import { ReportSkeleton } from "./ReportSkeleton";
+import { AcquisitionReport } from "./reports/AcquisitionReport";
+import { CustomersReport } from "./reports/CustomersReport";
 import { OverviewReport } from "./reports/OverviewReport";
+import { ProductsReport } from "./reports/ProductsReport";
 import { SalesReport } from "./reports/SalesReport";
+import { acquisitionOptions, productOptions } from "./report-options";
 import {
   changeDashboardLocation,
   createRequestGuard,
@@ -40,15 +46,17 @@ type ReportViewState =
   | { status: "error"; message: string };
 
 function ReportContent({
-  id,
+  location,
   report,
   onRequestChange,
 }: {
-  id: ReportId;
+  location: DashboardLocation;
   report: DashboardReport;
   onRequestChange: (change: DashboardChange) => void;
 }) {
   if (!report.data) return null;
+  const { request, attribution } = location;
+  const id = request.report;
   switch (id) {
     case "overview":
       return <OverviewReport report={report as ReportEnvelope<OverviewData>} />;
@@ -56,6 +64,31 @@ function ReportContent({
       return (
         <SalesReport
           report={report as ReportEnvelope<SalesData>}
+          onRequestChange={onRequestChange}
+        />
+      );
+    case "customers":
+      return (
+        <CustomersReport
+          report={report as ReportEnvelope<CustomersData>}
+          request={request}
+          onRequestChange={onRequestChange}
+        />
+      );
+    case "acquisition":
+      return (
+        <AcquisitionReport
+          report={report as ReportEnvelope<AcquisitionData>}
+          request={request}
+          attribution={attribution}
+          onRequestChange={onRequestChange}
+        />
+      );
+    case "products":
+      return (
+        <ProductsReport
+          report={report as ReportEnvelope<ProductsData>}
+          request={request}
           onRequestChange={onRequestChange}
         />
       );
@@ -206,6 +239,25 @@ export function AnalyticsPageClient({
     report?.data && "leadingSources" in report.data
       ? report.data.leadingSources
       : undefined;
+  const data = report?.data;
+  const reportedOptions =
+    data && "discovery" in data
+      ? acquisitionOptions(
+          location?.attribution === "discovery" ? data.discovery : data.purchaseSession,
+        )
+      : data && "inventory" in data
+        ? productOptions(data)
+        : undefined;
+  const alternateAcquisitionView =
+    location?.attribution === "discovery" ? "purchaseSession" : "discovery";
+  const coverage =
+    request?.report === "acquisition" && report?.data
+      ? report?.coverage.filter(
+          ({ metric }) =>
+            metric !== alternateAcquisitionView &&
+            metric !== `comparison.${alternateAcquisitionView}`,
+        )
+      : report?.coverage;
 
   return (
     <div data-admin-page className="analytics-page">
@@ -225,7 +277,12 @@ export function AnalyticsPageClient({
       </div>
       {request && (
         <>
-          <ReportFilters request={request} onChange={changeRequest} sources={sources} />
+          <ReportFilters
+            request={request}
+            onChange={changeRequest}
+            sources={sources}
+            reportedOptions={reportedOptions}
+          />
           <nav
             data-admin-tabs
             className="analytics-report-nav"
@@ -263,7 +320,7 @@ export function AnalyticsPageClient({
       {report && (
         <>
           <DataCoverage
-            coverage={report.coverage}
+            coverage={coverage ?? []}
             state={report.state}
             asOf={report.asOf}
             ingestionAsOf={report.ingestionAsOf}
@@ -271,9 +328,9 @@ export function AnalyticsPageClient({
             datasetStartedAt={report.datasetStartedAt}
             partial={report.range.partial}
           />
-          {request && (
+          {location && (
             <ReportContent
-              id={request.report}
+              location={location}
               report={report}
               onRequestChange={changeRequest}
             />

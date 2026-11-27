@@ -1,7 +1,7 @@
 import assert from "node:assert/strict";
 import { readFile } from "node:fs/promises";
 
-const productId = "00000000-0000-4000-a000-000000000001";
+export const productId = "00000000-0000-4000-a000-000000000001";
 export const salesQuery = new URLSearchParams({
   report: "sales",
   from: "2026-11-10",
@@ -280,6 +280,14 @@ export async function runSalesScenario({ page, requests, exports, capture }) {
   assert.equal(products.get("paymentMethod"), "card");
   assert.equal(products.get("fulfillment"), "ship");
   assert.equal(products.get("from"), "2026-11-10");
+  assert.equal(products.get("page"), "1");
+  assert.equal(products.get("sort"), "netMerchandise");
+  await page.getByRole("heading", { name: "Product sales", exact: true }).waitFor();
+  await page.getByRole("button", { name: "View Retired High Top details" }).waitFor();
+  await page
+    .getByRole("region", { name: "Selected product sales", exact: true })
+    .getByRole("cell", { name: "$84.01", exact: true })
+    .waitFor();
   await page.goBack();
   await collected.getByText("$193.99", { exact: true }).waitFor();
   await page.getByRole("button", { name: "Clear product filter" }).click();

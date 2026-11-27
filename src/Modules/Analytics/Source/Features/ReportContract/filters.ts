@@ -88,6 +88,22 @@ const requestSchema = z.object({
 
 const acceptedFields = new Set(Object.keys(requestSchema.shape));
 
+export function isReportFilterValue(
+  key:
+    | "source"
+    | "channel"
+    | "campaign"
+    | "productId"
+    | "variantId"
+    | "brandId"
+    | "categoryId"
+    | "sizeId",
+  value: string,
+) {
+  const parsed = requestSchema.shape[key].safeParse(value);
+  return parsed.success && parsed.data === value;
+}
+
 function defaultBucket(calendarDays: number): ReportBucket {
   if (calendarDays <= 90) return "day";
   if (calendarDays <= 365) return "week";

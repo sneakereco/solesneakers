@@ -54,6 +54,14 @@ export function filterLabel(value: string): string {
   );
 }
 
+export function acquisitionLabel(value: string) {
+  return value === "direct-unknown" ? "Direct / unknown" : filterLabel(value);
+}
+
+export function hasReportBucketControl(id: ReportId) {
+  return id !== "customers" && id !== "products";
+}
+
 export type DashboardLocation = Omit<ReturnType<typeof parseReportLocation>, "apiParams">;
 export type DashboardChange = Partial<Omit<ReportRequest, "range">> & {
   range?: CalendarRange;
@@ -110,6 +118,11 @@ export function changeDashboardLocation(
     params.set("sort", REPORT_SORTS[fields.report][0]);
     params.delete("attribution");
   }
+  if (
+    !hasReportBucketControl(fields.report ?? current.request.report) &&
+    (range || fields.compare !== undefined)
+  )
+    params.delete("bucket");
   const resetPage =
     Boolean(range) ||
     Object.keys(fields).some((key) => key !== "page" && key !== "attribution");

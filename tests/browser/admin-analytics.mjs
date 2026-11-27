@@ -6,14 +6,19 @@ import { chromium } from "@playwright/test";
 import postcss from "postcss";
 import tailwindcss from "tailwindcss";
 import { runSalesScenario, salesFixture, salesQuery } from "./admin-analytics-sales.mjs";
+import {
+  audienceFixtures,
+  audienceQueries,
+  audienceScenarios,
+} from "./admin-analytics-audience.mjs";
 
 const args = process.argv.slice(2);
 assert.ok(
   !args.length ||
     (args.length === 2 &&
       args[0] === "--report" &&
-      ["overview", "sales"].includes(args[1])),
-  "Usage: node tests/browser/admin-analytics.mjs [--report overview|sales]",
+      ["overview", "sales", "customers", "acquisition", "products"].includes(args[1])),
+  "Usage: node tests/browser/admin-analytics.mjs [--report overview|sales|customers|acquisition|products]",
 );
 const selectedReport = args[1] ?? "overview";
 
@@ -293,8 +298,11 @@ async function run() {
     if (mode === "unavailable")
       return { ...meta, state: mode, coverage: [coverageIssue("warehouse")], data: null };
     if (params.get("report") === "sales") return salesFixture(meta, compare);
-    if (selectedReport === "sales" && params.get("report") === "products")
-      return { ...meta, state: "unavailable", data: null };
+    const id = params.get("report");
+    if (Object.hasOwn(audienceFixtures, id)) {
+      const behaviorThrough = end < meta.behaviorThrough ? end : meta.behaviorThrough;
+      return audienceFixtures[id]({ ...meta, behaviorThrough }, compare, params);
+    }
 
     const selectedSummary = {
       ...summary,
@@ -495,6 +503,8 @@ async function run() {
   await page.getByRole("status").getByText("Loading analytics report").waitFor();
   if (selectedReport === "sales")
     await page.goto(`${origin}/admin/analytics?${salesQuery}`);
+  else if (audienceQueries[selectedReport])
+    await page.goto(`${origin}/admin/analytics?${audienceQueries[selectedReport]}`);
   await page.clock.setFixedTime(new Date("2026-11-26T02:00:00Z"));
   assert.deepEqual(
     await page.evaluate(() => [
@@ -521,11 +531,16 @@ async function run() {
     await page.evaluate(() => window.scrollTo({ top: 0, behavior: "instant" }));
     await page.screenshot({
       path: join(screenshots, `${name}.png`),
-      fullPage: !name.startsWith("calendar-"),
+      fullPage: !name.startsWith("calendar-") && !name.includes("-drawer"),
     });
   }
   if (selectedReport === "sales") {
     await runSalesScenario({ page, requests, exports, capture });
+    assert.deepEqual(pageErrors, []);
+    return;
+  }
+  if (audienceScenarios[selectedReport]) {
+    await audienceScenarios[selectedReport]({ page, requests, exports, capture });
     assert.deepEqual(pageErrors, []);
     return;
   }

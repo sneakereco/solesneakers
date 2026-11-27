@@ -1,7 +1,13 @@
 import type { CustomerCohort } from "../../ReportContract/types";
 import { formatCount, formatPercent } from "../format";
 
-export function CohortHeatmap({ cohorts }: { cohorts: CustomerCohort[] | null }) {
+export function CohortHeatmap({
+  cohorts,
+  label = "Buyer cohort heatmap",
+}: {
+  cohorts: CustomerCohort[] | null;
+  label?: string;
+}) {
   if (cohorts === null)
     return <p className="analytics-muted">Cohort activity is unavailable.</p>;
   if (!cohorts.length)
@@ -15,12 +21,7 @@ export function CohortHeatmap({ cohorts }: { cohorts: CustomerCohort[] | null })
   ].sort((a, b) => a - b);
 
   return (
-    <div
-      className="analytics-table-scroll"
-      tabIndex={0}
-      role="region"
-      aria-label="Buyer cohort heatmap"
-    >
+    <div className="analytics-table-scroll" tabIndex={0} role="region" aria-label={label}>
       <table className="analytics-table analytics-cohorts">
         <caption className="sr-only">
           Repeat purchase rate by months since first purchase
