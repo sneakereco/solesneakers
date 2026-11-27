@@ -10,7 +10,10 @@ describe("storefront legal policies", () => {
     const privacy = renderToStaticMarkup(<PrivacyPage />);
 
     expect(privacy).toContain("Solesneakers LLC");
-    expect(privacy).toContain("Cloudflare Web Analytics");
+    expect(privacy).toMatch(/necessary for account\s+sessions, checkout security/);
+    expect(privacy).toMatch(/We do not\s+use marketing or advertising cookies\./);
+    expect(privacy).toContain("Cloudflare security services");
+    expect(privacy).not.toContain("Cloudflare Web Analytics");
     expect(privacy).toContain("do not sell personal information");
     expect(privacy).toContain("September 18, 2026");
     expect(privacy).not.toContain("if your implementation");
