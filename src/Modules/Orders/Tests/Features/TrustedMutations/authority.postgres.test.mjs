@@ -21,10 +21,9 @@ const tables = [
 ];
 const callables = [
   "attach_square_checkout_order",
-  "claim_checkout_notifications",
-  "claim_checkout_notifications_for_order",
+  "claim_checkout_mail",
+  "finish_checkout_mail_disposition",
   "consume_square_checkout_reservation",
-  "finish_checkout_notification",
   "process_square_dispute_event",
   "process_square_payment_event",
   "process_square_refund_event",

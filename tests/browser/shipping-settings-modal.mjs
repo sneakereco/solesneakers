@@ -51,6 +51,7 @@ const bundle = await build({
           resolveDir: process.cwd(),
           contents: `
             import React from 'react';
+            export const useLinkStatus = () => ({ pending: false });
             export default ({ children, href, ...props }) =>
               React.createElement('a', { href, ...props }, children);
           `,
@@ -73,7 +74,7 @@ try {
         : path.endsWith("/origin")
           ? { origin: null }
           : { carriers: [] };
-      return { json: async () => payload };
+      return Response.json(payload);
     };
   });
   await page.addScriptTag({ content: bundle.outputFiles[0].text });

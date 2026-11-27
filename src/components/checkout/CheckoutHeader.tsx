@@ -2,7 +2,7 @@
 
 import { ShoppingBag } from "lucide-react";
 import Image from "next/image";
-import Link from "next/link";
+import { FeedbackLink as Link } from "@/components/ui/FeedbackLink";
 
 import { useCart } from "@/components/cart/CartProvider";
 

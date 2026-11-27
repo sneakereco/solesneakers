@@ -1,12 +1,12 @@
 // src/components/auth/ui/SixDigitCodeField.tsx
 "use client";
 
-import type { ComponentPropsWithoutRef } from "react";
+import type { ComponentPropsWithRef } from "react";
 
 import { authStyles } from "./authStyles";
 
 export interface SixDigitCodeFieldProps
-  extends Omit<ComponentPropsWithoutRef<"input">, "onChange" | "value"> {
+  extends Omit<ComponentPropsWithRef<"input">, "onChange" | "value"> {
   id: string;
   label?: string;
   length?: number;
@@ -32,7 +32,7 @@ export function SixDigitCodeField({
   return (
     <div className="space-y-2">
       {label && (
-        <label htmlFor={id} className="block text-sm font-medium text-zinc-700">
+        <label htmlFor={id} className={authStyles.label}>
           {label}
         </label>
       )}

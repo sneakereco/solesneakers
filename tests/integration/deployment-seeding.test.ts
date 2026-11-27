@@ -124,7 +124,9 @@ describe("deployment configuration", () => {
     } finally {
       jest.restoreAllMocks();
     }
-    expect(ciWorkflow).toContain("run: npx next build");
+    expect(ciWorkflow).toContain(
+      '"$RUNNER_TEMP/checkout-check" fixture-build ./node_modules/.bin/next build',
+    );
     expect(ciWorkflow).not.toContain("secrets.");
     expect(ciWorkflow).not.toContain("doppler");
   });

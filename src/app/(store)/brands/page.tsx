@@ -1,6 +1,7 @@
+import { withRequestDeadline } from "@/lib/http/request-deadline";
 import { pageMetadata } from "@/lib/metadata";
 
-import Link from "next/link";
+import { FeedbackLink } from "@/components/ui/FeedbackLink";
 import { unstable_cache } from "next/cache";
 import { connection } from "next/server";
 
@@ -14,25 +15,29 @@ type BrandOption = {
   label: string;
 };
 
-const listBrandsCached = unstable_cache(
-  async () => {
-    const supabase = createSupabasePublicClient();
-    const repository = new TagTaxonomyRepository(supabase);
-    const brands = await repository.listBrands();
+const listBrandsCached = () =>
+  withRequestDeadline((signal) =>
+    unstable_cache(
+      async () => {
+        const supabase = createSupabasePublicClient();
+        const repository = new TagTaxonomyRepository(supabase);
+        const brands = await repository.listBrands();
+        signal.throwIfAborted();
 
-    const seen = new Set<string>();
-    return brands.reduce<BrandOption[]>((entries, brand) => {
-      if (!brand.id || !brand.canonical_label || seen.has(brand.id)) {
-        return entries;
-      }
-      seen.add(brand.id);
-      entries.push({ id: brand.id, label: brand.canonical_label });
-      return entries;
-    }, []);
-  },
-  ["storefront", "brands"],
-  { revalidate: BRANDS_REVALIDATE_SECONDS, tags: ["products:list"] },
-);
+        const seen = new Set<string>();
+        return brands.reduce<BrandOption[]>((entries, brand) => {
+          if (!brand.id || !brand.canonical_label || seen.has(brand.id)) {
+            return entries;
+          }
+          seen.add(brand.id);
+          entries.push({ id: brand.id, label: brand.canonical_label });
+          return entries;
+        }, []);
+      },
+      ["storefront", "brands"],
+      { revalidate: BRANDS_REVALIDATE_SECONDS, tags: ["products:list"] },
+    )(),
+  );
 
 function buildBrandHref(brandId: string) {
   const params = new URLSearchParams();
@@ -75,7 +80,7 @@ export default async function BrandsPage() {
   });
 
   return (
-    <main className="min-h-screen bg-[#f4f4f4] text-black">
+    <div className="min-h-screen bg-[#f4f4f4] text-black">
       <div className="mx-auto w-full px-8 pb-20 pt-8 sm:px-12 sm:pt-9 lg:px-16">
         <h1 className="sr-only">Brands</h1>
 
@@ -90,12 +95,12 @@ export default async function BrandsPage() {
                 <ul className="space-y-2 text-[1.05rem] leading-8 sm:text-[1.1rem]">
                   {brandsForLetter.map((brand) => (
                     <li key={brand.id}>
-                      <Link
+                      <FeedbackLink
                         href={buildBrandHref(brand.id)}
-                        className="underline-offset-4 hover:underline focus-visible:underline focus-visible:outline-none"
+                        className="underline-offset-4 hover:underline focus-visible:underline"
                       >
                         {brand.label}
-                      </Link>
+                      </FeedbackLink>
                     </li>
                   ))}
                 </ul>
@@ -108,6 +113,6 @@ export default async function BrandsPage() {
           </p>
         )}
       </div>
-    </main>
+    </div>
   );
 }

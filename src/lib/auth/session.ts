@@ -1,4 +1,6 @@
 // src/lib/auth/session.ts
+import { isRejectedSessionError } from "./rejected-session";
+export { isRejectedSessionError } from "./rejected-session";
 import { redirect } from "next/navigation";
 import { isDynamicServerError } from "next/dist/client/components/hooks-server-context";
 
@@ -6,6 +8,7 @@ import { createSupabaseServerClient } from "@/lib/supabase/server";
 import { ProfileRepository } from "@/repositories/profile-repo";
 import type { ProfileRole } from "@/config/constants/roles";
 import { isAdminRole, isProfileRole } from "@/config/constants/roles";
+import { withRequestDeadline } from "@/lib/http/request-deadline";
 import { logError } from "@/lib/utils/log";
 
 export interface ServerSession {
@@ -31,71 +34,61 @@ export class AuthError extends Error {
   }
 }
 
-async function getServerSessionUncached(strict = false): Promise<ServerSession | null> {
-  try {
-    const supabase = await createSupabaseServerClient();
+/** Read the validated session for callers that can represent temporary unavailability. */
+export async function readServerSession(): Promise<ServerSession | null> {
+  return withRequestDeadline(readVerifiedSession);
+}
 
-    // ✅ Correct: validates user by contacting Supabase Auth server
-    const {
-      data: { user },
-      error,
-    } = await supabase.auth.getUser();
+async function readVerifiedSession(signal: AbortSignal): Promise<ServerSession | null> {
+  const supabase = await createSupabaseServerClient(signal);
+  const {
+    data: { user },
+    error,
+  } = await supabase.auth.getUser();
 
-    if (error || !user) {
-      if (
-        strict &&
-        !(
-          error?.name === "AuthSessionMissingError" ||
-          error?.code === "session_expired" ||
-          error?.code === "session_not_found" ||
-          error?.code === "refresh_token_not_found"
-        )
-      ) {
-        throw new Error("Session lookup unavailable");
+  if (error) {
+    if (isRejectedSessionError(error)) return null;
+    throw error;
+  }
+  if (!user || typeof user.id !== "string" || !user.id.trim())
+    throw Error("Session identity unavailable");
+
+  if (signal.aborted) throw signal.reason;
+  const profileRepo = new ProfileRepository(supabase);
+  const row = await profileRepo.getByUserId(user.id);
+  const profile = row
+    ? {
+        id: row.id,
+        email: row.email ?? user.email ?? "",
+        role: isProfileRole(row.role) ? row.role : ("customer" as const),
+        full_name: row.full_name ?? null,
+        tenant_id: row.tenant_id ?? null,
       }
-      return null;
-    }
-    if (strict && (typeof user.id !== "string" || !user.id.trim()))
-      throw new Error("Session identity unavailable");
+    : null;
 
-    const profileRepo = new ProfileRepository(supabase);
-    const row = await profileRepo.getByUserId(user.id);
+  return {
+    user: { id: user.id, email: user.email ?? "" },
+    profile,
+    role: profile?.role ?? "customer",
+  };
+}
 
-    const profile = row
-      ? {
-          id: row.id,
-          email: row.email ?? user.email ?? "",
-          role: isProfileRole(row.role) ? row.role : "customer",
-          full_name: row.full_name ?? null,
-          tenant_id: row.tenant_id ?? null,
-        }
-      : null;
+export const observeServerSession = readServerSession;
 
-    return {
-      user: {
-        id: user.id,
-        email: user.email ?? "",
-      },
-      profile,
-      role: profile?.role ?? "customer",
-    };
+export async function getServerSession(): Promise<ServerSession | null> {
+  try {
+    return await readServerSession();
   } catch (error) {
-    if (strict) throw new Error("Session lookup unavailable");
-    if (isDynamicServerError(error)) {
-      return null;
+    if (!isDynamicServerError(error)) {
+      logError(error, {
+        layer: "auth",
+        route: "getServerSession",
+        message: "server_session_lookup_failed",
+      });
     }
-
-    logError(error, {
-      layer: "auth",
-      route: "getServerSession",
-      message: "server_session_lookup_failed",
-    });
     return null;
   }
 }
-
-export const getServerSession = () => getServerSessionUncached();
-export const observeServerSession = () => getServerSessionUncached(true);
 
 /**
  * PAGE GUARDS (Server Components / Pages)

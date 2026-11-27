@@ -5,17 +5,23 @@ import {
   BasketLineReview,
 } from "@/Modules/Cart/Source/Client";
 
-import { useEffect } from "react";
+import { ActionButton } from "@/components/ui/ActionButton";
+import { useId } from "react";
 import Image from "next/image";
-import Link from "next/link";
+import { FeedbackLink, DocumentFeedbackLink } from "@/components/ui/FeedbackLink";
 import { Minus, Plus, ShoppingBag, Trash2, X } from "lucide-react";
 
+import { ModalPortal, useOverlayTransition } from "@/components/ui/ModalPortal";
+
 import { useCart } from "./CartProvider";
+import { CartFeedback } from "./CartFeedback";
+import { CartSkeleton } from "./CartSkeleton";
 import { ShippingEstimate } from "./ShippingEstimate";
 
 interface CartDrawerProps {
   isOpen: boolean;
   onClose: () => void;
+  invoker?: HTMLElement | null;
 }
 
 const formatPrice = (priceCents: number) =>
@@ -26,7 +32,7 @@ const formatPrice = (priceCents: number) =>
     maximumFractionDigits: 2,
   }).format(priceCents / 100);
 
-export function CartDrawer({ isOpen, onClose }: CartDrawerProps) {
+export function CartDrawer({ isOpen, onClose, invoker }: CartDrawerProps) {
   const {
     items,
     itemCount,
@@ -35,81 +41,72 @@ export function CartDrawer({ isOpen, onClose }: CartDrawerProps) {
     total,
     access,
     hasUnreadableItems,
+    isReady,
+    hasCartView,
+    validationStatus,
+    writePending,
   } = useCart();
-
-  useEffect(() => {
-    if (!isOpen) {
-      return;
-    }
-
-    const previousOverflow = document.body.style.overflow;
-    const handleKeyDown = (event: KeyboardEvent) => {
-      if (event.key === "Escape") {
-        onClose();
-      }
-    };
-
-    document.body.style.overflow = "hidden";
-    window.addEventListener("keydown", handleKeyDown);
-
-    return () => {
-      document.body.style.overflow = previousOverflow;
-      window.removeEventListener("keydown", handleKeyDown);
-    };
-  }, [isOpen, onClose]);
+  const titleId = useId();
+  const { present, visible } = useOverlayTransition(isOpen, 240);
 
   return (
-    <div
-      className={`fixed inset-0 z-[80] ${isOpen ? "pointer-events-auto" : "pointer-events-none"}`}
-      inert={!isOpen}
+    <ModalPortal
+      open={present}
+      invoker={invoker}
+      onClose={() => {
+        if (isOpen) onClose();
+      }}
+      labelledBy={titleId}
+      placement="right"
+      zIndexClassName="z-[80]"
+      contentClassName="contents"
+      backdropClassName={`bg-black/40 transition-opacity duration-[240ms] ease-out motion-reduce:transition-none ${
+        visible ? "opacity-100" : "opacity-0"
+      }`}
     >
-      <button
-        type="button"
-        className={`absolute inset-0 cursor-default bg-black/40 transition-opacity duration-[240ms] ease-out motion-reduce:transition-none ${
-          isOpen ? "opacity-100" : "opacity-0"
-        }`}
-        onClick={onClose}
-        tabIndex={isOpen ? 0 : -1}
-        aria-label="Close cart"
-      />
-
       <aside
-        role="dialog"
-        aria-modal="true"
-        aria-labelledby="cart-drawer-title"
         inert={!isOpen}
-        className={`absolute inset-y-0 right-0 flex w-full flex-col bg-white text-black shadow-2xl transition-transform duration-[240ms] ease-out motion-reduce:transition-none sm:max-w-[34rem] ${
-          isOpen ? "translate-x-0" : "translate-x-full"
+        className={`relative flex h-full w-full flex-col bg-white text-black shadow-2xl transition-transform duration-[240ms] ease-out motion-reduce:transition-none sm:max-w-[34rem] ${
+          visible ? "translate-x-0" : "translate-x-full"
         }`}
       >
         <header className="relative flex min-h-16 shrink-0 items-center justify-center border-b border-zinc-200 px-14">
-          <h2 id="cart-drawer-title" className="text-xl font-normal">
-            My cart <span aria-hidden="true">&#8226;</span> {itemCount}
+          <h2 id={titleId} className="text-xl font-normal">
+            My cart{" "}
+            {(isReady || hasCartView) && (
+              <>
+                <span aria-hidden="true">&#8226;</span> {itemCount}
+              </>
+            )}
           </h2>
-          <button
+          <ActionButton
             type="button"
             onClick={onClose}
-            className="absolute right-5 top-1/2 -translate-y-1/2 cursor-pointer p-2 text-black transition-colors hover:text-zinc-500"
+            className="absolute right-5 top-1/2 flex h-11 w-11 -translate-y-1/2 cursor-pointer items-center justify-center text-black transition-colors hover:text-zinc-500"
             aria-label="Close cart"
           >
             <X className="h-6 w-6" strokeWidth={1.7} />
-          </button>
+          </ActionButton>
         </header>
 
         {hasUnreadableItems && <BasketRepairNotice />}
-        {access !== "ready" ? (
-          <BasketAccessNotice />
+        <CartFeedback />
+        {!isReady && access !== "checking" && <BasketAccessNotice />}
+        {!isReady && !hasCartView ? (
+          validationStatus === "error" ? null : (
+            <CartSkeleton drawer />
+          )
         ) : items.length === 0 ? (
           <div className="flex flex-1 flex-col items-center justify-center px-6 pb-16 text-center">
             <ShoppingBag className="h-8 w-8" strokeWidth={1.7} />
             <p className="mt-4 text-base">Your cart is empty</p>
-            <Link
+            <FeedbackLink
               href="/store"
-              onClick={onClose}
+              onNavigate={onClose}
               className="mt-7 bg-zinc-900 px-8 py-3 text-sm font-medium uppercase text-white transition-colors hover:bg-black"
             >
               Shop Now
-            </Link>
+            </FeedbackLink>
           </div>
         ) : (
           <>
@@ -126,9 +123,9 @@ export function CartDrawer({ isOpen, onClose }: CartDrawerProps) {
                     key={`${item.productId}-${item.variantId}`}
                     className="grid grid-cols-[6rem_minmax(0,1fr)] gap-4 border-b border-zinc-200 py-6"
                   >
-                    <Link
+                    <FeedbackLink
                       href={`/store/${item.productId}`}
-                      onClick={onClose}
+                      onNavigate={onClose}
                       className="relative h-28 w-24 bg-[var(--storefront-surface)]"
                     >
                       <Image
@@ -138,13 +135,13 @@ export function CartDrawer({ isOpen, onClose }: CartDrawerProps) {
                         sizes="96px"
                         className="object-contain p-1 mix-blend-multiply"
                       />
-                    </Link>
+                    </FeedbackLink>
 
                     <div className="min-w-0">
                       <div className="flex items-start justify-between gap-4">
-                        <Link
+                        <FeedbackLink
                           href={`/store/${item.productId}`}
-                          onClick={onClose}
+                          onNavigate={onClose}
                           className="min-w-0"
                         >
                           <h3 className="text-sm font-medium uppercase leading-5 text-zinc-950">
@@ -155,7 +152,7 @@ export function CartDrawer({ isOpen, onClose }: CartDrawerProps) {
                               {item.brand}
                             </p>
                           )}
-                        </Link>
+                        </FeedbackLink>
                         <p className="shrink-0 text-sm font-medium">
                           {item.availability
                             ? "Unavailable"
@@ -170,7 +167,7 @@ export function CartDrawer({ isOpen, onClose }: CartDrawerProps) {
                       <BasketLineReview item={item} />
                       <div className="mt-4 flex items-center justify-between gap-4">
                         <div className="inline-grid grid-cols-3 border border-zinc-300">
-                          <button
+                          <ActionButton
                             type="button"
                             onClick={() =>
                               void updateQuantity(item.productId, item.variantId, {
@@ -178,36 +175,38 @@ export function CartDrawer({ isOpen, onClose }: CartDrawerProps) {
                               })
                             }
                             className="flex h-9 w-9 cursor-pointer items-center justify-center transition-colors hover:bg-zinc-100"
+                            disabled={!isReady || writePending}
                             aria-label={`Decrease quantity for ${item.titleDisplay}`}
                           >
                             <Minus className="h-3.5 w-3.5" />
-                          </button>
+                          </ActionButton>
                           <span className="flex h-9 min-w-9 items-center justify-center border-x border-zinc-300 text-sm">
                             {item.quantity}
                           </span>
-                          <button
+                          <ActionButton
                             type="button"
                             onClick={() =>
                               void updateQuantity(item.productId, item.variantId, {
                                 adjustBy: 1,
                               })
                             }
-                            disabled={!canIncrease}
+                            disabled={!isReady || writePending || !canIncrease}
                             className="flex h-9 w-9 cursor-pointer items-center justify-center transition-colors hover:bg-zinc-100 disabled:cursor-not-allowed disabled:text-zinc-300"
                             aria-label={`Increase quantity for ${item.titleDisplay}`}
                           >
                             <Plus className="h-3.5 w-3.5" />
-                          </button>
+                          </ActionButton>
                         </div>
 
-                        <button
+                        <ActionButton
                           type="button"
+                          disabled={!isReady || writePending}
                           onClick={() => void removeItem(item.productId, item.variantId)}
                           className="cursor-pointer p-2 text-zinc-500 transition-colors hover:text-black"
                           aria-label={`Remove ${item.titleDisplay} from cart`}
                         >
                           <Trash2 className="h-4 w-4" strokeWidth={1.7} />
-                        </button>
+                        </ActionButton>
                       </div>
                     </div>
                   </article>
@@ -220,30 +219,32 @@ export function CartDrawer({ isOpen, onClose }: CartDrawerProps) {
                 <span>Subtotal</span>
                 <span>{formatPrice(total)}</span>
               </div>
-              <a
-                href="/checkout"
+              <DocumentFeedbackLink
+                href={!isReady || writePending ? undefined : "/checkout"}
+                aria-disabled={!isReady || writePending || undefined}
+                data-checkout-link
                 className="mt-5 block w-full cursor-pointer bg-zinc-900 px-6 py-4 text-center text-sm font-medium uppercase text-white transition-colors hover:bg-black"
               >
                 Checkout <span aria-hidden="true">&#8226;</span> {formatPrice(total)}
-              </a>
-              <Link
+              </DocumentFeedbackLink>
+              <FeedbackLink
                 href="/store"
-                onClick={onClose}
+                onNavigate={onClose}
                 className="mt-5 block text-center text-sm underline underline-offset-4"
               >
                 Continue shopping
-              </Link>
-              <Link
+              </FeedbackLink>
+              <FeedbackLink
                 href="/cart"
-                onClick={onClose}
+                onNavigate={onClose}
                 className="mt-3 block text-center text-xs text-zinc-500 underline underline-offset-4"
               >
                 View full cart
-              </Link>
+              </FeedbackLink>
             </footer>
           </>
         )}
       </aside>
-    </div>
+    </ModalPortal>
   );
 }

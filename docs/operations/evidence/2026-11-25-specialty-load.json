@@ -1,0 +1,1673 @@
+{
+  "recordedDate": "2026-11-25",
+  "releaseDecision": "NO-GO",
+  "summary": "Integrity checks passed for all eight isolated award-engine scenarios; seven nominal latency gates failed. Protected Next development scenarios failed availability. These are local fixture results, not hosted qualification.",
+  "reports": [
+    {
+      "artifact": "duplicate-address-award-rpc.json",
+      "report": {
+        "target": "local",
+        "mode": "direct-postgrest-award-engine",
+        "sourceSha": "ef6adc3fa14936b532af8231a78688ed57682c7c",
+        "dirty": false,
+        "scenario": "duplicate-address",
+        "actorCount": 1000,
+        "requestCount": 1000,
+        "outcomes": {
+          "won": 1,
+          "soldOut": 0,
+          "alreadyClaimed": 999,
+          "retryable": 0,
+          "unresolved": 0,
+          "unexpectedErrors": 0
+        },
+        "latency": {
+          "p95Ms": 6363.138800000001,
+          "p99Ms": 6435.228
+        },
+        "initialLatency": {
+          "p95Ms": 6363.135700000001,
+          "p99Ms": 6435.2277
+        },
+        "maxResolutionMs": 6469.7618999999995,
+        "generator": {
+          "node": "v24.22.3",
+          "dispatchWindowMs": 2.561100000000806,
+          "maxInFlight": 1000,
+          "scheduledDispatchWindowMs": 101.91939999999977,
+          "establishedConnections": 1000,
+          "distinctSyntheticIps": 1000,
+          "serverIngressWindowMs": null
+        },
+        "initialHttpStatuses": {
+          "200": 1000
+        },
+        "retryCount": 0,
+        "lostResponses": 0,
+        "reconciliation": {
+          "winnerCount": 1,
+          "remainingStock": 999,
+          "negativeStock": false,
+          "ordinaryPrizeOrderItems": 0,
+          "duplicateIdentities": 0
+        },
+        "runtimeDiagnostics": {
+          "gateway": {
+            "redis": {
+              "count": 5,
+              "errors": 0,
+              "maxMs": 6.39890000000014
+            },
+            "accept_specialty_claim": {
+              "count": 1000,
+              "errors": 0,
+              "maxMs": 6162.5833999999995
+            }
+          },
+          "next": {
+            "completedResponses": 0,
+            "proxyP95Ms": 0,
+            "handlerP95Ms": 0
+          }
+        },
+        "expected": {
+          "winners": 1,
+          "remainingStock": 999
+        },
+        "differences": [
+          "Award engine isolation only: protected Next API, browser validation, BotID and Redis quotas are not part of this measured path; site capacity remains a separate gate",
+          "Local Node/PostgREST/PostgreSQL award engine; Next server is not started for this isolation run",
+          "Prepared signed eligibility; Shippo cold validation not measured",
+          "Trusted synthetic service-role RPC requests; application Auth, BotID, origin, browser and Redis quotas are not exercised",
+          "Server ingress timing unavailable; socket flush dispatch measured"
+        ],
+        "failureReasons": ["latency_or_resolution_budget_exceeded"],
+        "passed": false,
+        "siteCapacityPassed": false,
+        "awardEnginePassed": false
+      }
+    },
+    {
+      "artifact": "duplicate-address.json",
+      "report": {
+        "target": "local",
+        "mode": "real-next-development-http-postgrest-postgresql-redis",
+        "sourceSha": "ec8fd0f421b553b70f9d58b4ab91cb427e42fc6e",
+        "dirty": true,
+        "scenario": "duplicate-address",
+        "actorCount": 1000,
+        "requestCount": 1000,
+        "outcomes": {
+          "won": 0,
+          "soldOut": 0,
+          "alreadyClaimed": 0,
+          "retryable": 0,
+          "unresolved": 1000,
+          "unexpectedErrors": 0
+        },
+        "latency": {
+          "p95Ms": 30238.6109,
+          "p99Ms": 30240.995899999994
+        },
+        "maxResolutionMs": 30243.539800000006,
+        "generator": {
+          "node": "v24.22.3",
+          "dispatchWindowMs": 17.203999999997905,
+          "maxInFlight": 1000,
+          "scheduledDispatchWindowMs": 228.36019999999553,
+          "establishedConnections": 1000,
+          "distinctSyntheticIps": 1000,
+          "serverIngressWindowMs": null
+        },
+        "initialHttpStatuses": {
+          "0": 923,
+          "503": 77
+        },
+        "retryCount": 77,
+        "lostResponses": 0,
+        "reconciliation": {
+          "winnerCount": 0,
+          "remainingStock": 1000,
+          "negativeStock": false,
+          "ordinaryPrizeOrderItems": 0,
+          "duplicateIdentities": 0
+        },
+        "runtimeDiagnostics": {
+          "gateway": {
+            "redis": {
+              "count": 405,
+              "errors": 0,
+              "maxMs": 90.7554999999993
+            },
+            "database_reads": {
+              "count": 26,
+              "errors": 0,
+              "maxMs": 800.262200000001
+            }
+          },
+          "next": {
+            "completedResponses": 77,
+            "proxyP95Ms": 4700,
+            "handlerP95Ms": 12600
+          }
+        },
+        "expected": {
+          "winners": 1,
+          "remainingStock": 999
+        },
+        "differences": [
+          "Next development server; local shared machine and Docker",
+          "Prepared signed eligibility; Shippo cold validation not measured",
+          "BotID supported development HUMAN verdict; no hosted WAF/bot evidence",
+          "Actual Redis scripts via local REST bridge; IP quotas enforced with trusted loopback-only synthetic forwarded addresses; shared-IP run is separate",
+          "Synthetic Auth provider; real app origin/browser-cookie/credential checks",
+          "Server ingress timing unavailable; socket flush dispatch measured"
+        ],
+        "failureReasons": [
+          "unresolved_or_unexpected_outcomes",
+          "latency_or_resolution_budget_exceeded",
+          "database_reconciliation_failed",
+          "valid_business_outcomes_missing"
+        ],
+        "passed": false
+      }
+    },
+    {
+      "artifact": "duplicate-instagram-award-rpc.json",
+      "report": {
+        "target": "local",
+        "mode": "direct-postgrest-award-engine",
+        "sourceSha": "ef6adc3fa14936b532af8231a78688ed57682c7c",
+        "dirty": false,
+        "scenario": "duplicate-instagram",
+        "actorCount": 1000,
+        "requestCount": 1000,
+        "outcomes": {
+          "won": 1,
+          "soldOut": 0,
+          "alreadyClaimed": 999,
+          "retryable": 0,
+          "unresolved": 0,
+          "unexpectedErrors": 0
+        },
+        "latency": {
+          "p95Ms": 7876.6687999999995,
+          "p99Ms": 8026.025700000001
+        },
+        "initialLatency": {
+          "p95Ms": 7876.6674,
+          "p99Ms": 8026.022400000001
+        },
+        "maxResolutionMs": 8067.3809,
+        "generator": {
+          "node": "v24.22.3",
+          "dispatchWindowMs": 2.800199999999677,
+          "maxInFlight": 1000,
+          "scheduledDispatchWindowMs": 102.80220000000008,
+          "establishedConnections": 1000,
+          "distinctSyntheticIps": 1000,
+          "serverIngressWindowMs": null
+        },
+        "initialHttpStatuses": {
+          "200": 1000
+        },
+        "retryCount": 0,
+        "lostResponses": 0,
+        "reconciliation": {
+          "winnerCount": 1,
+          "remainingStock": 999,
+          "negativeStock": false,
+          "ordinaryPrizeOrderItems": 0,
+          "duplicateIdentities": 0
+        },
+        "runtimeDiagnostics": {
+          "gateway": {
+            "redis": {
+              "count": 5,
+              "errors": 0,
+              "maxMs": 5.175099999999929
+            },
+            "accept_specialty_claim": {
+              "count": 1000,
+              "errors": 0,
+              "maxMs": 7784.3105000000005
+            }
+          },
+          "next": {
+            "completedResponses": 0,
+            "proxyP95Ms": 0,
+            "handlerP95Ms": 0
+          }
+        },
+        "expected": {
+          "winners": 1,
+          "remainingStock": 999
+        },
+        "differences": [
+          "Award engine isolation only: protected Next API, browser validation, BotID and Redis quotas are not part of this measured path; site capacity remains a separate gate",
+          "Local Node/PostgREST/PostgreSQL award engine; Next server is not started for this isolation run",
+          "Prepared signed eligibility; Shippo cold validation not measured",
+          "Trusted synthetic service-role RPC requests; application Auth, BotID, origin, browser and Redis quotas are not exercised",
+          "Server ingress timing unavailable; socket flush dispatch measured"
+        ],
+        "failureReasons": ["latency_or_resolution_budget_exceeded"],
+        "passed": false,
+        "siteCapacityPassed": false,
+        "awardEnginePassed": false
+      }
+    },
+    {
+      "artifact": "duplicate-instagram.json",
+      "report": {
+        "target": "local",
+        "mode": "real-next-development-http-postgrest-postgresql-redis",
+        "sourceSha": "ec8fd0f421b553b70f9d58b4ab91cb427e42fc6e",
+        "dirty": true,
+        "scenario": "duplicate-instagram",
+        "actorCount": 1000,
+        "requestCount": 1000,
+        "outcomes": {
+          "won": 0,
+          "soldOut": 0,
+          "alreadyClaimed": 0,
+          "retryable": 0,
+          "unresolved": 1000,
+          "unexpectedErrors": 0
+        },
+        "latency": {
+          "p95Ms": 30200.116899999997,
+          "p99Ms": 30200.786599999996
+        },
+        "maxResolutionMs": 30201.1598,
+        "generator": {
+          "node": "v24.22.3",
+          "dispatchWindowMs": 8.80659999999989,
+          "maxInFlight": 1000,
+          "scheduledDispatchWindowMs": 192.520999999997,
+          "establishedConnections": 1000,
+          "distinctSyntheticIps": 1000,
+          "serverIngressWindowMs": null
+        },
+        "initialHttpStatuses": {
+          "0": 650,
+          "503": 350
+        },
+        "retryCount": 350,
+        "lostResponses": 0,
+        "reconciliation": {
+          "winnerCount": 0,
+          "remainingStock": 1000,
+          "negativeStock": false,
+          "ordinaryPrizeOrderItems": 0,
+          "duplicateIdentities": 0
+        },
+        "runtimeDiagnostics": {
+          "gateway": {
+            "redis": {
+              "count": 705,
+              "errors": 0,
+              "maxMs": 57.39749999999913
+            },
+            "database_reads": {
+              "count": 18,
+              "errors": 0,
+              "maxMs": 104.86159999999836
+            }
+          },
+          "next": {
+            "completedResponses": 350,
+            "proxyP95Ms": 3600,
+            "handlerP95Ms": 16000
+          }
+        },
+        "expected": {
+          "winners": 1,
+          "remainingStock": 999
+        },
+        "differences": [
+          "Next development server; local shared machine and Docker",
+          "Prepared signed eligibility; Shippo cold validation not measured",
+          "BotID supported development HUMAN verdict; no hosted WAF/bot evidence",
+          "Actual Redis scripts via local REST bridge; IP quotas enforced with trusted loopback-only synthetic forwarded addresses; shared-IP run is separate",
+          "Synthetic Auth provider; real app origin/browser-cookie/credential checks",
+          "Server ingress timing unavailable; socket flush dispatch measured"
+        ],
+        "failureReasons": [
+          "unresolved_or_unexpected_outcomes",
+          "latency_or_resolution_budget_exceeded",
+          "database_reconciliation_failed",
+          "valid_business_outcomes_missing"
+        ],
+        "passed": false,
+        "siteCapacityPassed": false,
+        "awardEnginePassed": false
+      }
+    },
+    {
+      "artifact": "hot-many-award-rpc.json",
+      "report": {
+        "target": "local",
+        "mode": "direct-postgrest-award-engine",
+        "sourceSha": "ef6adc3fa14936b532af8231a78688ed57682c7c",
+        "dirty": false,
+        "scenario": "hot-many",
+        "actorCount": 1000,
+        "requestCount": 1000,
+        "outcomes": {
+          "won": 10,
+          "soldOut": 990,
+          "alreadyClaimed": 0,
+          "retryable": 0,
+          "unresolved": 0,
+          "unexpectedErrors": 0
+        },
+        "latency": {
+          "p95Ms": 24151.5339,
+          "p99Ms": 24548.1055
+        },
+        "initialLatency": {
+          "p95Ms": 14774.943699999998,
+          "p99Ms": 15050.580799999998
+        },
+        "maxResolutionMs": 24690.112800000003,
+        "generator": {
+          "node": "v24.22.3",
+          "dispatchWindowMs": 2.771099999999933,
+          "maxInFlight": 1000,
+          "scheduledDispatchWindowMs": 343.40189999999984,
+          "establishedConnections": 1000,
+          "distinctSyntheticIps": 1000,
+          "serverIngressWindowMs": null
+        },
+        "initialHttpStatuses": {
+          "200": 449,
+          "500": 138,
+          "504": 413
+        },
+        "retryCount": 597,
+        "lostResponses": 0,
+        "reconciliation": {
+          "winnerCount": 10,
+          "remainingStock": 0,
+          "negativeStock": false,
+          "ordinaryPrizeOrderItems": 0,
+          "duplicateIdentities": 0
+        },
+        "runtimeDiagnostics": {
+          "gateway": {
+            "redis": {
+              "count": 5,
+              "errors": 0,
+              "maxMs": 9.601200000000063
+            },
+            "accept_specialty_claim": {
+              "count": 1555,
+              "errors": 555,
+              "maxMs": 14521.0784
+            },
+            "read_specialty_claim_result": {
+              "count": 597,
+              "errors": 42,
+              "maxMs": 10267.294899999999
+            }
+          },
+          "next": {
+            "completedResponses": 0,
+            "proxyP95Ms": 0,
+            "handlerP95Ms": 0
+          }
+        },
+        "expected": {
+          "winners": 10,
+          "remainingStock": 0
+        },
+        "differences": [
+          "Award engine isolation only: protected Next API, browser validation, BotID and Redis quotas are not part of this measured path; site capacity remains a separate gate",
+          "Local Node/PostgREST/PostgreSQL award engine; Next server is not started for this isolation run",
+          "Prepared signed eligibility; Shippo cold validation not measured",
+          "Trusted synthetic service-role RPC requests; application Auth, BotID, origin, browser and Redis quotas are not exercised",
+          "Server ingress timing unavailable; socket flush dispatch measured"
+        ],
+        "failureReasons": ["latency_or_resolution_budget_exceeded"],
+        "passed": false,
+        "siteCapacityPassed": false,
+        "awardEnginePassed": false
+      }
+    },
+    {
+      "artifact": "hot-many.json",
+      "report": {
+        "target": "local",
+        "mode": "real-next-development-http-postgrest-postgresql-redis",
+        "sourceSha": "ec8fd0f421b553b70f9d58b4ab91cb427e42fc6e",
+        "dirty": false,
+        "scenario": "hot-many",
+        "actorCount": 1000,
+        "requestCount": 1000,
+        "outcomes": {
+          "won": 0,
+          "soldOut": 0,
+          "alreadyClaimed": 0,
+          "retryable": 0,
+          "unresolved": 1000,
+          "unexpectedErrors": 0
+        },
+        "latency": {
+          "p95Ms": 30209.889999999996,
+          "p99Ms": 30211.646199999996
+        },
+        "maxResolutionMs": 30212.4361,
+        "generator": {
+          "node": "v24.22.3",
+          "dispatchWindowMs": 10.294999999998254,
+          "maxInFlight": 1000,
+          "scheduledDispatchWindowMs": 188.90740000000005,
+          "establishedConnections": 1000,
+          "distinctSyntheticIps": 1000,
+          "serverIngressWindowMs": null
+        },
+        "initialHttpStatuses": {
+          "0": 800,
+          "503": 200
+        },
+        "retryCount": 200,
+        "lostResponses": 0,
+        "reconciliation": {
+          "winnerCount": 0,
+          "remainingStock": 10,
+          "negativeStock": false,
+          "ordinaryPrizeOrderItems": 0,
+          "duplicateIdentities": 0
+        },
+        "runtimeDiagnostics": {
+          "gateway": {
+            "redis": {
+              "count": 481,
+              "errors": 0,
+              "maxMs": 42.78549999999814
+            },
+            "database_reads": {
+              "count": 18,
+              "errors": 0,
+              "maxMs": 160.01080000000002
+            }
+          },
+          "next": {
+            "completedResponses": 200,
+            "proxyP95Ms": 3500,
+            "handlerP95Ms": 12100
+          }
+        },
+        "expected": {
+          "winners": 10,
+          "remainingStock": 0
+        },
+        "differences": [
+          "Next development server; local shared machine and Docker",
+          "Prepared signed eligibility; Shippo cold validation not measured",
+          "BotID supported development HUMAN verdict; no hosted WAF/bot evidence",
+          "Actual Redis scripts via local REST bridge; IP quotas enforced with trusted loopback-only synthetic forwarded addresses; shared-IP run is separate",
+          "Synthetic Auth provider; real app origin/browser-cookie/credential checks",
+          "Server ingress timing unavailable; socket flush dispatch measured"
+        ],
+        "failureReasons": [
+          "unresolved_or_unexpected_outcomes",
+          "latency_or_resolution_budget_exceeded",
+          "database_reconciliation_failed",
+          "valid_business_outcomes_missing"
+        ],
+        "passed": false
+      }
+    },
+    {
+      "artifact": "hot-one-award-rpc.json",
+      "report": {
+        "target": "local",
+        "mode": "direct-postgrest-award-engine",
+        "sourceSha": "ef6adc3fa14936b532af8231a78688ed57682c7c",
+        "dirty": false,
+        "scenario": "hot-one",
+        "actorCount": 1000,
+        "requestCount": 1000,
+        "outcomes": {
+          "won": 1,
+          "soldOut": 999,
+          "alreadyClaimed": 0,
+          "retryable": 0,
+          "unresolved": 0,
+          "unexpectedErrors": 0
+        },
+        "latency": {
+          "p95Ms": 21552.1355,
+          "p99Ms": 22049.1895
+        },
+        "initialLatency": {
+          "p95Ms": 13825.091499999999,
+          "p99Ms": 14312.0015
+        },
+        "maxResolutionMs": 22169.008200000004,
+        "generator": {
+          "node": "v24.22.3",
+          "dispatchWindowMs": 5.455600000000231,
+          "maxInFlight": 1000,
+          "scheduledDispatchWindowMs": 118.75930000000062,
+          "establishedConnections": 1000,
+          "distinctSyntheticIps": 1000,
+          "serverIngressWindowMs": null
+        },
+        "initialHttpStatuses": {
+          "200": 704,
+          "504": 296
+        },
+        "retryCount": 296,
+        "lostResponses": 0,
+        "reconciliation": {
+          "winnerCount": 1,
+          "remainingStock": 0,
+          "negativeStock": false,
+          "ordinaryPrizeOrderItems": 0,
+          "duplicateIdentities": 0
+        },
+        "runtimeDiagnostics": {
+          "gateway": {
+            "redis": {
+              "count": 5,
+              "errors": 0,
+              "maxMs": 6.520100000000184
+            },
+            "accept_specialty_claim": {
+              "count": 1296,
+              "errors": 296,
+              "maxMs": 13035.313799999998
+            },
+            "read_specialty_claim_result": {
+              "count": 296,
+              "errors": 0,
+              "maxMs": 7593.870800000001
+            }
+          },
+          "next": {
+            "completedResponses": 0,
+            "proxyP95Ms": 0,
+            "handlerP95Ms": 0
+          }
+        },
+        "expected": {
+          "winners": 1,
+          "remainingStock": 0
+        },
+        "differences": [
+          "Award engine isolation only: protected Next API, browser validation, BotID and Redis quotas are not part of this measured path; site capacity remains a separate gate",
+          "Local Node/PostgREST/PostgreSQL award engine; Next server is not started for this isolation run",
+          "Prepared signed eligibility; Shippo cold validation not measured",
+          "Trusted synthetic service-role RPC requests; application Auth, BotID, origin, browser and Redis quotas are not exercised",
+          "Server ingress timing unavailable; socket flush dispatch measured"
+        ],
+        "failureReasons": ["latency_or_resolution_budget_exceeded"],
+        "passed": false,
+        "siteCapacityPassed": false,
+        "awardEnginePassed": false
+      }
+    },
+    {
+      "artifact": "hot-one.json",
+      "report": {
+        "target": "local",
+        "mode": "real-next-development-http-postgrest-postgresql-redis",
+        "sourceSha": "ef6adc3fa14936b532af8231a78688ed57682c7c",
+        "dirty": false,
+        "scenario": "hot-one",
+        "actorCount": 1000,
+        "requestCount": 1000,
+        "outcomes": {
+          "won": 0,
+          "soldOut": 0,
+          "alreadyClaimed": 0,
+          "retryable": 428,
+          "unresolved": 1000,
+          "unexpectedErrors": 0
+        },
+        "latency": {
+          "p95Ms": 30050.542799999996,
+          "p99Ms": 30072.1094
+        },
+        "initialLatency": {
+          "p95Ms": 30050.542,
+          "p99Ms": 30072.1086
+        },
+        "maxResolutionMs": 30087.313400000003,
+        "generator": {
+          "node": "v24.22.3",
+          "dispatchWindowMs": 2.319100000000617,
+          "maxInFlight": 1000,
+          "scheduledDispatchWindowMs": 85.95880000000034,
+          "establishedConnections": 1000,
+          "distinctSyntheticIps": 1000,
+          "serverIngressWindowMs": null
+        },
+        "initialHttpStatuses": {
+          "0": 138,
+          "503": 862
+        },
+        "retryCount": 434,
+        "lostResponses": 0,
+        "reconciliation": {
+          "winnerCount": 0,
+          "remainingStock": 1,
+          "negativeStock": false,
+          "ordinaryPrizeOrderItems": 0,
+          "duplicateIdentities": 0
+        },
+        "runtimeDiagnostics": {
+          "gateway": {
+            "redis": {
+              "count": 1958,
+              "errors": 0,
+              "maxMs": 21.125900000006368
+            },
+            "database_reads": {
+              "count": 12,
+              "errors": 0,
+              "maxMs": 64.82430000000022
+            },
+            "read_specialty_claim_result": {
+              "count": 4,
+              "errors": 0,
+              "maxMs": 90.25650000000314
+            }
+          },
+          "next": {
+            "completedResponses": 862,
+            "proxyP95Ms": 3500,
+            "handlerP95Ms": 24600
+          }
+        },
+        "expected": {
+          "winners": 1,
+          "remainingStock": 0
+        },
+        "differences": [
+          "Next development server; local shared machine and Docker",
+          "Prepared signed eligibility; Shippo cold validation not measured",
+          "BotID supported development HUMAN verdict; no hosted WAF/bot evidence",
+          "Actual Redis scripts via local REST bridge; IP quotas enforced with trusted loopback-only synthetic forwarded addresses; shared-IP run is separate",
+          "Synthetic Auth provider; real app origin/browser-cookie/credential checks",
+          "Server ingress timing unavailable; socket flush dispatch measured"
+        ],
+        "failureReasons": [
+          "unresolved_or_unexpected_outcomes",
+          "latency_or_resolution_budget_exceeded",
+          "database_reconciliation_failed",
+          "valid_business_outcomes_missing"
+        ],
+        "passed": false,
+        "siteCapacityPassed": false,
+        "awardEnginePassed": false
+      }
+    },
+    {
+      "artifact": "lost-response-award-rpc.json",
+      "report": {
+        "target": "local",
+        "mode": "direct-postgrest-award-engine",
+        "sourceSha": "ef6adc3fa14936b532af8231a78688ed57682c7c",
+        "dirty": false,
+        "scenario": "lost-response",
+        "actorCount": 1000,
+        "requestCount": 1000,
+        "outcomes": {
+          "won": 1,
+          "soldOut": 999,
+          "alreadyClaimed": 0,
+          "retryable": 0,
+          "unresolved": 0,
+          "unexpectedErrors": 0
+        },
+        "latency": {
+          "p95Ms": 12762.880000000001,
+          "p99Ms": 12909.5618
+        },
+        "initialLatency": {
+          "p95Ms": 12762.8776,
+          "p99Ms": 12909.560000000001
+        },
+        "maxResolutionMs": 12956.848399999999,
+        "generator": {
+          "node": "v24.22.3",
+          "dispatchWindowMs": 2.415499999999156,
+          "maxInFlight": 1000,
+          "scheduledDispatchWindowMs": 190.92889999999989,
+          "establishedConnections": 1000,
+          "distinctSyntheticIps": 1000,
+          "serverIngressWindowMs": null
+        },
+        "initialHttpStatuses": {
+          "200": 1000
+        },
+        "retryCount": 1,
+        "lostResponses": 1,
+        "reconciliation": {
+          "winnerCount": 1,
+          "remainingStock": 0,
+          "negativeStock": false,
+          "ordinaryPrizeOrderItems": 0,
+          "duplicateIdentities": 0
+        },
+        "runtimeDiagnostics": {
+          "gateway": {
+            "redis": {
+              "count": 5,
+              "errors": 0,
+              "maxMs": 7.309799999999996
+            },
+            "accept_specialty_claim": {
+              "count": 1000,
+              "errors": 0,
+              "maxMs": 12585.999
+            },
+            "read_specialty_claim_result": {
+              "count": 1,
+              "errors": 0,
+              "maxMs": 7259.917800000001
+            }
+          },
+          "next": {
+            "completedResponses": 0,
+            "proxyP95Ms": 0,
+            "handlerP95Ms": 0
+          }
+        },
+        "expected": {
+          "winners": 1,
+          "remainingStock": 0
+        },
+        "differences": [
+          "Award engine isolation only: protected Next API, browser validation, BotID and Redis quotas are not part of this measured path; site capacity remains a separate gate",
+          "Local Node/PostgREST/PostgreSQL award engine; Next server is not started for this isolation run",
+          "Prepared signed eligibility; Shippo cold validation not measured",
+          "Trusted synthetic service-role RPC requests; application Auth, BotID, origin, browser and Redis quotas are not exercised",
+          "Server ingress timing unavailable; socket flush dispatch measured"
+        ],
+        "failureReasons": ["latency_or_resolution_budget_exceeded"],
+        "passed": false,
+        "siteCapacityPassed": false,
+        "awardEnginePassed": false
+      }
+    },
+    {
+      "artifact": "lost-response.json",
+      "report": {
+        "target": "local",
+        "mode": "real-next-development-http-postgrest-postgresql-redis",
+        "sourceSha": "ec8fd0f421b553b70f9d58b4ab91cb427e42fc6e",
+        "dirty": true,
+        "scenario": "lost-response",
+        "actorCount": 1000,
+        "requestCount": 1000,
+        "outcomes": {
+          "won": 0,
+          "soldOut": 0,
+          "alreadyClaimed": 0,
+          "retryable": 0,
+          "unresolved": 1000,
+          "unexpectedErrors": 0
+        },
+        "latency": {
+          "p95Ms": 30342.389000000003,
+          "p99Ms": 30343.402800000003
+        },
+        "maxResolutionMs": 30343.6837,
+        "generator": {
+          "node": "v24.22.3",
+          "dispatchWindowMs": 6.310699999998178,
+          "maxInFlight": 1000,
+          "scheduledDispatchWindowMs": 216.85989999999947,
+          "establishedConnections": 1000,
+          "distinctSyntheticIps": 1000,
+          "serverIngressWindowMs": null
+        },
+        "initialHttpStatuses": {
+          "0": 991,
+          "503": 9
+        },
+        "retryCount": 9,
+        "lostResponses": 0,
+        "reconciliation": {
+          "winnerCount": 0,
+          "remainingStock": 1,
+          "negativeStock": false,
+          "ordinaryPrizeOrderItems": 0,
+          "duplicateIdentities": 0
+        },
+        "runtimeDiagnostics": {
+          "gateway": {
+            "redis": {
+              "count": 23,
+              "errors": 0,
+              "maxMs": 19.1820000000007
+            },
+            "database_reads": {
+              "count": 20,
+              "errors": 0,
+              "maxMs": 643.8538000000008
+            }
+          },
+          "next": {
+            "completedResponses": 9,
+            "proxyP95Ms": 1160,
+            "handlerP95Ms": 6500
+          }
+        },
+        "expected": {
+          "winners": 1,
+          "remainingStock": 0
+        },
+        "differences": [
+          "Next development server; local shared machine and Docker",
+          "Prepared signed eligibility; Shippo cold validation not measured",
+          "BotID supported development HUMAN verdict; no hosted WAF/bot evidence",
+          "Actual Redis scripts via local REST bridge; IP quotas enforced with trusted loopback-only synthetic forwarded addresses; shared-IP run is separate",
+          "Synthetic Auth provider; real app origin/browser-cookie/credential checks",
+          "Server ingress timing unavailable; socket flush dispatch measured"
+        ],
+        "failureReasons": [
+          "unresolved_or_unexpected_outcomes",
+          "latency_or_resolution_budget_exceeded",
+          "database_reconciliation_failed",
+          "valid_business_outcomes_missing",
+          "committed_response_loss_not_exercised"
+        ],
+        "passed": false,
+        "siteCapacityPassed": false,
+        "awardEnginePassed": false
+      }
+    },
+    {
+      "artifact": "multi-product-award-rpc.json",
+      "report": {
+        "target": "local",
+        "mode": "direct-postgrest-award-engine",
+        "sourceSha": "ef6adc3fa14936b532af8231a78688ed57682c7c",
+        "dirty": false,
+        "scenario": "multi-product",
+        "actorCount": 1000,
+        "requestCount": 1000,
+        "outcomes": {
+          "won": 100,
+          "soldOut": 900,
+          "alreadyClaimed": 0,
+          "retryable": 0,
+          "unresolved": 0,
+          "unexpectedErrors": 0
+        },
+        "latency": {
+          "p95Ms": 11253.7288,
+          "p99Ms": 11406.696199999998
+        },
+        "initialLatency": {
+          "p95Ms": 10979.287500000002,
+          "p99Ms": 11324.0464
+        },
+        "maxResolutionMs": 11523.063100000001,
+        "generator": {
+          "node": "v24.22.3",
+          "dispatchWindowMs": 5.054300000001604,
+          "maxInFlight": 1000,
+          "scheduledDispatchWindowMs": 288.76380000000063,
+          "establishedConnections": 1000,
+          "distinctSyntheticIps": 1000,
+          "serverIngressWindowMs": null
+        },
+        "initialHttpStatuses": {
+          "200": 852,
+          "500": 148
+        },
+        "retryCount": 148,
+        "lostResponses": 0,
+        "reconciliation": {
+          "winnerCount": 100,
+          "remainingStock": 0,
+          "negativeStock": false,
+          "ordinaryPrizeOrderItems": 0,
+          "duplicateIdentities": 0
+        },
+        "runtimeDiagnostics": {
+          "gateway": {
+            "redis": {
+              "count": 5,
+              "errors": 0,
+              "maxMs": 7.8828999999996086
+            },
+            "accept_specialty_claim": {
+              "count": 1148,
+              "errors": 148,
+              "maxMs": 10959.713200000002
+            },
+            "read_specialty_claim_result": {
+              "count": 148,
+              "errors": 0,
+              "maxMs": 4398.616099999999
+            }
+          },
+          "next": {
+            "completedResponses": 0,
+            "proxyP95Ms": 0,
+            "handlerP95Ms": 0
+          }
+        },
+        "expected": {
+          "winners": 100,
+          "remainingStock": 0
+        },
+        "differences": [
+          "Award engine isolation only: protected Next API, browser validation, BotID and Redis quotas are not part of this measured path; site capacity remains a separate gate",
+          "Local Node/PostgREST/PostgreSQL award engine; Next server is not started for this isolation run",
+          "Prepared signed eligibility; Shippo cold validation not measured",
+          "Trusted synthetic service-role RPC requests; application Auth, BotID, origin, browser and Redis quotas are not exercised",
+          "Server ingress timing unavailable; socket flush dispatch measured"
+        ],
+        "failureReasons": ["latency_or_resolution_budget_exceeded"],
+        "passed": false,
+        "siteCapacityPassed": false,
+        "awardEnginePassed": false
+      }
+    },
+    {
+      "artifact": "multi-product.json",
+      "report": {
+        "target": "local",
+        "mode": "real-next-development-http-postgrest-postgresql-redis",
+        "sourceSha": "ec8fd0f421b553b70f9d58b4ab91cb427e42fc6e",
+        "dirty": true,
+        "scenario": "multi-product",
+        "actorCount": 1000,
+        "requestCount": 1000,
+        "outcomes": {
+          "won": 0,
+          "soldOut": 0,
+          "alreadyClaimed": 0,
+          "retryable": 0,
+          "unresolved": 1000,
+          "unexpectedErrors": 0
+        },
+        "latency": {
+          "p95Ms": 30239.946000000004,
+          "p99Ms": 30240.853199999998
+        },
+        "maxResolutionMs": 30241.146400000005,
+        "generator": {
+          "node": "v24.22.3",
+          "dispatchWindowMs": 8.038699999997334,
+          "maxInFlight": 1000,
+          "scheduledDispatchWindowMs": 205.68639999999868,
+          "establishedConnections": 1000,
+          "distinctSyntheticIps": 1000,
+          "serverIngressWindowMs": null
+        },
+        "initialHttpStatuses": {
+          "0": 881,
+          "503": 119
+        },
+        "retryCount": 119,
+        "lostResponses": 0,
+        "reconciliation": {
+          "winnerCount": 0,
+          "remainingStock": 100,
+          "negativeStock": false,
+          "ordinaryPrizeOrderItems": 0,
+          "duplicateIdentities": 0
+        },
+        "runtimeDiagnostics": {
+          "gateway": {
+            "redis": {
+              "count": 373,
+              "errors": 0,
+              "maxMs": 12.163800000002084
+            },
+            "database_reads": {
+              "count": 18,
+              "errors": 0,
+              "maxMs": 213.1909999999989
+            }
+          },
+          "next": {
+            "completedResponses": 119,
+            "proxyP95Ms": 4700,
+            "handlerP95Ms": 10700
+          }
+        },
+        "expected": {
+          "winners": 100,
+          "remainingStock": 0
+        },
+        "differences": [
+          "Next development server; local shared machine and Docker",
+          "Prepared signed eligibility; Shippo cold validation not measured",
+          "BotID supported development HUMAN verdict; no hosted WAF/bot evidence",
+          "Actual Redis scripts via local REST bridge; IP quotas enforced with trusted loopback-only synthetic forwarded addresses; shared-IP run is separate",
+          "Synthetic Auth provider; real app origin/browser-cookie/credential checks",
+          "Server ingress timing unavailable; socket flush dispatch measured"
+        ],
+        "failureReasons": [
+          "unresolved_or_unexpected_outcomes",
+          "latency_or_resolution_budget_exceeded",
+          "database_reconciliation_failed",
+          "valid_business_outcomes_missing"
+        ],
+        "passed": false
+      }
+    },
+    {
+      "artifact": "overload-award-rpc.json",
+      "report": {
+        "target": "local",
+        "mode": "direct-postgrest-award-engine",
+        "sourceSha": "ef6adc3fa14936b532af8231a78688ed57682c7c",
+        "dirty": false,
+        "scenario": "overload",
+        "actorCount": 1000,
+        "requestCount": 1000,
+        "outcomes": {
+          "won": 1,
+          "soldOut": 999,
+          "alreadyClaimed": 0,
+          "retryable": 0,
+          "unresolved": 0,
+          "unexpectedErrors": 0
+        },
+        "latency": {
+          "p95Ms": 14284.020700000001,
+          "p99Ms": 14384.407099999999
+        },
+        "initialLatency": {
+          "p95Ms": 6133.6934,
+          "p99Ms": 6168.9364000000005
+        },
+        "maxResolutionMs": 14440.9369,
+        "generator": {
+          "node": "v24.22.3",
+          "dispatchWindowMs": 2.0938999999998487,
+          "maxInFlight": 1000,
+          "scheduledDispatchWindowMs": 116.6193000000003,
+          "establishedConnections": 1000,
+          "distinctSyntheticIps": 1000,
+          "serverIngressWindowMs": null
+        },
+        "initialHttpStatuses": {
+          "500": 1000
+        },
+        "retryCount": 1054,
+        "lostResponses": 0,
+        "reconciliation": {
+          "winnerCount": 1,
+          "remainingStock": 0,
+          "negativeStock": false,
+          "ordinaryPrizeOrderItems": 0,
+          "duplicateIdentities": 0
+        },
+        "runtimeDiagnostics": {
+          "gateway": {
+            "redis": {
+              "count": 5,
+              "errors": 0,
+              "maxMs": 8.464500000000044
+            },
+            "accept_specialty_claim": {
+              "count": 2054,
+              "errors": 1054,
+              "maxMs": 7770.8087
+            },
+            "read_specialty_claim_result": {
+              "count": 1054,
+              "errors": 0,
+              "maxMs": 7700.9733
+            }
+          },
+          "next": {
+            "completedResponses": 0,
+            "proxyP95Ms": 0,
+            "handlerP95Ms": 0
+          }
+        },
+        "expected": {
+          "winners": 1,
+          "remainingStock": 0
+        },
+        "differences": [
+          "Award engine isolation only: protected Next API, browser validation, BotID and Redis quotas are not part of this measured path; site capacity remains a separate gate",
+          "Local Node/PostgREST/PostgreSQL award engine; Next server is not started for this isolation run",
+          "Prepared signed eligibility; Shippo cold validation not measured",
+          "Trusted synthetic service-role RPC requests; application Auth, BotID, origin, browser and Redis quotas are not exercised",
+          "Server ingress timing unavailable; socket flush dispatch measured"
+        ],
+        "failureReasons": [],
+        "passed": true,
+        "siteCapacityPassed": false,
+        "awardEnginePassed": true
+      }
+    },
+    {
+      "artifact": "overload.json",
+      "report": {
+        "target": "local",
+        "mode": "real-next-development-http-postgrest-postgresql-redis",
+        "sourceSha": "ec8fd0f421b553b70f9d58b4ab91cb427e42fc6e",
+        "dirty": true,
+        "scenario": "overload",
+        "actorCount": 1000,
+        "requestCount": 1000,
+        "outcomes": {
+          "won": 0,
+          "soldOut": 0,
+          "alreadyClaimed": 0,
+          "retryable": 0,
+          "unresolved": 1000,
+          "unexpectedErrors": 0
+        },
+        "latency": {
+          "p95Ms": 30297.126599999996,
+          "p99Ms": 30306.5216
+        },
+        "maxResolutionMs": 30307.22729999999,
+        "generator": {
+          "node": "v24.22.3",
+          "dispatchWindowMs": 16.297899999997753,
+          "maxInFlight": 1000,
+          "scheduledDispatchWindowMs": 221.1261999999988,
+          "establishedConnections": 1000,
+          "distinctSyntheticIps": 1000,
+          "serverIngressWindowMs": null
+        },
+        "initialHttpStatuses": {
+          "0": 987,
+          "503": 13
+        },
+        "retryCount": 13,
+        "lostResponses": 0,
+        "reconciliation": {
+          "winnerCount": 0,
+          "remainingStock": 1,
+          "negativeStock": false,
+          "ordinaryPrizeOrderItems": 0,
+          "duplicateIdentities": 0
+        },
+        "runtimeDiagnostics": {
+          "gateway": {
+            "redis": {
+              "count": 31,
+              "errors": 0,
+              "maxMs": 10.773799999999937
+            },
+            "database_reads": {
+              "count": 20,
+              "errors": 0,
+              "maxMs": 1676.9271000000008
+            }
+          },
+          "next": {
+            "completedResponses": 13,
+            "proxyP95Ms": 2800,
+            "handlerP95Ms": 7900
+          }
+        },
+        "expected": {
+          "winners": 1,
+          "remainingStock": 0
+        },
+        "differences": [
+          "Next development server; local shared machine and Docker",
+          "Prepared signed eligibility; Shippo cold validation not measured",
+          "BotID supported development HUMAN verdict; no hosted WAF/bot evidence",
+          "Actual Redis scripts via local REST bridge; IP quotas enforced with trusted loopback-only synthetic forwarded addresses; shared-IP run is separate",
+          "Synthetic Auth provider; real app origin/browser-cookie/credential checks",
+          "Server ingress timing unavailable; socket flush dispatch measured"
+        ],
+        "failureReasons": [
+          "unresolved_or_unexpected_outcomes",
+          "database_reconciliation_failed",
+          "valid_business_outcomes_missing"
+        ],
+        "passed": false,
+        "siteCapacityPassed": false,
+        "awardEnginePassed": false
+      }
+    },
+    {
+      "artifact": "replayed-attempt-award-rpc.json",
+      "report": {
+        "target": "local",
+        "mode": "direct-postgrest-award-engine",
+        "sourceSha": "ef6adc3fa14936b532af8231a78688ed57682c7c",
+        "dirty": false,
+        "scenario": "replayed-attempt",
+        "actorCount": 1,
+        "requestCount": 1000,
+        "outcomes": {
+          "won": 1000,
+          "soldOut": 0,
+          "alreadyClaimed": 0,
+          "retryable": 0,
+          "unresolved": 0,
+          "unexpectedErrors": 0
+        },
+        "latency": {
+          "p95Ms": 8158.8155,
+          "p99Ms": 8274.335500000001
+        },
+        "initialLatency": {
+          "p95Ms": 8158.8129,
+          "p99Ms": 8274.332000000002
+        },
+        "maxResolutionMs": 8362.285899999999,
+        "generator": {
+          "node": "v24.22.3",
+          "dispatchWindowMs": 2.2560999999996056,
+          "maxInFlight": 1000,
+          "scheduledDispatchWindowMs": 157.42720000000008,
+          "establishedConnections": 1000,
+          "distinctSyntheticIps": 1000,
+          "serverIngressWindowMs": null
+        },
+        "initialHttpStatuses": {
+          "200": 1000
+        },
+        "retryCount": 0,
+        "lostResponses": 0,
+        "reconciliation": {
+          "winnerCount": 1,
+          "remainingStock": 0,
+          "negativeStock": false,
+          "ordinaryPrizeOrderItems": 0,
+          "duplicateIdentities": 0
+        },
+        "runtimeDiagnostics": {
+          "gateway": {
+            "redis": {
+              "count": 5,
+              "errors": 0,
+              "maxMs": 7.185800000000199
+            },
+            "accept_specialty_claim": {
+              "count": 1000,
+              "errors": 0,
+              "maxMs": 8084.8043
+            }
+          },
+          "next": {
+            "completedResponses": 0,
+            "proxyP95Ms": 0,
+            "handlerP95Ms": 0
+          }
+        },
+        "expected": {
+          "winners": 1,
+          "remainingStock": 0
+        },
+        "differences": [
+          "Award engine isolation only: protected Next API, browser validation, BotID and Redis quotas are not part of this measured path; site capacity remains a separate gate",
+          "Local Node/PostgREST/PostgreSQL award engine; Next server is not started for this isolation run",
+          "Prepared signed eligibility; Shippo cold validation not measured",
+          "Trusted synthetic service-role RPC requests; application Auth, BotID, origin, browser and Redis quotas are not exercised",
+          "Server ingress timing unavailable; socket flush dispatch measured"
+        ],
+        "failureReasons": ["latency_or_resolution_budget_exceeded"],
+        "passed": false,
+        "siteCapacityPassed": false,
+        "awardEnginePassed": false
+      }
+    },
+    {
+      "artifact": "replayed-attempt.json",
+      "report": {
+        "target": "local",
+        "mode": "real-next-development-http-postgrest-postgresql-redis",
+        "sourceSha": "ec8fd0f421b553b70f9d58b4ab91cb427e42fc6e",
+        "dirty": true,
+        "scenario": "replayed-attempt",
+        "actorCount": 1,
+        "requestCount": 1000,
+        "outcomes": {
+          "won": 0,
+          "soldOut": 0,
+          "alreadyClaimed": 0,
+          "retryable": 0,
+          "unresolved": 1000,
+          "unexpectedErrors": 0
+        },
+        "latency": {
+          "p95Ms": 30202.838399999997,
+          "p99Ms": 30203.1198
+        },
+        "maxResolutionMs": 30203.2741,
+        "generator": {
+          "node": "v24.22.3",
+          "dispatchWindowMs": 8.155299999998533,
+          "maxInFlight": 1000,
+          "scheduledDispatchWindowMs": 204.97880000000077,
+          "establishedConnections": 1000,
+          "distinctSyntheticIps": 1000,
+          "serverIngressWindowMs": null
+        },
+        "initialHttpStatuses": {
+          "0": 648,
+          "503": 352
+        },
+        "retryCount": 352,
+        "lostResponses": 0,
+        "reconciliation": {
+          "winnerCount": 0,
+          "remainingStock": 1,
+          "negativeStock": false,
+          "ordinaryPrizeOrderItems": 0,
+          "duplicateIdentities": 0
+        },
+        "runtimeDiagnostics": {
+          "gateway": {
+            "redis": {
+              "count": 709,
+              "errors": 0,
+              "maxMs": 34.820999999996275
+            },
+            "database_reads": {
+              "count": 16,
+              "errors": 0,
+              "maxMs": 112.18990000000122
+            }
+          },
+          "next": {
+            "completedResponses": 352,
+            "proxyP95Ms": 3600,
+            "handlerP95Ms": 16100.000000000002
+          }
+        },
+        "expected": {
+          "winners": 1,
+          "remainingStock": 0
+        },
+        "differences": [
+          "Next development server; local shared machine and Docker",
+          "Prepared signed eligibility; Shippo cold validation not measured",
+          "BotID supported development HUMAN verdict; no hosted WAF/bot evidence",
+          "Actual Redis scripts via local REST bridge; IP quotas enforced with trusted loopback-only synthetic forwarded addresses; shared-IP run is separate",
+          "Synthetic Auth provider; real app origin/browser-cookie/credential checks",
+          "Server ingress timing unavailable; socket flush dispatch measured"
+        ],
+        "failureReasons": [
+          "unresolved_or_unexpected_outcomes",
+          "latency_or_resolution_budget_exceeded",
+          "database_reconciliation_failed",
+          "valid_business_outcomes_missing"
+        ],
+        "passed": false,
+        "siteCapacityPassed": false,
+        "awardEnginePassed": false
+      }
+    },
+    {
+      "artifact": "shared-ip.json",
+      "report": {
+        "target": "local",
+        "mode": "real-next-development-http-postgrest-postgresql-redis",
+        "sourceSha": "ec8fd0f421b553b70f9d58b4ab91cb427e42fc6e",
+        "dirty": true,
+        "scenario": "shared-ip",
+        "actorCount": 1000,
+        "requestCount": 1000,
+        "outcomes": {
+          "won": 0,
+          "soldOut": 0,
+          "alreadyClaimed": 0,
+          "retryable": 0,
+          "unresolved": 1000,
+          "unexpectedErrors": 0
+        },
+        "latency": {
+          "p95Ms": 30260.369800000004,
+          "p99Ms": 30260.644000000004
+        },
+        "maxResolutionMs": 30260.763399999996,
+        "generator": {
+          "node": "v24.22.3",
+          "dispatchWindowMs": 6.979400000000169,
+          "maxInFlight": 1000,
+          "scheduledDispatchWindowMs": 199.2697999999982,
+          "establishedConnections": 1000,
+          "distinctSyntheticIps": 1,
+          "serverIngressWindowMs": null
+        },
+        "initialHttpStatuses": {
+          "0": 772,
+          "503": 228
+        },
+        "retryCount": 228,
+        "lostResponses": 0,
+        "reconciliation": {
+          "winnerCount": 0,
+          "remainingStock": 1,
+          "negativeStock": false,
+          "ordinaryPrizeOrderItems": 0,
+          "duplicateIdentities": 0
+        },
+        "runtimeDiagnostics": {
+          "gateway": {
+            "redis": {
+              "count": 461,
+              "errors": 0,
+              "maxMs": 313.2185000000027
+            },
+            "database_reads": {
+              "count": 18,
+              "errors": 0,
+              "maxMs": 206.1355999999978
+            }
+          },
+          "next": {
+            "completedResponses": 228,
+            "proxyP95Ms": 3500,
+            "handlerP95Ms": 14700
+          }
+        },
+        "expected": {
+          "winners": 1,
+          "remainingStock": 0
+        },
+        "differences": [
+          "Next development server; local shared machine and Docker",
+          "Prepared signed eligibility; Shippo cold validation not measured",
+          "BotID supported development HUMAN verdict; no hosted WAF/bot evidence",
+          "Actual Redis scripts via local REST bridge; IP quotas enforced with trusted loopback-only synthetic forwarded addresses; shared-IP run is separate",
+          "Synthetic Auth provider; real app origin/browser-cookie/credential checks",
+          "Server ingress timing unavailable; socket flush dispatch measured"
+        ],
+        "failureReasons": [
+          "unresolved_or_unexpected_outcomes",
+          "latency_or_resolution_budget_exceeded",
+          "database_reconciliation_failed",
+          "valid_business_outcomes_missing"
+        ],
+        "passed": false,
+        "siteCapacityPassed": false,
+        "awardEnginePassed": false
+      }
+    },
+    {
+      "artifact": "post-review-hot-one.json",
+      "report": {
+        "target": "local",
+        "mode": "real-next-development-http-postgrest-postgresql-redis",
+        "sourceSha": "3f2360679079a586df143b509f0d4a5504a69a5f",
+        "dirty": false,
+        "scenario": "hot-one",
+        "actorCount": 1000,
+        "requestCount": 1000,
+        "outcomes": {
+          "won": 0,
+          "soldOut": 0,
+          "alreadyClaimed": 0,
+          "retryable": 0,
+          "unresolved": 1000,
+          "unexpectedErrors": 0
+        },
+        "latency": {
+          "p95Ms": 30125.5674,
+          "p99Ms": 30128.995899999998
+        },
+        "initialLatency": {
+          "p95Ms": 30125.566900000005,
+          "p99Ms": 30128.9898
+        },
+        "maxResolutionMs": 30130.917799999996,
+        "generator": {
+          "node": "v24.22.3",
+          "dispatchWindowMs": 2.543499999999767,
+          "maxInFlight": 1000,
+          "scheduledDispatchWindowMs": 59.59410000000025,
+          "establishedConnections": 1000,
+          "distinctSyntheticIps": 1000,
+          "serverIngressWindowMs": null
+        },
+        "initialHttpStatuses": {
+          "0": 1000
+        },
+        "retryCount": 0,
+        "lostResponses": 0,
+        "reconciliation": {
+          "winnerCount": 0,
+          "remainingStock": 1,
+          "negativeStock": false,
+          "ordinaryPrizeOrderItems": 0,
+          "duplicateIdentities": 0
+        },
+        "runtimeDiagnostics": {
+          "gateway": {
+            "redis": {
+              "count": 130,
+              "errors": 0,
+              "maxMs": 39.73120000000017
+            },
+            "database_reads": {
+              "count": 12,
+              "errors": 0,
+              "maxMs": 71.33349999999882
+            }
+          },
+          "next": {
+            "completedResponses": 0,
+            "proxyP95Ms": 0,
+            "handlerP95Ms": 0
+          }
+        },
+        "expected": {
+          "winners": 1,
+          "remainingStock": 0
+        },
+        "differences": [
+          "Next development server; local shared machine and Docker",
+          "Prepared signed eligibility; Shippo cold validation not measured",
+          "BotID supported development HUMAN verdict; no hosted WAF/bot evidence",
+          "Actual Redis scripts via local REST bridge; IP quotas enforced with trusted loopback-only synthetic forwarded addresses; shared-IP run is separate",
+          "Synthetic Auth provider; real app origin/browser-cookie/credential checks",
+          "Server ingress timing unavailable; socket flush dispatch measured"
+        ],
+        "failureReasons": [
+          "unresolved_or_unexpected_outcomes",
+          "latency_or_resolution_budget_exceeded",
+          "database_reconciliation_failed",
+          "valid_business_outcomes_missing"
+        ],
+        "passed": false,
+        "siteCapacityPassed": false,
+        "awardEnginePassed": false
+      }
+    },
+    {
+      "artifact": "post-review-lost-response-award-rpc.json",
+      "report": {
+        "target": "local",
+        "mode": "direct-postgrest-award-engine",
+        "sourceSha": "3f2360679079a586df143b509f0d4a5504a69a5f",
+        "dirty": false,
+        "scenario": "lost-response",
+        "actorCount": 1000,
+        "requestCount": 1000,
+        "outcomes": {
+          "won": 1,
+          "soldOut": 999,
+          "alreadyClaimed": 0,
+          "retryable": 0,
+          "unresolved": 0,
+          "unexpectedErrors": 0
+        },
+        "latency": {
+          "p95Ms": 10297.8724,
+          "p99Ms": 10423.385199999999
+        },
+        "initialLatency": {
+          "p95Ms": 10297.8658,
+          "p99Ms": 10423.380299999999
+        },
+        "maxResolutionMs": 10491.340400000001,
+        "generator": {
+          "node": "v24.22.3",
+          "dispatchWindowMs": 5.3487999999997555,
+          "maxInFlight": 1000,
+          "scheduledDispatchWindowMs": 218.13430000000062,
+          "establishedConnections": 1000,
+          "distinctSyntheticIps": 1000,
+          "serverIngressWindowMs": null
+        },
+        "initialHttpStatuses": {
+          "200": 1000
+        },
+        "retryCount": 1,
+        "lostResponses": 1,
+        "reconciliation": {
+          "winnerCount": 1,
+          "remainingStock": 0,
+          "negativeStock": false,
+          "ordinaryPrizeOrderItems": 0,
+          "duplicateIdentities": 0
+        },
+        "runtimeDiagnostics": {
+          "gateway": {
+            "redis": {
+              "count": 5,
+              "errors": 0,
+              "maxMs": 6.931300000000192
+            },
+            "accept_specialty_claim": {
+              "count": 1000,
+              "errors": 0,
+              "maxMs": 10064.174500000001
+            },
+            "read_specialty_claim_result": {
+              "count": 1,
+              "errors": 0,
+              "maxMs": 5358.003599999998
+            }
+          },
+          "next": {
+            "completedResponses": 0,
+            "proxyP95Ms": 0,
+            "handlerP95Ms": 0
+          }
+        },
+        "expected": {
+          "winners": 1,
+          "remainingStock": 0
+        },
+        "differences": [
+          "Award engine isolation only: protected Next API, browser validation, BotID and Redis quotas are not part of this measured path; site capacity remains a separate gate",
+          "Local Node/PostgREST/PostgreSQL award engine; Next server is not started for this isolation run",
+          "Prepared signed eligibility; Shippo cold validation not measured",
+          "Trusted synthetic service-role RPC requests; application Auth, BotID, origin, browser and Redis quotas are not exercised",
+          "Server ingress timing unavailable; socket flush dispatch measured"
+        ],
+        "failureReasons": ["latency_or_resolution_budget_exceeded"],
+        "passed": false,
+        "siteCapacityPassed": false,
+        "awardEnginePassed": false
+      }
+    }
+  ]
+}

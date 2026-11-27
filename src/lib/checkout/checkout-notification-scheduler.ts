@@ -10,7 +10,7 @@ export function scheduleCheckoutNotifications(orderId: string): void {
   after(async () => {
     try {
       await drainNotifications(
-        { ...recoverySettings, batchSize: 2 },
+        { ...recoverySettings, batchSize: 3 },
         createCheckoutMailDrainDependencies(createSupabaseAdminClient(), orderId),
       );
     } catch (error) {

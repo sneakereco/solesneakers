@@ -16,10 +16,11 @@ const bundle = await build({
 
       import { RdkSelect } from './src/components/ui/Select';
       import { Toast } from './src/components/ui/Toast';
+import { SessionProvider } from "./src/contexts/SessionContext";
       import ShippingPage from './src/app/admin/shipping/page';
 
       const root = createRoot(document.getElementById('root'));
-      window.renderShipping = () => root.render(<div data-admin-shell><main data-admin-content><ShippingPage /></main></div>);
+      window.renderShipping = () => root.render(<div data-admin-shell><main data-admin-content><SessionProvider initialUser={{id:"staff",email:"staff@example.test"}} initialRole="admin"><ShippingPage /></SessionProvider></main></div>);
       function Harness() {
         const [open, setOpen] = useState(true);
         window.closeLabelForm = () => setOpen(false);

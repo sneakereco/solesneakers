@@ -1,5 +1,6 @@
 "use client";
 
+import { ActionButton } from "@/components/ui/ActionButton";
 import { useEffect, useRef, useState } from "react";
 import Image from "next/image";
 import { ChevronLeft, ChevronRight } from "lucide-react";
@@ -132,22 +133,22 @@ export function OutfitSlideshow() {
           );
         })}
       </div>
-      <button
+      <ActionButton
         type="button"
         aria-label="Previous outfit"
         className={`${arrowClassName} left-0 md:left-3`}
         onClick={() => moveSlide(-1)}
       >
         <ChevronLeft className="h-7 w-7 stroke-[1.5]" aria-hidden="true" />
-      </button>
-      <button
+      </ActionButton>
+      <ActionButton
         type="button"
         aria-label="Next outfit"
         className={`${arrowClassName} right-0 md:right-3`}
         onClick={() => moveSlide(1)}
       >
         <ChevronRight className="h-7 w-7 stroke-[1.5]" aria-hidden="true" />
-      </button>
+      </ActionButton>
     </section>
   );
 }

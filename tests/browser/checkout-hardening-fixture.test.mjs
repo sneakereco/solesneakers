@@ -23,7 +23,7 @@ test("mounts the real cart and session providers with the cart drawer", async ()
       expect(route.request().postDataJSON()).toEqual({
         items: [{ productId: item.productId, variantId: item.variantId, quantity: 1 }],
       });
-      await route.fulfill({ json: { items: [item] } });
+      await route.fulfill({ json: { removed: [], items: [item] } });
     },
   });
   try {
@@ -68,15 +68,18 @@ test("checkout view keeps the receiving checkout layout and receipt adapter", as
     accountItems: { "fixture-buyer": [item] },
     route: async (route, url) => {
       if (url.pathname === "/api/cart/validate")
-        return route.fulfill({ json: { items: [item] } });
+        return route.fulfill({ json: { removed: [], items: [item] } });
       if (url.pathname === "/api/checkout/quote")
         return route.fulfill({ status: 503, json: { error: "Fixture unavailable" } });
-      expect(url.pathname).toBe("/api/orders/fixture-order");
+      expect(url.pathname).toBe("/api/orders/90111111-1111-4111-8111-111111111111");
       expect(url.searchParams.get("token")).toBe("fixture-access");
       return route.fulfill({
         json: {
-          id: "fixture-order",
+          id: "90111111-1111-4111-8111-111111111111",
           status: "paid",
+          financial: { source: "legacy" },
+          supportEmail: "help@fixture.invalid",
+          events: [],
           fulfillment: "ship",
           subtotal: 10,
           shipping: 0,
@@ -96,7 +99,7 @@ test("checkout view keeps the receiving checkout layout and receipt adapter", as
       history.replaceState(
         {},
         "",
-        "/checkout/success?orderId=fixture-order&token=fixture-access",
+        "/checkout/success?orderId=90111111-1111-4111-8111-111111111111&token=fixture-access",
       );
       window.dispatchEvent(new PopStateEvent("popstate"));
     });
@@ -118,7 +121,10 @@ test("two checkout fixture tabs mount real hooks and retain account writes acros
       expect(url.pathname).toBe("/api/cart/validate");
       const { items } = route.request().postDataJSON();
       await route.fulfill({
-        json: { items: items.map(({ quantity }) => ({ ...item, quantity })) },
+        json: {
+          removed: [],
+          items: items.map(({ quantity }) => ({ ...item, quantity })),
+        },
       });
     },
   });

@@ -8,7 +8,11 @@ export default async function AdminLayout({ children }: { children: React.ReactN
   const userEmail = session.user.email ?? session.profile?.email ?? null;
 
   return (
-    <div data-admin-shell className="min-h-screen bg-[#f4f4f0] text-zinc-950">
+    <div
+      key={JSON.stringify([session.user.id, session.role, session.profile?.tenant_id])}
+      data-admin-shell
+      className="min-h-screen bg-[#f4f4f0] text-zinc-950"
+    >
       <AdminSidebar userEmail={userEmail} role={session.role} />
 
       <div className="flex min-h-screen flex-col md:ml-[17.5rem]">

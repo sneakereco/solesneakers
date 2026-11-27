@@ -254,8 +254,17 @@ async function fixture(
         });
       }
     }
+    if (url.pathname === "/api/cart/validate")
+      return route.fulfill({
+        json: {
+          removed: [],
+          items: route
+            .request()
+            .postDataJSON()
+            .items.map((row) => ({ ...shoe, maxStock: 10, ...row })),
+        },
+      });
     if (
-      url.pathname === "/api/cart/validate" ||
       url.pathname === "/shoe.jpg" ||
       url.pathname.startsWith("/images/") ||
       url.pathname === "/_next/image"

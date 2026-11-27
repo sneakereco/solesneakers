@@ -120,3 +120,22 @@ The first six affected fresh-schema suites passed 70/70, including their parent 
 | Shared-network checkout |      1 | `3f985dbc2610f6974874a7f5e7f3ce199db6a878370ced913cac8a975986d932` |
 
 The real shared-network scenario completed 20 original paid receipts with 20 inert payment calls. The first order mixed legacy and current permits. The fresh authority total includes its parent, 3 privilege/read-isolation cases, 3 ordinary or authorized read/write compatibility cases, 8 staff order-state rejections and 2 trusted pickup/shipping cases. The financial suite passed 14/14 again after separating sidecar creation and startup to retain cleanup ownership on startup failure. Its final raw SHA-256 is `4b8e197e5566aaca9e2eaf1a13e3b6fd3df902ad4b0209c315dba64cd57d36a3`.
+
+## Current-release migration order
+
+Pinned shipping main `6161af04` contains 113 published migrations through `20261127020000`. The following six unpublished hardening versions moved together. The mail-authority fence follows at `20261127030000`.
+
+| Earlier unpublished file                    | Current file                                |
+| ------------------------------------------- | ------------------------------------------- |
+| 20261125160000_checkout_authority.sql       | 20261127021000_checkout_authority.sql       |
+| 20261125161000_checkout_recovery.sql        | 20261127022000_checkout_recovery.sql        |
+| 20261125162000_checkout_attempts.sql        | 20261127023000_checkout_attempts.sql        |
+| 20261125163000_checkout_financial_facts.sql | 20261127024000_checkout_financial_facts.sql |
+| 20261125164000_checkout_reservations.sql    | 20261127025000_checkout_reservations.sql    |
+| 20261125165000_checkout_operations.sql      | 20261127026000_checkout_operations.sql      |
+
+### Integrated evidence and remaining release gates
+
+BF-A13 now includes the published specialty schema and dedicated claim flow. The populated fixture awards a genuine specialty item, compares its saved campaign, configuration, variant, claim and attempt across the ordinary upgrade, and verifies historical reseller mail rows. The locked ordinary checkout inspection excludes specialty products. The 120-file schema digest is `3c332e878800da3808cadd173b5e963b8b0fd44289bf31142fedbde9c89f8246`. The installed-main version prefix passed the deployment validator with 113 recorded and seven pending. The populated owned reseller SQL suite passed 10/10 on this chain. The complete current-chain fresh and populated matrices and campaign capacity remain open.
+
+BF-A01 through BF-A12 retain their earlier evidence scope. Current Cart and receipt tests exercise original units, customer verification, storage recovery and refusal of automatic quantity reductions. The public browser gate now includes shipping Cart/checkout, receipt authority and account/auth suites. The production optional-measurement check includes the configured Cloudflare beacon. This checkpoint still requires complete integrated checkout browser and database verification, CI, isolated staging and provider qualification. Copied-tab discovery and other outstanding cases are listed in the Task 15 integration report.

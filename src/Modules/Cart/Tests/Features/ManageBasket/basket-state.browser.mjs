@@ -310,7 +310,7 @@ test("a rejected persistence write does not report a successful product add", as
     };
   });
   await page.getByRole("button", { name: "Add to Cart" }).click();
-  await expect(page.getByText(/could not be added/i)).toBeVisible({
+  await expect(page.getByText(/could not add this item/i)).toBeVisible({
     timeout: 1800,
   });
   await expect(page.getByText("Added to cart.", { exact: true })).toHaveCount(0);
@@ -476,7 +476,7 @@ for (const lockMode of ["missing", "failed"])
   test("account with " + lockMode + " lock offers a safe retry", async (t) => {
     const { page } = await open(t, "a", { detail: true, lockMode, waitReady: false });
     const product = page.locator("[data-product-detail]");
-    const retry = product.getByRole("button", { name: "Retry cart access" });
+    const retry = product.getByRole("button", { name: "Retry loading cart" });
     await expect(retry).toBeVisible({ timeout: 1800 });
     assert.equal(
       (await page.evaluate((item) => window.testCart.addItem(item), line("blocked")))
@@ -760,13 +760,15 @@ for (const form of ["password", "otp"])
     const other = await context.newPage();
     await other.goto(new URL("/" + form, page.url()).href);
     await other.waitForFunction(() => window.testCart?.isReady);
-    await other.evaluate(() => {
+    const lockHolder = await context.newPage();
+    await lockHolder.goto(page.url());
+    await lockHolder.evaluate(() => {
       void navigator.locks.request(
         "rdk_cart",
         () => new Promise((resolve) => (window.releaseLock = resolve)),
       );
     });
-    await other.waitForFunction(() => window.releaseLock);
+    await lockHolder.waitForFunction(() => window.releaseLock);
     try {
       await page.evaluate((item) => {
         window.queued = Promise.resolve(window.testCart.addItem(item));
@@ -788,7 +790,7 @@ for (const form of ["password", "otp"])
     } finally {
       hold = false;
       held.forEach((release) => release());
-      await other.evaluate(() => window.releaseLock());
+      await lockHolder.evaluate(() => window.releaseLock());
     }
     await visible(page, [line("b")]);
     await visible(other, [line("b")]);
@@ -813,6 +815,7 @@ for (const view of ["navbar", "profile"])
             return route.fulfill({ status: 503, json: {} });
           if (
             [
+              "/api/account/profile",
               "/api/account/shipping",
               "/api/account/orders",
               "/api/account/addresses",
@@ -834,7 +837,9 @@ for (const view of ["navbar", "profile"])
         .first();
       if (view === "navbar") await page.getByRole("button", { name: /account/i }).click();
       await logout.click();
-      await expect(page.getByText(/Failed to log out/i)).toBeVisible({ timeout: 1800 });
+      await expect(
+        page.getByText(/sign out failed|could not sign out/i).first(),
+      ).toBeVisible({ timeout: 1800 });
       assert.deepEqual(await page.evaluate(() => window.testCart.items), [line("a")]);
       reject = false;
       if (!(await logout.isVisible()))
@@ -887,7 +892,7 @@ for (const surface of ["detail", "checkout"])
         .toBe("checking");
       if (surface === "detail")
         await expect(
-          page.getByRole("button", { name: "Add to Cart", exact: true }),
+          page.getByRole("button", { name: "Loading cart…", exact: true }),
         ).toBeDisabled();
       assert.deepEqual(await page.evaluate(() => window.testCart.clearCart()), {
         status: "unavailable",
@@ -897,7 +902,9 @@ for (const surface of ["detail", "checkout"])
         window.holdSession = false;
         window.releaseSession();
       });
-      const retry = page.getByRole("button", { name: "Retry cart access" });
+      const retry = page.getByRole("button", {
+        name: surface === "detail" ? "Retry loading cart" : "Retry cart access",
+      });
       await expect(retry).toBeVisible();
       await page.evaluate(() => (window.sessionStatus = 200));
       await retry.click();
@@ -1050,7 +1057,7 @@ test("unavailable identity offers account retry and masks the signed-out navigat
     sessionRoute: (route) => route.fulfill({ status: 503, json: {} }),
   });
   t.after(close);
-  await expect(page.getByRole("button", { name: "Retry account access" })).toBeVisible({
+  await expect(page.getByRole("button", { name: "Retry", exact: true })).toBeVisible({
     timeout: 1800,
   });
   await expect(page.getByRole("link", { name: "Login", exact: true })).toHaveCount(0);
@@ -1243,7 +1250,15 @@ async function checkoutOwnershipFixture(
             },
           });
         }
-        return route.fulfill({ status: 503, json: {} });
+        return route.fulfill({
+          json: {
+            removed: [],
+            items: input.items.map((row) => ({
+              ...checkoutLine(sessionUser?.id ?? "guest"),
+              ...row,
+            })),
+          },
+        });
       }
       if (url.pathname === "/api/checkout/quote") {
         requests.quotes.push(route.request().postDataJSON());
@@ -1480,7 +1495,21 @@ test("same-owner visibility preserves active checkout method, billing and a sing
     await page.waitForFunction(() => window.prepareRead && window.testSession.isLoading);
     assert.equal(f.requests.permits, 0);
     releaseSession();
-    await expect.poll(() => f.requests.permits).toBe(1);
+    await expect
+      .poll(() => f.requests.permits)
+      .toBe(1)
+      .catch(async (error) => {
+        console.error(
+          "Synthetic same-owner state",
+          (await page.locator("body").innerText()).slice(-1900),
+          {
+            quotes: f.requests.quotes.length,
+            prepares: f.requests.prepares.length,
+            validations: f.requests.validations.length,
+          },
+        );
+        throw error;
+      });
     await expect(page.getByText("Fixture payment paused", { exact: true })).toBeVisible();
     await page.evaluate(() => window.testCart.recheckAvailability());
     assert.deepEqual(f.requests.validations.at(-1).order, { orderId: preparedOrderId });

@@ -48,7 +48,7 @@ const bundle = await build({
             args.path === "next/image"
               ? `import React from 'react'; export default ({ fill, priority, quality, sizes, ...props }) =>
               React.createElement('img', { ...props, style: { ...(fill ? {position:'absolute',inset:0,width:'100%',height:'100%'} : {}), ...props.style } });`
-              : `import React from 'react'; export default ({children,href,...props}) => React.createElement('a',{href,...props},children);`,
+              : `import React from 'react'; export const useLinkStatus = () => ({ pending: false }); export default ({children,href,...props}) => React.createElement('a',{href,...props},children);`,
         }));
       },
     },
@@ -73,6 +73,12 @@ const clothing = Array.from({ length: 7 }, (_, i) => ({
     { sale_price_cents: 5500, stock: 1 },
   ],
 }));
+const featured = Array.from({ length: 6 }, (_, index) => ({
+  id: `featured-shoe-${index + 1}`,
+  titleDisplay: `Featured Sneaker ${index + 1}`,
+  primaryImage: "/images/hero.jpg",
+  minPrice: 9900,
+}));
 let mode = "success";
 let releaseClothing;
 let clothingGate = Promise.resolve();
@@ -92,14 +98,7 @@ try {
     if (url.pathname === "/api/featured-items")
       return route.fulfill({
         json: {
-          featured: [
-            {
-              id: "featured-shoe",
-              titleDisplay: "Featured Sneaker",
-              primaryImage: "/images/hero.jpg",
-              minPrice: 9900,
-            },
-          ],
+          featured: mode === "single" ? featured.slice(0, 1) : featured,
         },
       });
     if (url.pathname === "/api/store/taxonomy")
@@ -113,7 +112,12 @@ try {
       assert.equal(url.searchParams.get("limit"), "12");
       await clothingGate;
       if (mode === "error") return route.fulfill({ status: 503, json: {} });
-      return route.fulfill({ json: { products: mode === "empty" ? [] : clothing } });
+      return route.fulfill({
+        json: {
+          products:
+            mode === "empty" ? [] : mode === "single" ? clothing.slice(0, 1) : clothing,
+        },
+      });
     }
     if (url.pathname.startsWith("/images/"))
       return route.fulfill({
@@ -168,6 +172,11 @@ try {
   assert.equal(await slideshow.getByRole("img").getAttribute("alt"), firstAlt);
 
   const cards = section.getByRole("link", { name: /Catalog Hoodie/ });
+  const featuredCarousel = page.getByRole("region", {
+    name: "Featured products",
+    exact: true,
+  });
+  const featuredCards = featuredCarousel.getByRole("link");
   assert.equal(await cards.count(), 7);
   assert.equal(await cards.first().getAttribute("href"), "/store/clothing-1");
   assert.equal(
@@ -200,6 +209,106 @@ try {
     );
   }
   assert.equal(Math.round((await slideshow.boundingBox()).height), 200);
+
+  for (const width of [320, 375, 390, 430]) {
+    await page.setViewportSize({ width, height: 950 });
+    for (const index of [0, 3, 6]) {
+      await cards.nth(index).evaluate((card) => {
+        card.scrollIntoView({ behavior: "instant", block: "nearest", inline: "center" });
+      });
+      const bounds = await cards.nth(index).boundingBox();
+      assert.ok(
+        Math.abs(bounds.x + bounds.width / 2 - width / 2) < 1,
+        `clothing card ${index + 1} is centered in the ${width}px phone viewport`,
+      );
+    }
+    for (const index of [0, 3, 5]) {
+      await featuredCards.nth(index).evaluate((card) => {
+        card.scrollIntoView({ behavior: "instant", block: "nearest", inline: "center" });
+      });
+      const bounds = await featuredCards.nth(index).boundingBox();
+      assert.ok(
+        Math.abs(bounds.x + bounds.width / 2 - width / 2) < 1,
+        `featured card ${index + 1} is centered in the ${width}px phone viewport`,
+      );
+    }
+    assert.equal(
+      await page.evaluate(() => document.documentElement.scrollWidth <= innerWidth),
+      true,
+    );
+  }
+
+  await page.setViewportSize({ width: 390, height: 950 });
+  await cards.first().evaluate((card) => {
+    card.scrollIntoView({ behavior: "instant", block: "nearest", inline: "center" });
+  });
+  await section.getByRole("button", { name: "Next clothing products" }).click();
+  await page.waitForFunction(() => {
+    const card = document.querySelector(
+      '[aria-label="Clothing products"] > a:nth-child(2)',
+    );
+    const bounds = card.getBoundingClientRect();
+    return Math.abs(bounds.x + bounds.width / 2 - innerWidth / 2) < 1;
+  });
+  await section.screenshot({ path: path.join(outputDir, "mobile-centered.png") });
+  await featuredCards.first().evaluate((card) => {
+    card.scrollIntoView({ behavior: "instant", block: "nearest", inline: "center" });
+  });
+  await page.getByRole("button", { name: "Next featured products" }).click();
+  await page.waitForFunction(() => {
+    const card = document.querySelector(
+      '[aria-label="Featured products"] > a:nth-child(2)',
+    );
+    const bounds = card.getBoundingClientRect();
+    return Math.abs(bounds.x + bounds.width / 2 - innerWidth / 2) < 1;
+  });
+  await featuredCarousel.screenshot({
+    path: path.join(outputDir, "featured-mobile-centered.png"),
+  });
+
+  for (const width of [640, 768, 1024, 1440]) {
+    await page.setViewportSize({ width, height: 1000 });
+    const card = await cards.first().boundingBox();
+    const carousel = await section
+      .getByRole("region", { name: "Clothing products" })
+      .boundingBox();
+    const columns = width >= 1024 ? 4 : width >= 768 ? 3 : 2;
+    assert.ok(
+      card.width <= carousel.width / columns,
+      `${columns} clothing cards fit at ${width}px`,
+    );
+    assert.ok(
+      card.width > carousel.width / (columns + 1),
+      "desktop card sizing is retained",
+    );
+    const featuredCard = await featuredCards.first().boundingBox();
+    const featuredBounds = await featuredCarousel.boundingBox();
+    assert.ok(
+      featuredCard.width <= featuredBounds.width / columns &&
+        featuredCard.width > featuredBounds.width / (columns + 1),
+      `featured cards retain ${columns} columns at ${width}px`,
+    );
+  }
+
+  mode = "single";
+  await page.setViewportSize({ width: 390, height: 950 });
+  await mount();
+  await cards.first().waitFor();
+  const single = await cards.first().boundingBox();
+  assert.ok(
+    Math.abs(single.x + single.width / 2 - 195) < 1,
+    "a single clothing card is centered",
+  );
+  const singleFeatured = await featuredCards.first().boundingBox();
+  assert.ok(
+    Math.abs(singleFeatured.x + singleFeatured.width / 2 - 195) < 1,
+    "a single featured card is centered",
+  );
+  assert.equal(
+    await section.getByRole("button", { name: /clothing products/ }).count(),
+    0,
+  );
+  mode = "success";
 
   await page.setViewportSize({ width: 1440, height: 1000 });
   await mount();

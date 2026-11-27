@@ -26,6 +26,7 @@ describe("loadCheckoutPageData", () => {
       ownerId: null,
       isGuest: true,
       customer: {
+        ownerId: null,
         email: "",
         address: {
           name: "",
@@ -69,6 +70,7 @@ describe("loadCheckoutPageData", () => {
       ownerId: "user-1",
       isGuest: false,
       customer: {
+        ownerId: "user-1",
         email: "account@example.com",
         address: {
           name: "Shipping Name",

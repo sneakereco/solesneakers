@@ -144,7 +144,8 @@ async function validate(request: NextRequest, requestId: string) {
       { headers: { "Cache-Control": "no-store" } },
     );
   } catch (error: unknown) {
-    logError(new Error("cart_validation_upstream_unavailable"), {
+    logError(error, {
+      event: "cart_validation_upstream_unavailable",
       layer: "api",
       requestId,
       route: "/api/cart/validate",

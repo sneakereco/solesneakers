@@ -129,6 +129,19 @@ export class OrdersService {
         ? (order.pickup_instructions ?? PICKUP_INSTRUCTIONS.join("\n"))
         : null;
 
+    const purchasedLines = await readPurchasedLines(
+      {
+        orderId: order.id,
+        authorizedAccess: confirmed
+          ? {
+              orderId: order.id,
+              status: order.status ?? "pending",
+              financialReview,
+            }
+          : null,
+      },
+      client,
+    );
     return {
       id: order.id,
       financialReview,
@@ -137,19 +150,9 @@ export class OrdersService {
       shipping: monetaryAmount(order.shipping),
       tax: monetaryAmount(order.tax_amount),
       total,
-      purchasedLines: await readPurchasedLines(
-        {
-          orderId: order.id,
-          authorizedAccess: confirmed
-            ? {
-                orderId: order.id,
-                status: order.status ?? "pending",
-                financialReview,
-              }
-            : null,
-        },
-        client,
-      ),
+      purchasedLines,
+      ...(purchasedLines ? { purchasedItems: purchasedLines } : {}),
+      customerId: authorized.user_id,
       status: order.status ?? "pending",
       fulfillment: order.fulfillment,
       updatedAt: order.updated_at?.toString() ?? order.created_at?.toString() ?? "",

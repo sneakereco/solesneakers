@@ -18,6 +18,8 @@ export interface OrderStatusResponse {
   fulfillment: FulfillmentMethod | null;
   financial: ReceiptFinancialEvidence;
   financialReview?: boolean;
+  customerId?: string | null;
+  purchasedItems?: readonly { productId: string; variantId: string; quantity: number }[];
   purchasedLines?:
     | readonly { productId: string; variantId: string; quantity: number }[]
     | null;

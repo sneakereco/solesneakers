@@ -6,8 +6,10 @@ import {
   useRef,
   useCallback,
   useEffect,
+  useLayoutEffect,
 } from "react";
 import { isProfileRole, type ProfileRole } from "@/config/constants/roles";
+import { withRequestDeadline } from "@/lib/http/request-deadline";
 import { readSessionGeneration, sessionGenerationKey } from "./session-change";
 
 interface SessionUser {
@@ -22,6 +24,9 @@ type Observation = SessionFacts & {
 type SessionContextValue = Observation & {
   isAuthenticated: boolean;
   isLoading: boolean;
+  isSessionUnavailable: boolean;
+  hasRefreshed: boolean;
+  isIdentityCurrent: (expectedOwner: string | null) => boolean;
   refreshSession: () => Promise<void>;
 };
 const SessionContext = createContext<SessionContextValue | null>(null);
@@ -47,26 +52,29 @@ export function SessionProvider({
   children,
   initialUser,
   initialRole,
+  initialUnavailable = false,
+  serverReadId,
 }: {
   children: React.ReactNode;
   initialUser: SessionUser | null;
   initialRole: ProfileRole | null;
+  initialUnavailable?: boolean;
+  serverReadId?: string;
 }) {
   const [observation, setObservation] = useState<Observation>({
-    user: initialUser,
-    role: initialRole,
-    status: "checking",
+    ...masked,
+    status: initialUnavailable ? "unavailable" : "checking",
     isCurrent: masked.isCurrent,
   });
+  const [retryingUnavailable, setRetryingUnavailable] = useState(initialUnavailable);
   const active = useRef<AbortController | null>(null);
   const generation = useRef<string | null>(null);
-  const refreshSession = useCallback(async () => {
+  const beginObservation = useCallback(() => {
     active.current?.abort();
     const request = new AbortController();
     active.current = request;
     const atStart = readSessionGeneration();
     generation.current = atStart;
-    setObservation({ ...masked, status: "checking" });
     const isCurrent = () => {
       if (request.signal.aborted) return false;
       if (readSessionGeneration() === atStart) return true;
@@ -74,22 +82,31 @@ export function SessionProvider({
       window.dispatchEvent(new Event("sessionUpdate"));
       return false;
     };
+    return { request, isCurrent };
+  }, []);
+  const refreshSession = useCallback(async () => {
+    const { request, isCurrent } = beginObservation();
+    setObservation({ ...masked, status: "checking" });
     try {
-      const response = await fetch("/api/auth/session", {
-        cache: "no-store",
-        signal: request.signal,
-      });
-      const facts = response.ok ? parseSession(await response.json()) : undefined;
+      const { facts, status } = await withRequestDeadline(async (signal) => {
+        const response = await fetch("/api/auth/session", { cache: "no-store", signal });
+        const verified = response.ok ? parseSession(await response.json()) : undefined;
+        return { facts: verified, status: response.status };
+      }, request.signal);
       if (!isCurrent()) return;
+      setRetryingUnavailable(!facts);
       setObservation(
         facts
           ? { ...facts, status: "ready", isCurrent }
-          : { ...masked, status: response.status === 403 ? "denied" : "unavailable" },
+          : { ...masked, status: status === 403 ? "denied" : "unavailable" },
       );
     } catch {
-      if (isCurrent()) setObservation({ ...masked, status: "unavailable" });
+      if (isCurrent()) {
+        setRetryingUnavailable(true);
+        setObservation({ ...masked, status: "unavailable" });
+      }
     }
-  }, []);
+  }, [beginObservation]);
   useEffect(() => {
     function verify() {
       void refreshSession();
@@ -118,7 +135,6 @@ export function SessionProvider({
     window.addEventListener("sessionUpdate", verify);
     window.addEventListener("pageshow", onPageShow);
     document.addEventListener("visibilitychange", onVisible);
-    verify();
     return () => {
       active.current?.abort();
       channel?.close();
@@ -128,12 +144,54 @@ export function SessionProvider({
       document.removeEventListener("visibilitychange", onVisible);
     };
   }, [refreshSession]);
+  useLayoutEffect(() => {
+    if (!serverReadId) {
+      let mounted = true;
+      queueMicrotask(() => {
+        if (mounted) void refreshSession();
+      });
+      return () => {
+        mounted = false;
+        active.current?.abort();
+      };
+    } else {
+      const { isCurrent } = beginObservation();
+      const facts = initialUnavailable
+        ? undefined
+        : parseSession({ user: initialUser, role: initialRole });
+      // Apply the verified server observation before painting this owner scope.
+      // eslint-disable-next-line react-hooks/set-state-in-effect
+      setRetryingUnavailable(!facts);
+      setObservation(
+        facts
+          ? { ...facts, status: "ready", isCurrent }
+          : { ...masked, status: "unavailable" },
+      );
+    }
+    return () => active.current?.abort();
+  }, [
+    refreshSession,
+    beginObservation,
+    serverReadId,
+    initialUser,
+    initialRole,
+    initialUnavailable,
+  ]);
   return (
     <SessionContext.Provider
       value={{
         ...observation,
         isAuthenticated: observation.status === "ready" && Boolean(observation.user),
         isLoading: observation.status === "checking",
+        isSessionUnavailable:
+          retryingUnavailable ||
+          observation.status === "denied" ||
+          observation.status === "unavailable",
+        hasRefreshed: observation.status === "ready",
+        isIdentityCurrent: (expectedOwner) =>
+          observation.status === "ready" &&
+          observation.isCurrent() &&
+          (observation.user?.id ?? null) === expectedOwner,
         refreshSession,
       }}
     >

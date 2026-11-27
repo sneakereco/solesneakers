@@ -33,6 +33,7 @@ const events = [
   "account_error",
   "admin_error",
   "cart_error",
+  "cart_validation_upstream_unavailable",
   "checkout_error",
   "store_error",
   "error_boundary",

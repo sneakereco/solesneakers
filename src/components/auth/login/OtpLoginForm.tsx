@@ -2,10 +2,9 @@
 "use client";
 import { publishSessionChange } from "@/contexts/session-change";
 
-import { useRouter, useSearchParams } from "next/navigation";
-import Link from "next/link";
-
-import { authStyles } from "@/components/auth/ui/authStyles";
+import { useSearchParams } from "next/navigation";
+import { navigateAfterAuth } from "@/lib/auth/navigate-after-auth";
+import { postAuthJson } from "@/lib/http/post-auth-json";
 
 import { EmailCodeFlow } from "./EmailCodeFlow";
 
@@ -18,91 +17,71 @@ export function OtpLoginForm({
   onRequiresEmailVerification,
   onBackToLogin,
 }: OtpLoginFormProps) {
-  const router = useRouter();
   const searchParams = useSearchParams();
   const nextUrl = searchParams.get("next") || "/";
 
   async function requestOtp(email: string) {
-    const res = await fetch("/api/auth/otp/request", {
-      method: "POST",
-      headers: { "Content-Type": "application/json" },
-      body: JSON.stringify({ email }),
-    });
-
-    const json = await res.json();
-    if (!res.ok || !json.ok) {
-      throw new Error(json.error ?? "Error sending verification email.");
-    }
+    const result = await postAuthJson(
+      "/api/auth/otp/request",
+      { email },
+      "Could not send sign-in code.",
+    );
+    if (result.ok !== true) throw new Error("Could not send sign-in code.");
   }
 
   async function verifyOtp(email: string, code: string) {
-    const res = await fetch("/api/auth/otp/verify", {
-      method: "POST",
-      headers: { "Content-Type": "application/json" },
-      body: JSON.stringify({ email, code }),
-    });
-
-    const json = await res.json();
+    const json = await postAuthJson(
+      "/api/auth/otp/verify",
+      { email, code },
+      "Could not verify sign-in code.",
+      true,
+    );
 
     if (json.requiresEmailVerification) {
       onRequiresEmailVerification(email);
       return;
     }
 
-    if (!res.ok || json.ok !== true) {
-      throw new Error(json.error ?? "Invalid or expired code");
+    if (json.ok !== true) {
+      throw new Error("Invalid or expired code.");
     }
 
     publishSessionChange();
     if (json.isAdmin && json.requiresTwoFASetup) {
-      return router.push("/auth/2fa/setup");
+      return navigateAfterAuth("/auth/2fa/setup");
     }
     if (json.isAdmin && json.requiresTwoFAChallenge) {
-      return router.push("/auth/2fa/challenge");
+      return navigateAfterAuth("/auth/2fa/challenge");
     }
 
     // Redirect to where they came from or admin/home
     const destination = json.isAdmin ? "/admin" : nextUrl;
-    router.push(destination);
+    navigateAfterAuth(destination);
   }
 
   return (
-    <div className="space-y-4">
-      <EmailCodeFlow
-        flowId="otp-login"
-        title="Sign in with code"
-        codeLabel="Verification code"
-        getDescription={(stage) =>
-          stage === "request"
-            ? "We'll email you a code. No password needed."
-            : "Enter the code we sent to your email."
-        }
-        sendButtonLabel="Send code"
-        sendButtonSendingLabel="Sending..."
-        verifyButtonLabel="Sign in"
-        verifyButtonSubmittingLabel="Signing in..."
-        onRequestCode={requestOtp}
-        onVerifyCode={verifyOtp}
-      />
-
-      <div className="flex justify-start">
-        {onBackToLogin ? (
-          <button
-            type="button"
-            onClick={onBackToLogin}
-            className={authStyles.neutralLink}
-          >
-            Back to sign in
-          </button>
-        ) : (
-          <Link
-            href={`/auth/login${nextUrl !== "/" ? `?next=${encodeURIComponent(nextUrl)}` : ""}`}
-            className={authStyles.neutralLink}
-          >
-            Back to sign in
-          </Link>
-        )}
-      </div>
-    </div>
+    <EmailCodeFlow
+      flowId="otp-login"
+      title="Sign in with code"
+      codeLabel="Verification code"
+      getDescription={(stage) =>
+        stage === "request"
+          ? "We'll email you a code. No password needed."
+          : "Enter the code we sent to your email."
+      }
+      sendButtonLabel="Send code"
+      sendButtonSendingLabel="Sending..."
+      verifyButtonLabel="Sign in"
+      verifyButtonSubmittingLabel="Signing in..."
+      onRequestCode={requestOtp}
+      onVerifyCode={verifyOtp}
+      backLabel="Back to sign in"
+      onBack={onBackToLogin}
+      backHref={
+        onBackToLogin
+          ? undefined
+          : `/auth/login${nextUrl !== "/" ? `?next=${encodeURIComponent(nextUrl)}` : ""}`
+      }
+    />
   );
 }

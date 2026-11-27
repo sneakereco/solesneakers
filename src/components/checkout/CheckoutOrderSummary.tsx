@@ -1,5 +1,6 @@
 import { BasketLineReview, needsBasketReview } from "@/Modules/Cart/Source/Client";
 import Image from "next/image";
+import { Skeleton } from "@/components/ui/Skeleton";
 
 import type { CheckoutQuoteResponse } from "@/lib/checkout/checkout-request";
 import type { CartItem } from "@/types/domain/cart";
@@ -19,25 +20,32 @@ function formatPrice(cents: number): string {
 export function CheckoutOrderSummary({
   items,
   quoteState,
+  onRetry,
   className = "",
 }: {
   items: CartItem[];
   quoteState: CheckoutQuoteState;
+  onRetry?: () => void;
   className?: string;
 }) {
   const cartSubtotal = items.reduce(
     (sum, item) => sum + (needsBasketReview(item) ? 0 : item.priceCents * item.quantity),
     0,
   );
-  const quote = items.some(
-    (i) => i.availability || i.orderScoped || i.previousPriceCents !== undefined,
-  )
-    ? undefined
-    : quoteState.quote;
+  const loading = quoteState.status === "loading";
+  const quote =
+    quoteState.status === "ready" && !items.some(needsBasketReview)
+      ? quoteState.quote
+      : undefined;
+  const pendingAmount = loading ? (
+    <Skeleton className="h-4 w-16 rounded" />
+  ) : (
+    "Unavailable"
+  );
   const subtotal = quote?.totals.subtotalCents ?? cartSubtotal;
   const shipping = quote?.totals.shippingCents;
   const exact = quote?.completeness === "exact" ? quote : null;
-  const total = quote?.totals.totalCents ?? cartSubtotal;
+  const total = quote?.totals.totalCents;
 
   return (
     <aside
@@ -81,9 +89,14 @@ export function CheckoutOrderSummary({
           ))}
         </div>
 
+        {loading && (
+          <p role="status" className="mt-5 text-sm">
+            Updating totals…
+          </p>
+        )}
         <dl
+          aria-busy={loading}
           className="mt-8 space-y-3 border-t border-zinc-200 pt-6 text-sm"
-          aria-live="polite"
         >
           <div className="flex justify-between gap-4">
             <dt>Subtotal</dt>
@@ -91,22 +104,31 @@ export function CheckoutOrderSummary({
           </div>
           <div className="flex justify-between gap-4">
             <dt>Shipping</dt>
-            <dd>{shipping === undefined ? "Calculating" : formatPrice(shipping)}</dd>
+            <dd>{shipping === undefined ? pendingAmount : formatPrice(shipping)}</dd>
           </div>
           <div className="flex justify-between gap-4">
             <dt>Tax</dt>
             <dd>
-              {exact ? formatPrice(exact.totals.taxCents) : "Calculated after address"}
+              {exact
+                ? formatPrice(exact.totals.taxCents)
+                : quote
+                  ? "Calculated after address"
+                  : pendingAmount}
             </dd>
           </div>
           <div className="flex justify-between gap-4 border-t border-zinc-200 pt-4 text-lg font-semibold">
-            <dt>{exact ? "Total" : "Estimated total"}</dt>
-            <dd>{formatPrice(total)}</dd>
+            <dt>{!quote || exact ? "Total" : "Estimated total"}</dt>
+            <dd>{total === undefined ? pendingAmount : formatPrice(total)}</dd>
           </div>
         </dl>
         {quoteState.status === "error" && (
           <p className="mt-4 text-sm text-amber-800" role="alert">
-            {quoteState.message}
+            {quoteState.message}{" "}
+            {onRetry && (
+              <button type="button" className="ml-2 underline" onClick={onRetry}>
+                Retry totals
+              </button>
+            )}
           </p>
         )}
       </div>

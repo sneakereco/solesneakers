@@ -1,4 +1,5 @@
 // src/services/product-service.ts
+import type { InventoryIdentity } from "@/lib/validation/product";
 import type { TypedSupabaseClient } from "@/lib/supabase/server";
 import {
   ProductRepository,
@@ -56,6 +57,10 @@ export class ProductService {
     return this.repo.exportInventoryRows(normalized);
   }
 
+  lookupInventoryProduct(tenantId: string, identity: InventoryIdentity) {
+    return this.repo.lookupInventoryProduct(tenantId, identity);
+  }
+
   async listProducts(filters: ProductFilters) {
     return this.repo.list(this.normalizeArchiveFilters(filters));
   }
@@ -89,6 +94,8 @@ export class ProductService {
       tenantId: string;
     },
   ) {
+    if (input.category === "specialty")
+      throw new Error("Use specialty product management for this product.");
     if (!input.name?.trim()) {
       throw new Error("Product title is required.");
     }
@@ -148,6 +155,10 @@ export class ProductService {
     if (!existing) {
       throw new Error("Product not found");
     }
+    if (existing.category === "specialty" || input.category === "specialty")
+      throw new Error(
+        "Use specialty product management; category conversion is not available.",
+      );
     if (!input.name?.trim()) {
       throw new Error("Product title is required.");
     }
@@ -298,6 +309,8 @@ export class ProductService {
     if (!original) {
       throw new Error("Product not found");
     }
+    if (original.category === "specialty")
+      throw new Error("Specialty products cannot be duplicated. Create a new prize.");
 
     const input: ProductCreateInput = {
       name: `${original.name} (Copy)`,

@@ -269,7 +269,7 @@ const bundle = await build({
           ],
           [
             "next/link",
-            "export default ({ children, ...props }) => <a {...props}>{children}</a>;",
+            "export const useLinkStatus = () => ({ pending: false }); export default ({ children, onNavigate, ...props }) => <a {...props}>{children}</a>;",
           ],
           ["@/components/shell/Footer", "export const Footer = () => null;"],
           [
@@ -312,7 +312,7 @@ const bundle = await build({
           ],
           [
             "@/components/checkout/SquarePaymentMethods",
-            "export const SquarePaymentMethods = ({ children }) => <div data-payment>{children}</div>;",
+            "export class CheckoutCartUnavailable extends Error {}; export const SquarePaymentMethods = ({ children }) => <div data-payment>{children}</div>;",
           ],
           [
             "@/Modules/Checkout/Source/Client",
@@ -371,12 +371,12 @@ try {
       status: 200,
       contentType: "application/json",
       body: JSON.stringify({
-        completeness: "estimate",
-        quoteFingerprint: "a".repeat(64),
+        completeness: "preliminary",
+        quoteFingerprint: null,
         totals: {
           subtotalCents: 10000,
           shippingCents: 0,
-          taxCents: 0,
+          taxCents: null,
           totalCents: 10000,
         },
       }),

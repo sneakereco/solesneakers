@@ -6,6 +6,7 @@ import { CheckoutDependencyLeaseRepository } from "@/Modules/Checkout/Source/Fea
 import { z } from "zod";
 
 import { env } from "@/config/env";
+import { RESELLER_ORDER_NOTIFICATION_EMAIL } from "@/config/constants/mail";
 import type {
   CheckoutNotification,
   CheckoutNotificationWorkerDependencies,
@@ -23,6 +24,7 @@ const notificationsSchema = z.array(
     orderId: z.string().uuid(),
     kind: z.enum([
       "order_confirmation",
+      "reseller_order_placed",
       "pickup_instructions",
       "refund_confirmation",
       "label_created",
@@ -186,6 +188,32 @@ async function sendOrderConfirmation(
   });
 }
 
+async function sendResellerOrderPlaced(
+  admin: AdminSupabaseClient,
+  notification: CheckoutNotification,
+  delivery?: MailDelivery,
+): Promise<void> {
+  const order = await loadDetailedOrder(admin, notification.orderId);
+  await new OrderEmailService(
+    admin,
+    order.tenant_id,
+    notification.id,
+    ...(delivery ? [delivery] : []),
+  ).sendResellerOrderPlacedFromDetailed({
+    to: RESELLER_ORDER_NOTIFICATION_EMAIL,
+    order: {
+      orderId: order.id,
+      fulfillment: order.fulfillment === "pickup" ? "pickup" : "ship",
+      customerEmail: order.profiles?.email ?? order.guest_email ?? null,
+      subtotal: Number(order.subtotal ?? 0),
+      tax: Number(order.tax_amount ?? 0),
+      shipping: Number(order.shipping ?? 0),
+      total: Number(order.total ?? 0),
+    },
+    itemsDetailed: order.items ?? [],
+  });
+}
+
 async function sendPickupInstructions(
   admin: AdminSupabaseClient,
   notification: CheckoutNotification,
@@ -246,6 +274,8 @@ async function deliver(
   switch (notification.kind) {
     case "order_confirmation":
       return sendOrderConfirmation(admin, notification, delivery);
+    case "reseller_order_placed":
+      return sendResellerOrderPlaced(admin, notification, delivery);
     case "pickup_instructions":
       return sendPickupInstructions(admin, notification, delivery);
     case "refund_confirmation":
@@ -311,12 +341,10 @@ export function createCheckoutNotificationDependencies(
 ): CheckoutNotificationWorkerDependencies {
   return {
     claim: async (limit) => {
-      const { data, error } = orderId
-        ? await admin.rpc("claim_checkout_notifications_for_order", {
-            p_limit: limit,
-            p_order_id: orderId,
-          })
-        : await admin.rpc("claim_checkout_notifications", { p_limit: limit });
+      const { data, error } = await admin.rpc("claim_checkout_notifications_v2", {
+        p_limit: limit,
+        ...(orderId ? { p_order_id: orderId } : {}),
+      });
       if (error) {
         throw error;
       }

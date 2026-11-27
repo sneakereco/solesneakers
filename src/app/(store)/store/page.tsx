@@ -1,7 +1,9 @@
-import Link from "next/link";
+import localFont from "next/font/local";
+import { FeedbackLink } from "@/components/ui/FeedbackLink";
 import type { Metadata } from "next";
 
 import { ProductGrid } from "@/components/store/ProductGrid";
+import { StoreNavigation, StoreResults } from "@/components/store/StoreNavigation";
 import { StoreControls } from "@/components/store/StoreControls";
 import { StorefrontFilterBar } from "@/components/store/StorefrontFilterBar";
 import { createSupabasePublicClient } from "@/lib/supabase/public";
@@ -10,6 +12,16 @@ import type { ProductFilters } from "@/repositories/product-repo";
 import { TagTaxonomyRepository } from "@/repositories/tag-taxonomy-repo";
 import { StorefrontService } from "@/services/storefront-service";
 import { pageMetadata } from "@/lib/metadata";
+import { logError } from "@/lib/utils/log";
+
+import { isSpecialtyDiscoveryAllowed } from "@/Modules/SpecialtyProducts/Source/Features/Discovery/discovery-policy";
+
+const collectionHeadingFont = localFont({
+  src: "../../../components/store/fonts/BarlowCondensed-ExtraBold.ttf",
+  weight: "800",
+  style: "normal",
+  display: "swap",
+});
 
 export const revalidate = 60;
 
@@ -54,10 +66,41 @@ const formatPriceLabel = (min?: number, max?: number) => {
   return null;
 };
 
+async function withStoreReadDeadline<T>(read: () => Promise<T>): Promise<T> {
+  let timer: ReturnType<typeof setTimeout> | undefined;
+  const deadline = new Promise<never>((_, reject) => {
+    timer = setTimeout(() => reject(new Error("Catalog read timed out")), 15_000);
+  });
+  try {
+    return await Promise.race([read(), deadline]);
+  } finally {
+    clearTimeout(timer);
+  }
+}
+
+async function loadStoreData(filters: ProductFilters) {
+  const supabase = createSupabasePublicClient();
+  const service = new StorefrontService(supabase);
+  const taxonomyRepo = new TagTaxonomyRepository(supabase);
+  const [initialProductsResult, filterData, taxonomyBrands] = await Promise.all([
+    service.listProducts(filters),
+    service.listFilters({ filters }),
+    taxonomyRepo.listBrands(),
+  ]);
+
+  let productsResult = initialProductsResult;
+  let pageCount = Math.max(1, Math.ceil(productsResult.total / productsResult.limit));
+  if (productsResult.total > 0 && productsResult.page > pageCount) {
+    productsResult = await service.listProducts({ ...filters, page: pageCount });
+    pageCount = Math.max(1, Math.ceil(productsResult.total / productsResult.limit));
+  }
+  return { productsResult, pageCount, filterData, taxonomyBrands };
+}
+
 export async function generateMetadata({
   searchParams,
 }: {
-  searchParams?: Promise<StoreSearchParams> | StoreSearchParams;
+  searchParams?: Promise<StoreSearchParams>;
 }): Promise<Metadata> {
   const params = await searchParams;
   const query = getStringParam(params, "q")?.trim().slice(0, 100);
@@ -65,11 +108,16 @@ export async function generateMetadata({
   const modelIds = getArrayParam(params, "modelIds");
   const sizeIds = getArrayParam(params, "sizeIds");
   const taxonomy = new TagTaxonomyRepository(createSupabasePublicClient());
-  const [brands, models, sizes] = await Promise.all([
-    brandIds.length ? taxonomy.listBrands() : [],
-    modelIds.length ? taxonomy.listModels() : [],
-    sizeIds.length ? taxonomy.listSizes() : [],
-  ]);
+  const [brands, models, sizes] = await withStoreReadDeadline(() =>
+    Promise.all([
+      brandIds.length ? taxonomy.listBrands() : [],
+      modelIds.length ? taxonomy.listModels() : [],
+      sizeIds.length ? taxonomy.listSizes() : [],
+    ]),
+  ).catch((error) => {
+    logError(error, { layer: "frontend", event: "catalog_metadata_taxonomy" });
+    return [[], [], []] as const;
+  });
   const labels = [
     ...getArrayParam(params, "category")
       .filter((value) =>
@@ -107,9 +155,9 @@ export async function generateMetadata({
 export default async function StorePage({
   searchParams,
 }: {
-  searchParams?: Promise<StoreSearchParams> | StoreSearchParams;
+  searchParams?: Promise<StoreSearchParams>;
 }) {
-  const resolvedSearchParams = searchParams ? await searchParams : undefined;
+  const resolvedSearchParams = await searchParams;
   const query = getStringParam(resolvedSearchParams, "q")?.trim() ?? "";
   const priceMin = getNonNegativeInteger(
     getStringParam(resolvedSearchParams, "priceMin"),
@@ -159,21 +207,14 @@ export default async function StorePage({
   });
   const storeHref = storeQueryParams.size > 0 ? `/store?${storeQueryParams}` : "/store";
 
-  const supabase = createSupabasePublicClient();
-  const service = new StorefrontService(supabase);
-  const taxonomyRepo = new TagTaxonomyRepository(supabase);
-  const [initialProductsResult, filterData, taxonomyBrands] = await Promise.all([
-    service.listProducts(filters),
-    service.listFilters({ filters }),
-    taxonomyRepo.listBrands(),
-  ]);
-
-  let productsResult = initialProductsResult;
-  let pageCount = Math.max(1, Math.ceil(productsResult.total / productsResult.limit));
-  if (productsResult.total > 0 && productsResult.page > pageCount) {
-    productsResult = await service.listProducts({ ...filters, page: pageCount });
-    pageCount = Math.max(1, Math.ceil(productsResult.total / productsResult.limit));
-  }
+  const data = await withStoreReadDeadline(() => loadStoreData(filters)).catch(
+    (error) => {
+      logError(error, { layer: "frontend", event: "catalog_read" });
+      return null;
+    },
+  );
+  if (!data) return <StoreNavigation loadFailed />;
+  const { productsResult, pageCount, filterData, taxonomyBrands } = data;
 
   const selectedCategories = filters.category ?? [];
   const selectedBrandIds = filters.brandIds ?? [];
@@ -213,78 +254,86 @@ export default async function StorePage({
         : "Filtered Collection";
 
   return (
-    <div className="min-h-screen bg-[var(--storefront-surface)] text-black">
-      <section className="relative min-h-[190px] border-b border-zinc-300 px-5 sm:px-8 lg:px-12">
-        <nav
-          className="flex items-center gap-2 pt-6 text-[0.62rem] uppercase tracking-[0.08em] text-zinc-500"
-          aria-label="Breadcrumb"
-        >
-          <Link href="/" className="transition-colors hover:text-black">
-            Home
-          </Link>
-          <span>/</span>
-          <Link href="/store" className="transition-colors hover:text-black">
-            Shop
-          </Link>
-          <span>/</span>
-          <span>{browseLabel}</span>
-        </nav>
-        <div className="flex justify-center px-4 pb-12 pt-9 text-center">
-          <h1 className="text-3xl font-bold uppercase tracking-[0.025em] text-zinc-950 sm:text-[2rem]">
-            {browseLabel}
-          </h1>
-        </div>
-      </section>
+    <StoreNavigation>
+      <div className="min-h-screen bg-[var(--storefront-surface)] text-black">
+        <section className="relative min-h-[190px] border-b border-zinc-300 px-5 sm:px-8 lg:px-12">
+          <nav
+            className="flex items-center gap-2 pt-6 text-[0.62rem] uppercase tracking-[0.08em] text-zinc-500"
+            aria-label="Breadcrumb"
+          >
+            <FeedbackLink href="/" className="transition-colors hover:text-black">
+              Home
+            </FeedbackLink>
+            <span>/</span>
+            <FeedbackLink href="/store" className="transition-colors hover:text-black">
+              Shop
+            </FeedbackLink>
+            <span>/</span>
+            <span className="min-w-0 [overflow-wrap:anywhere]">{browseLabel}</span>
+          </nav>
+          <div className="flex justify-center px-4 pb-12 pt-9 text-center">
+            <h1
+              className={`${collectionHeadingFont.className} min-w-0 max-w-full text-3xl font-extrabold uppercase leading-[1.12] tracking-[0.015em] text-zinc-950 [overflow-wrap:anywhere] sm:text-[2rem]`}
+            >
+              {browseLabel}
+            </h1>
+          </div>
+        </section>
 
-      <StoreControls
-        total={productsResult.total}
-        page={productsResult.page}
-        pageCount={pageCount}
-        limit={productsResult.limit}
-        sort={filters.sort ?? "newest"}
-        view={view}
-        showPagination={false}
-      />
-
-      <StorefrontFilterBar
-        brands={filterData.brands}
-        categories={filterData.categories}
-        conditions={filterData.availableConditions}
-        shoeSizes={filterData.availableShoeSizes}
-        clothingSizes={filterData.availableClothingSizes}
-        shoeSizeCounts={filterData.shoeSizeCounts}
-        clothingSizeCounts={filterData.clothingSizeCounts}
-        selectedBrandIds={selectedBrandIds}
-        selectedCategories={selectedCategories}
-        selectedConditions={selectedConditions}
-        selectedSizeIds={selectedSizeIds}
-        priceMin={priceMin}
-        priceMax={priceMax}
-      />
-
-      <section
-        className={
-          view === "list"
-            ? "px-3 py-8 sm:px-6 lg:px-10 lg:py-12"
-            : "px-3 py-12 sm:px-6 lg:px-10 lg:py-16"
-        }
-      >
-        <ProductGrid
-          products={productsResult.products}
-          storeHref={storeHref}
+        <StoreControls
+          total={productsResult.total}
+          page={productsResult.page}
+          pageCount={pageCount}
+          limit={productsResult.limit}
+          sort={filters.sort ?? "newest"}
           view={view}
+          showPagination={false}
         />
-      </section>
 
-      <StoreControls
-        total={productsResult.total}
-        page={productsResult.page}
-        pageCount={pageCount}
-        limit={productsResult.limit}
-        sort={filters.sort ?? "newest"}
-        view={view}
-        showSortControls={false}
-      />
-    </div>
+        <StorefrontFilterBar
+          brands={filterData.brands}
+          categories={filterData.categories}
+          conditions={filterData.availableConditions}
+          shoeSizes={filterData.availableShoeSizes}
+          clothingSizes={filterData.availableClothingSizes}
+          shoeSizeCounts={filterData.shoeSizeCounts}
+          clothingSizeCounts={filterData.clothingSizeCounts}
+          selectedBrandIds={selectedBrandIds}
+          selectedCategories={selectedCategories}
+          selectedConditions={selectedConditions}
+          selectedSizeIds={selectedSizeIds}
+          priceMin={priceMin}
+          priceMax={priceMax}
+        />
+
+        <StoreResults
+          className={
+            view === "list"
+              ? "px-3 py-8 sm:px-6 lg:px-10 lg:py-12"
+              : "px-3 py-12 sm:px-6 lg:px-10 lg:py-16"
+          }
+        >
+          <ProductGrid
+            allowSpecialty={isSpecialtyDiscoveryAllowed({
+              ...rawFilters,
+              sort: undefined,
+            })}
+            products={productsResult.products}
+            storeHref={storeHref}
+            view={view}
+          />
+        </StoreResults>
+
+        <StoreControls
+          total={productsResult.total}
+          page={productsResult.page}
+          pageCount={pageCount}
+          limit={productsResult.limit}
+          sort={filters.sort ?? "newest"}
+          view={view}
+          showSortControls={false}
+        />
+      </div>
+    </StoreNavigation>
   );
 }

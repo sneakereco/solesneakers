@@ -55,6 +55,49 @@ function createQueryChain(result: {
 }
 
 describe("ProductRepository archive behavior", () => {
+  it.each([{ exactSku: "000123" }, { exactId: "product-id" }])(
+    "looks up exact identity and includes archived rows without the ordinary name search window",
+    async (identity) => {
+      const row = {
+        id: "product-id",
+        name: "Fixture",
+        archived_at: "2026-11-01",
+        variants: [{ sku: "000123" }, { sku: "000124" }],
+      };
+      const query = createQueryChain({ data: row, error: null });
+      const from = jest.fn(() => query);
+      const repo = new ProductRepository({ from } as never);
+      await expect(repo.lookupInventoryProduct("tenant-1", identity)).resolves.toEqual(
+        row,
+      );
+      expect(from).toHaveBeenCalledWith("products");
+      expect(query.eq).toHaveBeenCalledWith("tenant_id", "tenant-1");
+      if (identity.exactSku) {
+        expect(query.select).toHaveBeenCalledWith(
+          expect.stringContaining("matched:product_variants!inner(sku)"),
+        );
+        expect(query.eq).toHaveBeenCalledWith("matched.sku", "000123");
+      } else expect(query.eq).toHaveBeenCalledWith("id", "product-id");
+      expect(query.select).toHaveBeenCalledWith(
+        expect.stringContaining("variants:product_variants(sku)"),
+      );
+      expect(query.is).not.toHaveBeenCalled();
+      expect(query.range).not.toHaveBeenCalled();
+      expect(query.limit).not.toHaveBeenCalled();
+    },
+  );
+  it("propagates exact read errors and distinguishes a clean empty result", async () => {
+    const chain = createQueryChain({ data: null, error: null });
+    const repo = new ProductRepository({ from: () => chain } as never);
+    await expect(
+      repo.lookupInventoryProduct("tenant-1", { exactSku: "000123" }),
+    ).resolves.toBeNull();
+    const failure = new Error("query failed");
+    chain.maybeSingle.mockResolvedValue({ data: null, error: failure });
+    await expect(
+      repo.lookupInventoryProduct("tenant-1", { exactSku: "000123" }),
+    ).rejects.toBe(failure);
+  });
   it("excludes archived products from inventory lists by default", async () => {
     const baseQuery = createQueryChain({ data: [], error: null, count: 0 });
     const supabase = {

@@ -269,7 +269,7 @@ begin
    from jsonb_array_elements(lines) j
  ), availability as (
    select requested.*,v.sale_price_cents,v.unit_cost_cents,p.category current_category,v.stock,
-     (p.id is not null and p.is_active and p.go_live_at<=clock_timestamp() and v.id is not null
+     (p.id is not null and p.category <> 'specialty' and p.is_active and p.go_live_at<=clock_timestamp() and v.id is not null
        and (not p.is_out_of_stock or v.stock=0)) as eligible,
      held.active_quantity,held.other_quantity
    from requested left join public.products p on p.id=pid and p.tenant_id=tenant

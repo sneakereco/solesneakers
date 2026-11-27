@@ -18,7 +18,14 @@ import { isAbsolute, join, relative, resolve, sep } from "node:path";
 import { fileURLToPath } from "node:url";
 import { promisify } from "node:util";
 import { Client } from "pg";
+import { validatePrefix } from "../../../scripts/single-store/check-migration-baseline.mjs";
 import { runLabel, withLoopbackPublishing } from "./checkout-hardening-docker-relay.mjs";
+import {
+  createRaceCampaign,
+  seedPrize,
+  claimAttempt,
+  award,
+} from "./specialty-claims.mjs";
 import { withPostgrest } from "./checkout-postgrest.mjs";
 
 const run = promisify(execFile);
@@ -146,10 +153,15 @@ function safeDiagnostic(output) {
     .trim();
 }
 
-async function checked(executable, args, { env, action = executable } = {}) {
+async function checked(executable, args, { env, action = executable, maxBuffer } = {}) {
   try {
     return (
-      await run(executable, args, { cwd: root, env, timeout: 180_000 })
+      await run(executable, args, {
+        cwd: root,
+        env,
+        timeout: 180_000,
+        ...(maxBuffer && { maxBuffer }),
+      })
     ).stdout.trim();
   } catch (error) {
     const diagnostic = safeDiagnostic((error.stderr ?? "") + "\n" + (error.stdout ?? ""));
@@ -435,7 +447,9 @@ async function readMigrations() {
   );
   const [source, diff, untracked] = await Promise.all([
     checked("git", ["rev-parse", "HEAD"]),
-    checked("git", ["diff", "--binary", "HEAD", "--", "src", "supabase"]),
+    checked("git", ["diff", "--binary", "HEAD", "--", "src", "supabase"], {
+      maxBuffer: 64 * 1024 * 1024,
+    }),
     checked("git", [
       "ls-files",
       "-o",
@@ -887,7 +901,58 @@ async function replay(client, { migrations }, lease) {
       [legacyReview.orderId, "sq-" + legacyReview.orderId, "pay-" + legacyReview.orderId],
     );
     const before = await populatedRows(client, catalog, order);
-    await applyMigrations(client, migrations.slice(prefix.length));
+    const remaining = migrations.slice(prefix.length);
+    // Rehearse the already-shipping schema before applying this branch's unpublished migrations.
+    const shippingThrough = "20261127020000";
+    const shippingPrefix = migrations.filter(({ version }) => version <= shippingThrough);
+    await applyMigrations(
+      client,
+      remaining.slice(0, shippingPrefix.length - prefix.length),
+    );
+    await verifyRegistry(client, shippingPrefix);
+    const recorded = (
+      await client.query(
+        "select version from supabase_migrations.schema_migrations order by version",
+      )
+    ).rows.map(({ version }) => version);
+    assert.equal(recorded.length, 113);
+    assert.deepEqual(
+      validatePrefix(
+        migrations.map(({ version }) => version),
+        recorded,
+      ),
+      { blockers: [], through: shippingThrough },
+    );
+    const campaign = await createRaceCampaign(client);
+    const prize = await seedPrize(client, { quantity: 2, campaignSlug: campaign.slug });
+    const attempt = claimAttempt(prize, campaign);
+    const won = await award(client, attempt);
+    assert.equal(won.result.status, "won");
+    assert.equal(won.replayed, false);
+    const shippingState = () =>
+      client.query(
+        "select to_jsonb(c) as campaign, to_jsonb(p) as config, to_jsonb(v) as variant, to_jsonb(w) as claim, to_jsonb(a) as attempt from specialty_campaigns c join specialty_product_config p on p.campaign_id=c.id join product_variants v on v.id=p.variant_id join specialty_claims w on w.product_id=p.product_id join specialty_claim_attempts a on a.claim_id=w.id where p.product_id=$1",
+        [prize.productId],
+      );
+    const shippingBefore = (await shippingState()).rows;
+    assert.equal(shippingBefore.length, 1);
+    const historicalMail = () =>
+      client.query(
+        "select event_key,kind,status from checkout_notification_outbox where order_id=$1 order by event_key",
+        [order.orderId],
+      );
+    const oldMail = (await historicalMail()).rows;
+    await applyMigrations(client, migrations.slice(shippingPrefix.length));
+    assert.deepEqual(
+      (await shippingState()).rows,
+      shippingBefore,
+      "shipping specialty award and stock preserved",
+    );
+    assert.deepEqual(
+      (await historicalMail()).rows,
+      oldMail,
+      "no historical reseller backfill",
+    );
     const after = await populatedRows(client, catalog, order);
     assertPopulatedRowsPreserved(before, after);
     lease.populated = { ...catalog, ...order, legacyReview };

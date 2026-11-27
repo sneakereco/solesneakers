@@ -1,11 +1,12 @@
 import Image from "next/image";
-import Link from "next/link";
+import { FeedbackLink as Link } from "@/components/ui/FeedbackLink";
 import type { ReactNode, RefObject } from "react";
 
 import {
   BillingAddressFields,
   type CheckoutBillingAddressForm,
 } from "@/components/checkout/BillingAddressFields";
+import { CardFieldsSkeleton } from "@/components/checkout/CheckoutSkeletons";
 import { CheckoutField } from "@/components/checkout/CheckoutField";
 import { CheckoutLegalNotice } from "@/components/checkout/CheckoutLegalNotice";
 import { CheckoutCollapse } from "@/components/checkout/CheckoutCollapse";
@@ -17,6 +18,10 @@ type SelectedPaymentMethod = "card" | "cashAppPay" | "afterpay";
 export function CheckoutPaymentPanel({
   selectedMethod,
   cardBrand,
+  cardHost,
+  cardLoading,
+  cardLoadError,
+  onRetryCard,
   cardErrors,
   cashAppCanPay,
   afterpayReady,
@@ -29,6 +34,7 @@ export function CheckoutPaymentPanel({
   billingAddress,
   isPaying,
   loadingProvider,
+  payDescriptionId,
   payDisabled,
   payLabel,
   error,
@@ -42,6 +48,10 @@ export function CheckoutPaymentPanel({
   onPay,
 }: {
   selectedMethod: SelectedPaymentMethod;
+  cardHost?: RefObject<HTMLDivElement | null>;
+  cardLoading?: boolean;
+  cardLoadError?: boolean;
+  onRetryCard?: () => void;
   cardBrand?: string | null;
   cardErrors?: Record<string, string>;
   cashAppCanPay?: boolean;
@@ -55,6 +65,7 @@ export function CheckoutPaymentPanel({
   billingAddress: CheckoutBillingAddressForm;
   isPaying: boolean;
   loadingProvider?: "Afterpay" | "Cash App Pay" | null;
+  payDescriptionId?: string;
   payDisabled: boolean;
   payLabel: string;
   error: string | null;
@@ -158,7 +169,27 @@ export function CheckoutPaymentPanel({
                 {method === "card" ? (
                   <div className="grid gap-3 px-4 pb-4">
                     <div>
-                      <div id="square-card-container" className="min-w-0" />
+                      <div
+                        id="square-card-container"
+                        ref={cardHost}
+                        className="min-w-0"
+                      />
+                      {cardLoading && selected && <CardFieldsSkeleton />}
+                      {cardLoadError && selected && (
+                        <div>
+                          <p role="status">
+                            Secure payment fields could not be loaded. Please retry.
+                          </p>
+                          <button
+                            type="button"
+                            className="mt-2 underline"
+                            disabled={isPaying}
+                            onClick={onRetryCard}
+                          >
+                            Retry card fields
+                          </button>
+                        </div>
+                      )}
                       {cardErrors &&
                         Object.entries(cardErrors).map(([field, message]) => (
                           <p
@@ -274,11 +305,12 @@ export function CheckoutPaymentPanel({
         <button
           type="submit"
           disabled={payDisabled}
+          aria-describedby={payDescriptionId}
           onClick={(event) => {
             event.preventDefault();
             onPay();
           }}
-          aria-busy={selectedMethod === "afterpay" && !afterpayReady}
+          aria-busy={selectedMethod === "afterpay" && !afterpayReady && !onRetryMethod}
           className="mt-5 flex h-12 w-full items-center justify-center rounded-xl bg-zinc-950 px-6 text-sm font-semibold text-white disabled:cursor-not-allowed disabled:bg-zinc-400"
         >
           {isPaying

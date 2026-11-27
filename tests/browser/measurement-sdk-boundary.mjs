@@ -1,6 +1,7 @@
 // Run: node tests/browser/measurement-sdk-boundary.mjs
 // Uses the installed PostHog SDK and intercepts its real browser transport.
 import assert from "node:assert/strict";
+import { execFileSync } from "node:child_process";
 import { build } from "esbuild";
 import { chromium } from "playwright";
 
@@ -47,9 +48,9 @@ const bundle = await build({
         },
       };
 
-      let addItem;
+      let cart;
       function CartProbe() {
-        addItem = useCart().addItem;
+        cart = useCart();
         return null;
       }
 
@@ -84,8 +85,9 @@ const bundle = await build({
         let root = createRoot(rootElement);
         history.replaceState(null, "", "/store/" + productId);
         root.render(<CartProvider><CartProbe /></CartProvider>);
-        await pause();
-        addItem({
+        for (let attempt=0;attempt<50 && !cart?.isReady;attempt+=1) await pause();
+        if (!cart?.isReady) throw new Error("Fixture cart did not hydrate");
+        const saved = await cart.addItem({
           productId,
           variantId,
           sizeLabel: "10",
@@ -96,7 +98,7 @@ const bundle = await build({
           imageUrl: "/shoe.png",
           maxStock: 1,
         });
-        await pause();
+        if (saved.status !== "saved") throw new Error("Fixture cart write did not complete");
         test.persistedCart = JSON.parse(sessionStorage.getItem("rdk_cart_session") || "[]");
 
         root.unmount();
@@ -147,6 +149,10 @@ const bundle = await build({
         const mocks = new Map([
           ["botid/client/core", "export const initBotId=()=>{};"],
           [
+            "next/link",
+            "export const useLinkStatus=()=>({pending:false}); export default function Link({children,...props}){return <a {...props}>{children}</a>}",
+          ],
+          [
             "next/navigation",
             "export const useRouter = () => ({ push() {} }); export const usePathname = () => window.location.pathname;",
           ],
@@ -177,7 +183,7 @@ const bundle = await build({
           ],
           [
             "@/components/checkout/SquarePaymentMethods",
-            "export const SquarePaymentMethods = ({ children }) => <div data-payment>{children}</div>;",
+            "export class CheckoutCartUnavailable extends Error {}; export const SquarePaymentMethods = ({ children }) => <div data-payment>{children}</div>;",
           ],
           [
             "@/Modules/Checkout/Source/Client",
@@ -207,18 +213,16 @@ const bundle = await build({
   ],
 });
 
-let browser;
-try {
-  browser = await chromium.launch({ headless: true });
-} catch (error) {
-  if (
-    process.platform !== "win32" ||
-    !String(error).includes("Executable doesn't exist")
-  ) {
-    throw error;
-  }
-  browser = await chromium.launch({ channel: "msedge", headless: true });
-}
+const beaconMarkup = execFileSync(
+  process.execPath,
+  ["--require", "tsx/cjs", "tests/fixtures/render-optional-beacon.ts"],
+  {
+    cwd: process.cwd(),
+    env: { ...process.env, NODE_ENV: "production" },
+    encoding: "utf8",
+  },
+);
+const browser = await chromium.launch({ headless: true });
 
 try {
   const page = await browser.newPage();
@@ -226,6 +230,11 @@ try {
   const transportRequests = [];
   page.on("pageerror", (error) => errors.push(error.stack ?? error.message));
   await page.route("**/*", (route) => route.abort());
+  const beaconRequests = [];
+  page.on("request", (request) => {
+    if (new URL(request.url()).hostname.endsWith("cloudflareinsights.com"))
+      beaconRequests.push(request.method());
+  });
   await page.addInitScript(() => {
     window.optionalStorageTouches = [];
     for (const method of ["getItem", "setItem", "removeItem"]) {
@@ -245,7 +254,7 @@ try {
     route.fulfill({
       status: 200,
       contentType: "text/html",
-      body: '<div id="root"></div>',
+      body: beaconMarkup + '<div id="root"></div>',
     }),
   );
   await page.route("**/api/cart/validate", (route) =>
@@ -275,12 +284,12 @@ try {
       status: 200,
       contentType: "application/json",
       body: JSON.stringify({
-        completeness: "estimate",
-        quoteFingerprint: "a".repeat(64),
+        completeness: "preliminary",
+        quoteFingerprint: null,
         totals: {
           subtotalCents: 10000,
           shippingCents: 0,
-          taxCents: 0,
+          taxCents: null,
           totalCents: 10000,
         },
       }),
@@ -289,6 +298,9 @@ try {
   await page.goto(
     "https://soles-stg.vercel.app/checkout?utm_source=ba6ce9ab-4aa2-40aa-8514-d5ecd17392f3&token=synthetic",
   );
+  await page.waitForLoadState("load");
+  assert.deepEqual(beaconRequests, [], "unconsented production beacon requested");
+  assert.equal(await page.locator("script[data-cf-beacon]").count(), 0);
   await page.addScriptTag({ content: bundle.outputFiles[0].text });
   await page.waitForFunction(() => window.measurementSdkBoundaryTest?.complete === true);
 

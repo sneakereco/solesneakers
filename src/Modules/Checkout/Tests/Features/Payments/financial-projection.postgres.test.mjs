@@ -220,8 +220,17 @@ test("verified settlement, fulfillment and distinct refund obligations", async (
               assert.deepEqual(
                 kinds,
                 status === "COMPLETED"
-                  ? ["order_confirmation", "pickup_instructions", "refund_confirmation"]
-                  : ["order_confirmation", "pickup_instructions"],
+                  ? [
+                      "order_confirmation",
+                      "pickup_instructions",
+                      "refund_confirmation",
+                      "reseller_order_placed",
+                    ]
+                  : [
+                      "order_confirmation",
+                      "pickup_instructions",
+                      "reseller_order_placed",
+                    ],
               );
             },
           );
@@ -460,6 +469,7 @@ test("verified settlement, fulfillment and distinct refund obligations", async (
         assert.deepEqual(pickup, [
           { kind: "order_confirmation" },
           { kind: "pickup_instructions" },
+          { kind: "reseller_order_placed" },
         ]);
       } finally {
         await service.query("rollback");
@@ -584,6 +594,7 @@ test("verified settlement, fulfillment and distinct refund obligations", async (
       assert.deepEqual(notifications, [
         { kind: "order_confirmation", n: 1 },
         { kind: "refund_confirmation", n: 2 },
+        { kind: "reseller_order_placed", n: 1 },
       ]);
       await t.test(
         "actual counted HTTP relations detect truncation and preserve legacy-only refund floors",

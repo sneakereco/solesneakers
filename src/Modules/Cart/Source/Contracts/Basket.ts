@@ -100,6 +100,12 @@ export interface CartContextType extends CartPurchaseActions, BasketReviewAction
   itemCount: number;
   total: number;
   isReady: boolean;
+  hasCartView: boolean;
+  writePending: boolean;
+  writeError: string | null;
+  validationStatus: "idle" | "loading" | "error";
+  retryValidation(): void;
+  retrySavedAccess(): void;
   hasUnreadableItems: boolean;
   repairReason: BasketRepairReason;
   access: BasketAccess;

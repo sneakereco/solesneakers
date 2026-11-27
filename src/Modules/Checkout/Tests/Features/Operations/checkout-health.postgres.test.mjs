@@ -67,15 +67,13 @@ test("checkout operating health in the disposable database", async (t) => {
               )
             ).rows[0].token;
             assert.ok(slot);
-            assert.equal(
-              (
-                await admin.query(
-                  "select public.finish_checkout_notification($1,true) finished",
-                  [sent.id],
-                )
-              ).rows[0].finished,
-              true,
+            // This old writer is fenced in the combined schema. Recreate only the historical row shape as trusted fixture setup.
+            await admin.query("reset role");
+            await admin.query(
+              "update checkout_notification_outbox set status=\x27sent\x27 where id=$1",
+              [sent.id],
             );
+            await admin.query("set local role service_role");
             const persisted = (
               await admin.query(
                 "select status,lease_token,lease_expires_at is not null as has_expiry from checkout_notification_outbox where id=$1",

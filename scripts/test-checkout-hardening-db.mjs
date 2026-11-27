@@ -268,6 +268,7 @@ try {
       for (const [name, file] of [
         ["fixture", "tests/database/checkout-hardening-fixture.test.mjs"],
         ["stock", stock],
+        ["reseller-mail", "tests/database/reseller-order-notifications.test.mjs"],
         [
           "authority",
           "src/Modules/Orders/Tests/Features/TrustedMutations/authority.postgres.test.mjs",

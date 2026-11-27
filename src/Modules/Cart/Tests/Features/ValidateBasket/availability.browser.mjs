@@ -628,7 +628,19 @@ for (const [state, timing] of [
         },
         route: async (route, url) => {
           calls.push(url.pathname);
-          if (url.pathname === "/api/cart/validate") return offline(route);
+          if (url.pathname === "/api/cart/validate")
+            return route.fulfill({
+              json: {
+                removed: [],
+                items: route
+                  .request()
+                  .postDataJSON()
+                  .items.map((row) => ({
+                    ...[runner, other].find((x) => x.variantId === row.variantId),
+                    ...row,
+                  })),
+              },
+            });
           if (url.pathname === "/api/checkout/quote")
             return route.fulfill({
               json: { completeness: "exact", quoteFingerprint: "a".repeat(64), totals },

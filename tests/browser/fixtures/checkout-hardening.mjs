@@ -40,7 +40,8 @@ const framework = {
     export const usePathname = () => new URL(useSyncExternalStore(subscribe, currentURL)).pathname;
     export const useSearchParams = () => new URL(useSyncExternalStore(subscribe, currentURL)).searchParams;
   `,
-  "next/link": "export default props => <a {...props} />;",
+  "next/link":
+    "export const useLinkStatus=()=>({pending:false}); export default ({prefetch,onNavigate,...props}) => <a {...props} />;",
   "next/image": `
     export default ({ src, fill, priority, unoptimized, loader, ...props }) =>
       <img {...props} data-image-src={src} src={window.checkoutFixture.view==="fullCart" && src==="/images/logo.png"?src:"data:image/gif;base64,R0lGODlhAQABAAD/ACwAAAAAAQABAAACADs="} />;
@@ -121,7 +122,7 @@ function browserBundle() {
           const [open, setOpen] = useState(true);
           if(location.pathname==="/password")return <PasswordLoginForm onRequiresEmailVerification={()=>{}} onSwitchToOtp={()=>{}} onForgotPassword={()=>{}}/>;
           if(location.pathname==="/otp")return <OtpLoginForm onRequiresEmailVerification={()=>{}}/>;
-          if(view==="profile")return <AccountProfile userEmail={initialUser?.email??""}/>;
+          if(view==="profile")return <AccountProfile userId={initialUser?.id??""} userEmail={initialUser?.email??""}/>;
           if(view==="navbar" || location.pathname==="/navbar")return <Navbar/>;
           if(view==="product")return <ProductDetail product={{id:"shoe",name:"Missing photo",condition:"new",brand:{label:"Sole"},images:[],variants:[{id:"shoe-v",size:{id:"size",label:"10"},stock:7,sale_price_cents:1100}]}}/>;
           if(view==="fullCart")return <CartPage/>;

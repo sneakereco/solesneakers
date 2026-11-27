@@ -5,6 +5,10 @@ import { useEffect, useLayoutEffect, useMemo, useRef, useState } from "react";
 import { useRouter } from "next/navigation";
 import { useSession } from "@/contexts/SessionContext";
 import { useCheckoutOwnerAccess } from "@/Modules/Checkout/Source/Features/Preparation/use-checkout-owner-access";
+import { FeedbackLink as Link, DocumentFeedbackLink } from "@/components/ui/FeedbackLink";
+import { CheckoutSkeleton } from "./CheckoutSkeletons";
+import { postCheckoutJson } from "@/lib/square/web-payments";
+import { withRequestDeadline } from "@/lib/http/request-deadline";
 
 import { inventoryConflict } from "@/Modules/Checkout/Source/Features/Preparation/reservation-contract";
 import { provenConflictMessage, needsBasketReview } from "@/Modules/Cart/Source/Client";
@@ -65,21 +69,42 @@ function normalizedAddress(address: CheckoutAddressForm): CheckoutPaymentAddress
   return parsed.success ? { ...parsed.data, line2: parsed.data.line2 ?? null } : null;
 }
 
+function isCents(value: unknown): value is number {
+  return typeof value === "number" && Number.isSafeInteger(value) && value >= 0;
+}
+
 async function requestCheckoutQuote(
   input: CheckoutQuoteRequest,
   signal?: AbortSignal,
 ): Promise<CheckoutQuoteResponse> {
-  const response = await fetch("/api/checkout/quote", {
-    method: "POST",
-    headers: { "Content-Type": "application/json" },
-    signal,
-    body: JSON.stringify(input),
-  });
-  const data = await response.json().catch(() => null);
-  if (!response.ok) {
-    throw new Error(data?.error || "Unable to calculate checkout totals");
-  }
-  return data as CheckoutQuoteResponse;
+  return withRequestDeadline(async (requestSignal) => {
+    const response = await fetch("/api/checkout/quote", {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      signal: requestSignal,
+      body: JSON.stringify(input),
+    });
+    const data = await response.json().catch(() => null);
+    if (!response.ok) {
+      throw new Error(data?.error || "Unable to calculate checkout totals");
+    }
+    const totals = data?.totals;
+    const exact =
+      data?.completeness === "exact" &&
+      isCents(totals?.taxCents) &&
+      typeof data.quoteFingerprint === "string" &&
+      data.quoteFingerprint.length > 0;
+    const preliminary =
+      data?.completeness === "preliminary" &&
+      totals?.taxCents === null &&
+      data.quoteFingerprint === null;
+    if (
+      (!exact && !preliminary) ||
+      ![totals?.subtotalCents, totals?.shippingCents, totals?.totalCents].every(isCents)
+    )
+      throw Error("Unable to verify checkout totals.");
+    return data as CheckoutQuoteResponse;
+  }, signal);
 }
 
 type CheckoutPreparePayload = {
@@ -127,6 +152,9 @@ export function CheckoutClient({ initialData }: { initialData: CheckoutPageData 
           >
             Refresh checkout
           </button>
+          <DocumentFeedbackLink className="ml-3 underline" href="/checkout">
+            Reload checkout
+          </DocumentFeedbackLink>
         </section>
       </>
     );
@@ -157,7 +185,12 @@ function OwnerCheckout({
   }, [remember]);
   const activeAttempt = useRef<AbortController | null>(null);
   useLayoutEffect(() => () => activeAttempt.current?.abort(), []);
-  const isReady = verified && cartReady;
+  const isReady =
+    verified &&
+    cartReady &&
+    !cart.writePending &&
+    cart.validationStatus !== "error" &&
+    cart.validationStatus !== "loading";
   // An owned prepare can finish during a visibility check; attach its reference
   // through the newly verified connection when that continuation resumes.
   const pendingScope = useRef<ValidationOrder | null>(null);
@@ -182,7 +215,7 @@ function OwnerCheckout({
   const [isRedirecting, setIsRedirecting] = useState(false);
   const [email, setEmail] = useState(initialData.customer.email);
   const [fulfillment, setFulfillment] = useState<Fulfillment>("ship");
-  const [address, setAddress] = useState(initialData.customer.address);
+  const [address, setAddress] = useState(() => ({ ...initialData.customer.address }));
   const [quoteState, setQuoteState] = useState<CheckoutQuoteState>({
     status: "loading",
   });
@@ -197,7 +230,11 @@ function OwnerCheckout({
   useEffect(() => {
     if (
       didCaptureCheckoutStart.current ||
-      !hasUsableCheckout({ cartReady: isReady, itemCount: items.length, isRedirecting })
+      !hasUsableCheckout({
+        cartReady: isReady,
+        itemCount: items.length,
+        isRedirecting,
+      })
     ) {
       return;
     }
@@ -228,14 +265,14 @@ function OwnerCheckout({
   const latestCart = useRef(cart);
   const captureView = useRef(cart.captureForCheckout);
   useLayoutEffect(() => {
-    if (isReady) {
+    if (verified && cartReady) {
       captureView.current = cart.captureForCheckout;
       latestCart.current = cart;
     }
-  }, [isReady, cart]);
+  }, [verified, cartReady, cart]);
   useLayoutEffect(() => {
-    if (isReady) currentBasket.current = basketKey;
-  }, [basketKey, isReady]);
+    if (verified && cartReady) currentBasket.current = basketKey;
+  }, [basketKey, verified, cartReady]);
   const checkoutItems = useMemo(
     () =>
       items.map((item) => ({
@@ -267,6 +304,7 @@ function OwnerCheckout({
     const controller = new AbortController();
     const delay = fulfillment === "ship" && shippingAddress ? 300 : 0;
     const timer = window.setTimeout(() => {
+      if (!isCurrent()) return;
       setQuoteState((current) => ({
         status: "loading",
         quote: current.quote,
@@ -436,7 +474,7 @@ function OwnerCheckout({
       {
         ...latestCart.current,
         bindPreparedOrder: async (id, order, signal) => {
-          await requireOwner();
+          await requireOwner({ waitForQuote: true });
           return latestCart.current.bindPreparedOrder(id, order, signal);
         },
       },
@@ -457,32 +495,28 @@ function OwnerCheckout({
       attempt.requireRecovery();
       setNeedsRecovery(true);
     }
-    const response = await fetch("/api/checkout/prepare", {
-      method: "POST",
-      headers: { "Content-Type": "application/json" },
-      body: JSON.stringify(
-        buildCheckoutPreparePayload({
-          items: attempt.items,
-          fulfillment,
-          paymentMethod: method,
-          buyerEmail,
-          shippingAddress: selectedShippingAddress,
-          billingAddress: selectedBillingAddress,
-          pickupContact: selectedPickupContact,
-          quoteFingerprint: selectedQuote.quoteFingerprint,
-          shippingConfirmation: attempt.recoveryOnly
-            ? undefined
-            : context?.shippingConfirmation,
-          shippingAddressOverride: attempt.recoveryOnly
-            ? undefined
-            : context?.shippingAddressOverride,
-          ...(attempt.recoveryOnly ? { recoveryOnly: true as const } : {}),
-          idempotencyKey: attemptKey,
-          deviceSessionId,
-        }),
-      ),
-    });
-    const data = await response.json().catch(() => null);
+    const { response, data } = await postCheckoutJson(
+      "/api/checkout/prepare",
+      buildCheckoutPreparePayload({
+        items: attempt.items,
+        fulfillment,
+        paymentMethod: method,
+        buyerEmail,
+        shippingAddress: selectedShippingAddress,
+        billingAddress: selectedBillingAddress,
+        pickupContact: selectedPickupContact,
+        quoteFingerprint: selectedQuote.quoteFingerprint,
+        shippingConfirmation: attempt.recoveryOnly
+          ? undefined
+          : context?.shippingConfirmation,
+        shippingAddressOverride: attempt.recoveryOnly
+          ? undefined
+          : context?.shippingAddressOverride,
+        ...(attempt.recoveryOnly ? { recoveryOnly: true as const } : {}),
+        idempotencyKey: attemptKey,
+        deviceSessionId,
+      }),
+    );
     await requireOwner();
     if (lifetime.signal.aborted || !attempt.current())
       throw Error(
@@ -594,10 +628,12 @@ function OwnerCheckout({
     }
     if (
       !z.uuid().safeParse(data?.orderId).success ||
-      typeof data?.totals?.subtotalCents !== "number" ||
-      typeof data?.totals?.shippingCents !== "number" ||
-      typeof data?.totals?.taxCents !== "number" ||
-      typeof data?.totals?.totalCents !== "number"
+      ![
+        data?.totals?.subtotalCents,
+        data?.totals?.shippingCents,
+        data?.totals?.taxCents,
+        data?.totals?.totalCents,
+      ].every(isCents)
     ) {
       throw new Error("Checkout returned invalid payment details");
     }
@@ -716,16 +752,33 @@ function OwnerCheckout({
   );
   const unavailableNotice = !isReady && (
     <>
-      <BasketAccessNotice />
+      {cart.access !== "ready" && <BasketAccessNotice />}
+      {cart.access === "ready" && cart.validationStatus === "error" && (
+        <button type="button" onClick={cart.retryValidation}>
+          Retry checkout
+        </button>
+      )}
+      {cart.writeError && <p role="alert">{cart.writeError}</p>}
       {canCheckOriginalOrder && checkoutNotice}
     </>
   );
   if (isRedirecting) return <CheckoutPaymentDialog open={verified} />;
-  if ((!isReady && !hasOpened) || (isReady && items.length === 0 && !needsRecovery)) {
+  if (isReady && items.length === 0 && !needsRecovery)
+    return (
+      <main className="mx-auto max-w-2xl px-5 py-16">
+        <CheckoutPaymentDialog open={false} />
+        <h1>Your cart is empty</h1>
+        <Link className="underline" href="/store">
+          Continue shopping
+        </Link>
+      </main>
+    );
+  if (!isReady && !hasOpened) {
     return (
       <>
         <CheckoutPaymentDialog open={false} />
         {unavailableNotice}
+        {cart.access === "checking" && <CheckoutSkeleton />}
       </>
     );
   }
@@ -744,7 +797,8 @@ function OwnerCheckout({
           <CheckoutOrderSummary
             className="order-1 lg:order-2"
             items={items}
-            quoteState={quoteState}
+            quoteState={quotePending ? { status: "loading" } : quoteState}
+            onRetry={() => setQuoteRevision((n) => n + 1)}
           />
 
           <section className="order-2 px-5 py-10 sm:px-8 lg:order-1 lg:ml-auto lg:w-full lg:max-w-[36.25rem] lg:px-10 lg:py-16">
@@ -752,6 +806,7 @@ function OwnerCheckout({
             <div className="flex flex-col">
               {isReady && (stockBlocked || needsRecovery) && checkoutNotice}
               <SquarePaymentMethods
+                reviewOwner={{ verified, isCurrent }}
                 accessSuspended={!isReady}
                 recoveryRequired={needsRecovery}
                 requireOwner={requireOwner}

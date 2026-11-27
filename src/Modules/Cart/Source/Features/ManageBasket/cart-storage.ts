@@ -100,6 +100,7 @@ export class BasketStorage {
   private readonly key: string;
   private readonly revisionKey: string;
   private connection?: AbortController;
+  private validationChanged?: (status: "idle" | "loading" | "error") => void;
   private listener?: (view: BasketView) => void;
   private pending?: Snapshot & { scope: OwnerValidationScope["current"] };
   private published?: Snapshot;
@@ -111,6 +112,7 @@ export class BasketStorage {
     private readonly userId: string | null,
     private readonly observed: () => boolean,
     private readonly validation: OwnerValidationScope,
+    private readonly validateOnConnect = true,
   ) {
     this.key = userId ? "rdk_cart_user_" + userId : "rdk_cart_session";
     this.revisionKey = this.key + ":revision";
@@ -302,7 +304,10 @@ export class BasketStorage {
   private sync(snapshot: Snapshot) {
     this.blocked = false;
     this.repair = undefined;
-    if (this.pending && !sameSnapshot(this.pending, snapshot)) this.pending = undefined;
+    if (this.pending && !sameSnapshot(this.pending, snapshot)) {
+      this.pending = undefined;
+      this.validationChanged?.("idle");
+    }
     this.published = snapshot;
     const generation = this.connection;
     const eligible =
@@ -436,7 +441,11 @@ export class BasketStorage {
     });
     if (!byPair.size) return next;
   }
-  connect(listener: (view: BasketView) => void) {
+  connect(
+    listener: (view: BasketView) => void,
+    validationChanged?: (status: "idle" | "loading" | "error") => void,
+  ) {
+    this.validationChanged = validationChanged;
     this.listener = listener;
     if (this.observed() && this.validation.current?.owner !== this.userId)
       this.validation.current = undefined;
@@ -448,7 +457,8 @@ export class BasketStorage {
       this.sync(this.read());
       return true;
     }).then((ready) => {
-      if (ready && this.connection === connection) void this.validate();
+      if (ready && this.validateOnConnect && this.connection === connection)
+        void this.validate();
     });
     return () => {
       window.removeEventListener("storage", this.onStorage);
@@ -456,6 +466,7 @@ export class BasketStorage {
       this.repair = undefined;
       this.connection = undefined;
       this.listener = undefined;
+      this.validationChanged = undefined;
       this.published = undefined;
       this.pending = undefined;
     };
@@ -488,9 +499,11 @@ export class BasketStorage {
       this.validation.current === snapshot.scope &&
       this.observed();
     if (!isCurrent()) return false;
+    this.validationChanged?.("loading");
     try {
       const accepted = await requestValidation(snapshot.items, snapshot.scope?.order);
       if (!isCurrent()) return false;
+      this.validationChanged?.(accepted ? "idle" : "error");
       return (
         (await this.atomic(() => {
           if (!isCurrent()) return;
@@ -533,6 +546,7 @@ export class BasketStorage {
     if (invalidateProof) this.area.removeItem(this.proofKey);
     const committed = this.persist(raw, eligible, expected);
     if (!committed) return false;
+    if (this.pending) this.validationChanged?.("idle");
     this.pending = undefined;
     const observed = this.read();
     this.sync(observed);
@@ -578,12 +592,11 @@ export class BasketStorage {
     });
   }
   async addItem(item: Omit<CartItem, "quantity">) {
-    if (item.maxStock !== undefined && item.maxStock <= 0)
-      return { status: "stale" } as const;
     return this.mutate(() => {
       const current = this.read();
       const row = current.rows.find((r) => pairKey(r.item) === pairKey(item));
       if (!row) {
+        if (item.maxStock !== undefined && item.maxStock <= 0) return false;
         const raw = JSON.stringify([{ ...item, quantity: 1 }]);
         if (raw.length > maxSavedLength) return "unavailable";
         const clean = decodeSavedBasket(raw);
@@ -594,19 +607,26 @@ export class BasketStorage {
       }
       if (row.item.availability || row.item.orderScoped) return false;
       const maxStock = item.maxStock ?? row.item.maxStock;
-      const quantity = Math.min(row.item.quantity + 1, maxStock ?? Infinity);
-      if (
-        !Number.isSafeInteger(quantity) ||
-        (quantity === row.item.quantity && maxStock === row.item.maxStock)
-      )
-        return false;
+      if (maxStock !== undefined && row.item.quantity > maxStock) {
+        const recorded = this.mutation(
+          current,
+          current.rows.map((entry) =>
+            entry === row
+              ? { ...row, item: { ...row.item, maxStock, availability: "unavailable" } }
+              : entry,
+          ),
+        );
+        return recorded === "unavailable" ? "unavailable" : false;
+      }
+      const quantity = row.item.quantity + 1;
+      if (maxStock !== undefined && quantity > maxStock) return false;
+      if (!Number.isSafeInteger(quantity)) return false;
       const resized = resize(row, { ...row.item, quantity, maxStock });
       if (row.units && !resized.units) return "unavailable";
-      const result = this.mutation(
+      return this.mutation(
         current,
         current.rows.map((r) => (r === row ? resized : r)),
       );
-      return result === true ? quantity > row.item.quantity : result;
     });
   }
   async removeItem(productId: string, variantId: string) {
@@ -622,9 +642,18 @@ export class BasketStorage {
     productId: string,
     variantId: string,
     quantity: BasketQuantityUpdate,
+    renderedItems?: CartItem[],
   ) {
     return this.mutate(() => {
       const current = this.read();
+      if (
+        typeof quantity === "number" &&
+        renderedItems &&
+        (!this.published ||
+          this.published.items !== renderedItems ||
+          !sameSnapshot(current, this.published))
+      )
+        return false;
       const row = current.rows.find(
         (r) => r.item.productId === productId && r.item.variantId === variantId,
       );
@@ -632,17 +661,18 @@ export class BasketStorage {
       const next =
         typeof quantity === "number" ? quantity : row.item.quantity + quantity.adjustBy;
       if (row.item.orderScoped) return false;
-      const clamped = row.item.availability
-        ? next
-        : Math.min(next, row.item.maxStock ?? Infinity);
-      if (row.item.availability && next > row.item.quantity) return false;
-      if (!Number.isSafeInteger(clamped) || clamped === row.item.quantity) return false;
-      if (clamped <= 0)
+      if (!Number.isSafeInteger(next) || next === row.item.quantity) return false;
+      if (
+        next > row.item.quantity &&
+        (row.item.availability || next > (row.item.maxStock ?? Infinity))
+      )
+        return false;
+      if (next <= 0)
         return this.mutation(
           current,
           current.rows.filter((r) => r !== row),
         );
-      const resized = resize(row, { ...row.item, quantity: clamped });
+      const resized = resize(row, { ...row.item, quantity: next });
       if (row.units && !resized.units) return "unavailable";
       return this.mutation(
         current,

@@ -34,7 +34,7 @@ export async function resolveCheckoutCart(
 
   for (const requested of requestedItems) {
     const product = productMap.get(requested.productId);
-    if (!product || product.tenantId !== tenantId) {
+    if (!product || product.category === "specialty" || product.tenantId !== tenantId) {
       throw new CheckoutCatalogUnavailable("checkout_cart_unavailable");
     }
 

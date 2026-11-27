@@ -7,6 +7,7 @@ const routeTitles: Array<[string, string]> = [
   ["/admin/inventory", "Inventory"],
   ["/admin/featured-items", "Featured items"],
   ["/admin/transactions", "Transactions"],
+  ["/admin/specialty-claims", "Specialty Product Claims"],
   ["/admin/shipping", "Shipping"],
   ["/admin/pickups", "Pickups"],
   ["/admin/tags", "Product tags"],

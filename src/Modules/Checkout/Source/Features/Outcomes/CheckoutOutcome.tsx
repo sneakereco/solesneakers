@@ -212,7 +212,14 @@ function Observation({ entry }: { entry: Entry }) {
     token,
   ]);
   const visible = result?.observation === observation ? result.value : waiting;
-  const { isReady, consumeConfirmedPurchase } = useCart();
+  const {
+    isReady,
+    access: cartAccess,
+    retrySavedAccess,
+    consumeConfirmedPurchase,
+  } = useCart();
+  const [retryCart, setRetryCart] = useState(0);
+  const [cartFailure, setCartFailure] = useState<typeof observation>();
   useLayoutEffect(() => {
     const order = visible.order;
     if (!isReady || visible.state !== "confirmed" || !order?.purchasedLines) return;
@@ -234,6 +241,8 @@ function Observation({ entry }: { entry: Entry }) {
           setRetry((n) => n + 1);
           return;
         }
+        if (isCurrent() && !visible.signal?.aborted)
+          setCartFailure(consumption.status === "unavailable" ? observation : undefined);
         if (isCurrent() && !visible.signal?.aborted && consumption.status === "matched")
           finishCheckoutAttempt(order.id, consumption.attemptKey, undefined, () => {
             ownClear.current = { access, orderId, token, pair };
@@ -253,6 +262,8 @@ function Observation({ entry }: { entry: Entry }) {
     isReady,
     visible,
     consumeConfirmedPurchase,
+    observation,
+    retryCart,
   ]);
   if (session.status === "unavailable" || session.status === "denied")
     return (
@@ -265,7 +276,23 @@ function Observation({ entry }: { entry: Entry }) {
     );
   if (orderId && visible.state === "waiting") return <CheckoutPaymentDialog open />;
   if (orderId && visible.order && visible.state === "confirmed")
-    return <Receipt visibleStatus={visible.order} isAuthenticated={access.account} />;
+    return (
+      <Receipt
+        visibleStatus={visible.order}
+        isAuthenticated={access.account}
+        retryCartUpdate={
+          visible.order.purchasedLines &&
+          (cartAccess === "unavailable" || cartFailure === observation)
+            ? () => {
+                if (!access.current() || currentPair() !== pair || readToken() !== token)
+                  return;
+                if (!isReady) retrySavedAccess();
+                setRetryCart((n) => n + 1);
+              }
+            : undefined
+        }
+      />
+    );
   const [title, message] = !orderId
     ? [
         "Order status unverified",
@@ -313,9 +340,11 @@ export function CheckoutOutcome({ entry }: { entry: Entry }) {
 function Receipt({
   visibleStatus,
   isAuthenticated,
+  retryCartUpdate,
 }: {
   visibleStatus: OrderStatusResponse;
   isAuthenticated: boolean;
+  retryCartUpdate?: () => void;
 }) {
   const router = useRouter();
   const isPickup = visibleStatus.fulfillment === "pickup";
@@ -328,6 +357,16 @@ function Receipt({
         Thank you for your purchase. Your order has been successfully processed.
       </p>
 
+      {retryCartUpdate && (
+        <div className="mb-6 border border-zinc-300 p-4">
+          <p role="status">
+            Your order is confirmed. Your saved cart could not be updated.
+          </p>
+          <button type="button" className="underline" onClick={retryCartUpdate}>
+            Retry cart update
+          </button>
+        </div>
+      )}
       <div className="mb-6 border border-zinc-300 bg-white p-6 text-left">
         <h2 className="mb-4 text-xl font-semibold text-zinc-950">Order Details</h2>
         <div className="space-y-2 text-zinc-600">

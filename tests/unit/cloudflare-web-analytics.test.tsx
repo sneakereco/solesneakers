@@ -1,22 +1,12 @@
-import { renderToStaticMarkup } from "react-dom/server";
-import { CloudflareWebAnalytics } from "@/components/analytics/CloudflareWebAnalytics";
-
-describe("CloudflareWebAnalytics", () => {
-  const originalNodeEnv = process.env.NODE_ENV;
-
-  afterEach(() => {
-    Object.defineProperty(process.env, "NODE_ENV", {
-      configurable: true,
-      value: originalNodeEnv,
-    });
-  });
-
-  it("does not load the production beacon during local development", () => {
-    Object.defineProperty(process.env, "NODE_ENV", {
-      configurable: true,
-      value: "development",
-    });
-
-    expect(renderToStaticMarkup(<CloudflareWebAnalytics token="test-token" />)).toBe("");
-  });
-});
+import { execFileSync } from "node:child_process";
+it.each(["production", "development"] as const)(
+  "does not emit a configured analytics beacon without consent in %s",
+  (environment) => {
+    const markup = execFileSync(
+      process.execPath,
+      ["--require", "tsx/cjs", "tests/fixtures/render-optional-beacon.ts"],
+      { encoding: "utf8", env: { ...process.env, NODE_ENV: environment } },
+    );
+    expect(markup).toBe("");
+  },
+);

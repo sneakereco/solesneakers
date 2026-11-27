@@ -130,6 +130,18 @@ export function getRateLimitPolicyForRequest(
   }
 
   // General API read vs write
+  if (
+    [
+      "/api/specialty/eligibility",
+      "/api/specialty/claims",
+      "/api/specialty/claims/result",
+    ].includes(pathname) &&
+    method.toUpperCase() === "POST"
+  ) {
+    // These exact routes always apply their fail-closed browser/IP quotas.
+    return null;
+  }
+
   const m = method.toUpperCase();
   const isRead = m === "GET" || m === "HEAD";
 

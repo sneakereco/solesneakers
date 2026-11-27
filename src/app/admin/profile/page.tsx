@@ -1,31 +1,31 @@
 "use client";
 
-import { useEffect, useState } from "react";
+import { useAdminRead } from "@/components/admin/useAdminRead";
+import { AdminReadStatus } from "@/components/admin/AdminSkeletons";
+import { fetchJsonWithDeadline } from "@/lib/http/request-deadline";
 
 import { AdminPage, AdminPageHeader } from "@/components/admin/AdminPage";
-import { logError } from "@/lib/utils/log";
 
 type AdminProfile = { email: string | null };
 
+const loadProfile = (signal: AbortSignal) =>
+  fetchJsonWithDeadline<{ profile: AdminProfile }>(
+    "/api/admin/profile",
+    "Profile unavailable",
+    signal,
+  );
 export default function AdminProfilePage() {
-  const [profile, setProfile] = useState<AdminProfile | null>(null);
-
-  useEffect(() => {
-    fetch("/api/admin/profile", { cache: "no-store" })
-      .then((response) => response.json())
-      .then((data) => setProfile(data.profile ?? null))
-      .catch((error) =>
-        logError(error, { layer: "frontend", event: "admin_load_profile" }),
-      );
-  }, []);
-
+  const read = useAdminRead(loadProfile, "admin profile");
   return (
     <AdminPage width="narrow">
       <AdminPageHeader
         eyebrow="Account"
         title="Admin profile"
-        description={profile?.email ?? "Loading account..."}
+        description={
+          read.data ? (read.data.profile?.email ?? "No email on file.") : undefined
+        }
       />
+      <AdminReadStatus read={read} label="Loading profile" shape="detail" />
     </AdminPage>
   );
 }

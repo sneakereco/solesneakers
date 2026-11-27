@@ -73,7 +73,7 @@ describe("Square checkout reservation schema", () => {
 
   it("requires the durable, unattached quote rejection before invoking ordered restoration", () => {
     const schema = readFileSync(
-      resolve("supabase/migrations/20261125164000_checkout_reservations.sql"),
+      resolve("supabase/migrations/20261127025000_checkout_reservations.sql"),
       "utf8",
     );
     const wrapper = schema

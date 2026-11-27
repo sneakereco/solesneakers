@@ -42,6 +42,9 @@ try {
     "admin-transaction-detail",
     "admin-button-contrast",
     "shipping-settings-modal",
+    "ux-checkout",
+    "ux-receipt-authority",
+    "ux-account-auth",
   ])
     await gate(name, ["tests/browser/" + name + ".mjs"]);
 } catch (error) {

@@ -35,7 +35,7 @@ it("dispatches only the paid order's notifications after the response", async ()
     "order-1",
   );
   expect(drainNotifications).toHaveBeenCalledWith(
-    expect.objectContaining({ batchSize: 2 }),
+    expect.objectContaining({ batchSize: 3 }),
     { kind: "dependencies" },
   );
 });

@@ -1,5 +1,6 @@
 import assert from "node:assert/strict";
 import test from "node:test";
+import { seedPrize } from "../../../../../../tests/database/fixtures/specialty-claims.mjs";
 import { createServer } from "node:http";
 import { once } from "node:events";
 import { createRequire } from "node:module";
@@ -433,6 +434,23 @@ test("atomic checkout allocation across independent sessions", async (t) => {
           ]);
           await assert.rejects(
             reserve(a, r),
+            (e) => e.code === "PC409" && JSON.parse(e.detail)[0].reason === "unavailable",
+          );
+          const prize = await seedPrize(admin, { quantity: 2 });
+          await admin.query(
+            "update products set is_active=true,go_live_at=now()-interval \x271 minute\x27 where id=$1",
+            [prize.productId],
+          );
+          await assert.rejects(
+            reserve(a, {
+              version: 2,
+              action: "inspect",
+              tenantId: prize.owner,
+              idempotencyKey: randomUUID(),
+              items: [
+                { productId: prize.productId, variantId: prize.variantId, quantity: 1 },
+              ],
+            }),
             (e) => e.code === "PC409" && JSON.parse(e.detail)[0].reason === "unavailable",
           );
           assert.deepEqual(await stock(x), { stock: 1, holds: 0 });

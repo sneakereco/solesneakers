@@ -1,0 +1,78 @@
+[
+  {
+    "width": 320,
+    "catalogGrid": {
+      "width": 44,
+      "height": 44
+    },
+    "productLink": {
+      "width": 144,
+      "height": 235
+    },
+    "save": {
+      "width": 182,
+      "height": 46
+    },
+    "adminMenu": {
+      "width": 44,
+      "height": 44
+    },
+    "staffCaptionContrast": 7.72,
+    "roleCaptionContrast": 7.72
+  },
+  {
+    "width": 390,
+    "catalogGrid": {
+      "width": 44,
+      "height": 44
+    },
+    "productLink": {
+      "width": 179,
+      "height": 271
+    },
+    "save": {
+      "width": 252,
+      "height": 46
+    },
+    "adminMenu": {
+      "width": 44,
+      "height": 44
+    },
+    "staffCaptionContrast": 7.72,
+    "roleCaptionContrast": 7.72
+  },
+  {
+    "width": 768,
+    "catalogGrid": {
+      "width": 44,
+      "height": 44
+    },
+    "productLink": {
+      "width": 235,
+      "height": 327
+    },
+    "save": {
+      "width": 310,
+      "height": 48
+    },
+    "staffCaptionContrast": 7.72,
+    "roleCaptionContrast": 7.72
+  },
+  {
+    "width": 1440,
+    "catalogGrid": {
+      "width": 44,
+      "height": 44
+    },
+    "productLink": {
+      "width": 328,
+      "height": 423
+    },
+    "save": {
+      "width": 966,
+      "height": 48
+    },
+    "staffCaptionContrast": 7.72,
+    "roleCaptionContrast": 7.72
+  }
+]

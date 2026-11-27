@@ -1,13 +1,21 @@
 // app/admin/inventory/[id]/edit/client.tsx
 "use client";
+import { adminCommand } from "@/components/admin/admin-command";
+
+import { useState } from "react";
+import { useAsyncAction } from "@/components/ui/useAsyncAction";
+import { ActionButton } from "@/components/ui/ActionButton";
 
 import { useRouter } from "next/navigation";
 
 import { ProductForm } from "@/components/inventory/ProductForm";
 import type { ProductCreateInput } from "@/services/product-service";
 import type { ProductWithDetails } from "@/types/domain/product";
+import type { SpecialtyProductDraft } from "@/Modules/SpecialtyProducts/Source/Features/ManageProducts/specialty-product-contract";
+import { saveSpecialtyProduct } from "@/Modules/SpecialtyProducts/Source/Features/ManageProducts/specialty-product-client";
 
 interface EditProductClientProps {
+  specialtyInitial?: SpecialtyProductDraft;
   productId: string;
   product: ProductWithDetails;
   isArchived?: boolean;
@@ -21,38 +29,41 @@ interface EditProductClientProps {
 
 export function EditProductClient({
   productId,
+  specialtyInitial,
   product,
   isArchived = false,
   initialBrands,
   initialModels,
   initialSizes,
 }: EditProductClientProps) {
+  const restore = useAsyncAction();
+  const [notice, setNotice] = useState("");
+  const [restored, setRestored] = useState(false);
   const router = useRouter();
 
   const handleRestore = async () => {
-    const response = await fetch(`/api/admin/products/${productId}?action=restore`, {
+    const { response, data: result } = await adminCommand<{
+      error?: string;
+      id?: string;
+    }>(`/api/admin/products/${productId}?action=restore`, {
       method: "PATCH",
     });
 
     if (!response.ok) {
-      let message = "Failed to restore product";
-      try {
-        const payload = await response.json();
-        if (payload?.error) {
-          message = payload.error;
-        }
-      } catch {
-        // ignore parse errors
-      }
-      throw new Error(message);
+      throw new Error(result?.error ?? "Failed to restore product");
     }
 
+    setRestored(true);
+    setNotice("Product restored.");
     router.push("/admin/inventory?stockStatus=archived");
     router.refresh();
   };
 
   const handleSubmit = async (data: ProductCreateInput) => {
-    const response = await fetch(`/api/admin/products/${productId}`, {
+    const { response, data: result } = await adminCommand<{
+      error?: string;
+      id?: string;
+    }>(`/api/admin/products/${productId}`, {
       method: "PATCH",
       headers: { "Content-Type": "application/json" },
       body: JSON.stringify(data),
@@ -62,17 +73,7 @@ export function EditProductClient({
       router.push("/admin/inventory");
       return;
     }
-
-    let message = "Failed to update product";
-    try {
-      const payload = await response.json();
-      if (payload?.error) {
-        message = payload.error;
-      }
-    } catch {
-      // ignore parse errors
-    }
-    throw new Error(message);
+    throw new Error(result?.error ?? "Failed to update product");
   };
 
   const handleCancel = () => {
@@ -103,13 +104,21 @@ export function EditProductClient({
           </p>
         </div>
         <div className="flex flex-wrap items-center gap-3">
-          <button
+          <ActionButton
+            pending={restore.pending}
+            pendingLabel="Restoring…"
+            disabled={restored}
             type="button"
-            onClick={() => void handleRestore()}
+            onClick={() =>
+              void restore
+                .run(handleRestore)
+                .catch(() => setNotice("Unable to restore product. Try again."))
+            }
             className="rounded bg-red-600 px-4 py-2 text-sm font-semibold text-white transition hover:bg-red-700"
           >
             Restore Product
-          </button>
+          </ActionButton>
+          {notice && <p role="status">{notice}</p>}
           <button
             type="button"
             onClick={handleCancel}
@@ -124,6 +133,12 @@ export function EditProductClient({
 
   return (
     <ProductForm
+      specialtyInitial={specialtyInitial}
+      onSpecialtySubmit={async (input) => {
+        await saveSpecialtyProduct(input);
+        router.push("/admin/inventory");
+        router.refresh();
+      }}
       initialData={initialData}
       onSubmit={handleSubmit}
       onCancel={handleCancel}

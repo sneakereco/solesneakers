@@ -56,7 +56,7 @@ All paths below are repository-relative. Braces enumerate exact files in that di
 
 Use `.tsx` for CartProvider/CheckoutOutcome/CheckoutOutcomeProvider, `.ts` for hooks without JSX and the other source files. Retain neutral Cart contracts and its narrow `Source/Client.ts` entry; do not expose storage implementation details to Checkout. The donor's complete Cart private capture implementation is `purchase-capture.ts` together with changes to `cart-storage.ts` and `Contracts/Basket.ts`; merge those changes with Task 8's newer storage repairs rather than overwrite them with an older donor file. The donor's Outcomes helpers are `order-polling.ts`, `order-state.ts` and `status-url.ts`; retain those private helpers behind the planned observer. Create `src/Modules/Checkout/Source/Client.ts` in Task 11 for the narrow public observer/provider/session surface. Dependency injection object types are private implementation choices; the named cross-task interfaces and DTOs below are fixed.
 
-Reserve migrations `20261125160000_checkout_authority.sql`, `20261125161000_checkout_recovery.sql`, `20261125162000_checkout_attempts.sql`, `20261125163000_checkout_financial_facts.sql`, `20261125164000_checkout_reservations.sql`, `20261125165000_checkout_operations.sql`. Verify these versions are unused and ordered after current main and the independently planned specialty `120000/121000` migrations. If another writer has taken a version, coordinate one replacement sequence before committing; never edit a published migration. Regenerate `src/types/db/database.types.ts` from the combined disposable schema after each relevant task, serialized with the specialty owner.
+Reserve migrations `20261127021000_checkout_authority.sql`, `20261127022000_checkout_recovery.sql`, `20261127023000_checkout_attempts.sql`, `20261127024000_checkout_financial_facts.sql`, `20261127025000_checkout_reservations.sql`, `20261127026000_checkout_operations.sql`. Verify these versions are unused and ordered after current main and the independently planned specialty `120000/121000` migrations. If another writer has taken a version, coordinate one replacement sequence before committing; never edit a published migration. Regenerate `src/types/db/database.types.ts` from the combined disposable schema after each relevant task, serialized with the specialty owner.
 
 ### Common commands and task completion
 
@@ -89,7 +89,7 @@ assert.equal(ownedDatabasesAfterCleanup.length, 0);
 
 ## Task 2: Trusted staff mutations and customer financial-write denial
 
-**Depends:** 1. **Files:** Create Orders TrustedMutations source above; matching `trusted-order-write.test.ts` and `authority.postgres.test.mjs`; migration `20261125160000_checkout_authority.sql`. Modify `src/app/api/admin/orders/[orderId]/{fulfill,pickup}/route.ts`, required label/refund/event writers found in the mutation inventory, `src/repositories/orders-repo.ts`, `src/services/orders-service.ts`, generated types.
+**Depends:** 1. **Files:** Create Orders TrustedMutations source above; matching `trusted-order-write.test.ts` and `authority.postgres.test.mjs`; migration `20261127021000_checkout_authority.sql`. Modify `src/app/api/admin/orders/[orderId]/{fulfill,pickup}/route.ts`, required label/refund/event writers found in the mutation inventory, `src/repositories/orders-repo.ts`, `src/services/orders-service.ts`, generated types.
 
 **Interfaces:** `writeTrustedOrder(input: {orderId:string; action:'fulfill'|'pickup'; trackingNumber?:string|null; carrier?:string|null}, actor: {userId:string; role:'admin'}, deps): Promise<{orderId:string; fulfillmentStatus:string}>`. Actor comes only from `requireAdminApi`; `order-write-repository.ts` performs narrowly validated service-only mutations. Existing tracking/customer GET contracts remain unchanged.
 
@@ -116,7 +116,7 @@ assert.equal(
 
 ## Task 3: Durable work, webhook receipt storage and global dependency leases
 
-**Depends:** 1. **Files:** Recovery `recovery-contract.ts`, `recovery-repository.ts`, `dependency-lease.ts`; Payments `webhook-inbox.ts`; matching `work-storage.test.ts`, `work-storage.postgres.test.mjs`; migration `20261125161000_checkout_recovery.sql`; generated types.
+**Depends:** 1. **Files:** Recovery `recovery-contract.ts`, `recovery-repository.ts`, `dependency-lease.ts`; Payments `webhook-inbox.ts`; matching `work-storage.test.ts`, `work-storage.postgres.test.mjs`; migration `20261127022000_checkout_recovery.sql`; generated types.
 
 **Interfaces:** `RecoveryKind = 'reconcile_payment'|'expire_reservation'|'square_event'`; `RecoveryJob = {id:string; kind:RecoveryKind; orderId:string|null; eventId:string|null; leaseToken:string; attempts:number}`. Produce `enqueueRecovery(input): Promise<void>`, `claimRecovery({limit:50,leaseSeconds:120,now}): Promise<RecoveryJob[]>`, `finishRecovery({id,leaseToken,result:'done'|'retry'|'review',nextAttemptAt?,reason?}): Promise<boolean>`, `acquireDependencyLease({dependency:'square'|'shippo'|'smtp',limit:4,leaseSeconds:120}): Promise<string|null>`, `releaseDependencyLease(token): Promise<void>`, `receiveSquareEvent({eventId,kind,payloadHash,payload}): Promise<'stored'|'duplicate'>`. Enqueue and receipt RPCs can run in the caller's financial transaction.
 
@@ -142,7 +142,7 @@ assert.equal(await finishRecovery(staleCompletion), false);
 
 ## Task 4: One durable financial attempt per order
 
-**Depends:** 2–3. **Files:** Payments `attempt-contract.ts`, `attempt-repository.ts`; matching `attempt-repository.test.ts`, `attempt-ledger.postgres.test.mjs`; migration `20261125162000_checkout_attempts.sql`; generated types.
+**Depends:** 2–3. **Files:** Payments `attempt-contract.ts`, `attempt-repository.ts`; matching `attempt-repository.test.ts`, `attempt-ledger.postgres.test.mjs`; migration `20261127023000_checkout_attempts.sql`; generated types.
 
 **Interfaces:** `AttemptState = 'ready'|'dispatch_started'|'pending'|'unknown'|'succeeded'|'declined'|'canceled'|'review'`. `PaymentAttempt = {id:string;orderId:string;sequence:number;state:AttemptState;method:PaymentMethod;amountCents:number;currency:'USD';squareIdempotencyKey:string;requestDigest:string|null;providerPaymentId:string|null}`. Produce `getOrCreateAttempt({orderId,method,ownerBinding}): Promise<PaymentAttempt>`; `beginDispatch({attemptId,ownerBinding,requestDigest,sourceDigest}): Promise<{kind:'dispatch'|'observe';attempt:PaymentAttempt}>`; `recordAttemptOutcome({attemptId,providerPaymentId,state,verifiedFacts}): Promise<PaymentAttempt>`. `ownerBinding` is server-derived, never a client user ID.
 
@@ -189,7 +189,7 @@ expect(beforeDispatch.code).toBe("PAYMENT_NOT_SUBMITTED");
 
 ## Task 6: Preserve provider payment/refund facts and durably accept webhooks
 
-**Depends:** 3–5. **Files:** Payments `payment-facts.ts`, `projection-repository.ts`, matching `payment-facts.test.ts`, `financial-projection.postgres.test.mjs`; extend `webhook-inbox.ts`; migration `20261125163000_checkout_financial_facts.sql`. Modify `src/app/api/webhooks/square/route.ts`, `src/lib/square/{payment-event,payment-reconciliation,payment-details}.ts`, signed-webhook tests and generated types.
+**Depends:** 3–5. **Files:** Payments `payment-facts.ts`, `projection-repository.ts`, matching `payment-facts.test.ts`, `financial-projection.postgres.test.mjs`; extend `webhook-inbox.ts`; migration `20261127024000_checkout_financial_facts.sql`. Modify `src/app/api/webhooks/square/route.ts`, `src/lib/square/{payment-event,payment-reconciliation,payment-details}.ts`, signed-webhook tests and generated types.
 
 **Interfaces:** `VerifiedFinancialFact = {kind:'payment'|'refund';providerId:string;paymentId:string;orderId:string;providerVersion:string;status:string;amountCents:number;currency:'USD';expectedTotalCents:number;fulfillmentStatus:string}`. Produce `applyFinancialFact(fact): Promise<FinancialSnapshot>` and `projectOrderFinancialState(facts): FinancialSnapshot`. `FinancialSnapshot={orderId:string;revision:string;financialState:'unpaid'|'paid'|'partially_refunded'|'refunded';capturedCents:number;refundedCents:number;fulfillmentStatus:string;reviewReason:string|null}`. Only verified normalized facts cross this seam; the expected total is read from the immutable server quote, not accepted from webhook/client input.
 
@@ -211,7 +211,7 @@ expect(projected.fulfillmentStatus).toBe("shipped");
 
 ## Task 7: Idempotent preparation, guest proof and transactional item conflicts
 
-**Depends:** 3–6. **Files:** Preparation source table above; tests `guest-context.test.ts`, `reservation-contract.test.ts`, `reservation-races.postgres.test.mjs`; migration `20261125164000_checkout_reservations.sql`. Modify `src/lib/checkout/{checkout-quote,prepare-checkout,prepare-checkout-dependencies}.ts`, `src/repositories/checkout-reservation-repo.ts`, quote/prepare tests, generated types.
+**Depends:** 3–6. **Files:** Preparation source table above; tests `guest-context.test.ts`, `reservation-contract.test.ts`, `reservation-races.postgres.test.mjs`; migration `20261127025000_checkout_reservations.sql`. Modify `src/lib/checkout/{checkout-quote,prepare-checkout,prepare-checkout-dependencies}.ts`, `src/repositories/checkout-reservation-repo.ts`, quote/prepare tests, generated types.
 
 **Interfaces:** `InventoryConflict = {productId:string;variantId:string;requestedQuantity:number;availableQuantity:number;reason:'reserved_by_other'|'sold_out'|'unavailable'}`. `ReservationDecision = {kind:'reserved';orderId:string;expiresAt:string;reused:boolean}|{kind:'conflict';conflicts:InventoryConflict[]}`. Produce `reserveCheckout(input: ReserveCheckoutInput & {ownerBinding:string}): Promise<ReservationDecision>`, `readOrIssueGuestContext(request): {contextHash:string;setCookie?:string}` and `verifyGuestPreparationReuse(order, contextHash): boolean`.
 
@@ -350,7 +350,7 @@ assert.equal(restoredStockAcrossRepeatedRelease, 1);
 
 ## Task 13: Shopper-scoped admission and independent operational switches
 
-**Depends:** 5, 7, 12. **Files:** Operations `admission.ts`, `checkout-controls.ts`; tests `admission.test.ts`, `checkout-controls.postgres.test.mjs`; migration `20261125165000_checkout_operations.sql` for service-only operational controls. Modify `src/lib/checkout/{checkout-attempt-limit,checkout-access,payment-api-dependencies,prepare-checkout-dependencies}.ts`, `src/proxy/rate-limit.ts`, the settings read adapter, validated runtime configuration and generated database types. Do not grant customer settings writes.
+**Depends:** 5, 7, 12. **Files:** Operations `admission.ts`, `checkout-controls.ts`; tests `admission.test.ts`, `checkout-controls.postgres.test.mjs`; migration `20261127026000_checkout_operations.sql` for service-only operational controls. Modify `src/lib/checkout/{checkout-attempt-limit,checkout-access,payment-api-dependencies,prepare-checkout-dependencies}.ts`, `src/proxy/rate-limit.ts`, the settings read adapter, validated runtime configuration and generated database types. Do not grant customer settings writes.
 
 **Interfaces:** `admitCheckout({kind:'new_prepare'|'resume'|'gateway_attempt'|'decline',shopperBinding,orderId?,ip},deps): Promise<{allowed:boolean;retryAfterSeconds:number|null}>`; `readCheckoutControls(): Promise<{pauseNewCheckouts:boolean;pausePaymentDispatch:boolean}>`. Counters are atomic/distributed; switches are independent of status/webhook/worker authorization.
 

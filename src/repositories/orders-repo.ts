@@ -9,6 +9,28 @@ type OrderUpdate = TablesUpdate<"orders">;
 export class OrdersRepository {
   constructor(private readonly supabase: TypedSupabaseClient) {}
 
+  async listPurchasedItems(orderId: string) {
+    const { data, error } = await this.supabase
+      .from("order_items")
+      .select("product_id,variant_id,quantity")
+      .eq("order_id", orderId);
+    if (error) throw error;
+    return (data ?? []).flatMap((row) =>
+      row.product_id &&
+      row.variant_id &&
+      Number.isSafeInteger(row.quantity) &&
+      row.quantity > 0
+        ? [
+            {
+              productId: row.product_id,
+              variantId: row.variant_id,
+              quantity: row.quantity,
+            },
+          ]
+        : [],
+    );
+  }
+
   async getById(orderId: string): Promise<OrderRow | null> {
     const { data, error } = await this.supabase
       .from("orders")

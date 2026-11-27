@@ -75,6 +75,7 @@ describe("CheckoutClient", () => {
           ownerId: "user-1",
           isGuest: false,
           customer: {
+            ownerId: "user-1",
             email: "buyer@example.com",
             address: {
               name: "Buyer Example",
@@ -113,7 +114,7 @@ describe("CheckoutClient", () => {
     expect(html).toContain("focus-visible:outline-none");
     expect(html).toContain("Subtotal");
     expect(html).toContain("Tax");
-    expect(html).toContain("Estimated total");
+    expect(html).toContain("Updating totals");
     expect(html).toContain("air-runner.jpg");
     expect(html).toContain('<h1 class="sr-only">Checkout</h1>');
     expect(html.indexOf("Order summary")).toBeLessThan(html.indexOf("Contact"));
