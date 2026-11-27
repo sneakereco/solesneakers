@@ -285,7 +285,12 @@ export async function testReportingHistory(db) {
       "analytics_purchase_link_export",
     ])
       assert.equal(
-        (await db.query("select * from analytics_reporting." + view)).rowCount,
+        (
+          await db.query(
+            "select * from analytics_reporting." + view + " where dataset_id=$1",
+            [ds],
+          )
+        ).rowCount,
         0,
       );
     await db.query("reset role");

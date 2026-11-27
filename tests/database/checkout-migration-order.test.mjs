@@ -5,6 +5,7 @@ import test from "node:test";
 import { Client } from "pg";
 import payloads from "../../src/Modules/Analytics/Tests/Features/CommerceFacts/payloads.json" with { type: "json" };
 import { validatePrefix } from "../../scripts/single-store/check-migration-baseline.mjs";
+import { testReportingHistory } from "../../scripts/test-admin-analytics-history.mjs";
 import {
   root,
   validateMutationTarget,
@@ -283,6 +284,9 @@ for (const mode of ["fresh", "populated"]) {
                 );
               }
               await withReportingAdmin(fixture, assertReportingExports);
+              if (mode === "fresh" && bootstrapBeforeCheckout) {
+                await withReportingAdmin(fixture, testReportingHistory);
+              }
               await assertCanonicalLedger(admin);
             });
           },
