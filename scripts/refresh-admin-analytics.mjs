@@ -3,7 +3,11 @@ import { isDeepStrictEqual } from "node:util";
 import { readFileSync } from "node:fs";
 import { createClient } from "@supabase/supabase-js";
 import { requireAnalytics } from "./analytics-operator-runtime.mjs";
-import { readNativeMarkers } from "./analytics-native-readback.mjs";
+import {
+  NATIVE_MARKERS_PENDING_EXIT_CODE,
+  NativeMarkersPendingError,
+  readNativeMarkers,
+} from "./analytics-native-readback.mjs";
 
 const feature = (path) =>
   requireAnalytics("../src/Modules/Analytics/Source/Features/" + path + ".ts");
@@ -215,11 +219,22 @@ try {
       }),
     );
   }
-} catch {
-  console.error(
-    "Observation unavailable. A later scheduled run can retry the finite proof.",
-  );
-  process.exitCode = 1;
+} catch (error) {
+  if (error instanceof NativeMarkersPendingError) {
+    console.log(
+      JSON.stringify({
+        environment: values.environment,
+        source: values.source,
+        status: "markers-pending",
+      }),
+    );
+    process.exitCode = NATIVE_MARKERS_PENDING_EXIT_CODE;
+  } else {
+    console.error(
+      "Observation unavailable. A later scheduled run can retry the finite proof.",
+    );
+    process.exitCode = 1;
+  }
 } finally {
   await budget?.close();
 }

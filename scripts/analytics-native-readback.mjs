@@ -2,8 +2,18 @@ import { setTimeout as delay } from "node:timers/promises";
 
 const retryDelayMs = 2_000;
 
+export const NATIVE_MARKERS_PENDING_EXIT_CODE = 75;
+
+export class NativeMarkersPendingError extends Error {
+  name = "NativeMarkersPendingError";
+}
+
 export async function readNativeMarkers(read, expected, deadline, sleep = delay) {
-  for (let attempt = 1; attempt <= 3 && performance.now() < deadline; attempt++) {
+  for (let attempt = 1; attempt <= 3; attempt++) {
+    if (performance.now() >= deadline) {
+      if (attempt === 1) throw Error("Native marker deadline reached without a response");
+      break;
+    }
     const data = await read();
     const row = data?.results?.[0];
     if (
@@ -26,5 +36,5 @@ export async function readNativeMarkers(read, expected, deadline, sleep = delay)
     if (attempt === 3 || performance.now() + retryDelayMs >= deadline) break;
     await sleep(retryDelayMs);
   }
-  throw Error("Native markers not yet visible");
+  throw new NativeMarkersPendingError("Native markers not yet visible");
 }

@@ -32,14 +32,25 @@ test("native readback stops on exhausted attempts or remaining time", async () =
   const pauses = [];
   await assert.rejects(
     readNativeMarkers(read, 2, performance.now() + 20_000, async (ms) => pauses.push(ms)),
-    /not yet visible/,
+    { name: "NativeMarkersPendingError", message: /not yet visible/ },
   );
   assert.deepEqual(pauses, [2_000, 2_000]);
   await assert.rejects(
     readNativeMarkers(read, 2, performance.now() + 1_000, async () => {
       assert.fail("paused beyond the deadline");
     }),
-    /not yet visible/,
+    { name: "NativeMarkersPendingError", message: /not yet visible/ },
+  );
+});
+
+test("a deadline reached before any native response is a failure", async () => {
+  await assert.rejects(
+    readNativeMarkers(
+      async () => assert.fail("queried after the deadline"),
+      2,
+      performance.now() - 1,
+    ),
+    /without a response/,
   );
 });
 
@@ -242,6 +253,37 @@ test("uses the 240-second window and sequential cadence while a native failure l
       assert.equal(invocation.options.env[variable], undefined);
   }
   assert.equal(existsSync(h.attestationPath()), false);
+});
+
+test("one confirmed native proof completes the window after an earlier pending result", async () => {
+  const h = harness((source, at) =>
+    source === "native" && at === 0 ? { code: 75 } : {},
+  );
+  const result = await h.run();
+  assert.equal(result.status, "completed");
+  assert.deepEqual(result.native, { attempted: 2, failed: 0, pending: 1 });
+  assert.deepEqual(result.failures, {});
+});
+
+test("pending native readbacks do not hide native or warehouse failures", async () => {
+  for (const failedSource of ["native", "warehouse"]) {
+    const h = harness((source, at) => {
+      if (source === "native" && at === 0) return { code: 75 };
+      if (source === failedSource) return { code: source === "native" ? 1 : 75 };
+    });
+    const result = await h.run();
+    assert.equal(result.status, "failed");
+    assert.equal(result.native.pending, 1);
+    assert.ok(result[failedSource].failed > 0);
+  }
+});
+
+test("a window with only pending native readbacks remains pending", async () => {
+  const h = harness((source) => (source === "native" ? { code: 75 } : {}));
+  const result = await h.run();
+  assert.equal(result.status, "pending");
+  assert.deepEqual(result.native, { attempted: 2, failed: 0, pending: 2 });
+  assert.deepEqual(result.failures, {});
 });
 
 test("output overflow and child timeouts kill workers, redact output and permit a later warehouse attempt", async () => {
