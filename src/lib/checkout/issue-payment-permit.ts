@@ -99,9 +99,6 @@ export async function issuePaymentPermitHandler(
     if (!order || order.tenantId !== tenantId) {
       return json({ error: "Order not found" }, 404);
     }
-    if (!isUsable(order, deps.now())) {
-      return json({ error: "Checkout is no longer payable" }, 409);
-    }
     if (order.deviceSessionId !== parsed.data.deviceSessionId) {
       return json({ error: "Checkout verification failed" }, 403);
     }
@@ -116,6 +113,18 @@ export async function issuePaymentPermitHandler(
       return json({ error: "Order access denied" }, 403);
     }
 
+    if (order.financialReview)
+      return json(
+        {
+          code: "CHECKOUT_RECOVERY_REQUIRED",
+          error: "This payment needs review. Check the original order status.",
+          orderId: order.orderId,
+          statusUrl: "/checkout/processing?orderId=" + encodeURIComponent(order.orderId),
+        },
+        409,
+      );
+    if (!isUsable(order, deps.now()))
+      return json({ error: "Checkout is no longer payable" }, 409);
     const email = order.guestEmail ?? session?.user.email;
     if (!email) {
       throw new Error("checkout_payment_email_missing");

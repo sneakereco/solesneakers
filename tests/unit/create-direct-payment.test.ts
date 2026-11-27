@@ -16,6 +16,32 @@ function request() {
     body: JSON.stringify({ permit: "permit-1", sourceId: "cnon:card-nonce-ok" }),
   }) as never;
 }
+it.each(["declined", "canceled"])(
+  "observes a prior %s attempt with independently verified money under review",
+  async (state) => {
+    const deps = dependencies();
+    const order = await deps.loadOrder();
+    deps.loadOrder.mockResolvedValue({
+      ...order,
+      financialReview: "square_terminal_capture_conflict",
+    });
+    const at = await deps.readCurrentAttempt();
+    deps.readCurrentAttempt.mockResolvedValue({
+      ...at,
+      state,
+      providerPaymentId: "review-pay",
+    });
+    const res = await createDirectPaymentHandler(request(), deps);
+    expect(res.status).toBe(202);
+    expect(await res.json()).toMatchObject({
+      orderId: "order-1",
+      status: "UNKNOWN",
+      statusUrl: "/checkout/processing?orderId=order-1",
+    });
+    expect(deps.beginDispatch).not.toHaveBeenCalled();
+    expect(deps.createPayment).not.toHaveBeenCalled();
+  },
+);
 
 function dependencies() {
   const ready: PaymentAttempt = {

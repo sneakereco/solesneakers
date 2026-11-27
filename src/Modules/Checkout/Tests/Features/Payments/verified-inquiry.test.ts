@@ -88,6 +88,7 @@ it.each([
   "conflicting refund",
   "same version FAILED",
   "same version REJECTED",
+  "terminal capture",
 ])(
   "replays the stored %s effects against authenticated provider reads",
   async (scenario) => {
@@ -95,7 +96,12 @@ it.each([
       ? scenario.slice("same version ".length)
       : null;
     const conflict = scenario === "conflicting refund" || collisionStatus !== null;
-    const kind = conflict ? "refund.updated" : scenario;
+    const terminalCapture = scenario === "terminal capture";
+    const kind = terminalCapture
+      ? "payment.updated"
+      : conflict
+        ? "refund.updated"
+        : scenario;
     const receipt = {
       square_event_id: "evt",
       event_type: kind,
@@ -123,7 +129,9 @@ it.each([
               ? proof.local
               : table === "square_webhook_events"
                 ? receipt
-                : proof.attempt;
+                : terminalCapture
+                  ? { ...proof.attempt, state: "canceled" }
+                  : proof.attempt;
         let writing = false;
         const q = {
           select: () => q,
@@ -159,7 +167,10 @@ it.each([
             },
             error: null,
           };
-        if (name === "apply_checkout_financial_fact") {
+        if (
+          name === "apply_checkout_financial_fact" ||
+          name === "record_checkout_terminal_capture"
+        ) {
           applied.add(args.p_fact!.kind);
           return {
             data: {
@@ -169,7 +180,7 @@ it.each([
               capturedCents: 1000,
               refundedCents: 0,
               fulfillmentStatus: "shipped",
-              reviewReason: null,
+              reviewReason: terminalCapture ? "square_terminal_capture_conflict" : null,
             },
             error: null,
           };
@@ -230,7 +241,21 @@ it.each([
       sdk as never,
       { merchantId: "m", locationId: "l" },
       { syncShipping, scheduleNotifications: jest.fn() },
+      false,
     );
+    if (terminalCapture) {
+      for (let replay = 0; replay < 2; replay++) {
+        await expect(consumer.processStoredSquareEvent("evt")).rejects.toThrow(
+          "square_terminal_capture_conflict",
+        );
+        expect(receipt.processed_at).toBeNull();
+      }
+      expect(commands).toContain("record_checkout_terminal_capture");
+      expect(commands).not.toContain("record_checkout_payment_outcome");
+      expect(commands).not.toContain("get_or_create_checkout_payment_attempt");
+      expect(syncShipping).not.toHaveBeenCalled();
+      return;
+    }
     if (kind === "payment.updated") {
       await expect(consumer.processStoredSquareEvent("evt")).rejects.toThrow(
         "square_receipt_processing_pending",

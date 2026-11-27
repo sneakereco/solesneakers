@@ -1,3 +1,4 @@
+import type { MailDelivery } from "@/Modules/Checkout/Source/Features/Recovery/notification-drain";
 import { env } from "@/config/env";
 import type { AdminSupabaseClient } from "@/lib/supabase/service-role";
 import { log } from "@/lib/utils/log";
@@ -54,7 +55,11 @@ function parseRefundMarker(
 }
 
 export class RefundNotificationService {
-  constructor(private readonly adminSupabase: AdminSupabaseClient) {}
+  constructor(
+    private readonly adminSupabase: AdminSupabaseClient,
+    private readonly notificationId?: string,
+    private readonly delivery?: MailDelivery,
+  ) {}
 
   async sendRefundNotification(params: {
     order: OrderRow;
@@ -104,10 +109,14 @@ export class RefundNotificationService {
     }
 
     const orderUrl = await this.buildOrderUrl(params.order);
-    const emailService = new OrderEmailService(
-      this.adminSupabase,
-      params.order.tenant_id,
-    );
+    const emailService = this.delivery
+      ? new OrderEmailService(
+          this.adminSupabase,
+          params.order.tenant_id,
+          this.notificationId,
+          this.delivery,
+        )
+      : new OrderEmailService(this.adminSupabase, params.order.tenant_id);
 
     await emailService.sendOrderRefunded({
       to: recipientEmail,

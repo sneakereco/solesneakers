@@ -89,6 +89,7 @@ describe("CheckoutReservationRepository", () => {
           user_id: null,
           guest_email: "buyer@example.com",
           cart_hash: "cart-hash",
+          checkout_financial_review: null,
           status: "pending",
           expires_at: "2026-09-06T12:15:00.000Z",
           subtotal: 100,

@@ -4,7 +4,10 @@ import { getSquareConfig } from "@/lib/square/config";
 import { SquareCheckoutOrdersGateway } from "@/lib/square/checkout-orders";
 import { SquarePaymentsGateway } from "@/lib/square/payments";
 
-export function createSquareClient(options?: { maxRetries: 0 }): SquareClient {
+export function createSquareClient(options?: {
+  maxRetries: 0;
+  fetch?: typeof fetch;
+}): SquareClient {
   const config = getSquareConfig();
 
   return new SquareClient({
@@ -14,6 +17,7 @@ export function createSquareClient(options?: { maxRetries: 0 }): SquareClient {
         ? SquareEnvironment.Production
         : SquareEnvironment.Sandbox,
     maxRetries: options?.maxRetries ?? 2,
+    fetch: options?.fetch,
     timeoutInSeconds: 10,
   });
 }

@@ -1,3 +1,7 @@
+import {
+  deadlineFetch,
+  withDependency,
+} from "@/Modules/Checkout/Source/Features/Recovery/recovery-worker";
 import { after } from "next/server";
 import { CheckoutDependencyLeaseRepository } from "@/Modules/Checkout/Source/Features/Recovery/dependency-lease";
 import { SquareFinancialInquiry } from "@/Modules/Checkout/Source/Features/Payments/square-financial-inquiry";
@@ -10,8 +14,14 @@ import {
 import { getSquareConfig, getSquareMerchantId } from "./config";
 import { createSquareClient } from "./client";
 
-export function createSquareFinancialInquiry(db: AdminSupabaseClient) {
-  const square = createSquareClient({ maxRetries: 0 });
+export function createSquareFinancialInquiry(
+  db: AdminSupabaseClient,
+  signal?: AbortSignal,
+) {
+  const square = createSquareClient({
+    maxRetries: 0,
+    fetch: signal ? deadlineFetch(signal) : undefined,
+  });
   return new SquareFinancialInquiry(
     db,
     square,
@@ -24,6 +34,7 @@ export function createSquareFinancialInquiry(db: AdminSupabaseClient) {
         ),
       scheduleNotifications: scheduleCheckoutNotifications,
     },
+    !signal,
   );
 }
 
@@ -33,19 +44,12 @@ export function promptSquareReceipt(db: AdminSupabaseClient, eventId: string) {
   try {
     after(async () => {
       const leases = new CheckoutDependencyLeaseRepository(db);
-      let token: string | null = null;
       try {
-        token = await leases.acquireDependencyLease({
-          dependency: "square",
-          limit: 1,
-          leaseSeconds: 120,
-        });
-        if (token)
-          await createSquareFinancialInquiry(db).processStoredSquareEvent(eventId);
+        await withDependency(leases, "square", Date.now() + 10000, (signal) =>
+          createSquareFinancialInquiry(db, signal).processStoredSquareEvent(eventId),
+        );
       } catch {
-        /* The durable obligation is still pending. */
-      } finally {
-        if (token) await leases.releaseDependencyLease(token).catch(() => undefined);
+        /* Durable receipt remains pending. */
       }
     });
   } catch {

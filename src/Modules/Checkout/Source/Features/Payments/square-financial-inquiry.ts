@@ -16,8 +16,14 @@ type Effects = {
   syncShipping: (result: SquarePaymentEventResult) => Promise<unknown>;
   scheduleNotifications: (orderId: string) => void;
 };
-type ProofInput = { paymentId: string; squareOrderId?: string; localOrderId?: string };
+type ProofInput = {
+  paymentId: string;
+  squareOrderId?: string;
+  localOrderId?: string;
+  expectedAttemptId?: string;
+};
 
+import { SquareTerminalCaptureConflict } from "./payment-facts";
 export class SquareFinancialInquiry {
   constructor(
     private readonly db: AdminSupabaseClient,
@@ -27,6 +33,7 @@ export class SquareFinancialInquiry {
     >,
     private readonly identity: Identity,
     private readonly effects: Effects,
+    private readonly allowLegacyReviewCreation = true,
   ) {}
 
   async processStoredSquareEvent(eventId: string): Promise<void> {
@@ -66,7 +73,8 @@ export class SquareFinancialInquiry {
           .is("processed_at", null);
         if (markError) throw markError;
       }
-    } catch {
+    } catch (error) {
+      if (error instanceof SquareTerminalCaptureConflict) throw error;
       throw new Error("square_receipt_processing_pending");
     }
   }
@@ -108,6 +116,68 @@ export class SquareFinancialInquiry {
     } catch {
       throw new Error("square_payment_inquiry_pending");
     }
+  }
+
+  // Durable recovery binds a job to its own sequence. A later attempt's
+  // tender cannot complete the earlier obligation.
+  async recoverAttempt(
+    orderId: string,
+    attemptId: string,
+    cancelApproved = false,
+  ): Promise<"done" | "retry" | "review"> {
+    const { data: a, error } = await this.db
+      .from("checkout_payment_attempts")
+      .select(
+        "id,order_id,state,dispatched_at,square_order_id,provider_payment_id,reason",
+      )
+      .eq("order_id", orderId)
+      .eq("id", attemptId)
+      .single();
+    if (error || !a) throw Error("missing_recovery_attempt");
+    if (!a.provider_payment_id && !a.dispatched_at)
+      return a.state === "ready" ||
+        (a.state === "canceled" &&
+          ["expiry_not_dispatched", "unused_method_changed"].includes(a.reason ?? ""))
+        ? "done"
+        : "review";
+    if (!a.square_order_id) return "review";
+    let id = a.provider_payment_id;
+    if (!id) {
+      const { order } = await this.square.orders.get({ orderId: a.square_order_id });
+      if (
+        order?.id !== a.square_order_id ||
+        order.referenceId !== orderId ||
+        order.locationId !== this.identity.locationId
+      )
+        throw Error("unverified_recovery_order");
+      for (const tender of order.tenders ?? []) {
+        if (!tender.paymentId) continue;
+        const { payment } = await this.square.payments.get({
+          paymentId: tender.paymentId,
+        });
+        if (payment?.id === tender.paymentId && payment.referenceId === attemptId) {
+          if (id && id !== payment.id) return "review";
+          id = payment.id;
+        }
+      }
+    }
+    if (!id)
+      return a.state === "declined" && a.reason === "verified_square_decline"
+        ? "done"
+        : "retry";
+    const applied = await this.apply({
+      paymentId: id,
+      localOrderId: orderId,
+      squareOrderId: a.square_order_id,
+      expectedAttemptId: attemptId,
+    });
+    if (cancelApproved && applied.paymentStatus === "APPROVED") {
+      await this.square.payments.cancel({ paymentId: id });
+      return this.recoverAttempt(orderId, attemptId, false);
+    }
+    return ["COMPLETED", "FAILED", "CANCELED"].includes(applied.paymentStatus)
+      ? "done"
+      : "retry";
   }
 
   async reconcileVerifiedPayment(
@@ -155,7 +225,7 @@ export class SquareFinancialInquiry {
       this.db
         .from("checkout_payment_attempts")
         .select(
-          "id,order_id,square_order_id,amount_cents,currency,method,provider_payment_id,dispatched_at",
+          "id,order_id,square_order_id,amount_cents,currency,method,state,provider_payment_id,dispatched_at",
         )
         .eq("order_id", local.id);
     if (
@@ -170,6 +240,7 @@ export class SquareFinancialInquiry {
     let attempt = await read();
     if (attempt.error) throw attempt.error;
     if (
+      this.allowLegacyReviewCreation &&
       !attempt.data &&
       !local.checkout_attempt_guarded &&
       local.payment_transaction_id === payment.id &&
@@ -194,7 +265,12 @@ export class SquareFinancialInquiry {
       });
       attempt = await read();
     }
-    if (attempt.error || !attempt.data) throw new Error("Missing exact attempt");
+    if (
+      attempt.error ||
+      !attempt.data ||
+      (input.expectedAttemptId && input.expectedAttemptId !== attempt.data.id)
+    )
+      throw new Error("Missing exact attempt");
     const { fact, review, createdAt } = verifyPaymentInquiry({
       ...this.identity,
       merchantLocation: location,
@@ -215,21 +291,32 @@ export class SquareFinancialInquiry {
         CANCELED: "canceled",
       } as const
     )[status];
-    await attempts.recordAttemptOutcome({
-      attemptId: attempt.data.id,
-      providerPaymentId: payment.id,
-      state,
-      verifiedFacts: {
-        kind: "square_payment",
-        orderId: local.id,
-        squareOrderId,
-        paymentId: payment.id,
-        amountCents: fact.expectedTotalCents,
-        currency: "USD",
-        status,
-      },
-    });
     const repo = new FinancialProjectionRepository(this.db, createdAt, review);
+    const terminalConflict =
+      status === "COMPLETED" && ["declined", "canceled"].includes(attempt.data.state);
+    if (terminalConflict) {
+      await repo.recordTerminalCapture(
+        attempt.data.id,
+        squareOrderId,
+        payment.referenceId ?? "",
+        attempt.data.method,
+        fact,
+      );
+    } else
+      await attempts.recordAttemptOutcome({
+        attemptId: attempt.data.id,
+        providerPaymentId: payment.id,
+        state,
+        verifiedFacts: {
+          kind: "square_payment",
+          orderId: local.id,
+          squareOrderId,
+          paymentId: payment.id,
+          amountCents: fact.expectedTotalCents,
+          currency: "USD",
+          status,
+        },
+      });
     const refundId = receipt?.payload.refundId;
     if (refundId) {
       const { refund } = await this.square.refunds.get({ refundId });
@@ -285,6 +372,7 @@ export class SquareFinancialInquiry {
         payment_method: details.payment_method,
       },
     });
+    if (terminalConflict) throw new SquareTerminalCaptureConflict();
     if (status === "COMPLETED" && !refundId && !receipt?.payload.disputeId) {
       await this.effects.syncShipping({
         duplicate: false,

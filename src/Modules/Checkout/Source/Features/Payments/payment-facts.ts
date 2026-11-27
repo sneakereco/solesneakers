@@ -1,5 +1,11 @@
 import { z } from "zod";
 
+export class SquareTerminalCaptureConflict extends Error {
+  constructor() {
+    super("square_terminal_capture_conflict");
+  }
+}
+
 const money = z.number().int().positive().max(2147483647);
 const id = z.string().regex(/^[A-Za-z0-9._:=+-]{1,192}$/);
 export const financialFact = z

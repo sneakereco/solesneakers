@@ -153,12 +153,17 @@ export async function loadSquareWebPayments(input: {
 }
 
 export async function authorizeAndTokenize(input: {
+  onExistingPaymentReview?: () => Promise<never>;
   permitRequest: Record<string, unknown>;
   paymentMethod: Pick<SquarePaymentMethod, "tokenize">;
   verificationDetails?: Record<string, unknown>;
   fetchImpl?: typeof fetch;
 }): Promise<{ permit: string; sourceId: string }> {
-  const permit = await requestPermit(input.permitRequest, input.fetchImpl);
+  const permit = await requestPermit(
+    input.permitRequest,
+    input.fetchImpl,
+    input.onExistingPaymentReview,
+  );
   const token = await input.paymentMethod.tokenize(input.verificationDetails);
   if (token.status !== "OK" || !token.token) {
     throw new Error("Payment details could not be verified");
@@ -169,6 +174,7 @@ export async function authorizeAndTokenize(input: {
 async function requestPermit(
   permitRequest: Record<string, unknown>,
   fetchImplementation: typeof fetch | undefined,
+  onExistingPaymentReview?: () => Promise<never>,
 ): Promise<string> {
   const fetchImpl = fetchImplementation ?? fetch;
   const permitResponse = await fetchImpl("/api/checkout/payment-permit", {
@@ -177,6 +183,14 @@ async function requestPermit(
     body: JSON.stringify(permitRequest),
   });
   const permitData = await permitResponse.json().catch(() => null);
+  if (
+    permitResponse.status === 409 &&
+    permitData?.code === "CHECKOUT_RECOVERY_REQUIRED" &&
+    typeof permitRequest.orderId === "string" &&
+    permitData.orderId === permitRequest.orderId &&
+    onExistingPaymentReview
+  )
+    return onExistingPaymentReview();
   if (!permitResponse.ok || typeof permitData?.permit !== "string") {
     throw new Error(permitData?.error || "Unable to authorize payment");
   }
@@ -184,12 +198,17 @@ async function requestPermit(
 }
 
 export async function authorizeTokenizedSource(input: {
+  onExistingPaymentReview?: () => Promise<never>;
   permitRequest: Record<string, unknown>;
   sourceId: string;
   fetchImpl?: typeof fetch;
 }): Promise<{ permit: string; sourceId: string }> {
   return {
-    permit: await requestPermit(input.permitRequest, input.fetchImpl),
+    permit: await requestPermit(
+      input.permitRequest,
+      input.fetchImpl,
+      input.onExistingPaymentReview,
+    ),
     sourceId: input.sourceId,
   };
 }

@@ -53,6 +53,31 @@ function dependencies() {
 }
 
 describe("issuePaymentPermitHandler", () => {
+  it("directs the authorized shopper to status when money is independently under review", async () => {
+    const deps = dependencies();
+    const original = await deps.loadOrder();
+    deps.loadOrder.mockResolvedValue({
+      ...original,
+      financialReview: "square_terminal_capture_conflict",
+    });
+    const response = await issuePaymentPermitHandler(
+      request({
+        orderId: ORDER_ID,
+        guestAccessToken: "guest-token",
+        deviceSessionId: DEVICE_ID,
+        method: "card",
+        turnstileToken: "proof",
+      }),
+      deps,
+    );
+    expect(response.status).toBe(409);
+    expect(await response.json()).toMatchObject({
+      code: "CHECKOUT_RECOVERY_REQUIRED",
+      orderId: ORDER_ID,
+    });
+    expect(deps.getOrCreateAttempt).not.toHaveBeenCalled();
+    expect(deps.issuePermit).not.toHaveBeenCalled();
+  });
   it("does not issue a permit when guest Turnstile fails", async () => {
     const deps = dependencies();
     deps.verifyTurnstile.mockResolvedValue({ allowed: false, reason: "invalid" });

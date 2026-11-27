@@ -126,12 +126,18 @@ export type Database = {
         Row: {
           attempts: number
           created_at: string
+          delivery_failures: number
           event_key: string
+          handoff_started_at: string | null
           id: string
           kind: string
+          lease_expires_at: string | null
+          lease_token: string | null
           next_attempt_at: string
           order_id: string
           payload: Json
+          smtp_phase: string | null
+          smtp_reply: number | null
           status: string
           tenant_id: string
           updated_at: string
@@ -139,12 +145,18 @@ export type Database = {
         Insert: {
           attempts?: number
           created_at?: string
+          delivery_failures?: number
           event_key: string
+          handoff_started_at?: string | null
           id?: string
           kind: string
+          lease_expires_at?: string | null
+          lease_token?: string | null
           next_attempt_at?: string
           order_id: string
           payload?: Json
+          smtp_phase?: string | null
+          smtp_reply?: number | null
           status?: string
           tenant_id: string
           updated_at?: string
@@ -152,12 +164,18 @@ export type Database = {
         Update: {
           attempts?: number
           created_at?: string
+          delivery_failures?: number
           event_key?: string
+          handoff_started_at?: string | null
           id?: string
           kind?: string
+          lease_expires_at?: string | null
+          lease_token?: string | null
           next_attempt_at?: string
           order_id?: string
           payload?: Json
+          smtp_phase?: string | null
+          smtp_reply?: number | null
           status?: string
           tenant_id?: string
           updated_at?: string
@@ -234,6 +252,7 @@ export type Database = {
           square_idempotency_key: string
           square_order_id: string | null
           state: string
+          terminal_capture: Json | null
           updated_at: string
         }
         Insert: {
@@ -255,6 +274,7 @@ export type Database = {
           square_idempotency_key?: string
           square_order_id?: string | null
           state: string
+          terminal_capture?: Json | null
           updated_at?: string
         }
         Update: {
@@ -276,6 +296,7 @@ export type Database = {
           square_idempotency_key?: string
           square_order_id?: string | null
           state?: string
+          terminal_capture?: Json | null
           updated_at?: string
         }
         Relationships: [
@@ -838,6 +859,7 @@ export type Database = {
           actual_shipping_cost_cents: number | null
           cart_hash: string | null
           checkout_attempt_guarded: boolean
+          checkout_expiry_marked_at: string | null
           checkout_financial_review: string | null
           checkout_guest_context_hash: string | null
           checkout_protection_evidence: Json
@@ -881,6 +903,7 @@ export type Database = {
           actual_shipping_cost_cents?: number | null
           cart_hash?: string | null
           checkout_attempt_guarded?: boolean
+          checkout_expiry_marked_at?: string | null
           checkout_financial_review?: string | null
           checkout_guest_context_hash?: string | null
           checkout_protection_evidence?: Json
@@ -924,6 +947,7 @@ export type Database = {
           actual_shipping_cost_cents?: number | null
           cart_hash?: string | null
           checkout_attempt_guarded?: boolean
+          checkout_expiry_marked_at?: string | null
           checkout_financial_review?: string | null
           checkout_guest_context_hash?: string | null
           checkout_protection_evidence?: Json
@@ -2056,6 +2080,10 @@ export type Database = {
         }
         Returns: boolean
       }
+      begin_checkout_mail_handoff: {
+        Args: { p_id: string; p_token: string }
+        Returns: boolean
+      }
       begin_checkout_payment_dispatch: {
         Args: {
           p_attempt_id: string
@@ -2063,6 +2091,10 @@ export type Database = {
           p_request_digest: string
           p_source_digest: string
         }
+        Returns: Json
+      }
+      claim_checkout_mail: {
+        Args: { p_limit: number; p_order_id?: string }
         Returns: Json
       }
       claim_checkout_notifications: { Args: { p_limit: number }; Returns: Json }
@@ -2098,6 +2130,20 @@ export type Database = {
         }
         Returns: undefined
       }
+      finish_checkout_expiry: {
+        Args: { p_canceled_square_order_id?: string; p_order_id: string }
+        Returns: string
+      }
+      finish_checkout_mail: {
+        Args: {
+          p_id: string
+          p_outcome: string
+          p_phase?: string
+          p_reply?: number
+          p_token: string
+        }
+        Returns: boolean
+      }
       finish_checkout_notification: {
         Args: { p_notification_id: string; p_succeeded: boolean }
         Returns: boolean
@@ -2121,6 +2167,8 @@ export type Database = {
       is_admin_for_tenant: { Args: { target_tenant: string }; Returns: boolean }
       is_dev: { Args: never; Returns: boolean }
       is_super_admin: { Args: never; Returns: boolean }
+      mark_checkout_expiry: { Args: { p_order_id: string }; Returns: Json }
+      oldest_checkout_recovery_due_ms: { Args: never; Returns: number }
       process_square_dispute_event: {
         Args: {
           p_amount_cents: number
@@ -2190,6 +2238,17 @@ export type Database = {
           p_provider_payment_id?: string
           p_state?: string
           p_verified_facts?: Json
+        }
+        Returns: Json
+      }
+      record_checkout_terminal_capture: {
+        Args: {
+          p_attempt_id: string
+          p_fact: Json
+          p_method: string
+          p_provider_time: string
+          p_reference_id: string
+          p_square_order_id: string
         }
         Returns: Json
       }
@@ -2323,6 +2382,7 @@ export type Database = {
         }
         Returns: Json
       }
+      sweep_checkout_recovery: { Args: { p_limit: number }; Returns: undefined }
       upsert_store_access_settings: {
         Args: {
           p_checkout_lock_enabled: boolean
@@ -2344,6 +2404,7 @@ export type Database = {
           actual_shipping_cost_cents: number | null
           cart_hash: string | null
           checkout_attempt_guarded: boolean
+          checkout_expiry_marked_at: string | null
           checkout_financial_review: string | null
           checkout_guest_context_hash: string | null
           checkout_protection_evidence: Json

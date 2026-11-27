@@ -67,6 +67,7 @@ import { log } from "@/lib/utils/log";
 
 export type PaymentMethod = PaymentPermitRequest["method"];
 class CheckoutCancelled extends Error {}
+class ExistingOrderHandoff extends Error {}
 
 async function readUnavailablePayment(response: Response, request: AbortController) {
   let timeout: ReturnType<typeof setTimeout> | undefined;
@@ -1003,14 +1004,25 @@ export function SquarePaymentMethods({
     );
   }
 
-  function permitRequest(checkout: PreparedCheckout, method: PaymentMethod) {
+  function permitOptions(checkout: PreparedCheckout, method: PaymentMethod) {
     checkout.assertCurrentBasket?.();
     return {
-      orderId: checkout.orderId,
-      guestAccessToken: checkout.guestAccessToken,
-      deviceSessionId: checkout.deviceSessionId,
-      method,
-      turnstileToken: isGuest ? turnstileTokenRef.current : undefined,
+      onExistingPaymentReview: async (): Promise<never> => {
+        await requireOwner?.();
+        checkout.assertFinancialAttempt?.();
+        onProcessing(checkout.orderId, checkout.transientGuestAccessToken);
+        router.replace(
+          "/checkout/processing?orderId=" + encodeURIComponent(checkout.orderId),
+        );
+        throw new ExistingOrderHandoff();
+      },
+      permitRequest: {
+        orderId: checkout.orderId,
+        guestAccessToken: checkout.guestAccessToken,
+        deviceSessionId: checkout.deviceSessionId,
+        method,
+        turnstileToken: isGuest ? turnstileTokenRef.current : undefined,
+      },
     };
   }
 
@@ -1047,6 +1059,7 @@ export function SquarePaymentMethods({
       assertPayable(requireVisibleExactQuote);
       await action();
     } catch (paymentError) {
+      if (paymentError instanceof ExistingOrderHandoff) return;
       if (paymentError instanceof CheckoutCancelled) {
         setWalletReview(null);
         setAddressReview(null);
@@ -1233,7 +1246,7 @@ export function SquarePaymentMethods({
       await pay(
         checkout,
         await authorizeTokenizedSource({
-          permitRequest: permitRequest(checkout, method),
+          ...permitOptions(checkout, method),
           sourceId,
         }),
       );
@@ -1392,7 +1405,7 @@ export function SquarePaymentMethods({
       await pay(
         checkout,
         await authorizeTokenizedSource({
-          permitRequest: permitRequest(checkout, method),
+          ...permitOptions(checkout, method),
           sourceId,
         }),
       );
@@ -1451,7 +1464,7 @@ export function SquarePaymentMethods({
       await pay(
         checkout,
         await authorizeAndTokenize({
-          permitRequest: permitRequest(checkout, method),
+          ...permitOptions(checkout, method),
           paymentMethod: {
             tokenize: async (details) => {
               await requireOwner?.();

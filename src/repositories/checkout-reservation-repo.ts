@@ -2,7 +2,11 @@ import { z } from "zod";
 
 import type { TypedSupabaseClient } from "@/lib/supabase/server";
 import type { SquareCheckoutOrder } from "@/lib/square/checkout-orders";
-import type { ExpiredCheckout } from "@/lib/checkout/expire-checkout-reservations";
+type ExpiredCheckout = {
+  orderId: string;
+  squareOrderId: string | null;
+  squareOrderVersion: number | null;
+};
 import type { Database, Json } from "@/types/db/database.types";
 import type {
   CheckoutBillingAddress,
@@ -96,6 +100,7 @@ export type ExistingCheckout = {
 };
 
 export type PaymentCheckout = {
+  financialReview?: string;
   orderId: string;
   tenantId: string;
   userId: string | null;
@@ -170,6 +175,7 @@ const expiredCheckoutSchema = z.object({
 });
 
 const paymentCheckoutSchema = z.object({
+  checkout_financial_review: z.string().min(1).nullable(),
   pickup_name: z.string().nullable().optional(),
   pickup_phone: z.string().nullable().optional(),
   order_billing: z.preprocess(
@@ -321,7 +327,7 @@ export class CheckoutReservationRepository {
     const { data, error } = await this.supabase
       .from("orders")
       .select(
-        "id, tenant_id, user_id, guest_email, cart_hash, status, expires_at, subtotal, shipping, tax_amount, total, fulfillment, pickup_name, pickup_phone, square_order_id, square_order_version, checkout_protection_evidence, order_shipping(name, phone, line1, line2, city, state, postal_code, country), order_billing(line1, line2, city, state, postal_code, country)",
+        "id, tenant_id, user_id, guest_email, cart_hash, status, checkout_financial_review, expires_at, subtotal, shipping, tax_amount, total, fulfillment, pickup_name, pickup_phone, square_order_id, square_order_version, checkout_protection_evidence, order_shipping(name, phone, line1, line2, city, state, postal_code, country), order_billing(line1, line2, city, state, postal_code, country)",
       )
       .eq("id", orderId)
       .maybeSingle();
@@ -340,6 +346,9 @@ export class CheckoutReservationRepository {
     const row = parsed.data;
     const address = row.order_shipping;
     return {
+      ...(row.checkout_financial_review
+        ? { financialReview: row.checkout_financial_review }
+        : {}),
       orderId: row.id,
       tenantId: row.tenant_id,
       userId: row.user_id,

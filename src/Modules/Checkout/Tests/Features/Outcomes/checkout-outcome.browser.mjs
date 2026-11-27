@@ -307,6 +307,15 @@ async function fixture(
       flow.permits++;
       if (flow.holdPermit) await new Promise((resolve) => (flow.releasePermit = resolve));
       flow.permitBody = route.request().postDataJSON();
+      if (pay === "terminal-review")
+        return route.fulfill({
+          status: 409,
+          json: {
+            code: "CHECKOUT_RECOVERY_REQUIRED",
+            orderId: order,
+            error: "This payment needs review. Check the original order status.",
+          },
+        });
       return route.fulfill({ json: { permit: "permit" } });
     }
     if (url.pathname === "/api/checkout/pay") {
@@ -687,6 +696,43 @@ test("actual capture write failure never persists a fresh financial key", async 
     ),
     [2],
   );
+});
+test("permit review after binding observes the original order without submitting a payment", async (t) => {
+  const { open, flow } = await fixture(t, {
+    pay: "terminal-review",
+    initialStatus: {
+      ...receipt,
+      status: "review",
+      financial: {
+        source: "ledger",
+        snapshot: {
+          orderId: order,
+          revision: "2",
+          capturedCents: 2000,
+          refundedCents: 0,
+          financialState: "paid",
+          fulfillmentStatus: "unfulfilled",
+          reviewReason: "square_terminal_capture_conflict",
+        },
+      },
+      purchasedLines: null,
+    },
+  });
+  const page = await open();
+  await submit(page);
+  await page.getByText("Payment under review", { exact: true }).first().waitFor();
+  assert.equal(flow.permits, 1);
+  assert.equal(flow.pays, 0);
+  assert.equal(flow.reservations.size, 1);
+  assert.ok(flow.gets.length > 0);
+  assert.equal(new URL(page.url()).searchParams.get("orderId"), order);
+  assert.deepEqual(
+    await page.evaluate(() =>
+      JSON.parse(localStorage.getItem("rdk_cart_user_buyer")).map((i) => i.quantity),
+    ),
+    [2],
+  );
+  assert.equal(await page.getByText(/payment was declined|no charge/i).count(), 0);
 });
 test("actual malformed pay handoff checks only the original ID", async (t) => {
   const { open, flow } = await fixture(t, { pay: "wrong" });

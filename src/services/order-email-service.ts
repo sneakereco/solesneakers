@@ -1,6 +1,10 @@
 // src/services/order-email-service.ts
 import { emailSubjects, MAIL_REPLY_TO_EMAIL } from "@/config/constants/mail";
-import { sendEmailWithRetry } from "@/lib/email/mailer";
+import {
+  SmtpRefusal,
+  type MailDelivery,
+} from "@/Modules/Checkout/Source/Features/Recovery/notification-drain";
+import { sendEmailWithRetry, sendCheckoutMail } from "@/lib/email/mailer";
 import {
   buildOrderConfirmationEmail,
   buildOrderDeliveredEmail,
@@ -107,6 +111,7 @@ export class OrderEmailService {
     private readonly supabase?: TypedSupabaseClient | null,
     private readonly tenantId?: string | null,
     private readonly notificationId?: string,
+    private readonly delivery?: MailDelivery,
   ) {}
 
   private async send(
@@ -152,19 +157,31 @@ export class OrderEmailService {
     }
 
     let messageId: string | undefined;
+    let handoff = false;
     try {
-      const result = await sendEmailWithRetry(
-        {
-          to,
-          subject,
-          html: content.html,
-          text: content.text,
-          replyTo: MAIL_REPLY_TO_EMAIL,
-        },
-        { maxAttempts: this.notificationId ? 1 : 3, baseDelayMs: 750, timeoutMs: 5000 },
-      );
+      const input = {
+        to,
+        subject,
+        html: content.html,
+        text: content.text,
+        replyTo: MAIL_REPLY_TO_EMAIL,
+      };
+      const result = this.delivery
+        ? await sendCheckoutMail(input, {
+            signal: this.delivery.signal,
+            begin: async () => {
+              await this.delivery!.begin();
+              handoff = true;
+            },
+          })
+        : await sendEmailWithRetry(input, {
+            maxAttempts: this.notificationId ? 1 : 3,
+            baseDelayMs: 750,
+            timeoutMs: 5000,
+          });
       messageId = result.messageId;
     } catch (error) {
+      if (handoff && !(error instanceof SmtpRefusal)) throw error; // The outbox retains explicit ambiguous handoff for review.
       const { error: writeError } = await db
         .from("email_audit_log")
         .update({ delivery_status: "failed" })

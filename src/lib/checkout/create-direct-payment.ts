@@ -160,6 +160,7 @@ export async function createDirectPaymentHandler(
       status: "UNKNOWN",
       statusUrl: `/checkout/processing?orderId=${encodeURIComponent(order.orderId)}`,
     };
+    if (order.financialReview) return json(observation, 202);
     const attempt = await deps.readCurrentAttempt(order.orderId);
     if (!attempt) {
       try {

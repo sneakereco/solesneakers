@@ -1,12 +1,14 @@
 import type { NextRequest } from "next/server";
 
-import { expireCheckoutReservations } from "@/lib/checkout/expire-checkout-reservations";
+import {
+  runCheckoutRecovery,
+  recoverySettings,
+} from "@/Modules/Checkout/Source/Features/Recovery/recovery-worker";
+import { createCheckoutRecoveryDependencies } from "@/lib/checkout/expire-checkout-reservations";
 import { getCronSecret, isAuthorizedCronRequest } from "@/lib/http/cron-auth";
 import { getRequestIdFromHeaders } from "@/lib/http/request-id";
-import { createSquareCheckoutOrdersGateway } from "@/lib/square/client";
 import { createSupabaseAdminClient } from "@/lib/supabase/service-role";
 import { logError } from "@/lib/utils/log";
-import { CheckoutReservationRepository } from "@/repositories/checkout-reservation-repo";
 
 export const runtime = "nodejs";
 export const maxDuration = 60;
@@ -22,39 +24,14 @@ export async function GET(request: NextRequest): Promise<Response> {
       );
     }
 
-    const repository = new CheckoutReservationRepository(createSupabaseAdminClient());
-    const checkouts = await repository.listExpired(new Date().toISOString(), 50);
-    let squareOrdersGateway: ReturnType<typeof createSquareCheckoutOrdersGateway> | null =
-      null;
-    const getSquareOrdersGateway = () => {
-      squareOrdersGateway ??= createSquareCheckoutOrdersGateway();
-      return squareOrdersGateway;
-    };
-
-    const result = await expireCheckoutReservations(checkouts, {
-      getSquareOrder: (squareOrderId) =>
-        getSquareOrdersGateway().getCancellationState(squareOrderId),
-      cancelSquareOrder: (squareOrderId, version) =>
-        getSquareOrdersGateway().cancel(
-          squareOrderId,
-          version,
-          `expire:${squareOrderId}:${version}`,
-        ),
-      releaseReservation: (orderId, reason) => repository.release(orderId, reason),
-      reportError: (error, orderId) =>
-        logError(error, {
-          layer: "api",
-          requestId,
-          route: "/api/cron/expire-checkouts",
-          event: "checkout_expiration_failed",
-          orderId,
-        }),
-    });
-
+    const result = await runCheckoutRecovery(
+      recoverySettings,
+      createCheckoutRecoveryDependencies(createSupabaseAdminClient()),
+    );
     return Response.json(
       { ...result, requestId },
       {
-        status: result.failed > 0 ? 500 : 200,
+        status: result.retry > 0 || result.review > 0 ? 500 : 200,
         headers: { "Cache-Control": "no-store" },
       },
     );

@@ -1,5 +1,7 @@
 begin;
 
+alter table public.orders add column checkout_expiry_marked_at timestamptz;
+
 -- The unguarded overloads still use the historical transaction. Serialize their
 -- order-key decision with v2 and keep them away from guarded preparations.
 create schema checkout_preparation_private;
@@ -27,7 +29,7 @@ grant execute on function public.reserve_square_checkout_inventory_with_address(
 -- All callers of the live release RPC take the same order, attempt, product,
 -- variant and hold locks as preparation before the historical restore writes.
 alter function public.release_square_checkout_reservation(uuid,text) set schema checkout_preparation_private;
-create function public.release_square_checkout_reservation(p_order_id uuid,p_reason text)
+create function checkout_preparation_private.release_ordered(p_order_id uuid,p_reason text)
 returns boolean language plpgsql security definer set search_path='' as $fn$
 declare o public.orders;
 begin
@@ -43,6 +45,17 @@ begin
  return checkout_preparation_private.release_square_checkout_reservation(o.id,p_reason);
 end;
 $fn$;
+revoke all on function checkout_preparation_private.release_ordered(uuid,text) from public,anon,authenticated,service_role;
+create function public.release_square_checkout_reservation(p_order_id uuid,p_reason text)
+returns boolean language plpgsql security definer set search_path='' as $$
+declare o public.orders;
+begin
+ select * into o from public.orders where id=p_order_id for update;
+ if not found or not o.checkout_attempt_guarded or o.checkout_expiry_marked_at is not null or p_reason='checkout_expired'
+    or exists(select 1 from public.checkout_payment_attempts where order_id=o.id and dispatched_at is not null) then return false; end if;
+ return checkout_preparation_private.release_ordered(o.id,p_reason);
+end;
+$$;
 revoke all on function public.release_square_checkout_reservation(uuid,text) from public,anon,authenticated;
 grant execute on function public.release_square_checkout_reservation(uuid,text) to service_role;
 
@@ -56,7 +69,7 @@ declare o public.orders;
 begin
  select * into o from public.orders where id=p_order_id for update;
  if o.checkout_attempt_guarded then
-   if o.failure_reason='preparation_quote_rejected' then return false; end if;
+   if o.checkout_expiry_marked_at is not null or o.failure_reason='preparation_quote_rejected' then return false; end if;
    if o.shipping*100 is distinct from p_shipping_cents or o.tax_amount*100 is distinct from p_tax_cents
      or o.total*100 is distinct from p_total_cents then return false; end if;
    if o.square_order_id is not null then
@@ -319,4 +332,111 @@ $$;
 revoke all on function public.reserve_checkout_inventory_v2(jsonb) from public,anon,authenticated;
 grant execute on function public.reserve_checkout_inventory_v2(jsonb) to service_role;
 notify pgrst,'reload schema';
+alter function checkout_attempt_private.require_payable(public.orders,public.checkout_payment_attempts) rename to require_live_hold;
+create function checkout_attempt_private.require_payable(o public.orders,a public.checkout_payment_attempts)
+returns void language plpgsql set search_path='' as $$
+begin
+ if o.checkout_expiry_marked_at is not null or o.checkout_financial_review is not null then raise exception 'checkout_order_not_payable'; end if;
+ perform checkout_attempt_private.require_live_hold(o,a);
+end;
+$$;
+revoke all on function checkout_attempt_private.require_payable(public.orders,public.checkout_payment_attempts)
+ from public,anon,authenticated,service_role;
+
+create function public.mark_checkout_expiry(p_order_id uuid) returns jsonb
+language plpgsql security definer set search_path='' as $$
+declare o public.orders; keys jsonb;
+begin
+ select * into strict o from public.orders where id=p_order_id for update;
+ if o.expires_at is null or o.expires_at>clock_timestamp() or
+  not exists(select 1 from public.inventory_reservations where order_id=o.id and status='active')
+ then return jsonb_build_object('kind','unchanged'); end if;
+ perform id from public.checkout_payment_attempts where order_id=o.id order by sequence for update;
+ update public.orders set checkout_expiry_marked_at=clock_timestamp() where id=o.id and checkout_expiry_marked_at is null;
+ if not o.checkout_attempt_guarded then return jsonb_build_object('kind','review'); end if;
+ with retired as (
+  update public.checkout_payment_attempts set state='canceled',reason='expiry_not_dispatched',updated_at=clock_timestamp()
+  where order_id=o.id and state='ready' and dispatched_at is null and provider_payment_id is null returning id
+ ) insert into public.checkout_payment_attempt_history(attempt_id,state,reason) select id,'canceled','expiry_not_dispatched' from retired;
+ select coalesce(jsonb_agg(square_idempotency_key order by sequence),'[]') into keys
+ from public.checkout_payment_attempts where order_id=o.id and dispatched_at is not null
+ and state in ('dispatch_started','unknown','pending','review') and provider_payment_id is null;
+ return jsonb_build_object('kind','inquire','squareOrderId',o.square_order_id,'unknownKeys',keys);
+end;
+$$;
+
+create function public.finish_checkout_expiry(p_order_id uuid,p_canceled_square_order_id text default null) returns text
+language plpgsql security definer set search_path='' as $$
+declare o public.orders;
+begin
+ select * into strict o from public.orders where id=p_order_id for update;
+ perform id from public.checkout_payment_attempts where order_id=o.id order by sequence for update;
+ if o.checkout_expiry_marked_at is null or o.expires_at>clock_timestamp() or not exists(
+   select 1 from public.inventory_reservations where order_id=o.id and status='active') then return 'unchanged'; end if;
+ if not o.checkout_attempt_guarded or o.checkout_financial_review is not null or o.status not in ('pending','canceled')
+  or coalesce(o.refund_amount,0)>0 or exists(select 1 from public.square_refunds where order_id=o.id)
+  or exists(select 1 from public.checkout_financial_facts where order_id=o.id and (kind='refund' or status='COMPLETED'))
+ then return 'review'; end if;
+ if o.square_order_id is distinct from p_canceled_square_order_id then return 'reconcile'; end if;
+ -- Neither an order cancellation nor a no-match cancel-by-key proves an
+ -- in-flight dispatch was unsuccessful. Check every sequence independently.
+ if exists(select 1 from public.checkout_payment_attempts a where a.order_id=o.id and (
+   (a.dispatched_at is null and a.provider_payment_id is null and a.state='canceled' and a.reason in ('expiry_not_dispatched','unused_method_changed')) or
+   (a.dispatched_at is not null and a.state='declined' and a.provider_payment_id is null and exists(
+     select 1 from public.checkout_payment_attempt_history h where h.attempt_id=a.id and h.state='declined'
+     and h.reason='verified_square_decline' and h.verified_facts->>'requestDigest'=a.request_digest)) or
+   (a.dispatched_at is not null and a.state in ('declined','canceled') and exists(
+     select 1 from public.checkout_financial_facts f where f.kind='payment' and f.order_id=o.id
+     and f.payment_id=a.provider_payment_id and f.amount_cents=a.amount_cents and f.currency=a.currency
+     and f.status=case a.state when 'declined' then 'FAILED' else 'CANCELED' end))
+  ) is not true) then return 'reconcile'; end if;
+ if o.payment_transaction_id is not null and not exists(select 1 from public.checkout_payment_attempts
+   where order_id=o.id and provider_payment_id=o.payment_transaction_id and state in ('declined','canceled'))
+ then return 'reconcile'; end if;
+ if checkout_preparation_private.release_ordered(o.id,'checkout_expired') then return 'released'; end if;
+ return 'unchanged';
+end;
+$$;
+revoke all on function public.mark_checkout_expiry(uuid),public.finish_checkout_expiry(uuid,text) from public,anon,authenticated;
+grant execute on function public.mark_checkout_expiry(uuid),public.finish_checkout_expiry(uuid,text) to service_role;
+create function public.sweep_checkout_recovery(p_limit integer) returns void
+language plpgsql security definer set search_path='' as $$
+declare candidate record;
+begin
+ if p_limit not between 1 and 50 or p_limit is null then raise exception 'invalid_recovery_sweep'; end if;
+ for candidate in
+  select o.id from public.orders o where not o.checkout_attempt_guarded and o.status='pending'
+   and not exists(select 1 from public.checkout_payment_attempts a where a.order_id=o.id)
+   and not exists(select 1 from public.checkout_recovery_jobs j where j.unique_key='legacy_payment_order:'||o.id)
+  order by o.created_at,o.id limit p_limit
+ loop perform public.enqueue_checkout_recovery('reconcile_payment','legacy_payment_order:'||candidate.id,clock_timestamp(),'legacy_inquiry',candidate.id); end loop;
+ for candidate in
+  select a.id,a.order_id from public.checkout_payment_attempts a where a.state<>'ready'
+   and not exists(select 1 from public.checkout_recovery_jobs j where j.unique_key='payment_attempt:'||a.id)
+  order by a.updated_at,a.id limit p_limit
+ loop perform public.enqueue_checkout_recovery('reconcile_payment','payment_attempt:'||candidate.id,clock_timestamp(),'payment_inquiry',candidate.order_id); end loop;
+ for candidate in
+  select o.id from public.orders o where o.expires_at<=clock_timestamp()
+  and exists(select 1 from public.inventory_reservations h where h.order_id=o.id and h.status='active')
+  and not exists(select 1 from public.checkout_recovery_jobs j where j.unique_key='expire_reservation:'||o.id)
+  order by o.expires_at,o.id limit p_limit
+ loop perform public.enqueue_checkout_recovery('expire_reservation','expire_reservation:'||candidate.id,clock_timestamp(),'reservation_expiring',candidate.id); end loop;
+ for candidate in
+  select e.square_event_id from public.square_webhook_events e where e.processed_at is null
+  and not exists(select 1 from public.checkout_recovery_jobs j where j.event_id=e.square_event_id)
+  order by e.received_at,e.square_event_id limit p_limit
+ loop
+  if candidate.square_event_id ~ '^[A-Za-z0-9._:=+-]{1,128}$' then
+   perform public.enqueue_checkout_recovery('square_event','square_event:'||candidate.square_event_id,clock_timestamp(),'receipt_pending',null,candidate.square_event_id);
+  else
+   -- Preserve an unprocessable historical identifier as an operator obligation.
+   insert into public.checkout_recovery_jobs(kind,unique_key,event_id,status,next_attempt_at,reason)
+   values('square_event','legacy_event_review:'||md5(candidate.square_event_id),candidate.square_event_id,'review',clock_timestamp(),'legacy_event_id_invalid')
+   on conflict do nothing;
+  end if;
+ end loop;
+end;
+$$;
+revoke all on function public.sweep_checkout_recovery(integer) from public,anon,authenticated;
+grant execute on function public.sweep_checkout_recovery(integer) to service_role;
 commit;

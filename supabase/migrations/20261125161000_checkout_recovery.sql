@@ -358,4 +358,87 @@ grant execute on function
   public.receive_checkout_square_event(text, text, text, jsonb)
 to service_role;
 
+create function public.oldest_checkout_recovery_due_ms() returns bigint language sql security invoker set search_path='' as $$
+ select coalesce(greatest(0, floor(1000*extract(epoch from clock_timestamp()-min(next_attempt_at)))),0)::bigint
+ from public.checkout_recovery_jobs where status='pending' and next_attempt_at<=clock_timestamp();
+$$;
+
+alter table public.checkout_notification_outbox
+ add column lease_token uuid, add column lease_expires_at timestamptz,
+ add column handoff_started_at timestamptz,
+ add column delivery_failures integer not null default 0,
+ add column smtp_reply integer check(smtp_reply between 400 and 599),
+ add column smtp_phase text check(smtp_phase in ('auth','mail_from','rcpt_to','data_command','data_final')),
+ drop constraint checkout_notification_outbox_status_check,
+ add constraint checkout_notification_outbox_status_check check(status in ('pending','processing','sent','failed','review'));
+update public.checkout_notification_outbox set delivery_failures=attempts where status='failed';
+
+create function public.claim_checkout_mail(p_limit integer,p_order_id uuid default null) returns jsonb
+language plpgsql security invoker set search_path='' as $$
+declare result jsonb;
+begin
+ if p_limit is null or p_limit not between 1 and 50 then raise exception 'invalid_mail_claim'; end if;
+ -- A legacy processing row has no handoff token. Treat a lost legacy sender as
+ -- ambiguous too. A persisted sent audit independently repairs either case.
+ with candidates as (
+  select n.id,exists(select 1 from public.email_audit_log e where e.notification_id=n.id and e.delivery_status='sent') sent
+  from public.checkout_notification_outbox n where (p_order_id is null or n.order_id=p_order_id) and (
+   (n.status='processing' and ((n.lease_token is null and n.updated_at<clock_timestamp()-interval '10 minutes') or
+     (n.handoff_started_at is not null and n.lease_expires_at<=clock_timestamp()))) or
+   (n.status='review' and exists(select 1 from public.email_audit_log e where e.notification_id=n.id and e.delivery_status='sent')))
+  order by n.updated_at,n.id limit p_limit for update of n skip locked
+ ) update public.checkout_notification_outbox n set status=case when c.sent then 'sent' else 'review' end,
+ lease_token=null,lease_expires_at=null,updated_at=clock_timestamp() from candidates c where c.id=n.id;
+ with due as (
+  select n.id from public.checkout_notification_outbox n where (p_order_id is null or n.order_id=p_order_id) and (
+   (n.status in ('pending','failed') and n.next_attempt_at<=clock_timestamp()) or
+   (n.status='processing' and n.handoff_started_at is null and n.lease_expires_at<=clock_timestamp()))
+  order by n.next_attempt_at,n.created_at,n.id limit p_limit for update skip locked
+ ), claimed as (
+  update public.checkout_notification_outbox n set status='processing',lease_token=gen_random_uuid(),
+   lease_expires_at=clock_timestamp()+interval '120 seconds',attempts=attempts+1,updated_at=clock_timestamp()
+  from due where n.id=due.id returning n.*
+ ) select coalesce(jsonb_agg(jsonb_build_object('id',id,'orderId',order_id,'leaseToken',lease_token,'kind',kind,'payload',payload)),'[]') into result from claimed;
+ return result;
+end;
+$$;
+create function public.begin_checkout_mail_handoff(p_id uuid,p_token uuid) returns boolean
+language plpgsql security invoker set search_path='' as $$
+begin
+ perform id from public.checkout_notification_outbox where id=p_id and lease_token=p_token for update;
+ if not found then return false; end if;
+ update public.checkout_notification_outbox set handoff_started_at=clock_timestamp()
+ where id=p_id and lease_token=p_token and lease_expires_at>clock_timestamp() and status='processing' and handoff_started_at is null;
+ return found;
+end;
+$$;
+create function public.finish_checkout_mail(p_id uuid,p_token uuid,p_outcome text,p_reply integer default null,p_phase text default null) returns boolean
+language plpgsql security invoker set search_path='' as $$
+begin
+ perform id from public.checkout_notification_outbox where id=p_id and lease_token=p_token for update;
+ if not found then return false; end if;
+ if p_outcome is null or p_outcome not in ('sent','retry','review','rejected','deferred') or
+  (p_outcome='rejected' and (p_reply is null or p_reply not between 400 and 599 or p_phase is null
+    or p_phase not in ('auth','mail_from','rcpt_to','data_command','data_final'))) or
+  (p_outcome<>'rejected' and (p_reply is not null or p_phase is not null)) then raise exception 'invalid_mail_finish'; end if;
+ update public.checkout_notification_outbox n set status=case
+  when exists(select 1 from public.email_audit_log e where e.notification_id=n.id and e.delivery_status='sent') then 'sent'
+  when p_outcome='sent' then 'sent'
+  when p_outcome='review' or (handoff_started_at is not null and p_outcome<>'rejected')
+    or (p_outcome in ('retry','rejected') and delivery_failures>=11) then 'review'
+  else 'failed' end,
+  delivery_failures=delivery_failures+case when p_outcome in ('retry','rejected') then 1 else 0 end,
+  handoff_started_at=case when p_outcome='rejected' then null else handoff_started_at end,
+  smtp_reply=coalesce(p_reply,smtp_reply),smtp_phase=coalesce(p_phase,smtp_phase),
+  next_attempt_at=clock_timestamp()+make_interval(secs=>least(300,5*power(2,least(attempts-1,6))*(1+random()/4))),
+  lease_token=null,lease_expires_at=null,updated_at=clock_timestamp()
+ where id=p_id and lease_token=p_token and lease_expires_at>clock_timestamp() and status='processing'
+  and (p_outcome<>'rejected' or handoff_started_at is not null);
+ return found;
+end;
+$$;
+revoke all on function public.oldest_checkout_recovery_due_ms(),public.claim_checkout_mail(integer,uuid),
+ public.begin_checkout_mail_handoff(uuid,uuid),public.finish_checkout_mail(uuid,uuid,text,integer,text) from public,anon,authenticated;
+grant execute on function public.oldest_checkout_recovery_due_ms(),public.claim_checkout_mail(integer,uuid),
+ public.begin_checkout_mail_handoff(uuid,uuid),public.finish_checkout_mail(uuid,uuid,text,integer,text) to service_role;
 commit;

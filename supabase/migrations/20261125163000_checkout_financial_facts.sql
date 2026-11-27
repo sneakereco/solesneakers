@@ -17,6 +17,10 @@ alter table public.checkout_financial_facts enable row level security;
 revoke all on public.checkout_financial_facts from public,anon,authenticated,service_role;
 grant select on public.checkout_financial_facts to service_role;
 
+-- A provider can independently corroborate receipt of money after the
+-- dispatch workflow ended in cancellation/decline, including the same opaque
+-- provider version. Keep the first capture and its original task-4 history.
+alter table public.checkout_payment_attempts add column terminal_capture jsonb;
 alter table public.orders add column checkout_financial_review text;
 update public.orders set checkout_financial_review=failure_reason
 where status='review' and failure_reason in ('square_payment_high_risk','square_payment_amount_mismatch','late_or_released_square_payment');
@@ -56,7 +60,7 @@ begin
     or o.square_order_id is distinct from a.square_order_id or a.square_order_id is null
     or (not o.checkout_attempt_guarded and o.payment_transaction_id is distinct from pay)
     or p_review is not null and p_review <> 'square_payment_high_risk'
-    or (k='payment' and obj is distinct from pay) or (st='COMPLETED' and a.state <> 'succeeded')
+    or (k='payment' and obj is distinct from pay) or (st='COMPLETED' and a.state <> 'succeeded' and a.terminal_capture is null)
     or (k='payment' and st='REJECTED') or (k='refund' and st in ('APPROVED','CANCELED'))
     then raise exception 'invalid_verified_financial_fact'; end if;
   review:=coalesce(o.checkout_financial_review,case when o.status='review' and o.failure_reason in
@@ -112,6 +116,9 @@ begin
     where f.order_id=o.id and f.kind='payment' and f.status='COMPLETED' and ledger.state='succeeded'
       and ledger.amount_cents=f.amount_cents and ledger.currency=f.currency
     group by f.payment_id,ledger.amount_cents
+    union all
+    select ledger.provider_payment_id, ledger.amount_cents, (ledger.terminal_capture->>'observedAt')::timestamptz
+    from public.checkout_payment_attempts ledger where ledger.order_id=o.id and ledger.terminal_capture is not null
   ) c;
   if capture_count>1 then review:=coalesce(review,'square_multiple_captures'); end if;
   select greatest(coalesce(sum(amount_cents),0),coalesce(o.refund_amount,0),
@@ -162,10 +169,45 @@ begin
     refunded_at=case when refunded>0 then coalesce(refunded_at,now()) else refunded_at end,
     failure_reason=coalesce(review,failure_reason),updated_at=now() where id=o.id;
   select count(*) into revision from public.checkout_financial_facts where order_id=o.id;
+  revision:=revision+(select count(*) from public.checkout_payment_attempts where order_id=o.id and terminal_capture is not null);
   return jsonb_build_object('orderId',o.id,'revision',revision::text,'capturedCents',captured,'refundedCents',refunded,
     'financialState',financial,'fulfillmentStatus',coalesce(o.fulfillment_status,'unfulfilled'),'reviewReason',review);
 end;
 $$;
+
+create function public.record_checkout_terminal_capture(p_attempt_id uuid,p_square_order_id text,p_reference_id text,
+ p_method text,p_fact jsonb,p_provider_time timestamptz) returns jsonb
+language plpgsql security definer set search_path='' as $$
+declare o public.orders; a public.checkout_payment_attempts; pay text:=p_fact->>'paymentId'; observed jsonb;
+begin
+ select * into strict o from public.orders where id=(p_fact->>'orderId')::uuid for update;
+ select * into strict a from public.checkout_payment_attempts where order_id=o.id and id=p_attempt_id for update;
+ if a.state not in ('declined','canceled') or p_provider_time is null or not isfinite(p_provider_time)
+  or p_square_order_id is null or a.square_order_id is distinct from p_square_order_id or o.square_order_id is distinct from p_square_order_id
+  or p_method is distinct from a.method or a.amount_cents is distinct from o.total*100 or o.currency is distinct from 'USD' or a.currency<>'USD'
+  or pay is null or pay !~ '^[A-Za-z0-9_-]{1,192}$' or (a.provider_payment_id is not null and a.provider_payment_id<>pay)
+  or (o.checkout_attempt_guarded and (a.dispatched_at is null or p_reference_id is distinct from a.id::text))
+  or (not o.checkout_attempt_guarded and (o.payment_transaction_id is distinct from pay or a.provider_payment_id is distinct from pay))
+  or p_fact->>'providerVersion' is null or length(p_fact->>'providerVersion') not between 1 and 256
+  or p_fact is distinct from jsonb_build_object('kind','payment','providerId',pay,'paymentId',pay,'orderId',o.id,
+    'providerVersion',p_fact->>'providerVersion','status','COMPLETED','amountCents',a.amount_cents,'currency','USD',
+    'expectedTotalCents',a.amount_cents,'fulfillmentStatus',p_fact->>'fulfillmentStatus')
+ then raise exception 'invalid_terminal_capture_binding'; end if;
+ observed:=p_fact||jsonb_build_object('observedAt',p_provider_time);
+ update public.checkout_payment_attempts set terminal_capture=coalesce(terminal_capture,observed),provider_payment_id=pay
+ where id=a.id;
+ if not exists(select 1 from public.checkout_payment_attempt_history where attempt_id=a.id
+   and reason='verified_terminal_capture' and verified_facts=observed) then
+  insert into public.checkout_payment_attempt_history(attempt_id,state,reason,verified_facts)
+  values(a.id,a.state,'verified_terminal_capture',observed);
+ end if;
+ update public.orders set checkout_financial_review=coalesce(checkout_financial_review,'square_terminal_capture_conflict')
+ where id=o.id;
+ return public.apply_checkout_financial_fact(p_fact,p_provider_time);
+end;
+$$;
+revoke all on function public.record_checkout_terminal_capture(uuid,text,text,text,jsonb,timestamptz) from public,anon,authenticated;
+grant execute on function public.record_checkout_terminal_capture(uuid,text,text,text,jsonb,timestamptz) to service_role;
 
 -- Consumers that repeat the historical consumption operation can observe only
 -- an already proven, consumed payment. First consumption belongs to projection.

@@ -10,6 +10,7 @@ import {
 const money = z.number().int().positive().max(2147483647);
 const providerId = financialFact.shape.providerId;
 const attempt = z.object({
+  terminal_capture: financialFact.safeExtend({ observedAt: z.string().min(1) }).nullish(),
   id: z.uuid(),
   sequence: z.number().int().positive(),
   order_id: z.uuid(),
@@ -141,6 +142,26 @@ function project(order: Order): ReceiptFinancialEvidence {
   }
   const versions = new Set<string>();
   const captures = new Map<string, number>();
+  let terminalCaptureCount = 0;
+  for (const a of attempts) {
+    const f = a.terminal_capture;
+    if (!f) continue;
+    if (
+      !review ||
+      !["declined", "canceled"].includes(a.state) ||
+      f.kind !== "payment" ||
+      f.status !== "COMPLETED" ||
+      f.orderId !== order.id ||
+      f.providerId !== a.provider_payment_id ||
+      f.paymentId !== a.provider_payment_id ||
+      f.amountCents !== a.amount_cents ||
+      f.expectedTotalCents !== expected ||
+      f.amountCents !== expected
+    )
+      return unavailable;
+    captures.set(f.paymentId, f.amountCents);
+    terminalCaptureCount++;
+  }
   const objectBindings = new Map<string, { payment: string; amount: number }>();
   const observedCompletedRefunds = new Set<string>();
   const terminal = new Map<string, string>();
@@ -175,7 +196,7 @@ function project(order: Order): ReceiptFinancialEvidence {
       terminal.set(id, f.status);
     }
     if (f.status === "COMPLETED") {
-      if (a.state !== "succeeded") return unavailable;
+      if (a.state !== "succeeded" && !a.terminal_capture) return unavailable;
       if (f.kind === "refund") observedCompletedRefunds.add(f.provider_id);
       if (f.kind === "payment" && a.amount_cents === f.amount_cents)
         captures.set(f.payment_id, a.amount_cents);
@@ -217,7 +238,8 @@ function project(order: Order): ReceiptFinancialEvidence {
       order.checkout_attempt_guarded &&
       (!binding ||
         binding.amount !== r.amount_cents ||
-        a?.state !== "succeeded" ||
+        !a ||
+        (a.state !== "succeeded" && !a.terminal_capture) ||
         r.amount_cents > a.amount_cents ||
         (!observedCompletedRefunds.has(r.square_refund_id) &&
           !r.checkout_status_conflict))
@@ -260,7 +282,7 @@ function project(order: Order): ReceiptFinancialEvidence {
     source: "ledger",
     snapshot: financialSnapshot.parse({
       orderId: order.id,
-      revision: String(facts.length),
+      revision: String(facts.length + terminalCaptureCount),
       capturedCents: captured,
       refundedCents: refunded,
       financialState:
@@ -286,7 +308,7 @@ export async function readOrderFinancialEvidence(
   const { data, error } = await admin
     .from("orders")
     .select(
-      "id,user_id,tenant_id,checkout_guest_context_hash,status,total,subtotal,shipping,tax_amount,fulfillment,fulfillment_status,pickup_instructions,updated_at,created_at,currency,refund_amount,checkout_financial_review,checkout_attempt_guarded,payment_transaction_id,square_order_id,facts:checkout_financial_facts(order_id,kind,provider_id,provider_version,payment_id,amount_cents,currency,status),factCount:checkout_financial_facts(count),attempts:checkout_payment_attempts(id,sequence,order_id,provider_payment_id,square_order_id,amount_cents,currency,state),attemptCount:checkout_payment_attempts(count),refunds:square_refunds(order_id,tenant_id,square_refund_id,square_payment_id,status,amount_cents,currency,checkout_status_conflict),refundCount:square_refunds(count)",
+      "id,user_id,tenant_id,checkout_guest_context_hash,status,total,subtotal,shipping,tax_amount,fulfillment,fulfillment_status,pickup_instructions,updated_at,created_at,currency,refund_amount,checkout_financial_review,checkout_attempt_guarded,payment_transaction_id,square_order_id,facts:checkout_financial_facts(order_id,kind,provider_id,provider_version,payment_id,amount_cents,currency,status),factCount:checkout_financial_facts(count),attempts:checkout_payment_attempts(id,sequence,order_id,provider_payment_id,square_order_id,amount_cents,currency,state,terminal_capture),attemptCount:checkout_payment_attempts(count),refunds:square_refunds(order_id,tenant_id,square_refund_id,square_payment_id,status,amount_cents,currency,checkout_status_conflict),refundCount:square_refunds(count)",
     )
     .eq("id", authorized.id)
     .maybeSingle();

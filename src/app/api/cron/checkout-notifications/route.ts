@@ -1,7 +1,8 @@
 import type { NextRequest } from "next/server";
 
-import { createCheckoutNotificationDependencies } from "@/lib/checkout/checkout-notification-dependencies";
-import { processCheckoutNotifications } from "@/lib/checkout/checkout-notification-worker";
+import { createCheckoutMailDrainDependencies } from "@/lib/checkout/checkout-notification-dependencies";
+import { recoverySettings } from "@/Modules/Checkout/Source/Features/Recovery/recovery-worker";
+import { drainNotifications } from "@/Modules/Checkout/Source/Features/Recovery/notification-drain";
 import { getCronSecret, isAuthorizedCronRequest } from "@/lib/http/cron-auth";
 import { getRequestIdFromHeaders } from "@/lib/http/request-id";
 import { createSupabaseAdminClient } from "@/lib/supabase/service-role";
@@ -20,9 +21,9 @@ export async function GET(request: NextRequest): Promise<Response> {
   }
 
   try {
-    const result = await processCheckoutNotifications(
-      createCheckoutNotificationDependencies(createSupabaseAdminClient()),
-      3,
+    const result = await drainNotifications(
+      recoverySettings,
+      createCheckoutMailDrainDependencies(createSupabaseAdminClient()),
     );
     return Response.json(
       { ...result, requestId },
