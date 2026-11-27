@@ -1076,8 +1076,18 @@ export async function withCheckoutProject(
     "boolean",
     "Expected a bootstrap ordering flag",
   );
+  const mark = (state, phase) => {
+    if (process.env.CHECKOUT_GATE_DIAGNOSTICS === "true") {
+      console.error(`CHECKOUT_FIXTURE_PHASE ${state} ${phase}`);
+    }
+  };
+  mark("start", "docker-access");
   const upstreamSocket = await localDockerSocket();
+  mark("done", "docker-access");
+  mark("start", "inventory");
   const inventory = await readMigrations();
+  mark("done", "inventory");
+  mark("start", "preflight");
   const workspace = await mkdtemp(join(tmpdir(), "checkout-hardening-"));
   const projectId = "checkout-hardening-test-" + randomBytes(7).toString("hex");
   const ownership = await claimProjectDirectory(workspace, projectId);
@@ -1085,6 +1095,8 @@ export async function withCheckoutProject(
   let verifyBootstrap;
   try {
     await assertUnusedProject(projectId);
+    mark("done", "preflight");
+    mark("start", "ports-config");
     const [port, apiPort, shadowPort] = await reservePorts();
     const directory = join(ownership.directory, "supabase");
     await mkdir(directory);
@@ -1103,6 +1115,8 @@ export async function withCheckoutProject(
       ].join("\n") + "\n",
       { flag: "wx" },
     );
+    mark("done", "ports-config");
+    mark("start", "docker-start");
     await withLoopbackPublishing(
       ownership,
       port,
@@ -1110,6 +1124,8 @@ export async function withCheckoutProject(
       (env) => supabaseCommand(ownership, ["db", "start"], env),
       resources,
     );
+    mark("done", "docker-start");
+    mark("start", "identity");
     const containerId = await inspectDatabase(ownership, port);
     const primary = resources.find(
       (resource) => resource.kind === "container" && resource.id === containerId,
@@ -1128,12 +1144,15 @@ export async function withCheckoutProject(
     const database = projectId.replaceAll("-", "_");
     const url = "postgresql://postgres:postgres@127.0.0.1:" + port + "/" + database;
     validateMutationTarget(url, { database, port });
+    mark("done", "identity");
+    mark("start", "clone");
     verifyBootstrap = await createMutationDatabase(
       url,
       database,
       containerId,
       verifyFailedClone,
     );
+    mark("done", "clone");
     const lease = {
       ownership,
       mode,
@@ -1144,16 +1163,21 @@ export async function withCheckoutProject(
       containerId,
       bootstrapBeforeCheckout,
     };
+    mark("start", "connect");
     const admin = await pg(url);
     try {
       assert.equal(
         (await admin.query("select current_database() as name")).rows[0].name,
         database,
       );
+      mark("done", "connect");
+      mark("start", "replay");
       await replay(admin, inventory, lease);
     } finally {
       await admin.end();
     }
+    mark("done", "replay");
+    mark("start", "test");
     await runTest({
       source: inventory.source,
       workingTree: inventory.workingTree,
@@ -1165,15 +1189,24 @@ export async function withCheckoutProject(
       childEnv: { [leaseKey]: JSON.stringify(lease) },
       withDatabase: (callback) => withAttachedFixture(lease, callback),
     });
+    mark("done", "test");
   } finally {
     try {
-      if (verifyBootstrap) await verifyBootstrap();
+      if (verifyBootstrap) {
+        mark("start", "bootstrap-cleanup");
+        await verifyBootstrap();
+        mark("done", "bootstrap-cleanup");
+      }
     } finally {
+      mark("start", "resources-cleanup");
       await removeCreatedDockerResources(ownership, resources, {
         receipt: onResourceReceipt,
       });
+      mark("done", "resources-cleanup");
+      mark("start", "directory-cleanup");
       await removeOwnedDirectory(ownership);
       await rmdir(workspace);
+      mark("done", "directory-cleanup");
     }
   }
 }

@@ -7,6 +7,7 @@ import { promisify } from "node:util";
 import {
   createCheckoutGate,
   rejectedStockDiagnostic,
+  reportCheckoutFixtureError,
 } from "../tests/fixtures/checkout-gate.mjs";
 import {
   localDockerSocket,
@@ -256,7 +257,6 @@ try {
       "--test",
       "src/Modules/Checkout/Tests/Features/Operations/request-barrier.test.mjs",
       "tests/database/checkout-hardening-docker-relay.test.mjs",
-      "tests/fixtures/checkout-gate.test.mjs",
     ]);
     for (const mode of ["fresh", "populated"]) {
       const env = {
@@ -300,6 +300,7 @@ try {
     checkTestResult(result);
   }
 } catch (error) {
+  reportCheckoutFixtureError(error);
   console.error(scrub(error.message));
   process.exitCode = 1;
 }
