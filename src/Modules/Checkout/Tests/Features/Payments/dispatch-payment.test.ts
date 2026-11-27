@@ -1,3 +1,5 @@
+import { CheckoutPaymentAttemptRepository } from "../../../Source/Features/Payments/attempt-repository";
+import { summarizeCheckoutEvents } from "../../../Source/Features/Operations/request-metrics";
 import { SquarePaymentsGateway } from "@/lib/square/payments";
 import type { DirectPaymentInput } from "@/lib/square/payments";
 import { createDirectPaymentHandler } from "@/lib/checkout/create-direct-payment";
@@ -425,5 +427,39 @@ it.each(["COMPLETED", "FAILED", "CANCELED"])(
     ).toBe("observe");
     expect(create).toHaveBeenCalledTimes(1);
     expect(f.deps.save).not.toHaveBeenCalled();
+  },
+);
+
+it.each([
+  ["checkout_gateway_limited", "quota"],
+  ["checkout_dispatch_paused", "paused"],
+])(
+  "emits authoritative %s separately from preflight and SDK calls",
+  async (message, reason) => {
+    const f = setup(),
+      lines: string[] = [];
+    const record = (line: string) => {
+      lines.push(line);
+    };
+    const sinks = [
+      jest.spyOn(console, "info").mockImplementation(record),
+      jest.spyOn(console, "warn").mockImplementation(record),
+    ];
+    const repo = new CheckoutPaymentAttemptRepository({
+      rpc: jest.fn().mockResolvedValue({ data: null, error: { code: "P0001", message } }),
+    } as never);
+    try {
+      const result = await dispatchPayment(
+        { permit, sourceId: "local" },
+        { ...f.deps, beginDispatch: (i) => repo.beginDispatch(i) },
+      );
+      expect(result.kind).toBe("not_submitted");
+      expect(f.deps.createPayment).not.toHaveBeenCalled();
+      const metrics = summarizeCheckoutEvents(lines.map((line) => JSON.parse(line)));
+      expect(metrics.admission["authority.gateway_attempt.denied." + reason]).toBe(1);
+      expect(metrics.gateway.calls).toBe(0);
+    } finally {
+      for (const sink of sinks) sink.mockRestore();
+    }
   },
 );

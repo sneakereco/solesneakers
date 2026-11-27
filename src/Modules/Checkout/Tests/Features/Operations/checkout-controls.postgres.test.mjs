@@ -77,6 +77,131 @@ test("checkout controls, committed dispatches and verified declines", async (t) 
         );
 
       await t.test(
+        "a failed sink preserves the committed claim, installed SDK invocation and slot cleanup; authority denials and observers spend no additional calls",
+        async () => {
+          const {
+            CheckoutPaymentAttemptRepository,
+          } = require("../../../Source/Features/Payments/attempt-repository.ts");
+          const {
+            SquarePaymentsGateway,
+          } = require("../../../../../../src/lib/square/payments.ts");
+          const { SquareClient } = require("square");
+          const {
+            summarizeCheckoutEvents,
+          } = require("../../../Source/Features/Operations/request-metrics.ts");
+          const rows = [],
+            original = console.info,
+            warn = console.warn;
+          const transport = {
+            rpc: async (name, params) => {
+              try {
+                return {
+                  data: await rpc(reader, name, Object.values(params)),
+                  error: null,
+                };
+              } catch (error) {
+                return { data: null, error };
+              }
+            },
+          };
+          const leases = new CheckoutDependencyLeaseRepository(transport, null),
+            attempts = new CheckoutPaymentAttemptRepository(transport);
+          const o = await held(await seedOrder()),
+            a = await issue(o);
+          const input = {
+            attemptId: a.id,
+            ownerBinding: o.owner,
+            requestDigest: "a".repeat(64),
+            sourceDigest: "b".repeat(64),
+          };
+          let calls = 0;
+          const client = new SquareClient({
+            token: "local-fixture",
+            maxRetries: 0,
+            logging: { silent: true },
+            fetch: async () => {
+              calls++;
+              const actual = (
+                await writer.query(
+                  "select state,(select count(*)::int from checkout_dependency_leases where lease_token is not null) slots from checkout_payment_attempts where id=$1",
+                  [a.id],
+                )
+              ).rows[0];
+              assert.deepEqual(actual, { state: "dispatch_started", slots: 1 });
+              return Response.json({
+                payment: {
+                  id: "p-local",
+                  reference_id: a.id,
+                  order_id: o.sq,
+                  status: "COMPLETED",
+                  source_type: "CARD",
+                  amount_money: { amount: 1000, currency: "USD" },
+                  location_id: "local",
+                },
+              });
+            },
+          });
+          const gateway = new SquarePaymentsGateway(client.payments, "local");
+          try {
+            await flags(false, true);
+            console.info = console.warn = (line) => rows.push(JSON.parse(line));
+            await assert.rejects(attempts.beginDispatch(input), {
+              message: "checkout_dispatch_paused",
+            });
+            assert.equal(calls, 0);
+            await flags(false, false);
+            console.info = (line) => {
+              rows.push(JSON.parse(line));
+              throw Error("synthetic_sink_failure");
+            };
+            const lease = await leases.acquireDependencyLease({
+              dependency: "square",
+              limit: 1,
+              leaseSeconds: 120,
+            });
+            assert.ok(lease);
+            try {
+              const winner = await attempts.beginDispatch(input);
+              assert.equal(winner.kind, "dispatch");
+              await gateway.create({
+                attemptId: a.id,
+                localOrderId: o.id,
+                squareOrderId: o.sq,
+                method: "card",
+                sourceId: "fixture",
+                idempotencyKey: a.squareIdempotencyKey,
+                totalCents: 1000,
+                billingAddress: null,
+                shippingAddress: null,
+              });
+              assert.equal((await attempts.beginDispatch(input)).kind, "observe");
+            } finally {
+              await leases.releaseDependencyLease(lease);
+            }
+            assert.equal(calls, 1);
+            assert.equal(
+              (
+                await writer.query(
+                  "select count(*)::int n from checkout_dependency_leases where lease_token is not null",
+                )
+              ).rows[0].n,
+              0,
+            );
+            const summary = summarizeCheckoutEvents(rows);
+            assert.equal(summary.gateway.calls, 1);
+            assert.deepEqual(summary.admission, {
+              "authority.gateway_attempt.denied.paused": 1,
+              "authority.gateway_attempt.allowed": 1,
+              "authority.gateway_attempt.observed": 1,
+            });
+          } finally {
+            console.info = original;
+            console.warn = warn;
+            await flags(false, false);
+          }
+        },
+      );
+      await t.test(
         "committed pause wins against an already-issued ready permit",
         async () => {
           const o = await held(),

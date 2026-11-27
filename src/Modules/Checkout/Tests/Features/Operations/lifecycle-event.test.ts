@@ -70,7 +70,12 @@ it("reports request percentiles, failures, actual gateway calls and admission wi
   const summary = summarizeCheckoutEvents([
     ...rows,
     { event: "checkout_gateway_call", orderId },
-    { event: "checkout_admission", operation: "new_prepare", outcome: "denied" },
+    {
+      event: "checkout_admission",
+      admissionPhase: "preflight",
+      operation: "new_prepare",
+      outcome: "denied",
+    },
   ]);
   expect(summary.requests["/api/checkout/pay"]).toEqual({
     count: 100,
@@ -79,7 +84,49 @@ it("reports request percentiles, failures, actual gateway calls and admission wi
     p99Ms: 99,
   });
   expect(summary.gateway).toEqual({ calls: 1, distinctOrders: 1, maxCallsPerOrder: 1 });
-  expect(summary.admission["new_prepare.denied"]).toBe(1);
+  expect(summary.admission["preflight.new_prepare.denied"]).toBe(1);
   expect(JSON.stringify(summary)).not.toContain(orderId);
   expect(JSON.stringify(summary)).not.toContain(requestId);
+});
+
+it("keeps the original response and exception when the real sink or correlation accessor throws", async () => {
+  const { observeCheckoutRequest } = await import(
+    "../../../Source/Features/Operations/request-metrics"
+  );
+  const original = Error("original_handler_failure"),
+    res = new Response(null, { status: 202 });
+  jest.spyOn(console, "info").mockImplementation(() => {
+    throw Error("local_sink_unavailable");
+  });
+  await expect(
+    observeCheckoutRequest("/api/checkout/pay", "POST", requestId, () =>
+      Promise.resolve(res),
+    ),
+  ).resolves.toBe(res);
+  await expect(
+    observeCheckoutRequest("/api/checkout/pay", "POST", requestId, () =>
+      Promise.reject(original),
+    ),
+  ).rejects.toBe(original);
+  await expect(
+    observeCheckoutRequest(
+      "/api/checkout/pay",
+      "POST",
+      requestId,
+      () => Promise.resolve(res),
+      () => {
+        throw Error("correlation_failure");
+      },
+    ),
+  ).resolves.toBe(res);
+  const entry = {
+    level: "info" as const,
+    layer: "api" as const,
+    message: "checkout_request",
+    get route(): string {
+      throw Error("unavailable log field");
+    },
+  };
+  expect(() => log(entry)).not.toThrow();
+  expect(() => logError(original, entry)).not.toThrow();
 });

@@ -47,7 +47,6 @@ export async function GET(
           );
         }
 
-        correlatedOrderId = paramsParsed.data.orderId;
         const tokenParam = request.nextUrl.searchParams.get("token");
 
         const queryParsed = querySchema.safeParse({
@@ -80,6 +79,8 @@ export async function GET(
           userId,
           accessToken,
         );
+
+        correlatedOrderId = status.id;
 
         if (queryParsed.data.reconcile === "1" && status.status === "pending") {
           try {

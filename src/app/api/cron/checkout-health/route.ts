@@ -2,6 +2,7 @@ import { createHash } from "node:crypto";
 import { checkoutAdmissionBudgets } from "@/Modules/Checkout/Source/Features/Operations/admission";
 import {
   readDatabaseCheckoutHealth,
+  alertOrderReference,
   checkoutAlerts,
 } from "@/Modules/Checkout/Source/Features/Operations/health-snapshot";
 import { getCronSecret, isAuthorizedCronRequest } from "@/lib/http/cron-auth";
@@ -17,23 +18,27 @@ export async function GET(request: Request) {
     const alerts = checkoutAlerts(health);
     const budgets = checkoutAdmissionBudgets;
     if (!budgets) alerts.push("foreground_admission_unconfigured");
-    for (const alert of alerts)
+    const alertOrderIds: Record<string, string> = {};
+    for (const alert of alerts) {
+      const orderId = alertOrderReference(health, alert);
+      if (orderId) alertOrderIds[alert] = orderId;
       log({
         alert,
         level: "warn",
         layer: "observability",
         message: "checkout_alert",
         route: "/api/cron/checkout-health",
-        orderId: alert === "manual_review" ? health.reviewOrderId : undefined,
+        orderId,
         outcome: "degraded",
       });
-    const { reviewOrderId, ...metrics } = health;
+    }
+    const { reviewOrderId, alertOrderIds: _candidates, ...metrics } = health;
     return Response.json(
       {
         status: alerts.length ? "degraded" : "healthy",
         alerts,
         metrics,
-        correlation: { reviewOrderId },
+        correlation: { reviewOrderId, alertOrderIds },
         runbook: "docs/operations/checkout-hardening-runbook.md",
         admission: budgets
           ? {

@@ -2,6 +2,7 @@ import type { CheckoutAdmissionBudgets } from "../../../Source/Features/Operatio
 import {
   readCheckoutHealth,
   checkoutAlerts,
+  alertOrderReference,
 } from "../../../Source/Features/Operations/health-snapshot";
 import { GET } from "@/app/api/cron/checkout-health/route";
 import { createSupabaseAdminClient } from "@/lib/supabase/service-role";
@@ -19,6 +20,7 @@ const base = {
   mailLastSeenAt: observedAt,
   oldestUnknownMs: 1200000,
   oldestDueMs: 0,
+  oldestOrderBoundDueMs: 0,
   expiredHoldLagMs: 0,
   oldestNotificationMs: 0,
   reviewCount: 1,
@@ -36,6 +38,7 @@ const base = {
   pauseNewCheckouts: false,
   pausePaymentDispatch: false,
   reviewOrderId: "20000000-0000-4000-8000-000000000002",
+  alertOrderIds: { old_unknown: "20000000-0000-4000-8000-000000000003" },
 };
 
 it("a missing recovery heartbeat and a synthetic blocked review job degrade health", async () => {
@@ -81,12 +84,24 @@ it("protects details and degrades invalid data or unavailable DB without healthy
         "foreground_admission_unconfigured",
         "manual_review",
       ]),
-      correlation: { reviewOrderId: base.reviewOrderId },
+      correlation: {
+        reviewOrderId: base.reviewOrderId,
+        alertOrderIds: {
+          old_unknown: base.alertOrderIds.old_unknown,
+          manual_review: base.reviewOrderId,
+        },
+      },
       admission: {
         foreground: "unavailable",
         recoveryProviderCaps: { square: 4, shippo: 4, smtp: 4 },
       },
     });
+    expect(warning.mock.calls.map(([line]) => JSON.parse(line))).toContainEqual(
+      expect.objectContaining({
+        alert: "old_unknown",
+        orderId: base.alertOrderIds.old_unknown,
+      }),
+    );
     expect(
       warning.mock.calls.some(([line]) => JSON.parse(line).alert === "manual_review"),
     ).toBe(true);
@@ -134,4 +149,21 @@ it("protects details and degrades invalid data or unavailable DB without healthy
     if (secret === undefined) delete process.env.CRON_SECRET;
     else process.env.CRON_SECRET = secret;
   }
+});
+
+it("does not associate a young local job with an overdue unbound inbox job", async () => {
+  const old = await readCheckoutHealth({
+    read: () =>
+      Promise.resolve({
+        ...base,
+        oldestDueMs: 400000,
+        oldestOrderBoundDueMs: 1000,
+        alertOrderIds: { overdue_recovery: base.reviewOrderId },
+      }),
+  });
+  expect(checkoutAlerts(old)).toContain("overdue_recovery");
+  expect(alertOrderReference(old, "overdue_recovery")).toBeNull();
+  expect(
+    alertOrderReference({ ...old, oldestOrderBoundDueMs: 350000 }, "overdue_recovery"),
+  ).toBe(base.reviewOrderId);
 });

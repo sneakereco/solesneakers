@@ -35,6 +35,16 @@ export async function readCurrentPaymentAttempt(
   return row.data;
 }
 
+function dispatchDenial(message: string) {
+  switch (message) {
+    case "checkout_gateway_limited":
+      return "quota";
+    case "checkout_dispatch_paused":
+      return "paused";
+    case "checkout_order_not_payable":
+      return "not_payable";
+  }
+}
 export class CheckoutPaymentAttemptRepository {
   constructor(private readonly client: Pick<AdminSupabaseClient, "rpc">) {}
 
@@ -76,7 +86,19 @@ export class CheckoutPaymentAttemptRepository {
       p_request_digest: requestDigest,
       p_source_digest: sourceDigest,
     });
-    if (error) throw error;
+    if (error) {
+      const reason = error.code === "P0001" ? dispatchDenial(error.message) : undefined;
+      log({
+        level: "warn",
+        layer: "repository",
+        message: "checkout_admission",
+        operation: "gateway_attempt",
+        admissionPhase: "authority",
+        outcome: reason ? "denied" : "unavailable",
+        denialReason: reason,
+      });
+      throw error;
+    }
     const decision = dispatchDecisionSchema.safeParse(data);
     if (
       !decision.success ||
@@ -93,6 +115,14 @@ export class CheckoutPaymentAttemptRepository {
       attemptId,
       state: decision.data.attempt.state,
       outcome: decision.data.kind,
+    });
+    log({
+      level: "info",
+      layer: "repository",
+      message: "checkout_admission",
+      operation: "gateway_attempt",
+      admissionPhase: "authority",
+      outcome: decision.data.kind === "dispatch" ? "allowed" : "observed",
     });
     return decision.data;
   }

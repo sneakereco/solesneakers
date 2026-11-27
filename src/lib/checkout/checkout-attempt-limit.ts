@@ -39,6 +39,7 @@ async function observeAdmission(
       level: "info",
       layer: "service",
       message: "checkout_admission",
+      admissionPhase: "preflight",
       operation,
       outcome: result.allowed ? "allowed" : "denied",
     });
@@ -48,6 +49,7 @@ async function observeAdmission(
       level: "warn",
       layer: "service",
       message: "checkout_admission",
+      admissionPhase: "preflight",
       operation,
       outcome: "unavailable",
     });

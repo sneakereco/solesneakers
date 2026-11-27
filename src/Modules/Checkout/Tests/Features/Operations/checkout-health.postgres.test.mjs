@@ -9,7 +9,7 @@ require("tsx/cjs");
 test("checkout operating health in the disposable database", async (t) => {
   await withCheckoutDatabase(
     process.env.CHECKOUT_LEDGER_MODE ?? "fresh",
-    async ({ admin, connect, seedOrder }) => {
+    async ({ admin, connect, seedOrder, seedCatalog, populated }) => {
       const service = await connect("service_role");
       const { orderId } = await seedOrder();
       async function rpc(expression, values = []) {
@@ -39,6 +39,55 @@ test("checkout operating health in the disposable database", async (t) => {
               health.activeConnections > 0,
           );
           assert.ok(!checkoutAlerts(health).includes("missing_heartbeat"));
+        },
+      );
+      await t.test(
+        "distinct trusted orders correlate unknown, pending, expired hold, overdue work, mail and lost mail lease independently of review rows",
+        async () => {
+          const owners = {};
+          for (const kind of [
+            "old_unknown",
+            "old_pending",
+            "overdue_hold",
+            "overdue_recovery",
+            "overdue_mail",
+            "expired_lease",
+          ])
+            owners[kind] = (await seedOrder()).orderId;
+          for (const [kind, state] of [
+            ["old_unknown", "unknown"],
+            ["old_pending", "pending"],
+          ]) {
+            await admin.query(
+              "insert into checkout_payment_attempts(order_id,sequence,state,method,amount_cents,currency,owner_key,dispatched_at,request_digest,source_digest) values ($1,1,$2,'card',100,'USD','fixture',now()-interval '2 days',repeat('a',64),repeat('b',64))",
+              [owners[kind], state],
+            );
+          }
+          const { variantId } = await seedCatalog({ stock: 1 });
+          await admin.query(
+            "insert into inventory_reservations(order_id,tenant_id,variant_id,quantity,expires_at) select id,tenant_id,$2,1,now()-interval '2 days' from orders where id=$1",
+            [owners.overdue_hold, variantId],
+          );
+          await admin.query(
+            "insert into checkout_recovery_jobs(kind,unique_key,order_id,next_attempt_at) values ('reconcile_payment',$2,$1,now()-interval '2 days')",
+            [owners.overdue_recovery, randomUUID()],
+          );
+          for (const kind of ["overdue_mail", "expired_lease"])
+            await admin.query(
+              "insert into checkout_notification_outbox(order_id,tenant_id,kind,event_key,created_at,status,lease_token,lease_expires_at) select id,tenant_id,'order_confirmation',$2,now()-make_interval(days=>$3),'processing',$4,$5 from orders where id=$1",
+              [
+                owners[kind],
+                randomUUID(),
+                kind === "overdue_mail" ? 3 : 1,
+                randomUUID(),
+                new Date(Date.now() + (kind === "expired_lease" ? -60000 : 60000)),
+              ],
+            );
+          const sql = await rpc("read_checkout_health()");
+          assert.equal(sql.reviewCount, populated ? 1 : 0);
+          assert.equal(sql.reviewOrderId, populated?.legacyReview.orderId ?? null);
+          assert.ok(!Object.values(owners).includes(sql.reviewOrderId));
+          assert.deepEqual(sql.alertOrderIds, owners);
         },
       );
       await t.test(

@@ -307,6 +307,8 @@ function safeFields(v: Record<string, unknown>) {
       v.alert,
     ),
     phase: member(["load", "create", "attach", "tokenize"] as const, v.phase),
+    admissionPhase: member(["preflight", "authority"] as const, v.admissionPhase),
+    denialReason: member(["quota", "paused", "not_payable"] as const, v.denialReason),
     operation: member(operations, v.operation),
     outcome: member(outcomes, v.outcome),
   };

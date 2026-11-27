@@ -214,17 +214,18 @@ describe("Phase A measurement client", () => {
     ).toBeNull();
   });
 
-  it("captures only typed events after explicit initialization, without breaking on failure", () => {
+  it("keeps optional identity, attribution and transport off without verified current shopper consent", () => {
     process.env.NEXT_PUBLIC_POSTHOG_ENABLED = "true";
     process.env.NEXT_PUBLIC_MEASUREMENT_ENVIRONMENT = "staging";
     process.env.NEXT_PUBLIC_POSTHOG_PROJECT_KEY = `phc_${"a".repeat(24)}`;
     process.env.NEXT_PUBLIC_POSTHOG_HOST = "https://us.i.posthog.com";
-    const storage = new Map<string, string>();
+    const getItem = jest.fn(),
+      setItem = jest.fn();
     const browser = {
       location: new URL("https://www.solesneakersnc.com/store"),
       sessionStorage: {
-        getItem: (key: string) => storage.get(key) ?? null,
-        setItem: (key: string, value: string) => storage.set(key, value),
+        getItem,
+        setItem,
       },
     };
     Object.defineProperty(globalThis, "window", {
@@ -242,62 +243,16 @@ describe("Phase A measurement client", () => {
         "https://soles-stg.vercel.app/store?utm_source=Google&token=sensitive",
       );
       initializeMeasurement();
-      expect(init).toHaveBeenCalledWith(
-        expect.any(String),
-        expect.objectContaining({
-          autocapture: false,
-          capture_pageview: false,
-          capture_pageleave: false,
-          disable_session_recording: true,
-          disable_surveys: true,
-          advanced_disable_flags: true,
-          save_referrer: false,
-          save_campaign_params: false,
-          before_send: expect.any(Function),
-        }),
-      );
-      expect([...storage.values()].join(" ")).not.toContain("sensitive");
       captureStorefrontViewed();
-      expect(capture).toHaveBeenCalledWith(
-        "storefront_viewed",
-        expect.objectContaining({
-          storefront: "sole",
-          environment: "staging",
-          schema_version: 1,
-          pathname: "/store",
-          utm_source: "google",
-          referrer_host: "search.example.org",
-        }),
-      );
-      browser.location.pathname = `/store/${productId}`;
+      browser.location.pathname = "/store/" + productId;
       captureProductViewed(productId);
       captureProductAddedToCart(productId, variantId);
-      expect(capture).toHaveBeenCalledWith(
-        "product_viewed",
-        expect.objectContaining({
-          product_id: productId,
-        }),
-      );
-      expect(capture).toHaveBeenCalledWith(
-        "product_added_to_cart",
-        expect.objectContaining({
-          product_id: productId,
-          variant_id: variantId,
-          quantity: 1,
-        }),
-      );
       browser.location.pathname = "/checkout";
       captureCheckoutStarted();
-      expect(capture).toHaveBeenCalledWith(
-        "checkout_started",
-        expect.objectContaining({
-          pathname: "/checkout",
-        }),
-      );
-      capture.mockImplementationOnce(() => {
-        throw new Error("SDK unavailable");
-      });
-      expect(() => captureCheckoutStarted()).not.toThrow();
+      expect(init).not.toHaveBeenCalled();
+      expect(capture).not.toHaveBeenCalled();
+      expect(getItem).not.toHaveBeenCalled();
+      expect(setItem).not.toHaveBeenCalled();
     } finally {
       delete (globalThis as { window?: Window }).window;
       delete (globalThis as { document?: Document }).document;

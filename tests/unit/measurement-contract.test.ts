@@ -143,3 +143,29 @@ describe("safe source extraction", () => {
     ).toEqual({ referrer_host: "ref.example.com" });
   });
 });
+
+it("removes UUID-shaped payment permits from extracted and final attribution", () => {
+  const permit = "ba6ce9ab-4aa2-40aa-8514-d5ecd17392f3";
+  for (const key of [
+    "utm_source",
+    "utm_medium",
+    "utm_campaign",
+    "utm_content",
+    "utm_term",
+  ]) {
+    const extracted = extractSafeAttribution(
+      "https://shop.invalid/checkout?" + key + "=" + permit,
+      "",
+    );
+    expect(JSON.stringify(extracted)).not.toContain(permit);
+    const event = sanitizeMeasurementEvent("checkout_started", {
+      environment: "staging",
+      storefront: "sole",
+      schema_version: 1,
+      pathname: "/checkout",
+      [key]: permit,
+    });
+    expect(event).not.toBeNull();
+    expect(JSON.stringify(event)).not.toContain(permit);
+  }
+});

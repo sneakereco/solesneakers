@@ -42,6 +42,7 @@ const EVENT_NAMES: readonly MeasurementEventName[] = [
   "checkout_started",
 ];
 const UUID = /^[0-9a-f]{8}-[0-9a-f]{4}-[1-5][0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$/i;
+const CREDENTIAL_UUID = /[a-f0-9]{8}-(?:[a-f0-9]{4}-){3}[a-f0-9]{12}/i;
 const SAFE_SLUG = /^[a-z0-9][a-z0-9_-]{0,63}$/i;
 const ATTRIBUTION_KEYS = [
   "utm_source",
@@ -67,6 +68,7 @@ function safeSlug(value: unknown): string | null {
   }
   // Reject token-like high-entropy strings and obvious credential labels.
   if (
+    CREDENTIAL_UUID.test(value) ||
     /[a-z0-9]{24,}/i.test(value) ||
     /(?:token|secret|password|auth|session|key)/i.test(value)
   ) {
@@ -76,7 +78,7 @@ function safeSlug(value: unknown): string | null {
 }
 
 function safeReferrerHost(value: unknown): string | null {
-  if (typeof value !== "string" || value.length > 253) {
+  if (typeof value !== "string" || CREDENTIAL_UUID.test(value) || value.length > 253) {
     return null;
   }
   const host = value.toLowerCase();

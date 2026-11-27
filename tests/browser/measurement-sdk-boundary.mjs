@@ -1,7 +1,6 @@
 // Run: node tests/browser/measurement-sdk-boundary.mjs
 // Uses the installed PostHog SDK and intercepts its real browser transport.
 import assert from "node:assert/strict";
-import { gunzipSync } from "node:zlib";
 import { build } from "esbuild";
 import { chromium } from "playwright";
 
@@ -19,12 +18,13 @@ const bundle = await build({
       import { CartProvider, useCart } from "./src/components/cart/CartProvider";
       import { CheckoutClient } from "./src/components/checkout/CheckoutClient";
       import {
+        filterOutgoingEvent,
         captureCheckoutStarted,
         initializeMeasurement,
       } from "./src/lib/measurement/client";
 
       const test = window.measurementSdkBoundaryTest = {
-        boundaryEvent: null,
+        initCalls: 0, captureCalls: 0,
         complete: false,
       };
       const pause = () => new Promise(resolve => setTimeout(resolve, 60));
@@ -67,57 +67,19 @@ const bundle = await build({
           isApprovedMeasurementHostname("soles-pro-preview.vercel.app", "production"),
         ];
         const originalInit = posthog.init.bind(posthog);
-        posthog.init = (...args) => {
-          try {
-            return originalInit(...args);
-          } catch (error) {
-            test.initError = String(error?.stack || error);
-            throw error;
-          }
-        };
+        posthog.init = (...args) => { test.initCalls++; return originalInit(...args); };
+        const originalCapture = posthog.capture.bind(posthog);
+        posthog.capture = (...args) => {test.captureCalls++; return originalCapture(...args);};
+        await import("./src/instrumentation-client");
         initializeMeasurement();
-        test.posthogConfig = {
-          token: posthog.config.token,
-          apiHost: posthog.config.api_host,
-          beforeSendType: typeof posthog.config.before_send,
-          loaded: posthog.__loaded,
-        };
-        const originalBeforeSend = posthog.config.before_send;
-        posthog.set_config({
-          before_send: (event) => {
-            test.beforeSendInput = event;
-            const result = originalBeforeSend(event);
-            test.beforeSendResult = result;
-            return result;
-          },
-        });
-        posthog.set_config({
-          request_batching: false,
-          disable_compression: true,
-          // Headless Playwright identifies as automation, which PostHog filters as a bot.
-          // Disable that SDK guard only in this harness so the real send boundary executes.
-          opt_out_useragent_filter: true,
-        });
-        posthog.on("eventCaptured", (payload) => {
-          if (payload.event === "checkout_started") {
-            test.boundaryEvent = payload;
-          }
-        });
         captureCheckoutStarted();
-
-        for (let attempt = 0; attempt < 50 && !test.boundaryEvent; attempt += 1) {
-          await pause();
-        }
-        if (!test.boundaryEvent) {
-          throw new Error("installed SDK did not accept checkout_started");
-        }
-
-        const originalCapture = posthog.capture;
-        posthog.capture = () => {
-          test.failedCaptures = (test.failedCaptures || 0) + 1;
-          throw new Error("simulated SDK transport failure");
-        };
-
+        const permit = new URL(location.href).searchParams.get("utm_source");
+        const key = process.env.NEXT_PUBLIC_POSTHOG_PROJECT_KEY;
+        const filtered = filterOutgoingEvent({event:"checkout_started",properties:{
+          token:key,distinct_id:"01990f14-c5f9-7bc8-9d22-f560a81f2381",$session_id:"01990f14-c5f9-7bc8-9d22-f560a81f2382",
+          storefront:"sole",environment:"staging",schema_version:1,pathname:"/checkout",utm_source:permit,
+        }},key,"staging");
+        test.credentialRemoved = Boolean(permit && filtered && !JSON.stringify(filtered).includes(permit));
         const rootElement = document.getElementById("root");
         let root = createRoot(rootElement);
         history.replaceState(null, "", "/store/" + productId);
@@ -156,6 +118,7 @@ const bundle = await build({
         }
 
         test.finalCart = JSON.parse(sessionStorage.getItem("rdk_cart_session") || "[]");
+        test.storageTouches = window.optionalStorageTouches;
         posthog.capture = originalCapture;
         test.complete = true;
       })().catch(error => {
@@ -182,6 +145,7 @@ const bundle = await build({
       name: "measurement-sdk-test-boundaries",
       setup(builder) {
         const mocks = new Map([
+          ["botid/client/core", "export const initBotId=()=>{};"],
           [
             "next/navigation",
             "export const useRouter = () => ({ push() {} }); export const usePathname = () => window.location.pathname;",
@@ -220,7 +184,7 @@ const bundle = await build({
             `
               export const getOrCreateCheckoutDeviceSessionId = () => "device";
               export const useProcessingCredential=()=>undefined; export const useCheckoutRegistration=()=>undefined; export const capturePreparedAttempt=()=>{throw Error("unexpected prepare")};
-              export const readGuestOrderAccess=()=>null;
+              export const readGuestOrderAccess=()=>null; export const needsOriginalRecovery=()=>false; export const recoverOriginalOrder=()=>{throw Error("unexpected recovery")};
             `,
           ],
           [
@@ -261,23 +225,21 @@ try {
   const errors = [];
   const transportRequests = [];
   page.on("pageerror", (error) => errors.push(error.stack ?? error.message));
-  await page.route("https://us.i.posthog.com/**", async (route) => {
-    const bytes = route.request().postDataBuffer();
-    const postData = (
-      bytes?.[0] === 0x1f && bytes?.[1] === 0x8b ? gunzipSync(bytes) : bytes
-    )?.toString("utf8");
-    let payload = null;
-    try {
-      payload = postData ? JSON.parse(postData) : null;
-    } catch {
-      // A non-JSON request cannot satisfy the explicit checkout event assertion below.
+  await page.route("**/*", (route) => route.abort());
+  await page.addInitScript(() => {
+    window.optionalStorageTouches = [];
+    for (const method of ["getItem", "setItem", "removeItem"]) {
+      const original = Storage.prototype[method];
+      Storage.prototype[method] = function (key, ...args) {
+        if (/posthog|^ph_|phase_a_attribution/i.test(String(key)))
+          window.optionalStorageTouches.push(method);
+        return original.call(this, key, ...args);
+      };
     }
-    transportRequests.push({
-      method: route.request().method(),
-      url: route.request().url(),
-      payload,
-    });
-    await route.fulfill({ status: 200, contentType: "application/json", body: "{}" });
+  });
+  await page.route("https://us.i.posthog.com/**", (route) => {
+    transportRequests.push(route.request().method());
+    return route.fulfill({ status: 200, contentType: "application/json", body: "{}" });
   });
   await page.route("https://soles-stg.vercel.app/**", (route) =>
     route.fulfill({
@@ -325,22 +287,13 @@ try {
     }),
   );
   await page.goto(
-    "https://soles-stg.vercel.app/checkout?utm_source=google&token=sensitive",
+    "https://soles-stg.vercel.app/checkout?utm_source=ba6ce9ab-4aa2-40aa-8514-d5ecd17392f3&token=synthetic",
   );
   await page.addScriptTag({ content: bundle.outputFiles[0].text });
   await page.waitForFunction(() => window.measurementSdkBoundaryTest?.complete === true);
 
   const result = await page.evaluate(() => window.measurementSdkBoundaryTest);
-  assert.equal(
-    result.failure,
-    undefined,
-    JSON.stringify({
-      posthogConfig: result.posthogConfig,
-      initError: result.initError,
-      beforeSendInput: result.beforeSendInput,
-      beforeSendResult: result.beforeSendResult,
-    }),
-  );
+  assert.equal(result.failure, undefined);
   assert.deepEqual(errors, []);
   assert.deepEqual(result.hostMatrix, [
     true,
@@ -359,50 +312,13 @@ try {
   assert.equal(result.persistedCart[0].quantity, 1);
   assert.equal(result.finalCart.length, 1);
   assert.equal(result.finalCart[0].quantity, 1);
-  assert.equal(result.failedCaptures, 2);
-  const checkoutRequest = transportRequests.find(
-    (request) =>
-      request.method === "POST" &&
-      request.payload?.batch?.some((event) => event.event === "checkout_started"),
-  );
-  assert.ok(
-    checkoutRequest,
-    `checkout_started must reach the PostHog POST boundary: ${JSON.stringify(transportRequests)}`,
-  );
-
-  const properties = result.boundaryEvent.properties;
-  assert.deepEqual(Object.keys(properties).sort(), [
-    "$geoip_disable",
-    "$session_id",
-    "distinct_id",
-    "environment",
-    "landing_pathname",
-    "pathname",
-    "schema_version",
-    "storefront",
-    "token",
-    "utm_source",
-  ]);
-  assert.equal(properties.storefront, "sole");
-  assert.equal(properties.$geoip_disable, true);
-  assert.equal(properties.environment, "staging");
-  assert.equal(properties.schema_version, 1);
-  assert.equal(properties.pathname, "/checkout");
-  assert.equal(properties.landing_pathname, "/checkout");
-  assert.equal(properties.utm_source, "google");
-  assert.equal(properties.token, projectKey);
-  assert.match(properties.distinct_id, /^[0-9a-f-]{36}$/i);
-  assert.match(properties.$session_id, /^[0-9a-f-]{36}$/i);
-  assert.equal(JSON.stringify(result.boundaryEvent).includes("sensitive"), false);
-  assert.equal(JSON.stringify(result.boundaryEvent).includes("$current_url"), false);
-  assert.equal(JSON.stringify(result.boundaryEvent).includes("$referrer"), false);
-  assert.equal(checkoutRequest.payload.api_key, projectKey);
-  assert.equal(checkoutRequest.payload.batch.length, 1);
-  assert.deepEqual(checkoutRequest.payload.batch[0].properties, properties);
-  assert.equal(checkoutRequest.payload.batch[0].properties.$geoip_disable, true);
-
+  assert.equal(result.credentialRemoved, true);
+  assert.equal(result.initCalls, 0);
+  assert.equal(result.captureCalls, 0);
+  assert.deepEqual(result.storageTouches, []);
+  assert.deepEqual(transportRequests, []);
   console.log(
-    "PASS installed PostHog boundary: sanitized event dispatched; SDK failure preserved cart and checkout",
+    "PASS installed Chromium/PostHog boundary: zero optional startup/storage/capture/transport; cart and checkout remain functional",
   );
 } finally {
   await browser.close();

@@ -4,7 +4,7 @@ import { createSupabaseServerClient } from "@/lib/supabase/server";
 import { createSupabaseAdminClient } from "@/lib/supabase/service-role";
 jest.mock("@/lib/supabase/server");
 jest.mock("@/lib/supabase/service-role");
-jest.mock("@/lib/utils/log");
+
 jest.mock("@/Modules/Checkout/Source/Features/Operations/checkout-controls", () => ({
   readCheckoutControls: () =>
     Promise.resolve({
@@ -173,9 +173,14 @@ async function observe(options: Options = {}) {
   const url = new URL("http://localhost/api/orders/" + requestedId);
   if (options.reconcile) url.searchParams.set("reconcile", "1");
   if (options.token) url.searchParams.set("token", options.token);
-  const response = await GET(new NextRequest(url), {
-    params: Promise.resolve({ orderId: requestedId }),
-  });
+  const response = await GET(
+    new NextRequest(url, {
+      headers: { "x-request-id": "10000000-0000-4000-8000-000000000009" },
+    }),
+    {
+      params: Promise.resolve({ orderId: requestedId }),
+    },
+  );
   return { status: response.status, data: await response.json(), reads, jobs };
 }
 test.each(["paid", "shipped"])(
@@ -632,4 +637,35 @@ test("the authorized original order remains observable and schedules its existin
   expect(
     result.reads.some((table) => table.endsWith(".checkout_operational_controls")),
   ).toBe(false);
+});
+
+it("correlates only the authorized local order at the real logger sink", async () => {
+  const lines: string[] = [];
+  const sinks = [jest.spyOn(console, "info"), jest.spyOn(console, "error")];
+  for (const sink of sinks) sink.mockImplementation((line) => lines.push(String(line)));
+  const misplacedPermit = "ec6e9515-8274-4c86-95b3-fc6c68191145";
+  try {
+    for (const opts of [
+      { order: null },
+      { user: null, token: "wrong" },
+      { authFailure: true },
+    ]) {
+      const response = await observe({ ...opts, requestedId: misplacedPermit });
+      expect(response.status).toBeGreaterThanOrEqual(400);
+    }
+    expect(lines.join(" ")).not.toContain(misplacedPermit);
+    expect(lines.map((s) => JSON.parse(s))).toContainEqual(
+      expect.objectContaining({
+        event: "checkout_request",
+        route: "/api/orders/:orderId",
+        requestId: "10000000-0000-4000-8000-000000000009",
+      }),
+    );
+    expect((await observe()).status).toBe(200);
+    expect(lines.map((s) => JSON.parse(s))).toContainEqual(
+      expect.objectContaining({ event: "checkout_request", orderId, status: 200 }),
+    );
+  } finally {
+    for (const sink of sinks) sink.mockRestore();
+  }
 });

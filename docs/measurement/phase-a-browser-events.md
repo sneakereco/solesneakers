@@ -1,4 +1,10 @@
-# Phase A browser measurement (Sole staging; production-capable gate)
+# Phase A browser measurement
+
+**Current checkout hardening candidate.** The browser instrumentation leaves optional analytics disabled, including on the configured staging and production hostnames. The prior client lacked current shopper-consent verification. No optional SDK initialization, attribution/identity storage or capture runs until an explicit consent integration qualifies. Cart persistence, BotID and operational financial records retain their existing behavior.
+
+## Historical Phase A design and deployment record
+
+The following sections describe the earlier implementation. Positive SDK delivery, consented storage and revocation require renewed qualification before enabling a future integration.
 
 The client captures four explicit behavioral events. It does not emit payment, order, revenue, or identity events. Cloudflare remains the traffic/edge layer; PostHog is only the intentional product funnel layer. The production path is inert until a separately approved production tag and complete production configuration are released.
 

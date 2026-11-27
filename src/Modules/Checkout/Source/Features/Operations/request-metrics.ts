@@ -15,7 +15,7 @@ export async function observeCheckoutRequest<T extends Response>(
     status = response.status;
     return response;
   } finally {
-    log({
+    log(() => ({
       level: "info",
       layer: "api",
       message: "checkout_request",
@@ -25,7 +25,7 @@ export async function observeCheckoutRequest<T extends Response>(
       orderId: orderId?.(),
       status,
       latencyMs: Math.round(performance.now() - start),
-    });
+    }));
   }
 }
 
@@ -81,7 +81,14 @@ export function summarizeCheckoutEvents(rows: Iterable<unknown>) {
       }
     }
     if (e.event === "checkout_admission" && e.operation && e.outcome) {
-      const key = e.operation + "." + e.outcome;
+      const key = [
+        e.admissionPhase ?? "unspecified",
+        e.operation,
+        e.outcome,
+        e.denialReason,
+      ]
+        .filter(Boolean)
+        .join(".");
       admission[key] = (admission[key] ?? 0) + 1;
     }
   }

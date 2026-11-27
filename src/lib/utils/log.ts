@@ -21,17 +21,27 @@ export interface LogEntry {
   [key: string]: unknown;
 }
 
-export function log(entry: LogEntry) {
-  const safe = sanitizeLifecycleEvent({
-    ...entry,
-    release: entry.release ?? process.env.VERCEL_GIT_COMMIT_SHA,
-  });
-  const line = JSON.stringify({ timestamp: new Date().toISOString(), ...safe });
-  if (safe.level === "error") console.error(line);
-  else if (safe.level === "warn") console.warn(line);
-  else console.info(line);
+export function log(input: LogEntry | (() => LogEntry)) {
+  try {
+    const entry = typeof input === "function" ? input() : input;
+    const safe = sanitizeLifecycleEvent({
+      ...entry,
+      release: entry.release ?? process.env.VERCEL_GIT_COMMIT_SHA,
+    });
+    const line = JSON.stringify({ timestamp: new Date().toISOString(), ...safe });
+    if (safe.level === "error") console.error(line);
+    else if (safe.level === "warn") console.warn(line);
+    else console.info(line);
+  } catch {
+    // Emission is best effort. Retrying a failing sink here could recurse or disturb committed work.
+  }
 }
 
 export function logError(_error: unknown, entry: Partial<LogEntry> = {}) {
-  log({ message: "application_error", layer: "unknown", ...entry, level: "error" });
+  log(() => ({
+    message: "application_error",
+    layer: "unknown",
+    ...entry,
+    level: "error",
+  }));
 }

@@ -319,7 +319,7 @@ const bundle = await build({
             `
           export const getOrCreateCheckoutDeviceSessionId = () => "device";
           export const useProcessingCredential=()=>undefined; export const useCheckoutRegistration=()=>undefined; export const capturePreparedAttempt=()=>{throw Error("unexpected prepare")};
-          export const readGuestOrderAccess=()=>null;
+          export const readGuestOrderAccess=()=>null; export const needsOriginalRecovery=()=>false; export const recoverOriginalOrder=()=>{throw Error("unexpected recovery")};
         `,
           ],
           [
