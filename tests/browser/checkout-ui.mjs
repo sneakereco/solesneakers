@@ -8,7 +8,7 @@ const outputDir = join(
   "checkout-ui",
 );
 import { build } from "esbuild";
-import { chromium } from "@playwright/test";
+import { chromium, expect } from "@playwright/test";
 import postcss from "postcss";
 import tailwindcss from "tailwindcss";
 import nextEnv from "@next/env";
@@ -278,6 +278,7 @@ try {
       true,
     );
     await page.getByRole("radio", { name: "Credit card", exact: true }).click();
+    const cardError = page.getByText("Enter a valid card number", { exact: true });
     await page.evaluate(() =>
       window.checkoutTest.listeners.cardBrandChanged({
         detail: {
@@ -287,9 +288,8 @@ try {
         },
       }),
     );
-    assert.equal(await page.getByRole("img", { name: "Visa", exact: true }).count(), 1);
-    assert.equal(
-      await page.getByRole("img", { name: "Mastercard", exact: true }).count(),
+    await expect(page.getByRole("img", { name: "Visa", exact: true })).toHaveCount(1);
+    await expect(page.getByRole("img", { name: "Mastercard", exact: true })).toHaveCount(
       0,
     );
     await page.evaluate(() =>
@@ -300,10 +300,7 @@ try {
         },
       }),
     );
-    assert.equal(
-      await page.getByText("Enter a valid card number", { exact: true }).isVisible(),
-      true,
-    );
+    await expect(cardError).toBeVisible();
     await page.evaluate(() =>
       window.checkoutTest.listeners.errorClassRemoved({
         detail: {
@@ -312,10 +309,7 @@ try {
         },
       }),
     );
-    assert.equal(
-      await page.getByText("Enter a valid card number", { exact: true }).count(),
-      0,
-    );
+    await expect(cardError).toHaveCount(0);
     await page.evaluate(() =>
       window.checkoutTest.listeners.cardBrandChanged({
         detail: {
@@ -417,7 +411,7 @@ try {
     });
     await page.getByLabel("Name on card", { exact: true }).press("Enter");
     await page.waitForFunction(() => window.checkoutTest.tokenized.includes("card"));
-    await page.getByText("Enter a valid card number", { exact: true }).waitFor();
+    await cardError.waitFor();
     assert.equal(payRequests, 0, "INVALID card tokens cannot reach payment");
     assert.equal(await page.getByRole("dialog").count(), 0);
     assert.deepEqual(errors, []);

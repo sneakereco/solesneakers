@@ -62,7 +62,7 @@ const errorCodes = new Set([
 
 // Keep fixture payloads private while retaining the exact owned assertion site.
 const browserSource = new RegExp(
-  String.raw`((?:src/Modules/Cart/Tests/Features/(?:ManageBasket/(?:purchase-capture|basket-state|retained-cart)|ValidateBasket/availability)\.browser|src/Modules/Checkout/Tests/Features/(?:Outcomes/checkout-outcome\.browser|Preparation/guest-context\.browser\.test)|tests/browser/(?:measurement-(?:trigger-sites|sdk-boundary|lifecycle)|fixtures/checkout-hardening))\.mjs:[1-9]\d{0,4}:[1-9]\d{0,3})\)?$`,
+  String.raw`((?:src/Modules/Cart/Tests/Features/(?:ManageBasket/(?:purchase-capture|basket-state|retained-cart)|ValidateBasket/availability)\.browser|src/Modules/Checkout/Tests/Features/(?:Outcomes/checkout-outcome\.browser|Preparation/guest-context\.browser\.test)|tests/browser/(?:measurement-(?:trigger-sites|sdk-boundary|lifecycle)|checkout-ui|fixtures/checkout-hardening))\.mjs:[1-9]\d{0,4}:[1-9]\d{0,3})\)?$`,
 );
 export function browserFailureDiagnostics(output) {
   const types = new Set(),
