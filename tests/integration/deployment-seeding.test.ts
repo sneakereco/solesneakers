@@ -71,8 +71,15 @@ describe("deployment configuration", () => {
       expect(migrate).toContain(
         `needs: ${environment === "production" ? "validate-release" : "validate"}`,
       );
-      expect(migrate).toContain('supabase db push --db-url "$SUPABASE_DB_URL" --dry-run');
-      expect(migrate).toMatch(/supabase db push --db-url "\$SUPABASE_DB_URL"\r?\n/);
+      const command =
+        'SINGLE_STORE_DATABASE_URL="$SUPABASE_DB_URL" node scripts/single-store/deploy-migrations.mjs';
+      const plan = `"$RUNNER_TEMP/${environment}-migration-plan.json"`;
+      const preview = `${command} preview --plan ${plan}`;
+      const apply = `${command} apply --plan ${plan}`;
+      expect(migrate).toContain(preview);
+      expect(migrate).toContain(apply);
+      expect(migrate.indexOf(preview)).toBeLessThan(migrate.indexOf(apply));
+      expect(migrate).not.toContain("supabase db push");
       expect(deploy).toContain("needs: migrate");
       expect(deploy).toContain('deploy --prod --yes --token="$VERCEL_TOKEN"');
       expect(deploy).toContain(
@@ -93,7 +100,7 @@ describe("deployment configuration", () => {
         "utf8",
       );
       for (const [name, command] of [
-        ["migrate", "supabase db push"],
+        ["migrate", "node scripts/single-store/deploy-migrations.mjs"],
         ["deploy", "vercel@"],
       ]) {
         const section = job(workflow, name);
