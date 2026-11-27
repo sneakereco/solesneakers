@@ -28,7 +28,7 @@ const bundle = await build({
       import { CartProvider, useCart } from "./src/components/cart/CartProvider";
       import { CheckoutClient } from "./src/components/checkout/CheckoutClient";
       import {captureCheckoutStarted} from "./src/Modules/Analytics/Source/Features/VisitorMeasurement/triggers";
-      import {getCheckoutTrackingContext,revokeMeasurement,initializeMeasurement,identifyConsentingCustomer,setMeasurementAccount,capture} from "./src/Modules/Analytics/Source/Features/VisitorMeasurement/client";
+      import {getVerifiedMeasurementEpoch,getCheckoutTrackingContext,revokeMeasurement,initializeMeasurement,identifyConsentingCustomer,setMeasurementAccount,capture} from "./src/Modules/Analytics/Source/Features/VisitorMeasurement/client";
 
       const test = window.measurementSdkBoundaryTest = {
         boundaryEvent: null,
@@ -94,7 +94,7 @@ const bundle = await build({
         };
         const cfg=configuredMeasurement();
         const accepted={choice:"accepted",receiptId:"123e4567-e89b-42d3-a456-426614174000"};
-        window.actions={nativeId:()=>posthog.get_distinct_id(),nativeSession:()=>posthog.get_session_id(),context:getCheckoutTrackingContext,withdraw:revokeMeasurement,account:setMeasurementAccount,identify:identifyConsentingCustomer,capture:captureCheckoutStarted,accept:()=>initializeMeasurement(cfg,accepted)};
+        window.actions={epoch:getVerifiedMeasurementEpoch,nativeId:()=>posthog.get_distinct_id(),nativeSession:()=>posthog.get_session_id(),context:getCheckoutTrackingContext,withdraw:revokeMeasurement,account:setMeasurementAccount,identify:identifyConsentingCustomer,capture:captureCheckoutStarted,accept:()=>initializeMeasurement(cfg,accepted)};
         if(window.fixtureMode==="provider"||window.fixtureMode==="lifecycle"){
           const root=createRoot(document.getElementById("root"));
           const init=posthog.init.bind(posthog);
@@ -561,6 +561,7 @@ try {
     window.actions.capture();
   });
   assert.equal(await page.evaluate(() => window.actions.context()), null);
+  assert.equal(await page.evaluate(() => window.actions.epoch()), null);
   assert.deepEqual(
     await page.evaluate(() =>
       [...Object.keys(localStorage), ...Object.keys(sessionStorage)].filter(

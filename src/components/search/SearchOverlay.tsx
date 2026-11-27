@@ -13,6 +13,7 @@ import { LoadingState, Skeleton } from "@/components/ui/Skeleton";
 import { fetchJsonWithDeadline } from "@/lib/http/request-deadline";
 import { ModalPortal } from "@/components/ui/ModalPortal";
 import { logError } from "@/lib/utils/log";
+import { getVerifiedMeasurementEpoch } from "@/Modules/Analytics/Source/Features/VisitorMeasurement/client";
 import { captureCatalogSearchResults } from "@/Modules/Analytics/Source/Features/VisitorMeasurement/triggers";
 import { useViewGrant } from "@/Modules/Analytics/Source/Features/VisitorMeasurement/view-grant";
 
@@ -196,6 +197,7 @@ export function SearchOverlay({
     if (!isOpen || isClosing || !normalizedQuery) return;
 
     const originalGrant = currentGrant.current;
+    const originalEpoch = originalGrant ? getVerifiedMeasurementEpoch() : null;
     const controller = new AbortController();
     const generation = requestGeneration.current;
     const stillOwned = () =>
@@ -221,6 +223,8 @@ export function SearchOverlay({
         if (
           originalGrant &&
           currentGrant.current === originalGrant &&
+          originalEpoch !== null &&
+          getVerifiedMeasurementEpoch() === originalEpoch &&
           typeof data.total === "number"
         ) {
           captureCatalogSearchResults(data.total, normalizedQuery, data.products);

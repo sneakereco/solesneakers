@@ -243,10 +243,14 @@ async function exercise(browser, bundle, scenario) {
         await tab.waitForFunction(() =>
           window.actions.context()?.visitorId.startsWith("sole-buyer:"),
         );
+      const originalEpoch = await peer.evaluate(() => window.actions.epoch());
+      assert.equal(typeof originalEpoch, "number");
+      const receipt = await peer.evaluate(() => window.actions.context().receiptId);
       account = "b";
       authHold = true;
       await first.evaluate(() => window.dispatchEvent(new Event("sessionUpdate")));
       await peer.waitForFunction(() => window.actions.context() === null);
+      assert.equal(await peer.evaluate(() => window.actions.epoch()), null);
       const cutoff = wire.length;
       await peer.evaluate(() => window.observe());
       auth.resolve();
@@ -255,6 +259,13 @@ async function exercise(browser, bundle, scenario) {
         (key) => window.actions.context()?.visitorId === key,
         buyer("b"),
       );
+      assert.equal(
+        await peer.evaluate(() => window.actions.context().receiptId),
+        receipt,
+      );
+      const nextEpoch = await peer.evaluate(() => window.actions.epoch());
+      assert.equal(typeof nextEpoch, "number");
+      assert.notEqual(nextEpoch, originalEpoch);
       await peer.evaluate(() => window.observe());
       await peer.waitForTimeout(100);
       assert.ok(wire.slice(cutoff).some((e) => e.properties.distinct_id === buyer("b")));

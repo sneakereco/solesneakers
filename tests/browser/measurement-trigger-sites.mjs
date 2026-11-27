@@ -143,22 +143,55 @@ const bundle = await build({
       await render(<CartProvider><ProductDetail product={{...product,variants:[soldOut]}} /></CartProvider>);
       assert.deepEqual(test.events,["product_viewed","out_of_stock_viewed"],"all known variants unavailable at view");
       await resetRoot();test.events=[];test.payloads=[];
-      const realFetch=window.fetch;let finishStale;
+      const realFetch = window.fetch;
+      let finishStale, finishHeld;
+      let heldRequests = 0;
       window.fetch=async (url,...args)=>{
         if(typeof url!=="string" || !url.startsWith("/api/store/products"))return realFetch(url,...args);
         if(url.includes("stale"))return new Promise(resolve=>{finishStale=()=>resolve(Response.json({products:[product],total:99}));});
+        if (url.includes("held")) {
+          heldRequests++;
+          return new Promise(resolve => {
+            finishHeld = () => resolve(Response.json({ products: [product], total: 1 }));
+          });
+        }
         if(url.includes("failed"))return new Response(null,{status:503});
         return Response.json(url.includes("Sole")?{products:[{...product,brand:{id:product.id,label:"Sole"}}],total:1}:{products:[],total:0});
       };
-      await render(<SearchOverlay isOpen={true} onClose={()=>{}}/>);
+      const renderSearch = () => render(<SearchOverlay isOpen={true} onClose={() => {}} />);
+      window.searchOwner = "customer-A";
+      window.searchRevision = 0;
+      await renderSearch();
       const search=async text=>{
-        const field=document.querySelector('[role="dialog"] [role="searchbox"]');
+        const field = document.querySelector('dialog[open] [role="searchbox"]');
+        if (!(field instanceof HTMLInputElement)) {
+          throw new Error("Could not find the open search dialog's searchbox");
+        }
         Object.getOwnPropertyDescriptor(HTMLInputElement.prototype,"value").set.call(field,text);
         field.dispatchEvent(new Event("input",{bubbles:true}));await new Promise(r=>setTimeout(r,360));
       };
       await search("stale");await search("Sole");finishStale();await pause();
       await search("failed");await search("private@example.com");
       assert.deepEqual(test.payloads,[{event:"catalog_search_results",result_count:1,concept_kind:"brand",concept_id:product.id},{event:"catalog_search_results",result_count:0}],"only current successful safe search evidence");
+      test.payloads = [];
+      await search("held");
+      assert.deepEqual(heldRequests,1,"original owner's request started");
+      window.testGrant = null;
+      await renderSearch();
+      window.searchOwner = "customer-B";
+      window.searchRevision++;
+      window.testGrant = "consented";
+      await renderSearch();
+      finishHeld();
+      await pause();
+      const heldLink = document.querySelector('dialog[open] a[href="/store/' + product.id + '"]');
+      assert.deepEqual(heldLink?.textContent.includes(product.name),true,"the current search result remains usable");
+      assert.deepEqual(test.payloads,[],"a new verified owner cannot capture the original owner's held result under the same receipt");
+      await new Promise(resolve=>setTimeout(resolve,350));
+      assert.deepEqual(heldRequests,1,"changing owner must not refetch the open search");
+      await search("Sole");
+      assert.deepEqual(test.payloads,[{event:"catalog_search_results",result_count:1,concept_kind:"brand",concept_id:product.id}],"the new owner's own successful search emits once");
+      window.searchOwner = null;
       window.fetch=realFetch;
 
       await resetRoot();
@@ -273,6 +306,7 @@ const bundle = await build({
         quantity: 1,
       }]));
       await render(<CartProvider><CheckoutClient initialData={initialData} /></CartProvider>);
+      for(let attempt=0;attempt<50 && !test.events.length;attempt++)await pause();
       assert.deepEqual(test.events, ["checkout_started"], "ready nonempty checkout must emit once");
       await render(<CartProvider><CheckoutClient initialData={initialData} /></CartProvider>);
       assert.deepEqual(test.events, ["checkout_started"], "usable checkout rerender must not duplicate");
@@ -298,6 +332,10 @@ const bundle = await build({
       name: "measurement-trigger-test-boundaries",
       setup(builder) {
         const mocks = new Map([
+          [
+            "@/Modules/Analytics/Source/Features/VisitorMeasurement/client",
+            "export { getCheckoutTrackingContext } from './src/Modules/Analytics/Source/Features/VisitorMeasurement/client'; export const getVerifiedMeasurementEpoch=()=>window.testGrant?(window.searchRevision??0):null;",
+          ],
           [
             "@/Modules/Analytics/Source/Features/VisitorMeasurement/view-grant",
             "export const useViewGrant = () => window.testGrant; export const useCheckoutMeasurement=()=>'ready';",
@@ -334,7 +372,7 @@ const bundle = await build({
           ["@/lib/utils/log", "export const logError = () => {};"],
           [
             "@/contexts/SessionContext",
-            "const session={user:null,isIdentityCurrent:owner=>owner===null}; export const useSession=()=>session;",
+            "const isIdentityCurrent=owner=>owner===(window.searchOwner??null); export const useSession=()=>({user:window.searchOwner?{id:window.searchOwner}:null,sessionRevision:window.searchRevision??0,isIdentityCurrent});",
           ],
           [
             "@/components/checkout/CheckoutContactSection",
@@ -419,7 +457,23 @@ try {
     return route.fulfill({ status: 200, contentType: "application/json", body: "{}" });
   });
   await page.route("**/api/cart/validate", (route) =>
-    route.fulfill({ status: 200, contentType: "application/json", body: '{"items":[]}' }),
+    route.fulfill({
+      json: {
+        items: route
+          .request()
+          .postDataJSON()
+          .items.map((item) => ({
+            ...item,
+            sizeLabel: "10",
+            brand: "Sole",
+            name: "Air Runner",
+            titleDisplay: "Air Runner",
+            priceCents: 10000,
+            imageUrl: "/shoe.png",
+            maxStock: 1,
+          })),
+      },
+    }),
   );
   await page.route("**/api/checkout/quote", (route) =>
     route.fulfill({
@@ -452,6 +506,8 @@ try {
     window.measurementTriggerTest.keyboardDone = true;
   });
   await page.waitForFunction(() => window.measurementTriggerTest?.complete === true);
+  const failure = await page.evaluate(() => window.measurementTriggerTest.failure);
+  assert.equal(failure, undefined, failure);
   assert.deepEqual(errors, []);
   assert.equal(outgoingProbe.event, "storefront_viewed");
   assert.equal(outgoingProbe.properties.$geoip_disable, true);

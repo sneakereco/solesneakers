@@ -54,6 +54,11 @@ function ready() {
   }
 }
 
+// Fences delayed observations across consent withdrawal and account revalidation.
+export function getVerifiedMeasurementEpoch(): number | null {
+  return ready() ? generation : null;
+}
+
 export function filterOutgoingEvent(
   event: CaptureResult,
   config: PublicAnalyticsConfig,
