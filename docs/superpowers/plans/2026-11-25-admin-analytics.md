@@ -298,3 +298,13 @@ New dependency choices are planning decisions, based on current primary document
 **Execution recommendation:** subagent-driven, because transaction journaling, optional visitor identity, provider query semantics, and fourteen dependent tasks benefit from independent review before their interfaces propagate. Native execution is also supported and cheaper: one implementer follows the same task gates, then a fresh whole-branch reviewer checks the result. The user must review this plan and choose the execution method before production implementation begins.
 
 Task 14 operator commands, active source contracts, observation bounds and staging qualification gates are maintained in [the analytics operations guide](../../operations/admin-analytics.md).
+
+## November 27 local completion sequence
+
+This resumes Task 14 and follows the spec's November 27 amendment and the user's five-hour, local-only boundary. Existing tasks and prior tests are not to be rebuilt. The user will deploy staging after the local handoff.
+
+- [ ] Correct actual-retention eligibility, trusted journey purchase-link binding and the deferred inventory launch boundary; reproduce each defect and run the corresponding focused regression checks.
+- [ ] Prepare a separate operator scheduler and an offline-verifiable setup path for the restricted sources and 22 saved Endpoints. Keep operator/provisioning credentials out of the application. No provider writes occur during local work.
+- [ ] Run one independent combined Task 14/whole-branch review using the selected current-main baseline, repair concrete findings and verify the fixes. This combined gate follows the user's explicit usage-conservation instruction.
+- [ ] Run the final meaningful local unit, integration, owned-database, SDK/browser, type/lint/format and capture-disabled build checks on the resulting branch, without duplicate broad runs unless a new change or failure justifies one.
+- [ ] Commit and hand off the reviewed local branch, exact staging steps and remaining hosted checks before the hard cutoff. Do not push, publish a PR, deploy or activate anything.
