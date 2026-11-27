@@ -11,6 +11,35 @@ import { checkRankedExport } from "../../../Source/Features/Reporting/csv-export
 import { scope } from "./commerce-fixture";
 
 jest.mock("server-only", () => ({}), { virtual: true });
+test.each(["sole_analytics_acquisition", "sole_analytics_products", "none"])(
+  "Overview leader export distinguishes unavailable and observed empty: %s",
+  async (failed) => {
+    const f = makeAudienceFixture(),
+      r = request("overview");
+    const report = await getReport(
+      { ...r, report: "overview" },
+      {
+        ...f.deps,
+        execute: (q) =>
+          q.endpoint === failed
+            ? Promise.reject(new Error("fixture unavailable"))
+            : f.execute(q),
+      },
+    );
+    const { body } = exportAnalyticsCsv(report, r);
+    expect(body).toContain(
+      '"report.data.leadingSources","","' +
+        (failed === "sole_analytics_acquisition" ? "unavailable" : "empty") +
+        '"',
+    );
+    expect(body).toContain(
+      '"report.data.leadingProducts","","' +
+        (failed === "sole_analytics_products" ? "unavailable" : "empty") +
+        '"',
+    );
+    expect(body).toContain('"report.data.summary.confirmedOrders","0","observed"');
+  },
+);
 test("exports only explicit aggregate fields and guards text cells while preserving numeric cents", async () => {
   const f = makeAudienceFixture(),
     r = request("products", "pageSize=100");

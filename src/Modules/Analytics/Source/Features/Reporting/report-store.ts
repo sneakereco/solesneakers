@@ -8,7 +8,72 @@ export interface ReportStore {
   finish(key: string, owner: string, value: string | null): Promise<void>;
   admit(project: string, id: string): Promise<"ok" | "busy" | "limited">;
   release(project: string, id: string): Promise<void>;
-  cooldown(project: string, milliseconds: number): Promise<void>;
+  cooldown(project: string, permit: string, milliseconds: number): Promise<void>;
+}
+
+type Cooldown = {
+  until: number;
+  permit: string;
+  confirmed: boolean;
+  retryAt: number;
+  writing?: Promise<void>;
+};
+type LocalProject = { users: number; cooldown?: Cooldown };
+const localProjects = new Map<string, LocalProject>();
+/** Reserve an entry before issuing work. A full registry refuses additional projects
+ * until an entry is unused and its Retry-After has elapsed. */
+export function reserveReportProject(key: string, store: ReportStore, deadline: number) {
+  const now = performance.now();
+  for (const [k, p] of localProjects)
+    if (p.users === 0 && (p.cooldown?.until ?? 0) <= now) localProjects.delete(k);
+  const project = localProjects.get(key) ?? ({ users: 0 } as LocalProject);
+  if (!localProjects.has(key) && localProjects.size >= 32) return null;
+  project.users++;
+  localProjects.set(key, project);
+
+  function persist(block: Cooldown, attempts: number): Promise<void> {
+    if (block.writing) return block.writing;
+    if (block.confirmed || performance.now() < block.retryAt) return Promise.resolve();
+    block.writing = (async () => {
+      for (let attempt = 0; attempt < attempts; attempt++) {
+        const at = performance.now(),
+          remaining = Math.ceil(block.until - at);
+        // Each Upstash operation is bounded to 1 second.
+        if (remaining <= 0 || deadline - at < 1000) break;
+        try {
+          await store.cooldown(key, block.permit, remaining);
+          block.confirmed = true;
+          break;
+        } catch {
+          // Unknown commit. Repeating the atomic max-TTL/exact-permit operation is safe.
+        }
+      }
+    })().finally(() => {
+      block.writing = undefined;
+      block.retryAt = performance.now() + 1000;
+    });
+    return block.writing;
+  }
+  return {
+    close() {
+      project.users--;
+    },
+    isBlocked() {
+      return (project.cooldown?.until ?? 0) > performance.now();
+    },
+    async blocked() {
+      const block = project.cooldown;
+      if (!block || block.until <= performance.now()) return false;
+      await persist(block, 1);
+      return true;
+    },
+    rateLimited(permit: string, delay: number) {
+      const until = Math.max(project.cooldown?.until ?? 0, performance.now() + delay);
+      const block: Cooldown = { permit, until, confirmed: false, retryAt: 0 };
+      project.cooldown = block;
+      return persist(block, 2);
+    },
+  };
 }
 
 // Each result and owner lock share a Redis hash slot. A late owner cannot
@@ -35,6 +100,7 @@ const admit = `
  return 'ok'`;
 const extendCooldown = `
  if redis.call('PTTL',KEYS[1])<tonumber(ARGV[1]) then redis.call('SET',KEYS[1],'1','PX',ARGV[1]) end
+ redis.call('ZREM',KEYS[2],ARGV[2])
  return 1`;
 
 let client: Redis | undefined;
@@ -64,8 +130,12 @@ export function createReportStore(): ReportStore {
     release: async (project, id) => {
       await redis.zrem(project + ":slots", id);
     },
-    cooldown: async (project, ms) => {
-      await redis.eval(extendCooldown, [project + ":cooldown"], [ms]);
+    cooldown: async (project, permit, ms) => {
+      await redis.eval(
+        extendCooldown,
+        [project + ":cooldown", project + ":slots"],
+        [ms, permit],
+      );
     },
   };
 }

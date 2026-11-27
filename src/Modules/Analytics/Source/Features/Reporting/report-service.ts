@@ -28,7 +28,7 @@ import { moneyValue } from "../ReportContract/money";
 import { calendarBuckets } from "./queries/financial";
 import { rate, rows, count } from "./queries/commerce-source";
 import { resolveCalendarRange } from "../ReportContract/calendar-range";
-import { PostHogQueryError } from "./posthog-query";
+import { isTransientReportError, PostHogQueryError } from "./posthog-query";
 import { compileCommerceHealthQueries, mapHealthResult } from "./queries/commerce-health";
 import {
   compileFinancialQueries,
@@ -81,6 +81,8 @@ export async function executeCommerceReport(
 }
 
 export type ReportingDependencies = {
+  /** Server-only cache eligibility for the actual cause of a wholly unavailable selection. */
+  onTransientUnavailable?: () => void;
   mode?: CsvExecution;
   dataset: DatasetScope | null;
   now: Date;
@@ -224,6 +226,17 @@ async function getReportPeriod<T extends ReportId>(
       ...(report === "overview" ? ["purchaseSession"] : []),
     ]);
     const executionFailed = Symbol("executionFailed");
+    const transientFailures = new Set<string>();
+    function unavailableSections(keys: string[], message: string) {
+      const attempted = keys.filter((key) => Object.hasOwn(queries, key));
+      if (
+        !comparisonOnly &&
+        attempted.length &&
+        attempted.every((key) => transientFailures.has(key))
+      )
+        deps.onTransientUnavailable?.();
+      return fail("unavailable", "component-unavailable", message);
+    }
     const values: Record<string, unknown> = Object.fromEntries(
       await Promise.all(
         Object.entries(queries).map(async ([k, q]) => {
@@ -243,6 +256,7 @@ async function getReportPeriod<T extends ReportId>(
             return [k, await execute(q)] as const;
           } catch (error) {
             if (!optionalSections.has(k)) throw error;
+            if (isTransientReportError(error)) transientFailures.add(k);
             coverage.push({
               code: "component-unavailable",
               metric: k,
@@ -328,15 +342,10 @@ async function getReportPeriod<T extends ReportId>(
         return invalid ? null : count(row?.visitors);
       });
       if (result.liveOnly && live === null)
-        return fail(
-          "unavailable",
-          "component-unavailable",
-          "Recent activity could not be verified.",
-        );
+        return unavailableSections(["active"], "Recent activity could not be verified.");
       if (!p && !sessions && cohorts === null && live === null)
-        return fail(
-          "unavailable",
-          "component-unavailable",
+        return unavailableSections(
+          ["customers", "sessions", "cohorts", "active"],
           "Customer report sections are unavailable.",
         );
       const c: CustomersData = {
@@ -389,9 +398,8 @@ async function getReportPeriod<T extends ReportId>(
       const p = optional("products", (raw) => parseProductTable(raw, request));
       const demand = optional("signals", (raw) => readDemand(raw, request, behavior));
       if (!p && !demand)
-        return fail(
-          "unavailable",
-          "component-unavailable",
+        return unavailableSections(
+          ["products", "signals"],
           "Product report sections are unavailable.",
         );
       if (p) setAttribution(p.attribution);
@@ -560,6 +568,7 @@ async function getReportPeriod<T extends ReportId>(
             : "ready",
     };
   } catch (error) {
+    if (!comparisonOnly && isTransientReportError(error)) deps.onTransientUnavailable?.();
     return fail(
       error instanceof PostHogQueryError && error.category === "configuration-failure"
         ? "unconfigured"

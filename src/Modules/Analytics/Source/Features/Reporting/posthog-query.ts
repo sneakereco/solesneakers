@@ -62,6 +62,14 @@ export class PostHogQueryError extends Error {
   }
 }
 
+export function isTransientReportError(error: unknown): error is PostHogQueryError {
+  return (
+    error instanceof PostHogQueryError &&
+    error.category === "retryable" &&
+    error.reason !== "invalid-response"
+  );
+}
+
 export async function executePostHogQuery(
   query: CompiledQuery,
   deps: QueryDependencies,

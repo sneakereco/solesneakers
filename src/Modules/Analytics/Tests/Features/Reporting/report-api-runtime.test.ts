@@ -21,6 +21,7 @@ jest.mock("@/lib/supabase/service-role", () => ({
   createScopedSupabaseAdminClient: jest.fn(),
 }));
 jest.mock("../../../Source/Features/Reporting/report-store", () => ({
+  ...jest.requireActual("../../../Source/Features/Reporting/report-store"),
   createReportStore: jest.fn(),
 }));
 const call = (route: typeof csv, report: string, params = "") =>

@@ -239,6 +239,16 @@ export function exportAnalyticsCsv(
   request: ReportRequest,
 ): { filename: string; body: string } {
   const lines = ["field,value,status"];
+  const unavailableLeaders = new Set<string>();
+  if (request.report === "overview") {
+    for (const issue of report.coverage) {
+      if (issue.code !== "component-unavailable") continue;
+      if (issue.metric === "purchaseSession")
+        unavailableLeaders.add("report.data.leadingSources");
+      if (issue.metric === "products")
+        unavailableLeaders.add("report.data.leadingProducts");
+    }
+  }
   let bytes = lines[0].length + 2;
   function add(path: string, value: string | number | boolean, status: string) {
     const line = [cell(path), cell(value), cell(status)].join(",");
@@ -262,7 +272,8 @@ export function exportAnalyticsCsv(
       return;
     }
     if (Array.isArray(value)) {
-      if (!value.length) add(path, "", "empty");
+      if (!value.length)
+        add(path, "", unavailableLeaders.has(path) ? "unavailable" : "empty");
       value.forEach((row, i) => visit(path + "[" + i + "]", row, schema));
       return;
     }

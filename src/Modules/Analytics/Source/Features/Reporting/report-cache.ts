@@ -1,7 +1,6 @@
 import "server-only";
 import { createHash, randomUUID } from "node:crypto";
 import type { DatasetScope } from "../CommerceFacts/contract";
-import { analyticsInstantMicros } from "../EventDelivery/instant";
 import {
   warehouseFreshness,
   type HistoryEvidence,
@@ -11,6 +10,7 @@ import type {
   ReportDataMap,
   ReportEnvelope,
   ReportId,
+  CustomerPeriod,
 } from "../ReportContract/types";
 import type { getReport } from "./report-service";
 import { resolveReportCoverage } from "./report-coverage";
@@ -21,8 +21,8 @@ import {
   type CsvExecution,
 } from "./query-contract";
 import { checkRankedExport } from "./csv-export";
-import { PostHogQueryError } from "./posthog-query";
-import type { ReportStore } from "./report-store";
+import { isTransientReportError, PostHogQueryError } from "./posthog-query";
+import { reserveReportProject, type ReportStore } from "./report-store";
 
 type Envelope = ReportEnvelope<ReportDataMap[ReportId]>;
 export interface ReportLoaderDependencies {
@@ -77,11 +77,11 @@ function refreshLive(report: Envelope, now: number): Envelope {
         message: "The last observed five-minute window is no longer recent.",
       },
     ];
-    if (
-      report.datasetStartedAt &&
-      analyticsInstantMicros(report.range.endExclusive) <=
-        analyticsInstantMicros(report.datasetStartedAt)
-    ) {
+    // A non-null section includes a verified zero or a genuinely empty table.
+    const hasPeriodReading = (period: CustomerPeriod | null) =>
+      period !== null &&
+      (period.attribution !== null || period.devices !== null || period.cohorts !== null);
+    if (!hasPeriodReading(report.data) && !hasPeriodReading(report.data.comparison)) {
       return { ...report, state: "unavailable", data: null, coverage };
     }
     return {
@@ -136,6 +136,7 @@ function stale(report: Envelope): Envelope {
  * independently admits each call across all workers and both representations. */
 function execution(deps: ReportLoaderDependencies, project: string, deadline: number) {
   const store = deps.store!;
+  const localProject = reserveReportProject(project, store, deadline);
   const lanes = [Promise.resolve(), Promise.resolve()];
   let calls = 0,
     stopped = false,
@@ -146,12 +147,13 @@ function execution(deps: ReportLoaderDependencies, project: string, deadline: nu
     const index = calls++ % 2;
     if (calls > 10) return Promise.reject(temporary());
     const task = lanes[index].then(async () => {
-      if (stopped) throw temporary();
+      if (stopped || !localProject) throw temporary();
       const id = randomUUID();
       let acquired = false;
       try {
         for (let attempt = 0; attempt < 8; attempt++) {
           if (stopped || performance.now() >= deadline) throw deadlineError();
+          if (await localProject.blocked()) throw temporary();
           const admission = await store.admit(project, id);
           if (admission === "ok") {
             acquired = true;
@@ -161,6 +163,7 @@ function execution(deps: ReportLoaderDependencies, project: string, deadline: nu
           await sleep(150);
         }
         if (!acquired) throw temporary();
+        if (localProject.isBlocked()) throw temporary();
         const remaining = Math.floor(deadline - performance.now());
         if (stopped || remaining < 1) throw deadlineError();
         const raw = await deps.execute(q, Math.min(8000, remaining));
@@ -170,17 +173,17 @@ function execution(deps: ReportLoaderDependencies, project: string, deadline: nu
         if (error instanceof ExportScopeError) {
           exportError = true;
           stopped = true;
-        } else if (
-          error instanceof PostHogQueryError &&
-          error.category === "retryable" &&
-          error.reason !== "invalid-response"
-        ) {
+        } else if (isTransientReportError(error)) {
           transient = true;
           if (error.reason === "rate-limited") {
             stopped = true;
-            await store
-              .cooldown(project, Math.max(1000, error.retryAfterMs ?? 60000))
-              .catch(() => {});
+            // Only the coordinated transition may release this permit, even if
+            // the response to that Redis write is lost.
+            acquired = false;
+            await localProject.rateLimited(
+              id,
+              Math.min(3600000, Math.max(1000, error.retryAfterMs ?? 60000)),
+            );
           }
         } else permanent = true;
         throw error;
@@ -199,6 +202,7 @@ function execution(deps: ReportLoaderDependencies, project: string, deadline: nu
     close: async () => {
       stopped = true;
       await Promise.all(lanes);
+      localProject?.close();
     },
     transientOnly: () => transient && !permanent,
     exportFailed: () => exportError,
@@ -259,6 +263,7 @@ export async function loadAnalyticsReport(
       prior = await cached();
       if (prior && isFresh(prior)) return prior;
       const worker = execution(deps, project, deadline);
+      let transientUnavailable = false;
       let report: Envelope;
       try {
         report = await deps.service(request, {
@@ -267,6 +272,9 @@ export async function loadAnalyticsReport(
           now,
           execute: worker.execute,
           mode: deps.mode,
+          onTransientUnavailable: () => {
+            transientUnavailable = true;
+          },
         });
       } finally {
         await worker.close();
@@ -283,7 +291,7 @@ export async function loadAnalyticsReport(
       prior =
         prior &&
         decode(JSON.stringify({ key, report: prior }), key, deps.clock().getTime());
-      return prior && report.state === "unavailable" && worker.transientOnly()
+      return prior && report.state === "unavailable" && transientUnavailable
         ? stale(prior)
         : report;
     } finally {

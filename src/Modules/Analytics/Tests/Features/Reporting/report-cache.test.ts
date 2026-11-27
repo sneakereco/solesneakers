@@ -9,13 +9,14 @@ import { makeAudienceFixture } from "./audience-fixture";
 import { request, scope } from "./commerce-fixture";
 
 jest.mock("server-only", () => ({}), { virtual: true });
+let fixtureProject = 0;
 function setup() {
   const f = makeAudienceFixture();
   const entries = new Map<string, string>();
   const locks = new Map<string, string>();
   let now = f.deps.now;
   const deps: ReportLoaderDependencies = {
-    project: "us:123",
+    project: "us:fixture-" + ++fixtureProject,
     dataset: scope,
     history: f.deps.history,
     clock: () => now,
@@ -67,6 +68,156 @@ test("the canonical request partitions every scope and joins identical concurren
   expect(deps.execute).toHaveBeenCalledTimes(1);
   await loadAnalyticsReport(r, { ...deps, project: "eu:123" });
   expect(entries.size).toBe(2);
+});
+test.each(["none", "empty-cohorts", "prior"])(
+  "expiring the only live reading respects independent activated-period evidence: %s",
+  async (surviving) => {
+    const { deps, f, tick } = setup();
+    const r = request("customers", surviving === "prior" ? "compare=true" : "");
+    const end = new Date(deps.clock().getTime() - 299000).toISOString();
+    deps.history = {
+      native: [{ start: "2026-07-01T03:00:00.000Z", end }],
+      archive: [],
+      observation: null,
+    };
+    deps.execute = async (q) => {
+      if (q.endpoint === "sole_analytics_active") {
+        const result = await f.execute(q);
+        tick(2);
+        return result;
+      }
+      if (
+        q.endpoint === "sole_analytics_customer_cohorts" &&
+        (surviving === "empty-cohorts" ||
+          (surviving === "prior" &&
+            q.variables.start_inclusive === r.range.comparisonStartInclusive))
+      )
+        return f.execute(q);
+      throw new Error("fixture missing");
+    };
+    const result = await loadAnalyticsReport(r, deps);
+    if (surviving === "none")
+      expect(result).toMatchObject({ state: "unavailable", data: null });
+    else if (surviving === "prior")
+      expect(result.data).toMatchObject({
+        activeWindow: null,
+        comparison: { cohorts: [] },
+      });
+    else expect(result.data).toMatchObject({ activeWindow: null, cohorts: [] });
+  },
+);
+test.each(["schema", "transport"])(
+  "stale eligibility follows the required Overview result: %s",
+  async (reason) => {
+    const { deps, tick, f } = setup();
+    deps.history = { ...deps.history, observation: null };
+    const r = request("overview");
+    await loadAnalyticsReport(r, deps);
+    tick(61);
+    deps.execute = async (q) => {
+      if (q.endpoint === "sole_analytics_sales" && reason === "schema")
+        return { columns: ["invalid"], results: [[1]], hasMore: false };
+      if (
+        q.endpoint === "sole_analytics_products" ||
+        q.endpoint === "sole_analytics_sales"
+      )
+        throw new PostHogQueryError({
+          status: "retryable",
+          reason: "provider-unavailable",
+        });
+      return f.execute(q);
+    };
+    const result = await loadAnalyticsReport(r, deps);
+    if (reason === "schema")
+      expect(result).toMatchObject({ state: "unavailable", data: null });
+    else expect(result).toMatchObject({ state: "stale", asOf: f.deps.now.toISOString() });
+  },
+);
+test("a partitioned cooldown transition retains its permit, blocks fresh scopes and coalesces recovery", async () => {
+  const { deps, f } = setup();
+  const store = deps.store!;
+  store.release = jest.fn().mockResolvedValue(undefined);
+  const recovery = Promise.withResolvers<void>();
+  const cooldown = jest
+    .fn()
+    .mockRejectedValueOnce(new Error("partition"))
+    .mockRejectedValueOnce(new Error("partition"))
+    .mockImplementation(() => recovery.promise);
+  store.cooldown = cooldown;
+  deps.execute = jest.fn().mockRejectedValue(
+    new PostHogQueryError({
+      status: "retryable",
+      reason: "rate-limited",
+      retryAfterMs: 30000,
+    }),
+  );
+  expect((await loadAnalyticsReport(request("payments"), deps)).state).toBe(
+    "unavailable",
+  );
+  expect(store.release).not.toHaveBeenCalled();
+  expect(cooldown).toHaveBeenCalledTimes(2);
+  // Admission has recovered but a missing distributed record must not reopen this project.
+  deps.execute = jest.fn(f.execute);
+  const elapsed = performance.now() + 1500;
+  const monotonic = jest.spyOn(performance, "now").mockReturnValue(elapsed);
+  try {
+    const results = Promise.all(
+      ["one", "two"].map((source) =>
+        loadAnalyticsReport(request("payments", "source=" + source), deps),
+      ),
+    );
+    await new Promise((resolve) => setImmediate(resolve));
+    expect(cooldown).toHaveBeenCalledTimes(3);
+    const [project, owner, delay] = cooldown.mock.calls[2];
+    expect([project, owner]).toEqual(cooldown.mock.calls[0].slice(0, 2));
+    expect(delay).toBeLessThan(30000);
+    recovery.resolve();
+    expect((await results).map((r) => r.state)).toEqual(["unavailable", "unavailable"]);
+    expect(deps.execute).not.toHaveBeenCalled();
+  } finally {
+    recovery.resolve();
+    monotonic.mockRestore();
+  }
+});
+test("an already pending second-scope Redis admission cannot reopen the provider after a 429", async () => {
+  const { deps } = setup(),
+    store = deps.store!;
+  const started = Promise.withResolvers<void>(),
+    respond = Promise.withResolvers<unknown>();
+  const requested = Promise.withResolvers<void>(),
+    admitted = Promise.withResolvers<"ok">();
+  deps.execute = jest.fn(() => {
+    started.resolve();
+    return respond.promise;
+  });
+  store.admit = jest
+    .fn()
+    .mockResolvedValueOnce("ok")
+    .mockImplementationOnce(() => {
+      requested.resolve();
+      return admitted.promise;
+    });
+  store.cooldown = jest.fn().mockRejectedValue(new Error("write uncertain"));
+  store.release = jest.fn().mockResolvedValue(undefined);
+  const first = loadAnalyticsReport(request("payments"), deps);
+  await started.promise;
+  const second = loadAnalyticsReport(request("payments", "source=second"), deps);
+  await requested.promise;
+  respond.reject(
+    new PostHogQueryError({
+      status: "retryable",
+      reason: "rate-limited",
+      retryAfterMs: 30000,
+    }),
+  );
+  expect((await first).state).toBe("unavailable");
+  admitted.resolve("ok");
+  expect((await second).state).toBe("unavailable");
+  expect(deps.execute).toHaveBeenCalledTimes(1);
+  expect(store.release).toHaveBeenCalledTimes(1);
+  expect(jest.mocked(store.release).mock.calls[0]).toEqual(
+    jest.mocked(store.admit).mock.calls[1],
+  );
 });
 test("429 after expiry only serves a labeled matching report, with the original as-of", async () => {
   const { deps, tick } = setup();
