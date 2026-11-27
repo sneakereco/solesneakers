@@ -89,6 +89,7 @@ function dependencies() {
     getSession: jest.fn().mockResolvedValue(null),
     hashEmail: jest.fn().mockReturnValue("email-hash"),
     findExisting: jest.fn().mockResolvedValue(null),
+    readRetryExpiration: jest.fn().mockResolvedValue(null),
     checkResume: jest.fn().mockResolvedValue({ allowed: true, retryAfterSeconds: null }),
     checkAttempt: jest.fn().mockResolvedValue({ allowed: true, retryAfterSeconds: null }),
     resolveCart: jest.fn().mockResolvedValue({ items: [item], subtotalCents: 10000 }),
@@ -213,7 +214,14 @@ describe("prepareCheckoutHandler", () => {
     expect(deps.createSquareOrder).not.toHaveBeenCalled();
   });
 
-  it.each(["missing", "unfinished", "wrong-context", "wrong-account", "authorized"])(
+  it.each([
+    "missing",
+    "unfinished",
+    "wrong-context",
+    "wrong-account",
+    "wrong-device",
+    "authorized",
+  ])(
     "recovery-only prepare %s can only read the original owned attached order",
     async (kind) => {
       const { deps, body } = await existingCheckout(
@@ -232,7 +240,11 @@ describe("prepareCheckoutHandler", () => {
       const req = new Request("https://shop.example.com/api/checkout/prepare", {
         method: "POST",
         headers: { cookie },
-        body: JSON.stringify({ ...body, recoveryOnly: true }),
+        body: JSON.stringify({
+          ...body,
+          ...(kind === "wrong-device" ? { deviceSessionId: PRODUCT_ID } : {}),
+          recoveryOnly: true,
+        }),
       });
       const response = await prepareCheckoutHandler(req as never, deps);
       expect(response.status).toBe(kind === "authorized" ? 200 : 409);
@@ -244,6 +256,7 @@ describe("prepareCheckoutHandler", () => {
         expect(data.code).toBe("CHECKOUT_RECOVERY_REQUIRED");
         expect(data.orderId).toBeUndefined();
         expect(deps.createGuestAccessToken).not.toHaveBeenCalled();
+        expect(deps.readRetryExpiration).not.toHaveBeenCalled();
       }
       for (const dependency of [
         deps.resolveCart,
@@ -255,6 +268,55 @@ describe("prepareCheckoutHandler", () => {
         deps.checkAttempt,
       ])
         expect(dependency).not.toHaveBeenCalled();
+    },
+  );
+
+  it.each([false, true])(
+    "recovery preserves the original and gives exact retry metadata only when qualified (%s)",
+    async (qualified) => {
+      const { deps, body, existing } = await existingCheckout(3);
+      const expiry = "2026-09-06T12:14:00.000Z";
+      if (qualified) deps.readRetryExpiration.mockResolvedValue(expiry);
+      else deps.readRetryExpiration.mockRejectedValue(new Error("snapshot failed"));
+      const response = await prepareCheckoutHandler(
+        new Request("https://shop.example.com/api/checkout/prepare", {
+          method: "POST",
+          headers: { cookie },
+          body: JSON.stringify({ ...body, recoveryOnly: true }),
+        }) as never,
+        deps,
+      );
+      expect(response.status).toBe(200);
+      const data = await response.json();
+      expect(data).toMatchObject({
+        orderId: existing.orderId,
+        code: "CHECKOUT_RECOVERY_REQUIRED",
+        totals: {
+          subtotalCents: 10000,
+          shippingCents: 1000,
+          taxCents: 800,
+          totalCents: 11800,
+        },
+      });
+      expect(data.originalRetry).toEqual(
+        qualified
+          ? {
+              expiresAt: expiry,
+              lines: [
+                {
+                  productId: PRODUCT_ID,
+                  variantId: VARIANT_ID,
+                  quantity: 1,
+                  unitPriceCents: 10000,
+                },
+              ],
+            }
+          : undefined,
+      );
+      expect(deps.readRetryExpiration).toHaveBeenCalledWith("tenant-1", existing);
+      expect(deps.reserve).not.toHaveBeenCalled();
+      expect(deps.calculateSquareOrder).not.toHaveBeenCalled();
+      expect(deps.createSquareOrder).not.toHaveBeenCalled();
     },
   );
 

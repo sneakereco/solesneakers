@@ -15,6 +15,9 @@ const observe = jest.fn(),
   validateToken = jest.fn(),
   orderQuery = jest.fn();
 jest.mock("@/lib/auth/session", () => ({ observeServerSession: () => observe() }));
+jest.mock("@/Modules/Orders/Source/Features/OrderStatus/financial-evidence", () => ({
+  readGuardedPaymentHistory: jest.fn().mockResolvedValue("ready"),
+}));
 jest.mock("@/services/order-access-token-service", () => ({
   OrderAccessTokenService: jest.fn().mockImplementation(() => ({ validateToken })),
 }));
@@ -26,6 +29,7 @@ jest.mock("@/lib/supabase/service-role", () => ({
 import { reconcileValidation } from "@/Modules/Cart/Source/Features/ValidateBasket/reconcile-validation";
 import { needsBasketReview } from "@/Modules/Cart/Source/Contracts/Basket";
 import { POST } from "../../src/app/api/cart/validate/route";
+import { readGuardedPaymentHistory } from "@/Modules/Orders/Source/Features/OrderStatus/financial-evidence";
 
 describe("POST /api/cart/validate", () => {
   beforeEach(() => getVariantsForCart.mockReset());
@@ -41,22 +45,25 @@ describe("POST /api/cart/validate", () => {
     async (_label, viewer, owner, guest, expired, unknown, expected) => {
       observe.mockResolvedValue(viewer ? { user: { id: viewer } } : null);
       validateToken.mockResolvedValue(guest);
+      jest.mocked(readGuardedPaymentHistory).mockResolvedValue(unknown ? null : "ready");
       const expiresAt = new Date(Date.now() + (expired ? -60000 : 60000)).toISOString();
       orderQuery.mockResolvedValue({
         data: {
+          tenant_id: "fixture-tenant",
           user_id: owner,
           status: "pending",
           checkout_attempt_guarded: true,
           expires_at: expiresAt,
           inventory_reservations: [
             {
+              tenant_id: "fixture-tenant",
               variant_id: variantId,
               status: "active",
               quantity: 1,
               expires_at: expiresAt,
             },
           ],
-          checkout_payment_attempts: unknown ? [{ state: "unknown" }] : [],
+          reservationCount: [{ count: 1 }],
         },
         error: null,
       });
@@ -115,17 +122,25 @@ describe("POST /api/cart/validate", () => {
     };
     const snapshot = [base, { ...base, variantId: secondVariant }];
     observe.mockResolvedValue({ user: { id: "u" } });
+    jest.mocked(readGuardedPaymentHistory).mockResolvedValue("ready");
     const expiresAt = new Date(Date.now() + 60000).toISOString();
     orderQuery.mockResolvedValue({
       data: {
+        tenant_id: "fixture-tenant",
         user_id: "u",
         status: "pending",
         checkout_attempt_guarded: true,
         expires_at: expiresAt,
         inventory_reservations: [
-          { variant_id: variantId, status: "active", quantity: 1, expires_at: expiresAt },
+          {
+            tenant_id: "fixture-tenant",
+            variant_id: variantId,
+            status: "active",
+            quantity: 1,
+            expires_at: expiresAt,
+          },
         ],
-        checkout_payment_attempts: [],
+        reservationCount: [{ count: 1 }],
       },
       error: null,
     });

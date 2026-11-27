@@ -55,7 +55,7 @@ function payment(order, paymentId, status) {
 test("one durable payment attempt per order", async (t) => {
   await withCheckoutDatabase(
     process.env.CHECKOUT_LEDGER_MODE ?? "fresh",
-    async ({ admin, connect, seedOrder, seedCatalog }) => {
+    async ({ admin, connect, seedOrder, seedCatalog, withPostgrest }) => {
       const svc = await connect("service_role");
       async function order({ guarded = true, guest = false } = {}) {
         const { orderId, userId } = await seedOrder(guest ? { userId: null } : {});
@@ -78,6 +78,8 @@ test("one durable payment attempt per order", async (t) => {
         return {
           id,
           square,
+          userId,
+          variantId,
           binding: guest
             ? guarded
               ? "guest:" + other
@@ -98,6 +100,255 @@ test("one durable payment attempt per order", async (t) => {
         );
         return completedValues(results);
       }
+      await t.test(
+        "Cart scopes the original hold across definitive decline and a ready retry",
+        async (t) => {
+          await withPostgrest(async (http) => {
+            let viewer;
+            const replaced = new Map();
+            function boundary(path, exports) {
+              const resolved = require.resolve(path);
+              replaced.set(resolved, require.cache[resolved]);
+              require.cache[resolved] = {
+                id: resolved,
+                filename: resolved,
+                loaded: true,
+                exports,
+              };
+            }
+            boundary("@/config/env", {
+              env: { ORDER_ACCESS_TOKEN_SECRET: "owned-local-cart-grant-fixture" },
+            });
+            boundary("@/lib/auth/session", { observeServerSession: async () => viewer });
+            boundary("@/lib/supabase/service-role", {
+              createSupabaseAdminClient: () => http,
+            });
+            try {
+              const {
+                readOwnHolds,
+              } = require("@/Modules/Cart/Source/Features/ValidateBasket/own-hold");
+              const {
+                readOriginalRetryExpiration,
+              } = require("@/Modules/Checkout/Source/Features/Preparation/read-original-hold");
+              const {
+                OrderAccessTokenService,
+              } = require("@/services/order-access-token-service");
+              const tokens = new OrderAccessTokenService(http);
+              const view = async (o) => {
+                viewer = o.userId ? { user: { id: o.userId } } : null;
+                const grant = o.userId
+                  ? undefined
+                  : (await tokens.createToken({ orderId: o.id })).token;
+                return { orderId: o.id, guestAccessToken: grant };
+              };
+              const active = { quantity: 1, recovery: false };
+              const recovery = { quantity: 0, recovery: true };
+              const held = async (o, reference) =>
+                (await readOwnHolds(reference)).get(o.variantId);
+              const qualification = async (o) => {
+                const { tenant_id, checkout_guest_context_hash, expires_at } = (
+                  await admin.query(
+                    "select tenant_id,checkout_guest_context_hash,expires_at from orders where id=$1",
+                    [o.id],
+                  )
+                ).rows[0];
+                return readOriginalRetryExpiration(http, tenant_id, {
+                  orderId: o.id,
+                  userId: o.userId,
+                  guestContextHash: checkout_guest_context_hash,
+                  expiresAt: expires_at.toISOString(),
+                  items: [{ variantId: o.variantId, quantity: 1 }],
+                });
+              };
+              for (const guest of [false, true]) {
+                await t.test(
+                  guest ? "same verified guest" : "same verified account",
+                  async () => {
+                    const original = await order({ guest });
+                    const reference = await view(original);
+                    assert.deepEqual(await held(original, reference), active);
+                    assert.equal(await qualification(original), null);
+                    const first = await get(svc, original);
+                    assert.equal((await begin(svc, original, first)).kind, "dispatch");
+                    assert.deepEqual(await held(original, reference), recovery);
+                    const failed = `failed-${original.id}`;
+                    await record(
+                      svc,
+                      first,
+                      failed,
+                      "declined",
+                      payment(original, failed, "FAILED"),
+                    );
+                    assert.deepEqual(await held(original, reference), active);
+                    assert.ok(Date.parse(await qualification(original)) > Date.now());
+                    const retry = await get(svc, original);
+                    assert.equal(retry.sequence, 2);
+                    assert.notEqual(retry.id, first.id);
+                    assert.equal((await get(svc, original)).id, retry.id);
+                    assert.deepEqual(await held(original, reference), active);
+                    assert.ok(Date.parse(await qualification(original)) > Date.now());
+                    assert.equal((await begin(svc, original, first)).kind, "observe");
+                    assert.equal((await begin(svc, original, retry)).kind, "dispatch");
+                    assert.equal((await begin(svc, original, retry)).kind, "observe");
+                    const accepted = `accepted-${original.id}`;
+                    await record(
+                      svc,
+                      retry,
+                      accepted,
+                      "pending",
+                      payment(original, accepted, "APPROVED"),
+                    );
+                    assert.deepEqual(await held(original, reference), recovery);
+                    assert.equal(await qualification(original), null);
+                    await record(
+                      svc,
+                      retry,
+                      accepted,
+                      "succeeded",
+                      payment(original, accepted, "COMPLETED"),
+                    );
+                    assert.deepEqual(await held(original, reference), recovery);
+                    assert.equal(await qualification(original), null);
+                    assert.equal(
+                      (
+                        await admin.query(
+                          "select count(*)::int n from inventory_reservations where order_id=$1",
+                          [original.id],
+                        )
+                      ).rows[0].n,
+                      1,
+                    );
+                  },
+                );
+              }
+              await t.test(
+                "unknown, review, expiry and identity never credit the held stock",
+                async () => {
+                  const original = await order();
+                  const reference = await view(original);
+                  const a = await get(svc, original);
+                  await begin(svc, original, a);
+                  await record(svc, a, null, "unknown", {
+                    kind: "uncertain",
+                    reason: "response_lost",
+                  });
+                  assert.deepEqual(await held(original, reference), recovery);
+                  assert.equal(
+                    await held(original, { orderId: randomUUID() }),
+                    undefined,
+                  );
+                  viewer = { user: { id: randomUUID() } };
+                  assert.equal(await held(original, reference), undefined);
+                  const reviewed = await order();
+                  const review = await view(reviewed);
+                  await admin.query(
+                    "update orders set checkout_financial_review='square_evidence_conflict' where id=$1",
+                    [reviewed.id],
+                  );
+                  assert.deepEqual(await held(reviewed, review), recovery);
+                  const expired = await order();
+                  const expiredReference = await view(expired);
+                  await admin.query(
+                    "update inventory_reservations set expires_at=now()-interval '1 second' where order_id=$1",
+                    [expired.id],
+                  );
+                  assert.deepEqual(await held(expired, expiredReference), recovery);
+                  assert.equal(await qualification(expired), null);
+                  const old = await order({ guarded: false, guest: true });
+                  const oldReference = await view(old);
+                  assert.equal(
+                    await held(old, { ...oldReference, guestAccessToken: "invalid" }),
+                    undefined,
+                  );
+                  assert.deepEqual(await held(old, oldReference), recovery);
+                },
+              );
+              await t.test(
+                "late capture contradicting a declined attempt blocks a ready retry",
+                async () => {
+                  const original = await order();
+                  const reference = await view(original);
+                  const declined = await get(svc, original);
+                  await begin(svc, original, declined);
+                  const paymentId = `late-${original.id}`;
+                  await record(
+                    svc,
+                    declined,
+                    paymentId,
+                    "declined",
+                    payment(original, paymentId, "FAILED"),
+                  );
+                  const ready = await get(svc, original);
+                  assert.equal(ready.state, "ready");
+                  assert.ok(await qualification(original));
+                  const captured = await rpc(
+                    svc,
+                    "record_checkout_terminal_capture($1,$2,$3,$4,$5,$6)",
+                    [
+                      declined.id,
+                      original.square,
+                      declined.id,
+                      "card",
+                      {
+                        kind: "payment",
+                        orderId: original.id,
+                        providerId: paymentId,
+                        paymentId,
+                        providerVersion: "late-version",
+                        status: "COMPLETED",
+                        amountCents: 1000,
+                        expectedTotalCents: 1000,
+                        currency: "USD",
+                        fulfillmentStatus: "unfulfilled",
+                      },
+                      new Date().toISOString(),
+                    ],
+                  );
+                  assert.equal(captured.reviewReason, "square_terminal_capture_conflict");
+                  assert.deepEqual(await held(original, reference), recovery);
+                  assert.equal(await qualification(original), null);
+                  await assert.rejects(get(svc, original), /checkout_order_not_payable/);
+                },
+              );
+              await t.test(
+                "changed amount and released inventory close retry eligibility",
+                async () => {
+                  for (const change of [
+                    "update orders set total=11 where id=$1",
+                    "update inventory_reservations set status='released' where order_id=$1",
+                  ]) {
+                    const original = await order();
+                    const reference = await view(original);
+                    const first = await get(svc, original);
+                    await begin(svc, original, first);
+                    const canceled = `canceled-${original.id}`;
+                    await record(
+                      svc,
+                      first,
+                      canceled,
+                      "canceled",
+                      payment(original, canceled, "CANCELED"),
+                    );
+                    assert.ok(await qualification(original));
+                    await admin.query(change, [original.id]);
+                    assert.deepEqual(await held(original, reference), recovery);
+                    assert.equal(await qualification(original), null);
+                    await assert.rejects(
+                      get(svc, original),
+                      /checkout_order_not_payable/,
+                    );
+                  }
+                },
+              );
+            } finally {
+              for (const [path, original] of replaced) {
+                if (original) require.cache[path] = original;
+                else delete require.cache[path];
+              }
+            }
+          });
+        },
+      );
       await t.test(
         "guarded owner identity is fixed from preparation through observation",
         async () => {

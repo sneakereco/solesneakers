@@ -350,6 +350,38 @@ function isVerifiedUnpaid(financial: ReceiptFinancialEvidence): boolean {
   );
 }
 
+export async function readGuardedPaymentHistory(
+  authorized: OrderOwner,
+  admin: AdminSupabaseClient,
+): Promise<"ready" | "retry" | null> {
+  try {
+    const current = await readBoundEvidence(authorized, admin);
+    if (!current || !isVerifiedUnpaid(current.financial)) return null;
+    const { order } = current;
+    const cents = Math.round(order.total * 100);
+    const negative = order.attempts.filter(
+      (a) =>
+        a.state === "declined" || (a.state === "canceled" && !!a.provider_payment_id),
+    );
+    if (
+      !order.checkout_attempt_guarded ||
+      order.status !== "pending" ||
+      !order.square_order_id ||
+      (order.payment_transaction_id &&
+        !negative.some((a) => a.provider_payment_id === order.payment_transaction_id)) ||
+      !order.attempts.every(
+        (a) =>
+          a.amount_cents === cents && ["ready", "declined", "canceled"].includes(a.state),
+      )
+    )
+      return null;
+    return negative.length ? "retry" : "ready";
+  } catch (error) {
+    if (error instanceof OrderOwnerMismatch) return null;
+    throw error;
+  }
+}
+
 export async function permitRefusalDisposition(
   authorized: OrderOwner,
   admin: AdminSupabaseClient,

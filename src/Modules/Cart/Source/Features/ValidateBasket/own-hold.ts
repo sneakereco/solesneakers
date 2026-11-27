@@ -1,20 +1,17 @@
 import { observeServerSession } from "@/lib/auth/session";
 import { createSupabaseAdminClient } from "@/lib/supabase/service-role";
 import { OrderAccessTokenService } from "@/services/order-access-token-service";
+import {
+  classifyOriginalHold,
+  readOriginalHold,
+} from "@/Modules/Checkout/Source/Features/Preparation/read-original-hold";
 import type { ValidationOrder } from "./validation-contract";
 
 // These quantities are scoped to one already-prepared order. They are never free inventory.
 export async function readOwnHolds(reference: ValidationOrder) {
   const session = await observeServerSession();
   const client = createSupabaseAdminClient();
-  const { data: order, error } = await client
-    .from("orders")
-    .select(
-      "user_id,status,expires_at,checkout_attempt_guarded,inventory_reservations(variant_id,quantity,status,expires_at),checkout_payment_attempts(state)",
-    )
-    .eq("id", reference.orderId)
-    .maybeSingle();
-  if (error) throw error;
+  const order = await readOriginalHold(client, reference.orderId);
   const held = new Map<string, { quantity: number; recovery: boolean }>();
   if (!order) return held;
   const authorized =
@@ -27,19 +24,12 @@ export async function readOwnHolds(reference: ValidationOrder) {
           token: reference.guestAccessToken,
         }));
   if (!authorized) return held;
-  const now = Date.now();
-  const active =
-    order.checkout_attempt_guarded &&
-    order.status === "pending" &&
-    !!order.expires_at &&
-    Date.parse(order.expires_at) > now &&
-    order.checkout_payment_attempts.every((a) => a.state === "ready");
+  const active = !!(await classifyOriginalHold(client, order));
   for (const h of order.inventory_reservations) {
-    const usable = active && h.status === "active" && Date.parse(h.expires_at) > now;
     const previous = held.get(h.variant_id);
     held.set(h.variant_id, {
-      quantity: (previous?.quantity ?? 0) + (usable ? h.quantity : 0),
-      recovery: !!previous?.recovery || !usable,
+      quantity: (previous?.quantity ?? 0) + (active ? h.quantity : 0),
+      recovery: !active,
     });
   }
   return held;

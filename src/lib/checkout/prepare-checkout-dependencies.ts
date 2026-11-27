@@ -2,6 +2,7 @@ import { deadlineFetch } from "@/Modules/Checkout/Source/Features/Recovery/recov
 import { CheckoutProviderCapacity } from "@/lib/checkout/checkout-attempt-limit";
 import { checkoutAdmissionBudgets } from "@/Modules/Checkout/Source/Features/Operations/admission";
 import { CheckoutPreparationRepository } from "@/Modules/Checkout/Source/Features/Preparation/reservation-repository";
+import { readOriginalRetryExpiration } from "@/Modules/Checkout/Source/Features/Preparation/read-original-hold";
 import { validateShippingAddress } from "@/lib/shipping/validate-shipping-address";
 import { assertCheckoutOpen } from "@/lib/checkout/checkout-access";
 import { env } from "@/config/env";
@@ -54,6 +55,8 @@ export function createPrepareCheckoutDependencies(
     hashEmail: (email) => hashNormalizedCheckoutEmail(email, getCheckoutIdentitySecret()),
     findExisting: (tenantId, idempotencyKey) =>
       reservations.findByIdempotencyKey(tenantId, idempotencyKey),
+    readRetryExpiration: (tenantId, existing) =>
+      readOriginalRetryExpiration(supabase, tenantId, existing),
     checkAddressValidationAttempt: (identity) => limiter.checkAddressValidation(identity),
     checkResume: ({ shopperBinding, ip, attached }) =>
       attached

@@ -494,6 +494,42 @@ export function readPreparedScope(ownerId: string | null, storage = getSessionSt
   }
 }
 
+export function observePreparedCheckout(
+  ownerId: string | null,
+  storage = getSessionStorage(),
+) {
+  try {
+    const scope = readPreparedScope(ownerId, storage);
+    if (!storage || !scope) return null;
+    const pair = readPair(storage, financial);
+    const device = storage.getItem(DEVICE_SESSION_KEY);
+    if (!pair || !z.uuid().safeParse(device).success) return null;
+    const guestCurrent = observeStoredGuestAccess(storage);
+    return {
+      scope,
+      key: pair[0],
+      fingerprint: pair[1],
+      device,
+      current: () => {
+        try {
+          const next = readPreparedScope(ownerId, storage);
+          return (
+            next?.orderId === scope.orderId &&
+            next.guestAccessToken === scope.guestAccessToken &&
+            equal(readPair(storage, financial), pair) &&
+            storage.getItem(DEVICE_SESSION_KEY) === device &&
+            (ownerId !== null || guestCurrent())
+          );
+        } catch {
+          return false;
+        }
+      },
+    };
+  } catch {
+    return null;
+  }
+}
+
 export function closePreparedScope(
   orderId: string,
   token: string | null,

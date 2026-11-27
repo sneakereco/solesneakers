@@ -71,6 +71,10 @@ export type PrepareCheckoutDependencies = {
     tenantId: string,
     idempotencyKey: string,
   ): Promise<ExistingCheckout | null>;
+  readRetryExpiration(
+    tenantId: string,
+    existing: ExistingCheckout,
+  ): Promise<string | null>;
   checkAddressValidationAttempt(
     identity: CheckoutAttemptIdentity,
   ): Promise<CheckoutAttemptDecision>;
@@ -465,6 +469,13 @@ export async function prepareCheckoutHandler(
       (existing.status !== "pending" || !isFuture(existing.expiresAt, deps.now()));
     if (parsed.data.recoveryOnly || terminalOriginal) {
       if (!existing?.squareOrderId) return recoveryRequired();
+      const retryExpiresAt =
+        parsed.data.recoveryOnly && !terminalOriginal
+          ? await deps.readRetryExpiration(tenantId, existing).catch(() => {
+              deps.reportError(new Error("checkout_retry_qualification_unavailable"));
+              return null;
+            })
+          : null;
       return json(
         {
           code: "CHECKOUT_RECOVERY_REQUIRED",
@@ -472,6 +483,21 @@ export async function prepareCheckoutHandler(
           expiresAt: existing.expiresAt,
           reused: true,
           totals: totals(existing),
+          ...(retryExpiresAt && isFuture(retryExpiresAt, deps.now())
+            ? {
+                originalRetry: {
+                  expiresAt: retryExpiresAt,
+                  lines: existing.items.map(
+                    ({ productId, variantId, quantity, unitPriceCents }) => ({
+                      productId,
+                      variantId,
+                      quantity,
+                      unitPriceCents,
+                    }),
+                  ),
+                },
+              }
+            : {}),
           guestAccessToken: await guestToken(existing.orderId, !session, deps),
           paymentConfig,
         },

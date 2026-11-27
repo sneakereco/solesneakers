@@ -1,4 +1,5 @@
 import assert from "node:assert/strict";
+import { isDeepStrictEqual } from "node:util";
 import { chromium, expect } from "@playwright/test";
 import { compileUxHarness, openUxHarness } from "./helpers/ux-harness.mjs";
 
@@ -92,8 +93,8 @@ const sdk = `window.Square={payments:()=>({
     if(window.hangCreate){window.hangCreate=false;await new Promise(r=>window.releaseCreate=r)}
     return m;},
   paymentRequest(){return {update:()=>true,addEventListener(){}}},
-  async applePay(){window.appleCount=(window.appleCount||0)+1;return {async tokenize(){return window.walletResult??{status:"CANCEL"}}}},
-  async afterpayClearpay(){return {async attach(){}}},
+  async applePay(){window.appleCount=(window.appleCount||0)+1;return {async tokenize(){if(window.holdApple)await new Promise(resolve=>window.releaseApple=resolve);return window.walletResult??{status:"CANCEL"}}}},
+  async afterpayClearpay(){return {async attach(){},async tokenize(){return window.afterpayResult??{status:"CANCEL"}}}},
   async cashAppPay(request,options){const entry={options};(window.cashMethods??=[]).push(entry);return {async attach(){},addEventListener(type,listener){entry.complete=listener},async destroy(){entry.destroyed=true;return true}}}
 })};`;
 const prepared = (reused) => ({
@@ -140,16 +141,46 @@ async function fixture(browser) {
       });
     }
     if (u.hostname !== "ux.test") return route.abort();
-    if (path === "/api/cart/validate")
+    if (path === "/api/cart/validate") {
+      const input = route.request().postDataJSON();
+      if (f.lastUnit?.reservation) {
+        const last = f.lastUnit;
+        const owns =
+          input.order?.orderId === order.id &&
+          input.order?.guestAccessToken === last.guestAccessToken;
+        const available = owns && last.phase !== "paid";
+        last.validations.push({ phase: last.phase, owns });
+        return route.fulfill({
+          json: {
+            contractVersion: 2,
+            items: [],
+            removed: input.items.map(({ productId, variantId }) => ({
+              productId,
+              variantId,
+              reason: "out_of_stock",
+            })),
+            lineState: input.items.map((row) => ({
+              productId: row.productId,
+              variantId: row.variantId,
+              requestedQuantity: row.quantity,
+              availableQuantity: available ? 1 : 0,
+              availability: available ? "available" : "unavailable",
+              reason: available ? "available" : "unavailable",
+              facts: last.changedPrice
+                ? { ...item, priceCents: item.priceCents + 1 }
+                : item,
+              ...(owns ? { orderScoped: true } : {}),
+            })),
+          },
+        });
+      }
       return route.fulfill({
         json: {
           removed: [],
-          items: route
-            .request()
-            .postDataJSON()
-            .items.map((x) => ({ ...item, ...x })),
+          items: input.items.map((x) => ({ ...item, ...x })),
         },
       });
+    }
     if (path === "/api/auth/session") {
       if (f.sessionHold) await f.sessionHold.promise;
       return route.fulfill({ status: f.sessionStatus ?? 200, json: f.session });
@@ -157,9 +188,10 @@ async function fixture(browser) {
     if (path === "/api/checkout/quote") {
       f.quoteCalls++;
       if (f.quoteHold) await f.quoteHold.promise;
+      const unavailable = f.quoteError || f.lastUnit?.reservation;
       return route.fulfill({
-        status: f.quoteError ? 503 : 200,
-        json: f.quoteError
+        status: unavailable ? 503 : 200,
+        json: unavailable
           ? { error: "Totals unavailable" }
           : {
               completeness: "exact",
@@ -170,6 +202,56 @@ async function fixture(browser) {
     }
     if (path === "/api/checkout/prepare") {
       const n = f.prepareCalls.push(route.request().postDataJSON());
+      if (f.lastUnit) {
+        const last = f.lastUnit;
+        const input = f.prepareCalls[n - 1];
+        if (input.recoveryOnly) {
+          const original = last.reservation;
+          const requested = { ...input };
+          const saved = { ...original };
+          delete requested.recoveryOnly;
+          delete saved.shippingAddressOverride;
+          if (!isDeepStrictEqual(requested, saved))
+            return route.fulfill({
+              status: 409,
+              json: { code: "CHECKOUT_RECOVERY_REQUIRED" },
+            });
+          if (f.retryLookupHold) await f.retryLookupHold.promise;
+          const reply = route.fulfill({
+            json: {
+              ...prepared(true),
+              code: "CHECKOUT_RECOVERY_REQUIRED",
+              expiresAt: new Date(Date.now() + 10 * 60_000).toISOString(),
+              guestAccessToken: last.guestAccessToken,
+              ...(last.phase === "declined"
+                ? {
+                    originalRetry: {
+                      expiresAt: new Date(Date.now() + 10 * 60_000).toISOString(),
+                      lines: [
+                        {
+                          productId: item.productId,
+                          variantId: item.variantId,
+                          quantity: 1,
+                          unitPriceCents: item.priceCents,
+                        },
+                      ],
+                    },
+                  }
+                : {}),
+            },
+          });
+          if (!f.retryLookupHold) return reply;
+          await reply.catch(() => {});
+          last.lookupSettled = true;
+          return;
+        }
+        if (last.reservation)
+          return route.fulfill({ status: 409, json: { error: "Last unit is held" } });
+        last.reservation = f.prepareCalls[n - 1];
+        return route.fulfill({
+          json: { ...prepared(false), guestAccessToken: last.guestAccessToken },
+        });
+      }
       if (n === 1 && f.prepareHold) await f.prepareHold.promise;
       if (f.missingOriginal && f.prepareCalls[n - 1].recoveryOnly)
         return route.fulfill({
@@ -197,10 +279,47 @@ async function fixture(browser) {
     }
     if (path === "/api/checkout/payment-permit") {
       f.permitCalls++;
+      if (f.lastUnit) {
+        const last = f.lastUnit;
+        const { orderId, deviceSessionId, guestAccessToken, method, turnstileToken } =
+          route.request().postDataJSON();
+        if (
+          last.phase === "paid" ||
+          orderId !== order.id ||
+          deviceSessionId !== last.reservation?.deviceSessionId ||
+          guestAccessToken !== last.guestAccessToken ||
+          method !== last.reservation.paymentMethod ||
+          (last.guestAccessToken && !turnstileToken)
+        )
+          return route.fulfill({ status: 403, json: { error: "Original mismatch" } });
+        const permit = `permit-${last.attempts.length + 1}`;
+        last.attempts.push(permit);
+        return route.fulfill({ json: { permit } });
+      }
       return route.fulfill({ json: { permit: "fixture" } });
     }
     if (path === "/api/checkout/pay") {
       f.payCalls++;
+      if (f.lastUnit) {
+        const last = f.lastUnit;
+        const { permit } = route.request().postDataJSON();
+        if (!last.attempts.includes(permit) || last.dispatches.includes(permit))
+          return route.fulfill({ status: 409, json: { status: "UNKNOWN" } });
+        last.dispatches.push(permit);
+        if (last.phase === "ready") {
+          last.phase = "declined";
+          return route.fulfill({
+            status: 402,
+            json: {
+              error: "Payment was declined. Check your details and try again.",
+              status: "FAILED",
+              paymentId: "synthetic-declined-payment",
+              attemptId: "71111111-1111-4111-8111-111111111114",
+            },
+          });
+        }
+        last.phase = "paid";
+      }
       return route.fulfill({
         json: {
           statusUrl: "/checkout/success?orderId=71111111-1111-4111-8111-111111111111",
@@ -244,6 +363,194 @@ async function fixture(browser) {
 async function pay(page) {
   await page.getByRole("textbox", { name: "Name on card" }).fill("Buyer");
   await page.getByRole("button", { name: "Pay $2.30 now", exact: true }).click();
+}
+async function retryDeclinedLastUnit(
+  f,
+  { guest = false, reload = false, method = "card", failure } = {},
+) {
+  f.lastUnit = {
+    phase: "ready",
+    guestAccessToken: guest ? "synthetic-order-grant" : undefined,
+    validations: [],
+    attempts: [],
+    dispatches: [],
+  };
+  if (failure === "late qualification") f.retryLookupHold = gate();
+  const p = await f.ctx.newPage();
+  p.on("pageerror", (e) => f.errors.push(e.message));
+  if (guest) {
+    f.session = { user: null, role: null };
+    await p.route("https://challenges.cloudflare.com/**", (route) =>
+      route.fulfill({
+        contentType: "text/javascript",
+        body: "window.turnstile={render(el,options){window.verifyGuest=options.callback;return 'widget';},remove(){},reset(){}};",
+      }),
+    );
+  }
+  const url = "https://ux.test/checkout" + (guest ? "?guest&guestKey" : "");
+  const verifyGuest = async () => {
+    await p.getByLabel("Email", { exact: true }).fill("guest@example.test");
+    await p.waitForFunction(() => typeof window.verifyGuest === "function");
+    await p.evaluate(() => window.verifyGuest("synthetic-first-verification"));
+  };
+  await openUxHarness(p, bundle, url);
+  if (guest) await verifyGuest();
+  const submit = async (replaceUnits = false) => {
+    const replace = () =>
+      p.evaluate(() => window.cart.setCartItems([...window.cart.items]));
+    if (method === "applePay") {
+      await p.evaluate((pause) => {
+        const contact = {
+          givenName: "Test",
+          familyName: "Buyer",
+          phone: "3025550100",
+          addressLines: ["1 Test St"],
+          city: "Wilmington",
+          state: "DE",
+          postalCode: "19801",
+          countryCode: "US",
+        };
+        window.walletResult = {
+          status: "OK",
+          token: "synthetic-apple",
+          details: { billing: contact, shipping: { contact } },
+        };
+        window.holdApple = pause;
+      }, replaceUnits);
+      await p.getByRole("button", { name: "Pay with Apple Pay" }).click();
+      if (replaceUnits) {
+        await p.waitForFunction(() => typeof window.releaseApple === "function");
+        assert.deepEqual(await replace(), { status: "saved" });
+        await p.evaluate(() => window.releaseApple());
+      }
+    } else if (method === "cashAppPay") {
+      await p.getByRole("radio", { name: "Cash App Pay" }).click();
+      await p.waitForFunction(() => window.cashMethods?.at(-1)?.complete);
+      await expect
+        .poll(() => p.evaluate(() => window.cashMethods.at(-1).options.shouldTokenize()))
+        .toBe(true);
+      if (replaceUnits) assert.deepEqual(await replace(), { status: "saved" });
+      await p.evaluate(() =>
+        window.cashMethods.at(-1).complete({
+          detail: { tokenResult: { status: "OK", token: "synthetic-cash" } },
+        }),
+      );
+    } else if (method === "afterpay") {
+      await p.evaluate(() => {
+        window.afterpayResult = {
+          status: "OK",
+          token: "synthetic-afterpay",
+          details: {
+            shipping: {
+              contact: {
+                addressLines: ["1 Test St"],
+                city: "Wilmington",
+                state: "DE",
+                postalCode: "19801",
+                countryCode: "US",
+              },
+            },
+          },
+        };
+      });
+      await p.getByRole("radio", { name: "Afterpay" }).click();
+      await p.getByRole("button", { name: "Continue with Afterpay" }).click();
+    } else await pay(p);
+  };
+  await submit();
+  await expect(p.getByRole("dialog").getByRole("alert"))
+    .toHaveText("Payment was declined. Check your details and try again.")
+    .catch(async (error) => {
+      console.error(
+        "Initial decline diagnostic",
+        p.url(),
+        await p.locator("body").innerText(),
+        {
+          permits: f.permitCalls,
+          pays: f.payCalls,
+          validations: f.lastUnit.validations,
+        },
+      );
+      throw error;
+    });
+  const financialPair = () =>
+    p.evaluate(() => [
+      sessionStorage.getItem("checkout_idempotency_key"),
+      sessionStorage.getItem("checkout_cart_fingerprint"),
+    ]);
+  const originalPair = await financialPair();
+  assert.equal(originalPair[0], f.lastUnit.reservation.idempotencyKey);
+  assert.ok(originalPair[1]);
+  await p.evaluate(() => window.cart.recheckAvailability());
+  assert.ok(
+    f.lastUnit.validations.some(({ phase, owns }) => phase === "declined" && owns),
+  );
+  assert.deepEqual(f.lastUnit.dispatches, ["permit-1"]);
+  if (method === "card") assert.equal(await p.evaluate(() => window.tokenCalls), 1);
+  assert.equal(f.statusCalls, 0);
+  if (reload) await openUxHarness(p, bundle, url);
+  else await p.getByRole("button", { name: "Return to checkout" }).click();
+  if (guest) await verifyGuest();
+  if (failure === "price change") {
+    f.lastUnit.changedPrice = true;
+    await p.evaluate(() => window.cart.recheckAvailability());
+    await expect(p.getByRole("button", { name: "Pay now" })).toBeDisabled();
+    assert.equal(f.permitCalls, 1);
+    assert.equal(f.payCalls, 1);
+    return;
+  }
+  if (failure === "device change") {
+    await p.evaluate(() => {
+      sessionStorage.setItem("rdk_checkout_device_session_id", crypto.randomUUID());
+      return window.cart.recheckAvailability();
+    });
+    await expect(p.getByRole("button", { name: "Pay now" })).toBeDisabled();
+    assert.equal(f.permitCalls, 1);
+    assert.equal(f.payCalls, 1);
+    assert.equal(await p.evaluate(() => window.tokenCalls), 1);
+    return;
+  }
+  if (failure === "late qualification") {
+    await expect
+      .poll(() => f.prepareCalls.some((input) => input.recoveryOnly))
+      .toBe(true);
+    assert.deepEqual(
+      await p.evaluate(() => window.cart.setCartItems([...window.cart.items])),
+      { status: "saved" },
+    );
+    await p.evaluate(() => window.cart.recheckAvailability());
+    f.retryLookupHold.resolve();
+    await expect.poll(() => f.lastUnit.lookupSettled).toBe(true);
+    await p.evaluate(() => new Promise((resolve) => requestAnimationFrame(resolve)));
+    await expect(p.getByRole("button", { name: "Pay now" })).toBeDisabled();
+    assert.equal(f.permitCalls, 1);
+    assert.equal(f.payCalls, 1);
+    return;
+  }
+  if (failure === "replaced units") {
+    await submit(true);
+    await expect(p.getByRole("dialog").getByRole("alert")).toContainText(
+      /checkout changed/i,
+    );
+    assert.equal(f.permitCalls, 1);
+    assert.equal(f.payCalls, 1);
+    return;
+  }
+  f.orderHold = gate();
+  await submit();
+  await expect(p).toHaveURL(
+    /\/checkout\/processing\?orderId=71111111-1111-4111-8111-111111111111/,
+  );
+  assert.deepEqual(await financialPair(), originalPair);
+  assert.equal(f.prepareCalls.filter((input) => !input.recoveryOnly).length, 1);
+  assert.ok(f.prepareCalls.some((input) => input.recoveryOnly));
+  assert.equal(f.permitCalls, 2);
+  assert.equal(f.payCalls, 2);
+  if (method === "card")
+    assert.equal(await p.evaluate(() => window.tokenCalls), reload ? 1 : 2);
+  assert.deepEqual(f.lastUnit.dispatches, ["permit-1", "permit-2"]);
+  f.orderHold.resolve();
+  await expect(p.getByRole("heading", { name: "Order Confirmed!" })).toBeVisible();
 }
 async function controlledPost(f, stage, mode) {
   const p = await f.ctx.newPage();
@@ -443,6 +750,23 @@ const cases = {
     await expect(p.getByRole("dialog").getByText("Payment was declined.")).toBeVisible();
     assert.equal(f.statusCalls, 0);
   },
+  lastUnitDeclineAccount: (f) => retryDeclinedLastUnit(f),
+  lastUnitDeclineGuest: (f) => retryDeclinedLastUnit(f, { guest: true }),
+  lastUnitDeclineAccountReload: (f) => retryDeclinedLastUnit(f, { reload: true }),
+  lastUnitDeclineGuestReload: (f) =>
+    retryDeclinedLastUnit(f, { guest: true, reload: true }),
+  lastUnitApplePay: (f) => retryDeclinedLastUnit(f, { method: "applePay" }),
+  lastUnitCashApp: (f) => retryDeclinedLastUnit(f, { method: "cashAppPay" }),
+  lastUnitAfterpay: (f) => retryDeclinedLastUnit(f, { method: "afterpay" }),
+  lastUnitApplePayReplacement: (f) =>
+    retryDeclinedLastUnit(f, { method: "applePay", failure: "replaced units" }),
+  lastUnitCashAppReplacement: (f) =>
+    retryDeclinedLastUnit(f, { method: "cashAppPay", failure: "replaced units" }),
+  lastUnitDeclineRepriced: (f) => retryDeclinedLastUnit(f, { failure: "price change" }),
+  lastUnitDeclineDeviceChanged: (f) =>
+    retryDeclinedLastUnit(f, { failure: "device change" }),
+  lastUnitDeclineLateQualification: (f) =>
+    retryDeclinedLastUnit(f, { failure: "late qualification" }),
   async earlyDeadline(f) {
     for (const stage of ["prepare", "payment-permit"])
       for (const mode of ["headers", "body"]) {
@@ -1076,6 +1400,7 @@ try {
         "sessionHold",
         "orderHold",
         "scriptHold",
+        "retryLookupHold",
       ])
         f[hold]?.resolve();
       await f.ctx.close();
