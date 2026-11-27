@@ -4,8 +4,72 @@ import { EventEmitter } from "node:events";
 import { existsSync, readFileSync, statSync } from "node:fs";
 import { PassThrough } from "node:stream";
 import { test } from "node:test";
+import { readNativeMarkers } from "../../scripts/analytics-native-readback.mjs";
 import { resolveObserverRelease } from "../../scripts/resolve-analytics-observer-release.mjs";
 import { runObservers } from "../../scripts/run-admin-analytics-observers.mjs";
+
+const markerResult = (markers) => ({
+  columns: ["visible_events", "markers"],
+  results: [[0, markers]],
+  hasMore: false,
+});
+
+test("native readback retries pending markers until both are visible", async () => {
+  const counts = [0, 1, 2];
+  const pauses = [];
+  await readNativeMarkers(
+    async () => markerResult(counts.shift()),
+    2,
+    performance.now() + 20_000,
+    async (ms) => pauses.push(ms),
+  );
+  assert.deepEqual(counts, []);
+  assert.deepEqual(pauses, [2_000, 2_000]);
+});
+
+test("native readback stops on exhausted attempts or remaining time", async () => {
+  const read = async () => markerResult(1);
+  const pauses = [];
+  await assert.rejects(
+    readNativeMarkers(read, 2, performance.now() + 20_000, async (ms) => pauses.push(ms)),
+    /not yet visible/,
+  );
+  assert.deepEqual(pauses, [2_000, 2_000]);
+  await assert.rejects(
+    readNativeMarkers(read, 2, performance.now() + 1_000, async () => {
+      assert.fail("paused beyond the deadline");
+    }),
+    /not yet visible/,
+  );
+});
+
+test("native readback immediately rejects malformed or excessive counts", async () => {
+  for (const data of [
+    null,
+    markerResult(-1),
+    markerResult(1.5),
+    markerResult(3),
+    { ...markerResult(2), truncated: true },
+    { ...markerResult(2), hasMore: true },
+    { ...markerResult(2), results: [[-1, 2]] },
+    { ...markerResult(2), results: [[0, 2, 0]] },
+  ]) {
+    let reads = 0;
+    await assert.rejects(
+      readNativeMarkers(
+        async () => {
+          reads++;
+          return data;
+        },
+        2,
+        performance.now() + 20_000,
+        async () => assert.fail("retried an invalid response"),
+      ),
+      /Invalid native marker response/,
+    );
+    assert.equal(reads, 1);
+  }
+});
 
 const env = {
   ANALYTICS_OBSERVER_PROBES_APPROVED: "true",

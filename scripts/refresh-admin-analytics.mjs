@@ -3,6 +3,7 @@ import { isDeepStrictEqual } from "node:util";
 import { readFileSync } from "node:fs";
 import { createClient } from "@supabase/supabase-js";
 import { requireAnalytics } from "./analytics-operator-runtime.mjs";
+import { readNativeMarkers } from "./analytics-native-readback.mjs";
 
 const feature = (path) =>
   requireAnalytics("../src/Modules/Analytics/Source/Features/" + path + ".ts");
@@ -189,26 +190,21 @@ try {
     }
     const first = p.first_id ?? p.last_id,
       start = p.first_at ?? p.last_at;
-    const data = await read(
-      definition,
-      {
-        first_id: first,
-        last_id: p.last_id,
-        start_inclusive: start,
-        end_exclusive: p.last_at,
-      },
-      1,
+    await readNativeMarkers(
+      () =>
+        read(
+          definition,
+          {
+            first_id: first,
+            last_id: p.last_id,
+            start_inclusive: start,
+            end_exclusive: p.last_at,
+          },
+          1,
+        ),
+      p.first_id ? 2 : 1,
+      deadline,
     );
-    if (
-      data.hasMore ||
-      data.truncated ||
-      data.columns.join(",") !== "visible_events,markers" ||
-      data.results.length !== 1 ||
-      !Number.isSafeInteger(data.results[0][0]) ||
-      data.results[0][0] < 0 ||
-      data.results[0][1] !== (p.first_id ? 2 : 1)
-    )
-      throw Error();
     if (!(await rpc("analytics_native_advance", { p_last_id: p.last_id }))) throw Error();
     console.log(
       JSON.stringify({
