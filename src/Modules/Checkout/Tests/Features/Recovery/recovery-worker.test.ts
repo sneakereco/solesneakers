@@ -21,6 +21,27 @@ import type { RecoveryJob } from "../../../Source/Features/Recovery/recovery-con
 
 import { SquareEvidenceConflict } from "../../../Source/Features/Payments/payment-facts";
 const config = { deadlineMs: 45000, batchSize: 50, concurrency: 4 };
+it("does not start more recovery lanes than configured Square slots", () => {
+  const original = process.env.CHECKOUT_ADMISSION_BUDGETS;
+  try {
+    process.env.CHECKOUT_ADMISSION_BUDGETS = JSON.stringify({
+      version: 1,
+      revision: "test",
+      ipPerMinute: 120,
+      globalPerMinute: 400,
+      providers: { square: 2, shippo: 2 },
+    });
+    jest.isolateModules(() => {
+      const { recoverySettings } = jest.requireActual(
+        "../../../Source/Features/Recovery/recovery-worker",
+      );
+      expect(recoverySettings.concurrency).toBe(2);
+    });
+  } finally {
+    if (original === undefined) delete process.env.CHECKOUT_ADMISSION_BUDGETS;
+    else process.env.CHECKOUT_ADMISSION_BUDGETS = original;
+  }
+});
 const jobs = (n: number): RecoveryJob[] =>
   Array.from({ length: n }, (_, i) => ({
     kind: "reconcile_payment",

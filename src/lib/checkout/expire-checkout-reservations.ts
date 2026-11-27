@@ -115,31 +115,38 @@ export function createCheckoutRecoveryDependencies(
             return order;
           };
           const order = await read();
-          const canceledProof = async (observed: typeof order) => {
-            if (observed.state !== "CANCELED") return null;
-            if (!observed.tenders?.length) return id;
+          const negativeTenderIds = async (observed: typeof order) => {
+            if (!observed.tenders?.length) return [];
             const { data, error } = await db
               .from("checkout_financial_facts")
               .select("payment_id,status")
               .eq("order_id", localId)
               .eq("kind", "payment");
             if (error) throw error;
+            const captures = new Set(
+              data.filter((f) => f.status === "COMPLETED").map((f) => f.payment_id),
+            );
             const negative = new Set(
               data
-                .filter((f) => ["CANCELED", "FAILED"].includes(f.status))
+                .filter(
+                  (f) =>
+                    ["CANCELED", "FAILED"].includes(f.status) &&
+                    !captures.has(f.payment_id),
+                )
                 .map((f) => f.payment_id),
             );
             return observed.tenders.every((t) => t.paymentId && negative.has(t.paymentId))
-              ? id
+              ? [...negative]
               : null;
           };
+          const canceledProof = async (observed: typeof order) =>
+            observed.state === "CANCELED" && (await negativeTenderIds(observed)) !== null
+              ? id
+              : null;
           if (order.state === "CANCELED") return canceledProof(order);
-          if (
-            order.state !== "OPEN" ||
-            !Number.isSafeInteger(order.version) ||
-            order.tenders?.length
-          )
-            return null;
+          if (order.state !== "OPEN" || !Number.isSafeInteger(order.version)) return null;
+          const negativeIds = await negativeTenderIds(order);
+          if (negativeIds === null) return null;
           const key = createHash("sha256")
             .update(id + "|" + order.version)
             .digest("hex")
@@ -148,6 +155,7 @@ export function createCheckoutRecoveryDependencies(
             id,
             order.version!,
             key,
+            negativeIds,
           );
           return canceledProof(await read());
         },

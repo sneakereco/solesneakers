@@ -11,6 +11,33 @@ jest.mock("../../../Source/Features/EventDelivery/delivery-runtime", () => ({
   runAnalyticsDrain: jest.fn(),
 }));
 jest.mock("server-only", () => ({}), { virtual: true });
+it("attributes configuration failures without exposing private provider errors", async () => {
+  const previous = process.env.CRON_SECRET;
+  process.env.CRON_SECRET = "s".repeat(40);
+  const sink = jest.spyOn(console, "error").mockImplementation(() => {});
+  try {
+    jest
+      .mocked(runAnalyticsDrain)
+      .mockRejectedValueOnce(new Error("Analytics configuration unavailable"));
+    const response = await GET(
+      new Request("https://sole.test/api/cron/analytics", {
+        headers: { authorization: "Bearer " + process.env.CRON_SECRET },
+      }),
+    );
+    expect(response.status).toBe(503);
+    expect(await response.json()).toEqual({ error: "Analytics delivery unavailable" });
+    expect(JSON.parse(String(sink.mock.calls[0][0]))).toMatchObject({
+      route: "/api/cron/analytics",
+      phase: "analytics_drain",
+      errorCode: "analytics_configuration_unavailable",
+    });
+  } finally {
+    sink.mockRestore();
+    jest.mocked(runAnalyticsDrain).mockReset();
+    if (previous === undefined) delete process.env.CRON_SECRET;
+    else process.env.CRON_SECRET = previous;
+  }
+});
 it("permits the exact locked-site cron path and requires its bearer credential", async () => {
   const old = process.env.CRON_SECRET;
   const secret = "x".repeat(48);
