@@ -4,7 +4,7 @@ import { DATASET_IDS } from "../Configuration/dataset";
 import type { ResolvedRange } from "../ReportContract/types";
 import type { CompiledQuery } from "../Reporting/query-contract";
 import { REPORT_ENDPOINT_VERSIONS } from "../Reporting/query-contract";
-import { warehouseFreshness } from "./history-source";
+import { postHogWarehouseTables, warehouseFreshness } from "./history-source";
 import {
   compareEvidence,
   evidenceInvocation,
@@ -33,7 +33,7 @@ export const reconciliationEndpoint = {
    AND properties.dataset_id = {variables.dataset_id}
    AND timestamp >= parseDateTime64BestEffort({variables.start_inclusive},6,'UTC')
    AND timestamp < parseDateTime64BestEffort({variables.end_exclusive},6,'UTC')) AS visible_revisions,
- (SELECT uniqExact(fact_id) FROM analytics_financial_export WHERE dataset_id = {variables.dataset_id}
+ (SELECT uniqExact(fact_id) FROM ${postHogWarehouseTables.finance} WHERE dataset_id = {variables.dataset_id}
    AND effective_at >= parseDateTime64BestEffort({variables.start_inclusive},6,'UTC')
    AND effective_at < parseDateTime64BestEffort({variables.end_exclusive},6,'UTC')) AS warehouse_facts`,
 };

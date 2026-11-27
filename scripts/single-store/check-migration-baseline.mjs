@@ -1,7 +1,14 @@
-import { execFileSync } from "node:child_process";
 import { fileURLToPath, pathToFileURL } from "node:url";
 import { Client } from "pg";
 import { inspectDatabase } from "./preflight.mjs";
+import {
+  bootstrapMatches,
+  databaseFingerprint,
+  digest,
+  readMigrationInventory,
+  reviewedBackfill,
+} from "./migration-reconciliation.mjs";
+export { readMigrationInventory } from "./migration-reconciliation.mjs";
 
 const ROOT = fileURLToPath(new URL("../../", import.meta.url));
 const HISTORICAL_THROUGH = "20260922120000";
@@ -9,16 +16,8 @@ const HISTORICAL_COUNT = 105;
 const COMPATIBILITY_VERSION = "20261123120000";
 
 function manifest() {
-  const versions = execFileSync(
-    "git",
-    ["ls-tree", "-r", "--name-only", "HEAD", "--", "supabase/migrations"],
-    { cwd: ROOT, encoding: "utf8", stdio: ["ignore", "pipe", "pipe"] },
-  )
-    .trim()
-    .split(/\r?\n/)
-    .filter((file) => /\/\d{14}_.+\.sql$/.test(file))
-    .map((file) => file.split("/").at(-1).slice(0, 14))
-    .sort();
+  const inventory = readMigrationInventory(ROOT);
+  const versions = inventory.entries.map(({ version }) => version);
   if (
     new Set(versions).size !== versions.length ||
     !versions.includes(HISTORICAL_THROUGH) ||
@@ -27,7 +26,7 @@ function manifest() {
   ) {
     throw new Error("invalid_committed_migration_inventory");
   }
-  return versions;
+  return inventory;
 }
 
 function connection(value) {
@@ -48,7 +47,7 @@ function connection(value) {
   return url.href;
 }
 
-async function recordedVersions(connectionString) {
+async function recordedMigrations(connectionString) {
   const client = new Client({
     connectionString,
     connectionTimeoutMillis: 10000,
@@ -61,9 +60,9 @@ async function recordedVersions(connectionString) {
     await client.query("SET LOCAL row_security = off");
     return (
       await client.query(
-        "SELECT version::text FROM supabase_migrations.schema_migrations ORDER BY version",
+        "SELECT to_jsonb(m)->>'version' AS version, to_jsonb(m)->>'name' AS name, to_jsonb(m)->'statements' AS statements FROM supabase_migrations.schema_migrations m ORDER BY version",
       )
-    ).rows.map((row) => row.version);
+    ).rows;
   } finally {
     try {
       await client.query("ROLLBACK");
@@ -93,11 +92,52 @@ export function validatePrefix(known, recorded) {
   return { blockers, through };
 }
 
+export function planMigrationBaseline({ inventory, recordedRows, connectionString }) {
+  const known = inventory.entries.map(({ version }) => version);
+  const rows = [...recordedRows].sort((a, b) => a.version.localeCompare(b.version));
+  const recorded = rows.map(({ version }) => version);
+  const strict = validatePrefix(known, recorded);
+  let blockers = [...strict.blockers];
+  const bootstrapValid = bootstrapMatches(inventory, rows);
+  if (!bootstrapValid) blockers.push("recorded_bootstrap_mismatch");
+  const includeAll =
+    bootstrapValid &&
+    blockers.length === 1 &&
+    blockers[0] === "recorded_migration_prefix_gap" &&
+    reviewedBackfill(inventory, recorded);
+  if (includeAll) blockers = [];
+  return {
+    blockers,
+    through: strict.through,
+    migrationPlan: {
+      head: inventory.head,
+      inventoryDigest: inventory.inventoryDigest,
+      recordedDigest: digest(
+        rows.map(({ version, name, statements }) => ({
+          version,
+          name: name ?? null,
+          statements: statements ?? null,
+        })),
+      ),
+      databaseFingerprint: databaseFingerprint(connectionString),
+      includeAll,
+      pendingFiles: inventory.entries
+        .filter(({ version }) => !recorded.includes(version))
+        .map(({ path }) => path),
+    },
+  };
+}
+
 export async function checkMigrationBaseline({ connectionString } = {}) {
   const url = connection(connectionString);
-  const known = manifest();
-  const recorded = await recordedVersions(url);
-  const { blockers, through } = validatePrefix(known, recorded);
+  const inventory = manifest();
+  const recordedRows = await recordedMigrations(url);
+  const recorded = recordedRows.map(({ version }) => version);
+  const { blockers, through, migrationPlan } = planMigrationBaseline({
+    inventory,
+    recordedRows,
+    connectionString: url,
+  });
   const report = {
     formatVersion: 1,
     mode: "read-only-deployment-gate",
@@ -106,7 +146,8 @@ export async function checkMigrationBaseline({ connectionString } = {}) {
     historicalCount: HISTORICAL_COUNT,
     baselineThrough: through ?? null,
     recordedCount: recorded.length,
-    pendingCount: known.length - recorded.length,
+    pendingCount: migrationPlan.pendingFiles.length,
+    migrationPlan,
     blockers,
     preflight: null,
     expansionPreflight: { status: "not_run", reason: "migration_prefix_blocked" },
@@ -151,6 +192,7 @@ if (process.argv[1] && import.meta.url === pathToFileURL(process.argv[1]).href) 
       "invalid_connection_url",
       "invalid_arguments",
       "invalid_committed_migration_inventory",
+      "migration_inventory_drift",
     ];
     process.stdout.write(
       `${JSON.stringify({

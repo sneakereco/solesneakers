@@ -94,6 +94,7 @@ test("known new suffixes permit pending work and expanded redeploys, but a later
       "preflight.mjs",
       "preflight.sql",
       "check-migration-baseline.mjs",
+      "migration-reconciliation.mjs",
     ]) {
       await copyFile(
         join("scripts/single-store", file),

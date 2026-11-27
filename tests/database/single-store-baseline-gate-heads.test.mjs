@@ -35,6 +35,7 @@ async function fixture(versions) {
     "scripts/single-store/preflight.mjs",
     "scripts/single-store/preflight.sql",
     "scripts/single-store/check-migration-baseline.mjs",
+    "scripts/single-store/migration-reconciliation.mjs",
     "tests/database/single-store-baseline-gate.test.mjs",
     "tests/database/fixtures/single-store-expansion.mjs",
   ])

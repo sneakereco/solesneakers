@@ -53,7 +53,7 @@ export const line = {
 export function fixture() {
   const db = new DatabaseSync(":memory:");
   db.exec(
-    "CREATE TABLE analytics_financial_export(dataset_id,environment,fact_id,revision,kind,effective_at,recorded_at,currency,order_id,buyer_key,payload,updated_at); CREATE TABLE analytics_purchase_link_export(dataset_id,order_id,active,device,purchase_session,updated_at);",
+    "CREATE TABLE analytics_financial_export(dataset_id,environment,fact_id,revision,kind,effective_at,recorded_at,currency,order_id,buyer_key,payload,updated_at); CREATE TABLE analytics_purchase_link_export(dataset_id,order_id,active,device,purchase_session,updated_at); CREATE VIEW postgres_analytics_financial_export AS SELECT * FROM analytics_financial_export; CREATE VIEW postgres_analytics_purchase_link_export AS SELECT * FROM analytics_purchase_link_export;",
   );
   db.function("JSONExtractRaw", (raw, k) =>
     JSON.stringify(JSON.parse(String(raw ?? "{}"))[String(k)] ?? null),

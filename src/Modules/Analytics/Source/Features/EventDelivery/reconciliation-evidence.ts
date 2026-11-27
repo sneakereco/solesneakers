@@ -1,4 +1,5 @@
 import "server-only";
+import { postHogWarehouseTables } from "./history-source";
 import { analyticsInstantMicros as instant } from "./instant";
 import { isDeepStrictEqual } from "node:util";
 import { z } from "zod";
@@ -85,8 +86,8 @@ export const reconciliationRawEndpoint = definition(
 );
 export const reconciliationWarehouseEndpoint = definition(
   "sole_analytics_reconciliation_warehouse",
-  `dataset_id,environment,fact_id,revision,kind,${timestamp("effective_at")} AS effective_at,${timestamp("recorded_at")} AS recorded_at,currency,order_id,buyer_key,if(toTypeName(analytics_financial_export.payload) IN ('String','Nullable(String)','LowCardinality(String)','LowCardinality(Nullable(String))'),${bounded("toString(analytics_financial_export.payload)", 8192)},'') AS payload
- FROM analytics_financial_export WHERE dataset_id={variables.dataset_id} AND ${range("analytics_financial_export.effective_at")}`,
+  `dataset_id,environment,fact_id,revision,kind,${timestamp("effective_at")} AS effective_at,${timestamp("recorded_at")} AS recorded_at,currency,order_id,buyer_key,if(toTypeName(${postHogWarehouseTables.finance}.payload) IN ('String','Nullable(String)','LowCardinality(String)','LowCardinality(Nullable(String))'),${bounded(`toString(${postHogWarehouseTables.finance}.payload)`, 8192)},'') AS payload
+ FROM ${postHogWarehouseTables.finance} WHERE dataset_id={variables.dataset_id} AND ${range(`${postHogWarehouseTables.finance}.effective_at`)}`,
 );
 
 export class IncompleteEvidence extends Error {

@@ -5,6 +5,7 @@ import type { DatasetScope } from "../CommerceFacts/contract";
 import { endpoint } from "../Reporting/queries/commerce-source";
 import { compileBehaviorHistorySql } from "./behavior-archive";
 import { analyticsInstantMicros } from "./instant";
+import { postHogWarehouseTables } from "./history-source";
 
 const amount = (s: string) =>
   `if(toTypeName(${s}) in ('String','Nullable(String)','LowCardinality(String)','LowCardinality(Nullable(String))'),toString(${s}),'')`;
@@ -52,11 +53,11 @@ function projection(table: string, fields: string[], id: string) {
 }
 export const financeObservation = endpoint(
   "sole_analytics_observe_finance",
-  projection("analytics_financial_export", financeFields, "fact_id"),
+  projection(postHogWarehouseTables.finance, financeFields, "fact_id"),
 );
 export const linkObservation = endpoint(
   "sole_analytics_observe_links",
-  projection("analytics_purchase_link_export", linkFields, "order_id"),
+  projection(postHogWarehouseTables.purchases, linkFields, "order_id"),
 );
 export function nativeObservation(scope: DatasetScope) {
   const native = compileBehaviorHistorySql({ ...scope, behaviorArchiveCutoff: null });

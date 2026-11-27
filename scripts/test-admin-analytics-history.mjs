@@ -121,7 +121,10 @@ export async function testReportingHistory(db) {
     }
     await db.query("set local role sole_analytics_staging_reader");
     const rows = (
-      await db.query("select * from analytics_reporting.analytics_financial_export")
+      await db.query(
+        "select * from analytics_reporting.analytics_financial_export where dataset_id=$1",
+        [ds],
+      )
     ).rows;
     assert.equal(rows.length, 1);
     assert.equal(rows[0].revision, 3);
@@ -145,8 +148,12 @@ export async function testReportingHistory(db) {
       ].sort(),
     );
     const link = async () =>
-      (await db.query("select * from analytics_reporting.analytics_purchase_link_export"))
-        .rows[0];
+      (
+        await db.query(
+          "select * from analytics_reporting.analytics_purchase_link_export where dataset_id=$1",
+          [ds],
+        )
+      ).rows[0];
     const active = await link();
     assert.equal(active.session_id, session);
     assert.equal(active.active, true);
@@ -278,7 +285,12 @@ export async function testReportingHistory(db) {
       "analytics_purchase_link_export",
     ])
       assert.equal(
-        (await db.query("select * from analytics_reporting." + view)).rowCount,
+        (
+          await db.query(
+            "select * from analytics_reporting." + view + " where dataset_id=$1",
+            [ds],
+          )
+        ).rowCount,
         0,
       );
     await db.query("reset role");
