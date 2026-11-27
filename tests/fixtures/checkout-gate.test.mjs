@@ -64,3 +64,52 @@ for (const scenario of [
 }
 test("fault gate recognizes the single identified error", () =>
   run("identified-rejection"));
+
+const fixtureDiagnostics = `
+  if (process.env.CHECKOUT_GATE_DIAGNOSTICS !== "true") process.exit(2);
+  const lines = [
+    "CHECKOUT_FIXTURE_PHASE done docker-start",
+    "CHECKOUT_FIXTURE_PHASE start clone",
+    "CHECKOUT_FIXTURE_PHASE done clone private-phase-value",
+    "CHECKOUT_FIXTURE_PHASE done directory-cleanup",
+    "CHECKOUT_FIXTURE_ERROR AssertionError ERR_ASSERTION tests/database/fixtures/checkout-hardening.mjs:123",
+    "CHECKOUT_FIXTURE_ERROR Error 57014 -",
+    "CHECKOUT_FIXTURE_ERROR Error ECONNREFUSED /private/path.mjs:10",
+    "CHECKOUT_FIXTURE_ERROR Error UNRECOGNIZED_CODE scripts/test-checkout-hardening-db.mjs:12",
+    "CHECKOUT_FIXTURE_ERROR Error ECONNRESET scripts/test-checkout-hardening-db.mjs:12 private-context",
+    "private-raw-error",
+  ];
+  for (const line of lines) console.error(line);
+  process.exitCode = 1;
+`;
+
+for (const expectedFailure of [marker, undefined]) {
+  const gate = expectedFailure ? "fault" : "required";
+  test(
+    gate + " gate reports only validated fixture diagnostics when it fails",
+    async (t) => {
+      const logs = t.mock.method(console, "log", () => {});
+      await assert.rejects(
+        runner(
+          gate + "-setup-failure",
+          ["--input-type=module", "-e", fixtureDiagnostics],
+          {
+            expectedFailure,
+          },
+        ),
+        expectedFailure ? /fault injection inconclusive/ : /gate failed/,
+      );
+      const output = logs.mock.calls
+        .map(({ arguments: args }) => args.join(" "))
+        .join("\n");
+      assert.match(output, /fixture=clone:start cleanup=directory-cleanup:done/);
+      assert.match(output, /exit=1 tap=absent/);
+      assert.match(
+        output,
+        /AssertionError:ERR_ASSERTION@tests\/database\/fixtures\/checkout-hardening\.mjs:123/,
+      );
+      assert.match(output, /Error:57014@-/);
+      assert.doesNotMatch(output, /private-|ECONNRESET|ECONNREFUSED|UNRECOGNIZED_CODE/);
+    },
+  );
+}

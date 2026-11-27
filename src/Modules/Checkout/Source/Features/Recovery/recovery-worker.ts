@@ -1,4 +1,4 @@
-import { log } from "@/lib/utils/log";
+import { log, logError } from "@/lib/utils/log";
 import { checkoutAdmissionBudgets } from "../Operations/admission";
 import type {
   CheckoutDependency,
@@ -14,7 +14,7 @@ import {
 export const recoverySettings = {
   deadlineMs: 45000,
   batchSize: 50,
-  concurrency: checkoutAdmissionBudgets?.providers.square ?? 4,
+  concurrency: Math.min(4, checkoutAdmissionBudgets?.providers.square ?? 4),
 };
 export type WorkerOptions = typeof recoverySettings;
 export type DependencyLeases = Pick<
@@ -148,7 +148,15 @@ export async function runCheckoutRecovery(
           } else if (error instanceof SquareEvidenceConflict) {
             result = "review";
             reason = "square_evidence_conflict";
-          } else reason = "recovery_unavailable";
+          } else {
+            reason = "recovery_unavailable";
+            logError(error, {
+              layer: "job",
+              operation: "recovery",
+              phase: "recovery",
+              orderId: job.orderId,
+            });
+          }
         }
         if (
           result === "retry" &&

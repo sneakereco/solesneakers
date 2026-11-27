@@ -1,6 +1,6 @@
 import "server-only";
 import { postHogWarehouseTables } from "./history-source";
-import { analyticsInstantMicros as instant } from "./instant";
+import { analyticsInstantMicros as instant, parseHogqlInstant } from "./instant";
 import { isDeepStrictEqual } from "node:util";
 import { z } from "zod";
 import {
@@ -42,7 +42,7 @@ const envelopeColumns = [
 const timestamp = (column: string) =>
   `formatDateTime(${column},'%Y-%m-%dT%H:%i:%S.%fZ','UTC')`;
 const range = (column: string) =>
-  `${column} >= parseDateTime64BestEffort({variables.start_inclusive},6,'UTC') AND ${column} < parseDateTime64BestEffort({variables.end_exclusive},6,'UTC')`;
+  `${column} >= ${parseHogqlInstant("{variables.start_inclusive}")} AND ${column} < ${parseHogqlInstant("{variables.end_exclusive}")}`;
 const bounded = (column: string, limit = 256) =>
   `if(length(${column}) <= ${limit}, ${column}, '')`;
 const stringProperty = (key: string) => bounded(`JSONExtractString(properties,'${key}')`);

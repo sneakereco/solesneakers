@@ -804,6 +804,68 @@ test("expiry fences dispatch and conserves stock across independently committed 
         };
       };
       await t.test(
+        "worker records late FAILED evidence after a no-ID decline and expiry can release once cancellation is proved",
+        async () => {
+          const o = await held();
+          const attempt = await rpc(
+            a,
+            "get_or_create_checkout_payment_attempt($1,'card',$2)",
+            [o.id, o.binding],
+          );
+          await rpc(a, "begin_checkout_payment_dispatch($1,$2,$3,$4)", [
+            attempt.id,
+            o.binding,
+            "a".repeat(64),
+            "b".repeat(64),
+          ]);
+          await rpc(a, "record_checkout_payment_outcome($1,null,'declined',$2)", [
+            attempt.id,
+            {
+              kind: "square_decline",
+              code: "CARD_DECLINED",
+              requestDigest: "a".repeat(64),
+            },
+          ]);
+          const pay = "failed-" + o.id;
+          const result = await runFixtureWorker(
+            o,
+            attempt,
+            pay,
+            null,
+            "failed",
+            new Date().toISOString(),
+            { status: "FAILED" },
+          );
+          assert.equal(result.creates, 0);
+          assert.equal(result.metrics.done, 1);
+          assert.ok(result.commands.includes("apply_checkout_payment_with_analytics"));
+          assert.deepEqual(
+            (
+              await admin.query(
+                "select state,provider_payment_id from checkout_payment_attempts where id=$1",
+                [attempt.id],
+              )
+            ).rows[0],
+            { state: "declined", provider_payment_id: pay },
+          );
+          assert.equal(
+            (
+              await admin.query(
+                "select count(*)::int n from checkout_financial_facts where order_id=$1 and payment_id=$2 and status='FAILED'",
+                [o.id, pay],
+              )
+            ).rows[0].n,
+            1,
+          );
+          await due(o);
+          await mark(b, o);
+          assert.equal(await rpc(b, "finish_checkout_expiry($1)", [o.id]), "reconcile");
+          assert.equal(await stock(o), 0);
+          assert.equal(await finish(b, o), "released");
+          assert.equal(await stock(o), 1);
+        },
+      );
+      await t.test(
         "worker settles the exact accepted payment after browser closure with webhook absent",
         async () => {
           const o = await held(),

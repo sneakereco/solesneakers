@@ -1,4 +1,5 @@
 import { sanitizeLifecycleEvent } from "@/Modules/Checkout/Source/Features/Operations/lifecycle-event";
+import { errorDiagnostics } from "@/Modules/Checkout/Source/Features/Operations/error-diagnostics";
 
 export type LogLevel = "debug" | "info" | "warn" | "error";
 export type LogLayer =
@@ -37,11 +38,12 @@ export function log(input: LogEntry | (() => LogEntry)) {
   }
 }
 
-export function logError(_error: unknown, entry: Partial<LogEntry> = {}) {
+export function logError(error: unknown, entry: Partial<LogEntry> = {}) {
   log(() => ({
     message: "application_error",
     layer: "unknown",
     ...entry,
+    ...errorDiagnostics(error),
     level: "error",
   }));
 }

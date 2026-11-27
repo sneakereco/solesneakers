@@ -20,7 +20,7 @@ import {
   type CsvExecution,
 } from "./query-contract";
 
-const QUERY_TIMEOUT_MS = 8_000;
+export const QUERY_TIMEOUT_MS = 15_000;
 const endpointResponse = z.object({
   name: z.string(),
   execution_id: z.uuid(),

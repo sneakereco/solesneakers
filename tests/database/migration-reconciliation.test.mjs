@@ -9,6 +9,10 @@ import * as gate from "../../scripts/single-store/check-migration-baseline.mjs";
 
 const root = fileURLToPath(new URL("../../", import.meta.url));
 const bootstrap = "20261127134000";
+const recoveryBindingPath =
+  "supabase/migrations/20261127195500_checkout_decline_inquiry_binding.sql";
+const terminalEvidencePath =
+  "supabase/migrations/20261127202000_checkout_terminal_negative_evidence.sql";
 const checkout = [
   "20261127040000",
   "20261127041000",
@@ -55,6 +59,7 @@ test("production-shaped registry produces the exact reviewed backfill plan", () 
   const { inventory, baseline, boot, plan } = setup();
   assert.equal(baseline.length, 122);
   const result = plan([...baseline, boot]);
+  const ordinarySuffix = inventory.entries.filter(({ version }) => version > bootstrap);
   assert.deepEqual(result.blockers, []);
   assert.equal(result.migrationPlan.includeAll, true);
   assert.deepEqual(
@@ -65,9 +70,13 @@ test("production-shaped registry produces the exact reviewed backfill plan", () 
   );
   assert.equal(
     result.migrationPlan.pendingFiles.length,
-    inventory.entries.filter(
-      ({ version }) => checkout.includes(version) || version > bootstrap,
-    ).length,
+    checkout.length + ordinarySuffix.length,
+  );
+  assert.ok(
+    [recoveryBindingPath, terminalEvidencePath].every((path) =>
+      result.migrationPlan.pendingFiles.includes(path),
+    ),
+    "Both checkout recovery migrations must be included as ordinary pending migrations",
   );
   for (const field of ["inventoryDigest", "recordedDigest", "databaseFingerprint"])
     assert.match(result.migrationPlan[field], /^[a-f0-9]{64}$/);
@@ -80,13 +89,18 @@ test("production-shaped registry produces the exact reviewed backfill plan", () 
 
 test("every sequential partial retry permits only the remaining reviewed suffix", () => {
   const { inventory, baseline, boot, plan } = setup();
-  for (let count = 0; count <= 8; count++) {
+  const ordinarySuffix = inventory.entries.filter(({ version }) => version > bootstrap);
+  for (let count = 0; count <= checkout.length; count++) {
     const applied = inventory.entries
       .filter(({ version }) => checkout.slice(0, count).includes(version))
       .map(row);
     const result = plan([...baseline, ...applied, boot]);
     assert.deepEqual(result.blockers, []);
-    assert.equal(result.migrationPlan.includeAll, count < 8);
+    assert.equal(result.migrationPlan.includeAll, count < checkout.length);
+    assert.equal(
+      result.migrationPlan.pendingFiles.length,
+      checkout.length - count + ordinarySuffix.length,
+    );
     assert.deepEqual(
       result.migrationPlan.pendingFiles,
       inventory.entries
@@ -261,7 +275,9 @@ test("strict ordinary prefixes and completed registry retain their original beha
   assert.equal(ordinary.migrationPlan.includeAll, false);
   assert.equal(
     ordinary.migrationPlan.pendingFiles.length,
-    inventory.entries.length - baseline.length,
+    checkout.length +
+      1 +
+      inventory.entries.filter(({ version }) => version > bootstrap).length,
   );
   const complete = plan(inventory.entries.map(row));
   assert.deepEqual(complete.blockers, []);

@@ -5,12 +5,75 @@ import { mockFetch, now, validEnv } from "../Configuration/config-fixture";
 import { base, id, payloads } from "../CommerceFacts/fixtures";
 import type { AdminSupabaseClient } from "@/lib/supabase/service-role";
 import { GET } from "@/app/api/cron/analytics/route";
-import { runAnalyticsDrain } from "../../../Source/Features/EventDelivery/delivery-runtime";
+import {
+  runAnalyticsDrain,
+  analyticsRuntimeIdentity,
+} from "../../../Source/Features/EventDelivery/delivery-runtime";
 import { security } from "@/config/security";
 jest.mock("../../../Source/Features/EventDelivery/delivery-runtime", () => ({
   runAnalyticsDrain: jest.fn(),
+  analyticsRuntimeIdentity: jest.fn(),
 }));
 jest.mock("server-only", () => ({}), { virtual: true });
+it("protects configuration inspection and does not claim or publish jobs", async () => {
+  const previous = process.env.CRON_SECRET;
+  process.env.CRON_SECRET = "s".repeat(40);
+  jest.mocked(runAnalyticsDrain).mockClear();
+  jest.mocked(analyticsRuntimeIdentity).mockReturnValue({
+    enabled: true,
+    environment: "staging",
+    configurationSha256: "a".repeat(64),
+    publicBuildSha256: "b".repeat(64),
+  });
+  try {
+    expect(
+      (await GET(new Request("https://sole.test/api/cron/analytics?inspect=1"))).status,
+    ).toBe(401);
+    expect(analyticsRuntimeIdentity).not.toHaveBeenCalled();
+    const response = await GET(
+      new Request("https://sole.test/api/cron/analytics?inspect=1", {
+        headers: { authorization: "Bearer " + process.env.CRON_SECRET },
+      }),
+    );
+    expect(response.status).toBe(200);
+    expect(await response.json()).toMatchObject({
+      enabled: true,
+      environment: "staging",
+    });
+    expect(runAnalyticsDrain).not.toHaveBeenCalled();
+  } finally {
+    jest.mocked(analyticsRuntimeIdentity).mockClear();
+    if (previous === undefined) delete process.env.CRON_SECRET;
+    else process.env.CRON_SECRET = previous;
+  }
+});
+it("attributes configuration failures without exposing private provider errors", async () => {
+  const previous = process.env.CRON_SECRET;
+  process.env.CRON_SECRET = "s".repeat(40);
+  const sink = jest.spyOn(console, "error").mockImplementation(() => {});
+  try {
+    jest
+      .mocked(runAnalyticsDrain)
+      .mockRejectedValueOnce(new Error("Analytics configuration unavailable"));
+    const response = await GET(
+      new Request("https://sole.test/api/cron/analytics", {
+        headers: { authorization: "Bearer " + process.env.CRON_SECRET },
+      }),
+    );
+    expect(response.status).toBe(503);
+    expect(await response.json()).toEqual({ error: "Analytics delivery unavailable" });
+    expect(JSON.parse(String(sink.mock.calls[0][0]))).toMatchObject({
+      route: "/api/cron/analytics",
+      phase: "analytics_drain",
+      errorCode: "analytics_configuration_unavailable",
+    });
+  } finally {
+    sink.mockRestore();
+    jest.mocked(runAnalyticsDrain).mockReset();
+    if (previous === undefined) delete process.env.CRON_SECRET;
+    else process.env.CRON_SECRET = previous;
+  }
+});
 it("permits the exact locked-site cron path and requires its bearer credential", async () => {
   const old = process.env.CRON_SECRET;
   const secret = "x".repeat(48);

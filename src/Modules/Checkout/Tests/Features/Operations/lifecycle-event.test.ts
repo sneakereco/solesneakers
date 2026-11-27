@@ -1,7 +1,4 @@
-import {
-  sanitizeLifecycleEvent,
-  checkoutFailureCategory,
-} from "../../../Source/Features/Operations/lifecycle-event";
+import { sanitizeLifecycleEvent } from "../../../Source/Features/Operations/lifecycle-event";
 import { log, logError } from "@/lib/utils/log";
 
 const requestId = "10000000-0000-4000-8000-000000000001";
@@ -9,6 +6,40 @@ const orderId = "20000000-0000-4000-8000-000000000002";
 const release = "8e6a574e29066654b17f1031e25f1df9c202c469";
 
 afterEach(() => jest.restoreAllMocks());
+
+it("preserves allowlisted failure codes and preparation phases while discarding private errors", () => {
+  const sink = jest.spyOn(console, "error").mockImplementation(() => {});
+  logError(new Error("checkout_provider_busy"), {
+    layer: "api",
+    route: "/api/checkout/prepare",
+    phase: "provider_calculate",
+    requestId,
+  });
+  expect(JSON.parse(String(sink.mock.calls[0][0]))).toMatchObject({
+    errorCode: "checkout_provider_busy",
+    errorType: "Error",
+    phase: "provider_calculate",
+    requestId,
+  });
+  logError(
+    Object.assign(new Error("PRIVATE_CUSTOMER_ADDRESS"), {
+      code: "23505",
+      body: "PRIVATE_PROVIDER_BODY",
+    }),
+    { phase: "PRIVATE_PHASE" },
+  );
+  expect(JSON.parse(String(sink.mock.calls[1][0]))).toMatchObject({
+    errorCode: "database_unique_conflict",
+    errorType: "Error",
+  });
+  expect(String(sink.mock.calls[1][0])).not.toContain("PRIVATE_");
+  logError(new Error("PRIVATE_UNKNOWN_ERROR"));
+  expect(JSON.parse(String(sink.mock.calls[2][0]))).toMatchObject({
+    errorCode: "unclassified",
+    errorType: "Error",
+  });
+  expect(String(sink.mock.calls[2][0])).not.toContain("PRIVATE_");
+});
 
 it("synthetic_credentials_cannot_escape_nested_url_or_error_logging", () => {
   const info = jest.spyOn(console, "info").mockImplementation(() => {});
@@ -132,29 +163,4 @@ it("keeps the original response and exception when the real sink or correlation 
   };
   expect(() => log(entry)).not.toThrow();
   expect(() => logError(original, entry)).not.toThrow();
-});
-
-it("keeps bounded preparation failure categories and discards arbitrary failure details", () => {
-  expect(
-    sanitizeLifecycleEvent({ phase: "tokenize", failureCategory: "database" }),
-  ).toMatchObject({ phase: "tokenize", failureCategory: "database" });
-  const safe = sanitizeLifecycleEvent({
-    phase: "SYNTHETIC_SECRET",
-    failureCategory: "SYNTHETIC_SECRET",
-    error: "SYNTHETIC_SECRET",
-  });
-  expect(JSON.stringify(safe)).not.toContain("SYNTHETIC_SECRET");
-});
-
-it.each([
-  [Error("checkout_provider_busy"), "capacity"],
-  [Object.assign(Error("private address"), { name: "TimeoutError" }), "timeout"],
-  [{ code: "PGRST116", message: "private token" }, "database"],
-  [{ code: "08006", details: "private connection" }, "database"],
-  [Error("square_configuration_invalid"), "configuration"],
-  [Error("fetch failed"), "dependency"],
-  [Error("SYNTHETIC_SECRET"), "unexpected"],
-  [{ code: "SYNTHETIC_SECRET" }, "unexpected"],
-])("classifies only bounded checkout failure categories for %j", (error, expected) => {
-  expect(checkoutFailureCategory(error)).toBe(expected);
 });

@@ -63,6 +63,26 @@ function request(quoteFingerprint = QUOTE_FINGERPRINT) {
   }) as never;
 }
 
+it.each([
+  ["getSession", "session"],
+  ["validateShippingAddress", "address_verification"],
+  ["calculateSquareOrder", "provider_calculate"],
+  ["reserve", "reservation"],
+  ["createSquareOrder", "provider_create"],
+  ["attachSquareOrder", "provider_attach"],
+] as const)(
+  "attributes %s failures without changing the generic response",
+  async (dependency, phase) => {
+    const deps = dependencies();
+    const error = new Error("PRIVATE_DEPENDENCY_ERROR");
+    deps[dependency].mockRejectedValueOnce(error);
+    const response = await prepareCheckoutHandler(request(), deps);
+    expect(response.status).toBe(503);
+    expect(deps.reportError).toHaveBeenCalledWith(error, phase);
+    expect(JSON.stringify(await response.json())).not.toContain("PRIVATE_");
+  },
+);
+
 it("keeps an optional identity outage outside the accepted checkout and its abuse evidence", async () => {
   const deps = {
     ...dependencies(),
@@ -744,9 +764,9 @@ describe("prepareCheckoutHandler", () => {
     expect(deps.createSquareOrder).not.toHaveBeenCalled();
   });
   it.each([
-    ["createSquareOrder", "create"],
-    ["attachSquareOrder", "attach"],
-    ["createGuestAccessToken", "tokenize"],
+    ["createSquareOrder", "provider_create"],
+    ["attachSquareOrder", "provider_attach"],
+    ["createGuestAccessToken", "guest_access"],
   ] as const)(
     "identifies the failing preparation phase at %s without changing recovery safety",
     async (dependency, phase) => {
@@ -758,7 +778,7 @@ describe("prepareCheckoutHandler", () => {
       expect(await response.json()).toEqual({
         error: "Checkout is temporarily unavailable",
       });
-      expect(deps.reportError).toHaveBeenCalledWith(error, { phase, orderId: "order-1" });
+      expect(deps.reportError).toHaveBeenCalledWith(error, phase);
       expect(deps.releaseReservation).not.toHaveBeenCalled();
       expect(deps.cancelSquareOrder).not.toHaveBeenCalled();
     },

@@ -14,27 +14,21 @@ import {
 
 const shippingThrough = "20261127034000";
 const bootstrapVersion = "20261127134000";
-const checkoutVersions = [
-  "20261127040000",
-  "20261127041000",
-  "20261127042000",
-  "20261127043000",
-  "20261127044000",
-  "20261127045000",
-  "20261127046000",
-  "20261127047000",
-];
+const recoveryBindingVersion = "20261127195500";
+const terminalEvidenceVersion = "20261127202000";
 
-async function assertCanonicalLedger(admin) {
+async function readCanonicalMigrations() {
   const directory = join(root, "supabase", "migrations");
   const files = (await readdir(directory)).filter((file) => file.endsWith(".sql")).sort();
-  assert.ok(files.length >= 131, "The released migration baseline must remain intact");
-  const expected = await Promise.all(
+  return Promise.all(
     files.map(async (file) => {
       const [, version, name] = /^(\d{14})_(.+)\.sql$/.exec(file);
       return { version, name, source: await readFile(join(directory, file), "utf8") };
     }),
   );
+}
+
+async function assertCanonicalLedger(admin, expected) {
   const { rows } = await admin.query(
     "select version, name, statements[1] as source from supabase_migrations.schema_migrations order by version",
   );
@@ -220,35 +214,34 @@ for (const mode of ["fresh", "populated"]) {
       ? "bootstrap before checkout"
       : "canonical order";
     test(
-      `${mode}: ${order} preserves the canonical migrations and reporting`,
+      `${mode}: ${order} preserves the canonical migration ledger and reporting`,
       { timeout: 240_000 },
       async () => {
+        const expected = await readCanonicalMigrations();
+        assert.ok(
+          [recoveryBindingVersion, terminalEvidenceVersion].every((version) =>
+            expected.some((migration) => migration.version === version),
+          ),
+          "Canonical inventory must include both forward checkout recovery migrations",
+        );
         const resources = [];
         await withCheckoutProject(
           mode,
           async (fixture) => {
-            assert.equal(
-              fixture.migrations,
-              (await readdir(join(root, "supabase", "migrations"))).filter((file) =>
-                file.endsWith(".sql"),
-              ).length,
-            );
+            assert.equal(fixture.migrations, expected.length);
             if (bootstrapBeforeCheckout) {
-              assert.equal(
-                fixture.preCheckoutVersions?.length,
-                123,
-                "Bootstrap-first replay must expose the actual 123-entry pre-checkout ledger",
-              );
-              assert.equal(fixture.preCheckoutVersions.at(-2), shippingThrough);
-              assert.equal(fixture.preCheckoutVersions.at(-1), bootstrapVersion);
-              assert.ok(
-                checkoutVersions.every(
-                  (version) => !fixture.preCheckoutVersions.includes(version),
-                ),
+              const shippingVersions = expected
+                .filter(({ version }) => version <= shippingThrough)
+                .map(({ version }) => version);
+              assert.equal(shippingVersions.at(-1), shippingThrough);
+              assert.deepEqual(
+                fixture.preCheckoutVersions,
+                [...shippingVersions, bootstrapVersion],
+                "Bootstrap-first replay must start with the shipping prefix and the recorded bootstrap",
               );
             }
             await fixture.withDatabase(async ({ admin, populated }) => {
-              await assertCanonicalLedger(admin);
+              await assertCanonicalLedger(admin, expected);
               for (const table of [
                 "checkout_payment_attempts",
                 "checkout_payment_attempt_history",
@@ -296,7 +289,7 @@ for (const mode of ["fresh", "populated"]) {
               if (mode === "fresh" && bootstrapBeforeCheckout) {
                 await withReportingAdmin(fixture, testReportingHistory);
               }
-              await assertCanonicalLedger(admin);
+              await assertCanonicalLedger(admin, expected);
             });
           },
           {

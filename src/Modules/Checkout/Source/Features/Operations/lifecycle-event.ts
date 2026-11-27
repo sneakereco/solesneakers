@@ -1,3 +1,5 @@
+import { diagnosticPhases, errorCodes, errorTypes } from "./error-diagnostics";
+
 // Values that reach stdout must come from this vocabulary or from typed, bounded fields.
 // Never traverse request bodies, arbitrary metadata, error causes or stacks.
 const events = [
@@ -167,6 +169,7 @@ const routes = [
   "/api/cron/expire-checkouts",
   "/api/cron/checkout-notifications",
   "/api/cron/checkout-health",
+  "/api/cron/analytics",
   "/api/admin/shipping/labels",
 ] as const;
 const outcomes = [
@@ -217,46 +220,6 @@ const layers = [
   "frontend",
   "unknown",
 ] as const;
-const failureCategories = [
-  "capacity",
-  "timeout",
-  "database",
-  "configuration",
-  "dependency",
-  "unexpected",
-] as const;
-// Classify known failure shapes without emitting messages, causes, stacks or payloads.
-export function checkoutFailureCategory(
-  error: unknown,
-): (typeof failureCategories)[number] {
-  try {
-    if (!error || typeof error !== "object") return "unexpected";
-    const value = error as { message?: unknown; name?: unknown; code?: unknown };
-    if (value.message === "checkout_provider_busy") return "capacity";
-    if (
-      value.message === "checkout_provider_lease_elapsed" ||
-      value.name === "TimeoutError" ||
-      value.name === "AbortError"
-    )
-      return "timeout";
-    if (
-      value.message === "square_configuration_invalid" ||
-      value.message === "checkout_protection_unavailable"
-    )
-      return "configuration";
-    if (
-      typeof value.code === "string" &&
-      /^(?:(?:08|22|23|25|40|42|53|54|55|57|58|XX)[0-9A-Z]{3}|P0001|PGRST[0-9]{3})$/.test(
-        value.code,
-      )
-    )
-      return "database";
-    if (value.message === "fetch failed") return "dependency";
-  } catch {
-    // Hostile or unavailable error accessors must not interfere with checkout.
-  }
-  return "unexpected";
-}
 const uuid = /^[a-f0-9]{8}-[a-f0-9]{4}-[a-f0-9]{4}-[a-f0-9]{4}-[a-f0-9]{12}$/i;
 function member<T extends string>(choices: readonly T[], value: unknown): T | undefined {
   return choices.find((choice) => choice === value);
@@ -347,8 +310,9 @@ function safeFields(v: Record<string, unknown>) {
       ] as const,
       v.alert,
     ),
-    phase: member(["load", "create", "attach", "tokenize"] as const, v.phase),
-    failureCategory: member(failureCategories, v.failureCategory),
+    phase: member(diagnosticPhases, v.phase),
+    errorType: member(errorTypes, v.errorType),
+    errorCode: member(errorCodes, v.errorCode),
     admissionPhase: member(["preflight", "authority"] as const, v.admissionPhase),
     denialReason: member(["quota", "paused", "not_payable"] as const, v.denialReason),
     operation: member(operations, v.operation),

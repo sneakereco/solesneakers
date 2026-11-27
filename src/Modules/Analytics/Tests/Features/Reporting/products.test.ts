@@ -277,6 +277,18 @@ it("review: reports unassignable purchased orders and actual returns on every pa
   );
   expect(r.data?.products?.totalCount).toBe(0);
 });
+it("keeps the total for a populated product axis beyond its last page", async () => {
+  const f = makeAudienceFixture();
+  f.sale("o", "guest");
+  f.put("line", "l", { ...line, productId: f.pid, variantId: f.vid });
+  const r = await getReport(
+    { ...request("products", "page=2"), report: "products" },
+    f.deps,
+  );
+  expect(r.state).toBe("ready");
+  expect(r.data?.products).toMatchObject({ rows: [], totalCount: 1, page: 2 });
+  expect(r.data?.variants).toMatchObject({ rows: [], totalCount: 1, page: 2 });
+});
 it("review: rejects null wire merchandise for a known purchased line", async () => {
   const f = makeAudienceFixture();
   f.sale("o", "guest");

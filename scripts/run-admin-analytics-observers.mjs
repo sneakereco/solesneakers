@@ -5,6 +5,7 @@ import { join, resolve } from "node:path";
 import { setTimeout as sleep } from "node:timers/promises";
 import { fileURLToPath, pathToFileURL } from "node:url";
 import { parseArgs } from "node:util";
+import { OBSERVATION_PENDING_EXIT_CODE } from "./analytics-native-readback.mjs";
 
 const worker = fileURLToPath(new URL("./refresh-admin-analytics.mjs", import.meta.url));
 const windowMs = 240_000;
@@ -134,9 +135,12 @@ function runWorker({ environment, source, attestationPath, env, timeout, clock, 
       if (!child.pid) finish("spawn-failed");
       else stop("worker-error");
     });
-    child.once("close", (code) =>
-      finish(finishing ?? (code === 0 ? null : "worker-failed")),
-    );
+    child.once("close", (code) => {
+      if (finishing) finish(finishing);
+      else if (code === 0) finish(null);
+      else if (code === OBSERVATION_PENDING_EXIT_CODE) finish("pending");
+      else finish("worker-failed");
+    });
     workerTimer = clock.setTimer(() => stop("timeout"), timeout);
   });
 }
@@ -178,8 +182,8 @@ export async function runObservers({
     );
     const start = clock.now();
     const deadline = start + windowMs;
-    const native = { attempted: 0, failed: 0 };
-    const warehouse = { attempted: 0, failed: 0 };
+    const native = { attempted: 0, failed: 0, pending: 0 };
+    const warehouse = { attempted: 0, failed: 0, pending: 0 };
     const failures = {};
     let nextWarehouse = start;
     while (clock.now() <= deadline - minWorkerMs) {
@@ -193,7 +197,7 @@ export async function runObservers({
       const counts = source === "native" ? native : warehouse;
       if (source === "warehouse") nextWarehouse = now + warehouseIntervalMs;
       counts.attempted++;
-      const failure = await runWorker({
+      const outcome = await runWorker({
         environment,
         source,
         attestationPath,
@@ -202,20 +206,30 @@ export async function runObservers({
         spawn,
         timeout: Math.min(workerLimitMs, deadline - now - exitGraceMs),
       });
-      if (failure) {
+      if (outcome === "pending") counts.pending++;
+      else if (outcome) {
         counts.failed++;
-        failures[failure] = (failures[failure] ?? 0) + 1;
+        failures[outcome] = (failures[outcome] ?? 0) + 1;
       }
-      if (failure === "exit-unconfirmed") break;
+      if (outcome === "exit-unconfirmed") break;
     }
-    const ok =
+    let status = "failed";
+    if (
       native.attempted === nativeTimes.length &&
       warehouse.attempted > 0 &&
       !native.failed &&
-      !warehouse.failed;
+      !warehouse.failed
+    ) {
+      // Completion counts worker progress. Coverage still requires a complete
+      // database sweep and is recorded independently by the SQL proof ledger.
+      status =
+        native.pending === native.attempted || warehouse.pending === warehouse.attempted
+          ? "pending"
+          : "completed";
+    }
     return {
       environment,
-      status: ok ? "completed" : "failed",
+      status,
       native,
       warehouse,
       failures,
@@ -236,7 +250,9 @@ if (process.argv[1] && pathToFileURL(resolve(process.argv[1])).href === import.m
     });
     const result = await runObservers(values);
     console.log(JSON.stringify(result));
-    if (result.status === "failed" || result.status === "skipped") process.exitCode = 1;
+    if (result.status === "pending") process.exitCode = OBSERVATION_PENDING_EXIT_CODE;
+    else if (result.status === "failed" || result.status === "skipped")
+      process.exitCode = 1;
   } catch {
     console.error("Analytics observer runner unavailable.");
     process.exitCode = 1;
