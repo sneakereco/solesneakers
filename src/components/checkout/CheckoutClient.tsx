@@ -336,17 +336,22 @@ function OwnerCheckout({
   useLayoutEffect(() => {
     currentRetryForm.current = retryFormKey;
   }, [retryFormKey]);
-  const originalRetry =
+  const qualifiedRetry =
     isReady &&
     stockBlocked &&
     !needsRecovery &&
     retryEvidence?.observation === isCurrent &&
     retryEvidence.basketKey === basketKey &&
     retryEvidence.original.expiresAt > Date.now() &&
-    retryEvidence.original.current() &&
-    retryDetailsKey(retryEvidence.original.payload) === retryFormKey
+    retryEvidence.original.current()
       ? retryEvidence.original
       : null;
+  const originalRetry =
+    qualifiedRetry && retryDetailsKey(qualifiedRetry.payload) === retryFormKey
+      ? qualifiedRetry
+      : null;
+  const originalDetails =
+    qualifiedRetry && !originalRetry ? qualifiedRetry.payload : null;
 
   useEffect(() => {
     if (
@@ -360,7 +365,6 @@ function OwnerCheckout({
     const original = originalPaymentRetryContext(initialData.ownerId);
     if (
       !original ||
-      retryDetailsKey(original.payload) !== retryFormKey ||
       JSON.stringify(original.payload.items) !== JSON.stringify(checkoutItems)
     )
       return;
@@ -416,7 +420,6 @@ function OwnerCheckout({
     isCurrent,
     retryRevision,
     initialData.ownerId,
-    retryFormKey,
     boundBasketGuard,
   ]);
 
@@ -430,18 +433,37 @@ function OwnerCheckout({
       });
   }
 
+  function isQualifiedRetryCurrent(original: OriginalRetry) {
+    return (
+      readyScopeAction.current !== null &&
+      isCurrent() &&
+      original.current() &&
+      original.expiresAt > Date.now() &&
+      currentBasket.current === basketKey &&
+      currentRetryForm.current === retryFormKey &&
+      retryEvidence?.bound()
+    );
+  }
   const assertOriginalRetryCurrent = () => {
-    if (
-      !originalRetry ||
-      !isCurrent() ||
-      !originalRetry.current() ||
-      originalRetry.expiresAt <= Date.now() ||
-      currentBasket.current !== basketKey ||
-      currentRetryForm.current !== retryFormKey ||
-      !retryEvidence?.bound()
-    )
+    if (!originalRetry || !isQualifiedRetryCurrent(originalRetry))
       throw Error("Your checkout changed. Review your original order before paying.");
   };
+
+  function restoreOriginalDetails() {
+    if (!qualifiedRetry || !originalDetails || !isQualifiedRetryCurrent(qualifiedRetry))
+      return;
+    const {
+      buyerEmail,
+      fulfillment: originalFulfillment,
+      shippingAddress: originalShipping,
+      pickupContact,
+    } = originalDetails;
+    setEmail(buyerEmail ?? "");
+    setFulfillment(originalFulfillment);
+    if (originalShipping)
+      setAddress({ ...originalShipping, line2: originalShipping.line2 ?? "" });
+    else if (pickupContact) setAddress((current) => ({ ...current, ...pickupContact }));
+  }
   const quoteKey = JSON.stringify({
     items: checkoutItems,
     fulfillment,
@@ -1037,6 +1059,8 @@ function OwnerCheckout({
       </a>
     </div>
   );
+  const originalRecipient =
+    originalDetails?.shippingAddress ?? originalDetails?.pickupContact;
   const unavailableNotice = !isReady && (
     <>
       {cart.access !== "ready" && <BasketAccessNotice />}
@@ -1099,7 +1123,45 @@ function OwnerCheckout({
             <div className="flex flex-col">
               {isReady &&
                 ((stockBlocked && !originalRetry) || needsRecovery) &&
-                checkoutNotice}
+                (originalDetails ? (
+                  <section className="mb-4" aria-labelledby="original-checkout-details">
+                    <h2 id="original-checkout-details" className="font-semibold">
+                      Original checkout details
+                    </h2>
+                    <p>Restore these details to retry payment for your original order.</p>
+                    <p>{originalDetails.buyerEmail}</p>
+                    <p>
+                      {originalDetails.fulfillment === "ship"
+                        ? "Shipping"
+                        : "Store pickup"}
+                    </p>
+                    <p>{originalRecipient?.name}</p>
+                    <p>{originalRecipient?.phone}</p>
+                    {originalDetails.shippingAddress && (
+                      <>
+                        <p>{originalDetails.shippingAddress.line1}</p>
+                        {originalDetails.shippingAddress.line2 && (
+                          <p>{originalDetails.shippingAddress.line2}</p>
+                        )}
+                        <p>
+                          {originalDetails.shippingAddress.city},{" "}
+                          {originalDetails.shippingAddress.state}{" "}
+                          {originalDetails.shippingAddress.postalCode},{" "}
+                          {originalDetails.shippingAddress.country}
+                        </p>
+                      </>
+                    )}
+                    <button
+                      type="button"
+                      className="mt-2 underline"
+                      onClick={restoreOriginalDetails}
+                    >
+                      Restore original details
+                    </button>
+                  </section>
+                ) : (
+                  checkoutNotice
+                ))}
               <SquarePaymentMethods
                 reviewOwner={{ verified, isCurrent }}
                 accessSuspended={!isReady}

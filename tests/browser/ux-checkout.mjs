@@ -92,8 +92,8 @@ const sdk = `window.Square={payments:()=>({
   async card(){const m={async attach(selector){const host=document.querySelector(selector);if(window.hangAttach){window.hangAttach=false;window.retiredCard=m;m.attaching=true;await new Promise(r=>window.releaseAttach=r);m.attaching=false;m.resource=true;}host.textContent="Secure fields ready";m.host=host;},async destroy(){if(m.attaching)return false;m.resource=false;m.host?.replaceChildren();window.destroyed=(window.destroyed||0)+1;return true;},async tokenize(){window.tokenCalls=(window.tokenCalls||0)+1;if(window.holdToken)await new Promise(r=>window.releaseToken=r);return {status:"OK",token:"synthetic"}}};
     if(window.hangCreate){window.hangCreate=false;await new Promise(r=>window.releaseCreate=r)}
     return m;},
-  paymentRequest(){return {update:()=>true,addEventListener(){}}},
-  async applePay(){window.appleCount=(window.appleCount||0)+1;return {async tokenize(){if(window.holdApple)await new Promise(resolve=>window.releaseApple=resolve);return window.walletResult??{status:"CANCEL"}}}},
+  paymentRequest(options){return {total:options.total,update(patch){this.total=patch.total??this.total;return true},addEventListener(){}}},
+  async applePay(request){window.appleCount=(window.appleCount||0)+1;return {async tokenize(){(window.appleTokenAmounts??=[]).push(request.total.amount);if(window.holdApple)await new Promise(resolve=>window.releaseApple=resolve);return window.walletResult??{status:"CANCEL"}}}},
   async afterpayClearpay(){return {async attach(){},async tokenize(){return window.afterpayResult??{status:"CANCEL"}}}},
   async cashAppPay(request,options){const entry={options};(window.cashMethods??=[]).push(entry);return {async attach(){},addEventListener(type,listener){entry.complete=listener},async destroy(){entry.destroyed=true;return true}}}
 })};`;
@@ -211,6 +211,7 @@ async function fixture(browser) {
           const saved = { ...original };
           delete requested.recoveryOnly;
           delete saved.shippingAddressOverride;
+          delete saved.shippingConfirmation;
           if (!isDeepStrictEqual(requested, saved))
             return route.fulfill({
               status: 409,
@@ -245,6 +246,16 @@ async function fixture(browser) {
           last.lookupSettled = true;
           return;
         }
+        if (last.suggestion && !input.shippingConfirmation)
+          return route.fulfill({
+            status: 422,
+            json: {
+              code: "SHIPPING_ADDRESS_SUGGESTION",
+              error: "Review address",
+              suggestedAddress: { ...input.shippingAddress, line1: last.suggestion },
+              shippingConfirmation: "fixture",
+            },
+          });
         if (last.reservation)
           return route.fulfill({ status: 409, json: { error: "Last unit is held" } });
         last.reservation = f.prepareCalls[n - 1];
@@ -366,7 +377,14 @@ async function pay(page) {
 }
 async function retryDeclinedLastUnit(
   f,
-  { guest = false, reload = false, method = "card", failure } = {},
+  {
+    guest = false,
+    reload = false,
+    method = "card",
+    walletAddress,
+    suggestion,
+    failure,
+  } = {},
 ) {
   f.lastUnit = {
     phase: "ready",
@@ -374,8 +392,10 @@ async function retryDeclinedLastUnit(
     validations: [],
     attempts: [],
     dispatches: [],
+    suggestion,
   };
-  if (failure === "late qualification") f.retryLookupHold = gate();
+  if (failure === "late qualification" || failure === "edited contact")
+    f.retryLookupHold = gate();
   const p = await f.ctx.newPage();
   p.on("pageerror", (e) => f.errors.push(e.message));
   if (guest) {
@@ -389,7 +409,8 @@ async function retryDeclinedLastUnit(
   }
   const url = "https://ux.test/checkout" + (guest ? "?guest&guestKey" : "");
   const verifyGuest = async () => {
-    await p.getByLabel("Email", { exact: true }).fill("guest@example.test");
+    if (!walletAddress)
+      await p.getByLabel("Email", { exact: true }).fill("guest@example.test");
     await p.waitForFunction(() => typeof window.verifyGuest === "function");
     await p.evaluate(() => window.verifyGuest("synthetic-first-verification"));
   };
@@ -399,24 +420,28 @@ async function retryDeclinedLastUnit(
     const replace = () =>
       p.evaluate(() => window.cart.setCartItems([...window.cart.items]));
     if (method === "applePay") {
-      await p.evaluate((pause) => {
-        const contact = {
-          givenName: "Test",
-          familyName: "Buyer",
-          phone: "3025550100",
-          addressLines: ["1 Test St"],
-          city: "Wilmington",
-          state: "DE",
-          postalCode: "19801",
-          countryCode: "US",
-        };
-        window.walletResult = {
-          status: "OK",
-          token: "synthetic-apple",
-          details: { billing: contact, shipping: { contact } },
-        };
-        window.holdApple = pause;
-      }, replaceUnits);
+      await p.evaluate(
+        ({ pause, walletAddress }) => {
+          const contact = {
+            givenName: "Test",
+            familyName: "Buyer",
+            phone: "3025550100",
+            addressLines: [walletAddress ?? "1 Test St"],
+            email: "guest@example.test",
+            city: "Wilmington",
+            state: "DE",
+            postalCode: "19801",
+            countryCode: "US",
+          };
+          window.walletResult = {
+            status: "OK",
+            token: "synthetic-apple",
+            details: { billing: contact, shipping: { contact } },
+          };
+          window.holdApple = pause;
+        },
+        { pause: replaceUnits, walletAddress },
+      );
       await p.getByRole("button", { name: "Pay with Apple Pay" }).click();
       if (replaceUnits) {
         await p.waitForFunction(() => typeof window.releaseApple === "function");
@@ -458,6 +483,8 @@ async function retryDeclinedLastUnit(
     } else await pay(p);
   };
   await submit();
+  if (suggestion)
+    await p.getByRole("button", { name: "Accept suggested address" }).click();
   await expect(p.getByRole("dialog").getByRole("alert"))
     .toHaveText("Payment was declined. Check your details and try again.")
     .catch(async (error) => {
@@ -491,6 +518,85 @@ async function retryDeclinedLastUnit(
   if (reload) await openUxHarness(p, bundle, url);
   else await p.getByRole("button", { name: "Return to checkout" }).click();
   if (guest) await verifyGuest();
+  const restoredAddress = walletAddress ?? suggestion;
+  if (restoredAddress) {
+    assert.equal(f.lastUnit.reservation.shippingAddress.line1, restoredAddress);
+    const address = p.getByRole("textbox", { name: "Address", exact: true });
+    const apple = p.getByRole("button", { name: "Pay with Apple Pay" });
+    const restore = p.getByRole("button", { name: "Restore original details" });
+    const tokenCalls = () =>
+      p.evaluate(() => [window.tokenCalls, window.appleTokenAmounts]);
+    const tokensBeforeRestore = await tokenCalls();
+    if (failure === "edited contact") {
+      await expect
+        .poll(() => f.prepareCalls.some((input) => input.recoveryOnly))
+        .toBe(true);
+      await address.fill("3 Edited St");
+      f.retryLookupHold.resolve();
+    }
+    await expect(restore).toBeVisible();
+    await expect(p.getByText(restoredAddress, { exact: true })).toBeVisible();
+    await expect(address).toHaveValue(
+      failure === "edited contact" ? "3 Edited St" : "1 Test St",
+    );
+    await expect(p.locator("#square-apple-pay-container:enabled")).toHaveCount(0);
+    await expect(p.getByRole("button", { name: "Pay now", exact: true })).toBeDisabled();
+    if (guest) await expect(p.getByLabel("Email", { exact: true })).toHaveValue("");
+    const prepareCount = f.prepareCalls.length;
+    const staleRestore = async () =>
+      restore.evaluate((button) => {
+        window.staleRestore = () => button.click();
+      });
+    if (failure === "restore owner changed") {
+      await staleRestore();
+      f.sessionStatus = 503;
+      await p.evaluate(() => {
+        const refresh = window.session.refreshSession();
+        window.staleRestore();
+        return refresh;
+      });
+      await expect(restore).toBeHidden();
+      assert.equal(
+        await p.locator('input[aria-label="Address"]').inputValue(),
+        "1 Test St",
+      );
+      assert.equal(f.permitCalls, 1);
+      assert.equal(f.payCalls, 1);
+      assert.deepEqual(await tokenCalls(), tokensBeforeRestore);
+      return;
+    }
+    if (failure === "restore units changed") {
+      await staleRestore();
+      assert.deepEqual(
+        await p.evaluate(async () => {
+          const saved = await window.cart.setCartItems([...window.cart.items]);
+          window.staleRestore();
+          return saved;
+        }),
+        { status: "saved" },
+      );
+      await expect(restore).toBeHidden();
+      await expect(address).toHaveValue("1 Test St");
+      await expect(apple).toBeDisabled();
+      assert.equal(f.permitCalls, 1);
+      assert.equal(f.payCalls, 1);
+      assert.deepEqual(await tokenCalls(), tokensBeforeRestore);
+      return;
+    }
+    await restore.click();
+    await expect(address).toHaveValue(restoredAddress);
+    if (guest)
+      await expect(p.getByLabel("Email", { exact: true })).toHaveValue(
+        "guest@example.test",
+      );
+    await expect(restore).toHaveCount(0);
+    if (method === "applePay")
+      await expect(p.getByRole("button", { name: "Pay $2.30 now" })).toBeDisabled();
+    assert.equal(f.prepareCalls.length, prepareCount);
+    assert.equal(f.permitCalls, 1);
+    assert.equal(f.payCalls, 1);
+    assert.deepEqual(await tokenCalls(), tokensBeforeRestore);
+  }
   if (failure === "price change") {
     f.lastUnit.changedPrice = true;
     await p.evaluate(() => window.cart.recheckAvailability());
@@ -542,12 +648,20 @@ async function retryDeclinedLastUnit(
     /\/checkout\/processing\?orderId=71111111-1111-4111-8111-111111111111/,
   );
   assert.deepEqual(await financialPair(), originalPair);
-  assert.equal(f.prepareCalls.filter((input) => !input.recoveryOnly).length, 1);
+  assert.equal(
+    f.prepareCalls.filter((input) => !input.recoveryOnly).length,
+    suggestion ? 2 : 1,
+  );
   assert.ok(f.prepareCalls.some((input) => input.recoveryOnly));
   assert.equal(f.permitCalls, 2);
   assert.equal(f.payCalls, 2);
   if (method === "card")
     assert.equal(await p.evaluate(() => window.tokenCalls), reload ? 1 : 2);
+  if (method === "applePay")
+    assert.deepEqual(
+      await p.evaluate(() => window.appleTokenAmounts),
+      reload ? ["2.30"] : ["2.30", "2.30"],
+    );
   assert.deepEqual(f.lastUnit.dispatches, ["permit-1", "permit-2"]);
   f.orderHold.resolve();
   await expect(p.getByRole("heading", { name: "Order Confirmed!" })).toBeVisible();
@@ -756,6 +870,35 @@ const cases = {
   lastUnitDeclineGuestReload: (f) =>
     retryDeclinedLastUnit(f, { guest: true, reload: true }),
   lastUnitApplePay: (f) => retryDeclinedLastUnit(f, { method: "applePay" }),
+  lastUnitApplePayRestore: (f) =>
+    retryDeclinedLastUnit(f, { method: "applePay", walletAddress: "2 Wallet St" }),
+  lastUnitApplePayRestoreGuestReload: (f) =>
+    retryDeclinedLastUnit(f, {
+      method: "applePay",
+      walletAddress: "2 Wallet St",
+      guest: true,
+      reload: true,
+    }),
+  lastUnitCardRestoreSuggestion: (f) =>
+    retryDeclinedLastUnit(f, { suggestion: "2 Suggested St" }),
+  lastUnitApplePayRestoreEditedContact: (f) =>
+    retryDeclinedLastUnit(f, {
+      method: "applePay",
+      walletAddress: "2 Wallet St",
+      failure: "edited contact",
+    }),
+  lastUnitApplePayRestoreOwnerChanged: (f) =>
+    retryDeclinedLastUnit(f, {
+      method: "applePay",
+      walletAddress: "2 Wallet St",
+      failure: "restore owner changed",
+    }),
+  lastUnitApplePayRestoreUnitsChanged: (f) =>
+    retryDeclinedLastUnit(f, {
+      method: "applePay",
+      walletAddress: "2 Wallet St",
+      failure: "restore units changed",
+    }),
   lastUnitCashApp: (f) => retryDeclinedLastUnit(f, { method: "cashAppPay" }),
   lastUnitAfterpay: (f) => retryDeclinedLastUnit(f, { method: "afterpay" }),
   lastUnitApplePayReplacement: (f) =>
