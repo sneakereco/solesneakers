@@ -23,7 +23,22 @@ type ProofInput = {
   expectedAttemptId?: string;
 };
 
-import { SquareTerminalCaptureConflict } from "./payment-facts";
+import { SquareEvidenceConflict, SquareTerminalCaptureConflict } from "./payment-facts";
+// Callers may pass only a local job's order or an independently correlated provider order.
+export async function rejectSquareEvidence(
+  db: AdminSupabaseClient,
+  orderId?: string,
+): Promise<never> {
+  if (orderId) {
+    const { error } = await db
+      .from("orders")
+      .update({ checkout_financial_review: "square_evidence_conflict" })
+      .eq("id", orderId)
+      .is("checkout_financial_review", null);
+    if (error) throw error;
+  }
+  throw new SquareEvidenceConflict();
+}
 export class SquareFinancialInquiry {
   constructor(
     private readonly db: AdminSupabaseClient,
@@ -36,6 +51,23 @@ export class SquareFinancialInquiry {
     private readonly allowLegacyReviewCreation = true,
   ) {}
 
+  private async rejectEvidence(orderId?: string): Promise<never> {
+    return rejectSquareEvidence(this.db, orderId);
+  }
+
+  private async validateEvidence<T>(
+    orderId: string | undefined,
+    read: () => T,
+  ): Promise<T> {
+    try {
+      return read();
+    } catch (error) {
+      if (error instanceof SquareEvidenceConflict || error instanceof z.ZodError)
+        return this.rejectEvidence(orderId);
+      throw error;
+    }
+  }
+
   async processStoredSquareEvent(eventId: string): Promise<void> {
     try {
       const { data, error } = await this.db
@@ -47,17 +79,19 @@ export class SquareFinancialInquiry {
         .single();
       if (error || !data.recovery_receipt) throw new Error("Missing stored receipt");
       if (data.processed_at) return;
-      const receipt = squareEventReceipt.parse({
+      const parsed = squareEventReceipt.safeParse({
         eventId: data.square_event_id,
         kind: data.event_type,
         payloadHash: data.payload_sha256,
         payload: data.event_data,
       });
+      if (!parsed.success) throw new SquareEvidenceConflict();
+      const receipt = parsed.data;
       if (
         receipt.payload.merchantId !== this.identity.merchantId ||
         receipt.payload.locationId !== this.identity.locationId
       )
-        throw new Error("Foreign receipt");
+        throw new SquareEvidenceConflict();
       // Older refund receipts placed the return order in squareOrderId. The
       // exact authenticated payment supplies the original sale order.
       const lookup = receipt.payload.refundId
@@ -74,7 +108,11 @@ export class SquareFinancialInquiry {
         if (markError) throw markError;
       }
     } catch (error) {
-      if (error instanceof SquareTerminalCaptureConflict) throw error;
+      if (
+        error instanceof SquareTerminalCaptureConflict ||
+        error instanceof SquareEvidenceConflict
+      )
+        throw error;
       throw new Error("square_receipt_processing_pending");
     }
   }
@@ -149,14 +187,14 @@ export class SquareFinancialInquiry {
         order.referenceId !== orderId ||
         order.locationId !== this.identity.locationId
       )
-        throw Error("unverified_recovery_order");
+        return this.rejectEvidence(orderId);
       for (const tender of order.tenders ?? []) {
         if (!tender.paymentId) continue;
         const { payment } = await this.square.payments.get({
           paymentId: tender.paymentId,
         });
         if (payment?.id === tender.paymentId && payment.referenceId === attemptId) {
-          if (id && id !== payment.id) return "review";
+          if (id && id !== payment.id) return this.rejectEvidence(orderId);
           id = payment.id;
         }
       }
@@ -199,7 +237,7 @@ export class SquareFinancialInquiry {
       !payment.orderId ||
       (input.squareOrderId && input.squareOrderId !== payment.orderId)
     )
-      throw new Error("Invalid payment");
+      return this.rejectEvidence(input.localOrderId);
     const squareOrderId = payment.orderId;
     const { order } = await this.square.orders.get({ orderId: squareOrderId });
     const { location } = await this.square.locations.get({
@@ -212,14 +250,21 @@ export class SquareFinancialInquiry {
       )
       .eq("square_order_id", squareOrderId)
       .single();
-    if (
-      error ||
-      !local ||
-      !order ||
-      !location ||
-      (input.localOrderId && input.localOrderId !== local.id)
-    )
-      throw new Error("Missing payment binding");
+    if (error) throw error;
+    if (!local) throw new Error("Missing local binding");
+    if (!order || !location || (input.localOrderId && input.localOrderId !== local.id))
+      return this.rejectEvidence(input.localOrderId);
+    // A raw receipt cannot choose whose financial review is changed.
+    const trustedOrder =
+      input.localOrderId ??
+      (order.id === local.square_order_id &&
+      order.referenceId === local.id &&
+      order.locationId === this.identity.locationId &&
+      payment.locationId === this.identity.locationId &&
+      location.id === this.identity.locationId &&
+      location.merchantId === this.identity.merchantId
+        ? local.id
+        : undefined);
     const attempts = new CheckoutPaymentAttemptRepository(this.db);
     const lookup = () =>
       this.db
@@ -232,7 +277,7 @@ export class SquareFinancialInquiry {
       local.checkout_attempt_guarded &&
       !z.uuid().safeParse(payment.referenceId).success
     )
-      throw new Error("Missing attempt reference");
+      return this.rejectEvidence(trustedOrder);
     const read = () =>
       local.checkout_attempt_guarded
         ? lookup().eq("id", payment.referenceId!).maybeSingle()
@@ -265,20 +310,25 @@ export class SquareFinancialInquiry {
       });
       attempt = await read();
     }
+    if (attempt.error) throw attempt.error;
     if (
-      attempt.error ||
       !attempt.data ||
       (input.expectedAttemptId && input.expectedAttemptId !== attempt.data.id)
     )
-      throw new Error("Missing exact attempt");
-    const { fact, review, createdAt } = verifyPaymentInquiry({
-      ...this.identity,
-      merchantLocation: location,
-      payment,
-      order,
-      local,
-      attempt: attempt.data,
-    });
+      return this.rejectEvidence(trustedOrder);
+    const boundAttempt = attempt.data;
+    const { fact, review, createdAt, providerMethod } = await this.validateEvidence(
+      trustedOrder,
+      () =>
+        verifyPaymentInquiry({
+          ...this.identity,
+          merchantLocation: location,
+          payment,
+          order,
+          local,
+          attempt: boundAttempt,
+        }),
+    );
     const status = z
       .enum(["APPROVED", "PENDING", "COMPLETED", "FAILED", "CANCELED"])
       .parse(fact.status);
@@ -295,11 +345,12 @@ export class SquareFinancialInquiry {
     const terminalConflict =
       status === "COMPLETED" && ["declined", "canceled"].includes(attempt.data.state);
     if (terminalConflict) {
+      if (!providerMethod) return this.rejectEvidence(trustedOrder);
       await repo.recordTerminalCapture(
         attempt.data.id,
         squareOrderId,
         payment.referenceId ?? "",
-        attempt.data.method,
+        providerMethod,
         fact,
       );
     } else
@@ -320,11 +371,8 @@ export class SquareFinancialInquiry {
     const refundId = receipt?.payload.refundId;
     if (refundId) {
       const { refund } = await this.square.refunds.get({ refundId });
-      const verified = verifyRefundInquiry(
-        refund,
-        refundId,
-        fact,
-        this.identity.locationId,
+      const verified = await this.validateEvidence(trustedOrder, () =>
+        verifyRefundInquiry(refund, refundId, fact, this.identity.locationId),
       );
       await new FinancialProjectionRepository(
         this.db,
@@ -342,11 +390,8 @@ export class SquareFinancialInquiry {
         // A fresh provider read can corroborate completed money. Uncertainty
         // leaves this receipt pending, and historical conflict remains visible.
         const { refund: refreshed } = await this.square.refunds.get({ refundId });
-        const confirmed = verifyRefundInquiry(
-          refreshed,
-          refundId,
-          fact,
-          this.identity.locationId,
+        const confirmed = await this.validateEvidence(trustedOrder, () =>
+          verifyRefundInquiry(refreshed, refundId, fact, this.identity.locationId),
         );
         if (
           confirmed.status !== "COMPLETED" ||
@@ -396,7 +441,7 @@ export class SquareFinancialInquiry {
         !d.state ||
         !d.reason
       )
-        throw new Error("Invalid dispute");
+        return this.rejectEvidence(trustedOrder);
       const { error: disputeError } = await this.db.rpc(
         "apply_checkout_dispute_receipt",
         {

@@ -71,6 +71,19 @@ describe("Square checkout reservation schema", () => {
     expect(migration).toContain("return false");
   });
 
+  it("requires the durable, unattached quote rejection before invoking ordered restoration", () => {
+    const schema = readFileSync(
+      resolve("supabase/migrations/20261125164000_checkout_reservations.sql"),
+      "utf8",
+    );
+    const wrapper = schema
+      .split("create function public.release_square_checkout_reservation(")[1]
+      .split("revoke all")[0];
+    expect(wrapper).toContain(
+      "o.failure_reason is distinct from 'preparation_quote_rejected'",
+    );
+    expect(wrapper).toContain("o.square_order_id is not null");
+  });
   it("deduplicates durable Square webhook evidence", () => {
     expect(migration).toContain("create table public.square_webhook_events");
     expect(migration).toContain("square_event_id text primary key");

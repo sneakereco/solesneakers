@@ -45,6 +45,7 @@ test("expiry fences dispatch and conserves stock across independently committed 
         eventId = null,
         version = "first",
         time = new Date().toISOString(),
+        paymentOverrides = {},
       ) {
         const commands = [];
         const db = {
@@ -87,6 +88,24 @@ test("expiry fences dispatch and conserves stock across independently committed 
                 values.push(value);
                 conditions.push(field + "=$" + values.length);
                 return q;
+              },
+              update(fields) {
+                assert.equal(table, "orders");
+                assert.deepEqual(fields, {
+                  checkout_financial_review: "square_evidence_conflict",
+                });
+                return q;
+              },
+              async is(field, value) {
+                assert.equal(table, "orders");
+                assert.equal(field, "checkout_financial_review");
+                assert.equal(value, null);
+                assert.deepEqual(conditions, ["id=$1"]);
+                await a.query(
+                  "update orders set checkout_financial_review='square_evidence_conflict' where id=$1 and checkout_financial_review is null",
+                  values,
+                );
+                return { error: null };
               },
               single: read,
               maybeSingle: read,
@@ -178,6 +197,7 @@ test("expiry fences dispatch and conserves stock across independently committed 
                 createdAt: time,
                 status: "COMPLETED",
                 versionToken: version,
+                ...paymentOverrides,
               },
             }),
           },
@@ -218,6 +238,56 @@ test("expiry fences dispatch and conserves stock across independently committed 
         );
         return { metrics, creates, commands };
       }
+      await t.test(
+        "immutable receipt contradictions retain review and protect only independently bound orders",
+        async () => {
+          for (const mode of ["foreign", "malformed", "binding"]) {
+            const o = await held(),
+              eventId = randomUUID(),
+              pay = "pay-" + o.id,
+              time = new Date().toISOString();
+            const at = await rpc(
+              a,
+              "get_or_create_checkout_payment_attempt($1,'card',$2)",
+              [o.id, o.binding],
+            );
+            const payload = {
+              merchantId: mode === "foreign" ? "other" : "merchant",
+              locationId: "location",
+              createdAt: time,
+              paymentId: pay,
+              squareOrderId: o.sq,
+            };
+            await rpc(a, "receive_checkout_square_event($1,'payment.updated',$2,$3)", [
+              eventId,
+              "d".repeat(64),
+              payload,
+            ]);
+            if (mode === "malformed")
+              await admin.query(
+                "update square_webhook_events set event_data=event_data-'createdAt' where square_event_id=$1",
+                [eventId],
+              );
+            const run = await runFixtureWorker(o, at, pay, eventId, "opaque", time, {
+              amountMoney: { amount: 1100n, currency: "USD" },
+            });
+            assert.equal(run.creates, 0);
+            const state = await admin.query(
+              "select e.processed_at,j.status,j.reason,j.unresolved_observations,o.checkout_financial_review,(select count(*) from checkout_financial_facts where order_id=o.id)::int facts from square_webhook_events e join checkout_recovery_jobs j on j.event_id=e.square_event_id cross join orders o where e.square_event_id=$1 and o.id=$2",
+              [eventId, o.id],
+            );
+            assert.deepEqual(state.rows[0], {
+              processed_at: null,
+              status: "review",
+              reason: "square_evidence_conflict",
+              unresolved_observations: 0,
+              checkout_financial_review:
+                mode === "binding" ? "square_evidence_conflict" : null,
+              facts: 0,
+            });
+          }
+        },
+      );
       for (const terminal of ["declined", "canceled"]) {
         await t.test(
           "retains terminal " +
@@ -384,6 +454,26 @@ test("expiry fences dispatch and conserves stock across independently committed 
                 { ...captured, providerVersion: "later-opaque" },
                 time,
               ]);
+            const historyCount = () =>
+              rpc(
+                admin,
+                "(select count(*)::int from checkout_payment_attempt_history where attempt_id=$1)",
+                [at.id],
+              );
+            const beforeReplay = await historyCount();
+            assert.equal(
+              (
+                await rpc(a, "record_checkout_payment_outcome($1,$2,$3,$4)", [
+                  at.id,
+                  pay,
+                  terminal,
+                  facts,
+                ])
+              ).state,
+              terminal,
+            );
+            assert.equal(await historyCount(), beforeReplay);
+            assert.deepEqual(await record(captured), snap);
             assert.equal(snap.capturedCents, 1000);
             assert.equal(snap.reviewReason, "square_terminal_capture_conflict");
             const {

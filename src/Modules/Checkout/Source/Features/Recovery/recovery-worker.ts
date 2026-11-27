@@ -4,7 +4,10 @@ import type {
 } from "./dependency-lease";
 import type { CheckoutRecoveryRepository } from "./recovery-repository";
 import type { RecoveryJob } from "./recovery-contract";
-import { SquareTerminalCaptureConflict } from "../Payments/payment-facts";
+import {
+  SquareEvidenceConflict,
+  SquareTerminalCaptureConflict,
+} from "../Payments/payment-facts";
 
 export const recoverySettings = { deadlineMs: 45000, batchSize: 50, concurrency: 4 };
 export type WorkerOptions = typeof recoverySettings;
@@ -20,7 +23,10 @@ export type RecoveryWorkerDependencies = Pick<
   DependencyLeases & {
     sweep(): Promise<void>;
     oldestDueMs(): Promise<number>;
-    process(job: RecoveryJob, signal: AbortSignal): Promise<RecoveryDisposition>;
+    process(
+      job: RecoveryJob,
+      signal: AbortSignal,
+    ): Promise<RecoveryDisposition | "deferred">;
   };
 
 export function deadlineFetch(
@@ -124,17 +130,25 @@ export async function runCheckoutRecovery(
           const operation = await withDependency(deps, "square", stop, (signal) =>
             deps.process(job, signal),
           );
-          if (operation) {
+          if (operation?.value === "deferred") reason = "awaiting_receipt";
+          else if (operation) {
             result = operation.value;
-            reason = "inquiry_unresolved";
+            reason = result === "review" ? "inquiry_review" : "inquiry_unresolved";
           }
         } catch (error) {
           if (error instanceof SquareTerminalCaptureConflict) {
             result = "review";
             reason = "square_terminal_capture_conflict";
+          } else if (error instanceof SquareEvidenceConflict) {
+            result = "review";
+            reason = "square_evidence_conflict";
           } else reason = "recovery_unavailable";
         }
-        if (result === "retry" && reason === "inquiry_unresolved" && job.attempts >= 12) {
+        if (
+          result === "retry" &&
+          reason === "inquiry_unresolved" &&
+          job.unresolvedObservations >= 11
+        ) {
           result = "review";
         }
         const base = Math.min(300000, 5000 * 2 ** Math.min(6, job.attempts - 1));

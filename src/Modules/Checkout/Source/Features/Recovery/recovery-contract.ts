@@ -34,6 +34,7 @@ export const recoveryJobSchema = z
     eventId: z.string().min(1).max(128).nullable(),
     leaseToken: z.guid(),
     attempts: z.number().int().positive(),
+    unresolvedObservations: z.number().int().nonnegative(),
   })
   .refine(({ kind, orderId, eventId }) =>
     kind === "square_event"

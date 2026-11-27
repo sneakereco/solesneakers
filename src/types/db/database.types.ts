@@ -322,6 +322,7 @@ export type Database = {
           reason: string | null
           status: string
           unique_key: string
+          unresolved_observations: number
         }
         Insert: {
           attempts?: number
@@ -335,6 +336,7 @@ export type Database = {
           reason?: string | null
           status?: string
           unique_key: string
+          unresolved_observations?: number
         }
         Update: {
           attempts?: number
@@ -348,6 +350,7 @@ export type Database = {
           reason?: string | null
           status?: string
           unique_key?: string
+          unresolved_observations?: number
         }
         Relationships: [
           {

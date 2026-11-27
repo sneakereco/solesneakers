@@ -213,6 +213,14 @@ begin
   ) then raise exception 'invalid_attempt_outcome'; end if;
   if p_state is null or p_state not in ('unknown','review','pending','succeeded','declined','canceled')
      or jsonb_typeof(p_verified_facts) is distinct from 'object' then raise exception 'invalid_attempt_outcome'; end if;
+  -- Replay the most recent workflow outcome. Independent observations may
+  -- append history or bind a previously unknown payment ID after a decline.
+  if a.state=p_state and ((kind='square_payment' and p_provider_payment_id=a.provider_payment_id)
+      or (kind in ('square_decline','uncertain') and p_provider_payment_id is null)) then
+    select verified_facts into last_facts from public.checkout_payment_attempt_history
+    where attempt_id=a.id and state=a.state and reason=a.reason order by id desc limit 1;
+    if last_facts=p_verified_facts then return checkout_attempt_private.dto(a); end if;
+  end if;
   if kind='square_payment' then
     matching_state := case p_verified_facts->>'status' when 'APPROVED' then 'pending' when 'PENDING' then 'pending'
       when 'COMPLETED' then 'succeeded' when 'FAILED' then 'declined' when 'CANCELED' then 'canceled' end;
@@ -246,10 +254,7 @@ begin
     if p_state='unknown' and a.state in ('pending','review') then return checkout_attempt_private.dto(a); end if;
   else raise exception 'invalid_outcome_facts'; end if;
 
-  if a.state=p_state then
-    select verified_facts into last_facts from public.checkout_payment_attempt_history where attempt_id=a.id order by id desc limit 1;
-    if last_facts=p_verified_facts then return checkout_attempt_private.dto(a); end if;
-  end if;
+
   if a.state in ('succeeded','declined','canceled') then raise exception 'terminal_attempt_outcome'; end if;
   update public.checkout_payment_attempts set state=p_state,provider_payment_id=coalesce(p_provider_payment_id,provider_payment_id),
     reason=outcome_reason,updated_at=clock_timestamp()

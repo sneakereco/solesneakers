@@ -47,6 +47,63 @@ test("durable recovery fairness, concurrent capacity and crash ownership", async
           rpc(c, "release_checkout_dependency_lease($1)", [token]),
         process,
       });
+      await t.test(
+        "eleven capacity deferrals and stale finishes preserve each genuine observation",
+        async () => {
+          const key = "capacity-observation:" + order.orderId;
+          await rpc(
+            admin,
+            "enqueue_checkout_recovery('reconcile_payment',$1,now()-interval '2 hours',null,$2)",
+            [key, order.orderId],
+          );
+          const wake = () =>
+            admin.query(
+              "update checkout_recovery_jobs set next_attempt_at=now()-interval '2 hours' where unique_key=$1",
+              [key],
+            );
+          const worker = deps(clients[0], () => Promise.resolve("retry"));
+          for (let i = 0; i < 11; i++) {
+            const summary = await runCheckoutRecovery(
+              { deadlineMs: 45000, batchSize: 1, concurrency: 1 },
+              { ...worker, acquireDependencyLease: () => Promise.resolve(null) },
+            );
+            assert.equal(summary.retry, 1);
+            await wake();
+          }
+          const [stale] = await worker.claimRecovery({
+            limit: 1,
+            now: new Date().toISOString(),
+          });
+          await admin.query(
+            "update checkout_recovery_jobs set lease_expires_at=clock_timestamp()-interval '1 second' where id=$1",
+            [stale.id],
+          );
+          for (let i = 1; i <= 12; i++) {
+            const summary = await runCheckoutRecovery(
+              { deadlineMs: 45000, batchSize: 1, concurrency: 1 },
+              worker,
+            );
+            assert.equal(i === 12 ? summary.review : summary.retry, 1);
+            const {
+              rows: [job],
+            } = await admin.query(
+              "select id,unresolved_observations,attempts from checkout_recovery_jobs where unique_key=$1",
+              [key],
+            );
+            assert.equal(job.unresolved_observations, i);
+            assert.equal(job.attempts, i + 12);
+            assert.equal(
+              await rpc(
+                clients[1],
+                "finish_checkout_recovery($1,$2,'review',null,'inquiry_unresolved')",
+                [job.id, stale.leaseToken],
+              ),
+              false,
+            );
+            if (i < 12) await wake();
+          }
+        },
+      );
       await t.test("fifty failing jobs cannot starve a later valid job", async () => {
         await enqueue(51);
         const valid = await rpc(

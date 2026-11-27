@@ -51,8 +51,11 @@ returns boolean language plpgsql security definer set search_path='' as $$
 declare o public.orders;
 begin
  select * into o from public.orders where id=p_order_id for update;
- if not found or not o.checkout_attempt_guarded or o.checkout_expiry_marked_at is not null or p_reason='checkout_expired'
-    or exists(select 1 from public.checkout_payment_attempts where order_id=o.id and dispatched_at is not null) then return false; end if;
+ if not found or not o.checkout_attempt_guarded or o.checkout_expiry_marked_at is not null
+    or o.status is distinct from 'pending' or o.square_order_id is not null
+    or o.failure_reason is distinct from 'preparation_quote_rejected' or p_reason is distinct from 'square_order_totals_changed'
+    or o.checkout_financial_review is not null
+    or exists(select 1 from public.checkout_payment_attempts where order_id=o.id) then return false; end if;
  return checkout_preparation_private.release_ordered(o.id,p_reason);
 end;
 $$;

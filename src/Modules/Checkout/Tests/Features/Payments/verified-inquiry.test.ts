@@ -89,6 +89,11 @@ it.each([
   "same version FAILED",
   "same version REJECTED",
   "terminal capture",
+  "foreign receipt",
+  "malformed receipt",
+  "legacy source mismatch",
+  "payment unavailable",
+  "storage unavailable",
 ])(
   "replays the stored %s effects against authenticated provider reads",
   async (scenario) => {
@@ -97,11 +102,16 @@ it.each([
       : null;
     const conflict = scenario === "conflicting refund" || collisionStatus !== null;
     const terminalCapture = scenario === "terminal capture";
-    const kind = terminalCapture
-      ? "payment.updated"
-      : conflict
-        ? "refund.updated"
-        : scenario;
+    const badSource = scenario === "legacy source mismatch";
+    const foreign = scenario === "foreign receipt";
+    const malformed = scenario === "malformed receipt";
+    const unavailable = scenario.endsWith("unavailable");
+    const kind =
+      terminalCapture || badSource || foreign || malformed || unavailable
+        ? "payment.updated"
+        : conflict
+          ? "refund.updated"
+          : scenario;
     const receipt = {
       square_event_id: "evt",
       event_type: kind,
@@ -109,15 +119,16 @@ it.each([
       recovery_receipt: true,
       processed_at: null as string | null,
       event_data: {
-        merchantId: "m",
+        merchantId: foreign ? "another-merchant" : "m",
         locationId: "l",
-        paymentId: "pay",
+        paymentId: malformed ? "" : "pay",
         squareOrderId: kind.startsWith("refund") ? "old-receipt-return-order" : "sq",
         createdAt: "2026-11-25T10:00:00Z",
         ...(kind.startsWith("dispute") ? { disputeId: "d" } : {}),
         ...(kind.startsWith("refund") ? { refundId: "r" } : {}),
       },
     };
+    const reviews: string[] = [];
     const applied = new Set<string>(),
       commands: string[] = [];
     const db = {
@@ -126,25 +137,45 @@ it.each([
           table === "square_refunds"
             ? { checkout_status_conflict: conflict, amount_cents: 400 }
             : table === "orders"
-              ? proof.local
+              ? badSource
+                ? {
+                    ...proof.local,
+                    checkout_attempt_guarded: false,
+                    payment_transaction_id: "pay",
+                  }
+                : proof.local
               : table === "square_webhook_events"
                 ? receipt
-                : terminalCapture
-                  ? { ...proof.attempt, state: "canceled" }
-                  : proof.attempt;
+                : badSource
+                  ? {
+                      ...proof.attempt,
+                      provider_payment_id: "pay",
+                      dispatched_at: null,
+                      state: "declined",
+                    }
+                  : terminalCapture
+                    ? { ...proof.attempt, state: "canceled" }
+                    : proof.attempt;
         let writing = false;
         const q = {
           select: () => q,
           eq: () => q,
-          update: () => {
+          update: (fields: { checkout_financial_review?: string }) => {
+            if (table === "orders" && fields.checkout_financial_review)
+              reviews.push(fields.checkout_financial_review);
             writing = true;
             return q;
           },
           is: () => {
-            if (writing) receipt.processed_at = "done";
+            if (writing && table === "square_webhook_events")
+              receipt.processed_at = "done";
             return { error: null };
           },
-          single: () => ({ data: row, error: null }),
+          single: () => ({
+            data: row,
+            error:
+              scenario === "storage unavailable" ? Error("connection unavailable") : null,
+          }),
           maybeSingle: () => ({ data: row, error: null }),
         };
         return q;
@@ -191,7 +222,21 @@ it.each([
     };
     let refundReads = 0;
     const sdk = {
-      payments: { get: () => Promise.resolve({ payment: proof.payment }) },
+      payments: {
+        get: () =>
+          scenario === "payment unavailable"
+            ? Promise.reject(Error("transport unavailable"))
+            : Promise.resolve({
+                payment: badSource
+                  ? {
+                      ...proof.payment,
+                      referenceId: orderId,
+                      sourceType: "WALLET",
+                      walletDetails: { brand: "CASH_APP" },
+                    }
+                  : proof.payment,
+              }),
+      },
       orders: { get: () => Promise.resolve({ order: proof.order }) },
       locations: { get: () => Promise.resolve({ location: proof.merchantLocation }) },
       refunds: {
@@ -243,6 +288,15 @@ it.each([
       { syncShipping, scheduleNotifications: jest.fn() },
       false,
     );
+    if (foreign || malformed || badSource || unavailable) {
+      await expect(consumer.processStoredSquareEvent("evt")).rejects.toThrow(
+        unavailable ? "square_receipt_processing_pending" : "square_evidence_conflict",
+      );
+      expect(receipt.processed_at).toBeNull();
+      expect(reviews).toEqual(badSource ? ["square_evidence_conflict"] : []);
+      expect(commands).toEqual([]);
+      return;
+    }
     if (terminalCapture) {
       for (let replay = 0; replay < 2; replay++) {
         await expect(consumer.processStoredSquareEvent("evt")).rejects.toThrow(

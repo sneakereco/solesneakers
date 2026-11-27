@@ -184,7 +184,8 @@ begin
  select * into strict a from public.checkout_payment_attempts where order_id=o.id and id=p_attempt_id for update;
  if a.state not in ('declined','canceled') or p_provider_time is null or not isfinite(p_provider_time)
   or p_square_order_id is null or a.square_order_id is distinct from p_square_order_id or o.square_order_id is distinct from p_square_order_id
-  or p_method is distinct from a.method or a.amount_cents is distinct from o.total*100 or o.currency is distinct from 'USD' or a.currency<>'USD'
+  or p_method is distinct from (case when a.method='applePay' then 'card' else a.method end)
+  or a.amount_cents is distinct from o.total*100 or o.currency is distinct from 'USD' or a.currency<>'USD'
   or pay is null or pay !~ '^[A-Za-z0-9_-]{1,192}$' or (a.provider_payment_id is not null and a.provider_payment_id<>pay)
   or (o.checkout_attempt_guarded and (a.dispatched_at is null or p_reference_id is distinct from a.id::text))
   or (not o.checkout_attempt_guarded and (o.payment_transaction_id is distinct from pay or a.provider_payment_id is distinct from pay))

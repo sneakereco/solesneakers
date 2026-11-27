@@ -1,6 +1,7 @@
 import type * as Square from "square";
 import {
   financialFact,
+  SquareEvidenceConflict,
   type VerifiedFinancialFact,
 } from "@/Modules/Checkout/Source/Features/Payments/payment-facts";
 
@@ -13,6 +14,7 @@ type Attempt = {
   provider_payment_id: string | null;
   method: string;
   dispatched_at: string | null;
+  state?: string;
 };
 type Local = {
   id: string;
@@ -42,14 +44,21 @@ export function verifyPaymentInquiry({
   local,
   attempt,
 }: Inquiry) {
-  const method = attempt.method;
+  const providerMethod =
+    payment.sourceType === "CARD"
+      ? "card"
+      : payment.sourceType === "WALLET" && payment.walletDetails?.brand === "CASH_APP"
+        ? "cashAppPay"
+        : payment.sourceType === "BUY_NOW_PAY_LATER" &&
+            ["AFTERPAY", "CLEARPAY"].includes(payment.buyNowPayLaterDetails?.brand ?? "")
+          ? "afterpay"
+          : null;
   const correctSource =
-    method === "cashAppPay"
-      ? payment.sourceType === "WALLET" && payment.walletDetails?.brand === "CASH_APP"
-      : method === "afterpay"
-        ? payment.sourceType === "BUY_NOW_PAY_LATER" &&
-          ["AFTERPAY", "CLEARPAY"].includes(payment.buyNowPayLaterDetails?.brand ?? "")
-        : ["card", "applePay"].includes(method) && payment.sourceType === "CARD";
+    providerMethod !== null &&
+    providerMethod === (attempt.method === "applePay" ? "card" : attempt.method);
+  const terminalCapture =
+    payment.status === "COMPLETED" &&
+    (attempt.state === "declined" || attempt.state === "canceled");
   const knownLegacy =
     !local.checkout_attempt_guarded &&
     !!payment.id &&
@@ -75,6 +84,7 @@ export function verifyPaymentInquiry({
         !attempt.dispatched_at ||
         payment.referenceId !== attempt.id ||
         !correctSource)) ||
+    (terminalCapture && !correctSource) ||
     attempt.currency !== "USD" ||
     order.totalMoney?.currency !== "USD" ||
     order.totalMoney.amount !== BigInt(attempt.amount_cents) ||
@@ -85,7 +95,7 @@ export function verifyPaymentInquiry({
     !payment.status ||
     !["APPROVED", "PENDING", "COMPLETED", "FAILED", "CANCELED"].includes(payment.status)
   )
-    throw new Error("square_inquiry_binding_mismatch");
+    throw new SquareEvidenceConflict();
   const fact = financialFact.parse({
     kind: "payment",
     providerId: payment.id,
@@ -100,6 +110,7 @@ export function verifyPaymentInquiry({
   });
   return {
     fact,
+    providerMethod,
     createdAt: payment.createdAt,
     review:
       payment.riskEvaluation?.riskLevel === "HIGH"
@@ -119,13 +130,13 @@ export function verifyRefundInquiry(
     refund.id !== refundId ||
     refund.paymentId !== payment.paymentId ||
     refund.locationId !== locationId ||
-    refund.amountMoney.currency !== "USD" ||
+    refund.amountMoney?.currency !== "USD" ||
     !refund.updatedAt ||
     !refund.status ||
     !["PENDING", "COMPLETED", "FAILED", "REJECTED"].includes(refund.status) ||
     payment.status !== "COMPLETED"
   )
-    throw new Error("square_refund_binding_mismatch");
+    throw new SquareEvidenceConflict();
   return financialFact.parse({
     ...payment,
     kind: "refund",

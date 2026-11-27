@@ -28,6 +28,7 @@ const jobs = (n: number): RecoveryJob[] =>
     eventId: null,
     leaseToken: "lease" + i,
     attempts: 1,
+    unresolvedObservations: 0,
   }));
 it("continues beyond fifty retrying jobs to settle a closed browser's accepted payment", async () => {
   const queue = jobs(51),
@@ -63,6 +64,28 @@ it("continues beyond fifty retrying jobs to settle a closed browser's accepted p
   });
   expect(done).toEqual(["50"]);
   expect(peak).toBeLessThanOrEqual(4);
+});
+it("escalates only the twelfth actual unresolved observation", async () => {
+  const queue = jobs(2).map((j, i) => ({
+    ...j,
+    attempts: 12 + i,
+    unresolvedObservations: i ? 11 : 0,
+  }));
+  const finishes: string[] = [];
+  const result = await runCheckoutRecovery(config, {
+    sweep: async () => {},
+    oldestDueMs: () => Promise.resolve(0),
+    claimRecovery: () => Promise.resolve(queue.splice(0)),
+    acquireDependencyLease: () => Promise.resolve("slot"),
+    releaseDependencyLease: async () => {},
+    process: () => Promise.resolve("retry"),
+    finishRecovery: (j) => {
+      finishes.push(j.result);
+      return Promise.resolve(true);
+    },
+  });
+  expect(finishes.sort()).toEqual(["retry", "review"]);
+  expect(result.review).toBe(1);
 });
 it("aborts the installed Square SDK's response body and forbids subsequent requests after the operation deadline", async () => {
   const ctl = new AbortController();

@@ -1,6 +1,7 @@
 import { createHash } from "node:crypto";
 import { z } from "zod";
 import { expireCheckout } from "@/Modules/Checkout/Source/Features/Recovery/expiry-operation";
+import { rejectSquareEvidence } from "@/Modules/Checkout/Source/Features/Payments/square-financial-inquiry";
 import { CheckoutRecoveryRepository } from "@/Modules/Checkout/Source/Features/Recovery/recovery-repository";
 import { CheckoutDependencyLeaseRepository } from "@/Modules/Checkout/Source/Features/Recovery/dependency-lease";
 import {
@@ -51,7 +52,7 @@ export function createCheckoutRecoveryDependencies(
           .single();
         if (error) throw error;
         if (data.processed_at) return "done";
-        if (!data.recovery_receipt) return "retry";
+        if (!data.recovery_receipt) return "deferred";
         await inquiry().processStoredSquareEvent(job.eventId!);
         return "done";
       }
@@ -102,7 +103,7 @@ export function createCheckoutRecoveryDependencies(
             location?.id !== locationId ||
             location.merchantId !== getSquareMerchantId()
           )
-            throw Error("unverified_cancel_merchant");
+            return rejectSquareEvidence(db, localId);
           const read = async () => {
             const { order } = await client.orders.get({ orderId: id });
             if (
@@ -110,7 +111,7 @@ export function createCheckoutRecoveryDependencies(
               order.referenceId !== localId ||
               order.locationId !== locationId
             )
-              throw Error("unverified_cancel_order");
+              return rejectSquareEvidence(db, localId);
             return order;
           };
           const order = await read();

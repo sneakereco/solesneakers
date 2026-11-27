@@ -255,6 +255,15 @@ test("atomic checkout allocation across independent sessions", async (t) => {
         async () => {
           const x = await item(2),
             held = await reserve(a, req([x]));
+          assert.equal(
+            (
+              await a.query("select reject_checkout_quote_before_attach($1,$2) ok", [
+                held.orderId,
+                req([x]).ownerBinding,
+              ])
+            ).rows[0].ok,
+            true,
+          );
           const heldPid = (await b.query("select pg_backend_pid() pid")).rows[0].pid;
           await a.query("begin");
           let release;
@@ -263,7 +272,7 @@ test("atomic checkout allocation across independent sessions", async (t) => {
               x.productId,
             ]);
             release = b.query(
-              "select release_square_checkout_reservation($1,'fixture_expiry') released",
+              "select release_square_checkout_reservation($1,'square_order_totals_changed') released",
               [held.orderId],
             );
             const deadline = Date.now() + 5000;
@@ -563,7 +572,18 @@ test("atomic checkout allocation across independent sessions", async (t) => {
                 );
               }
               assert.equal((await stock(x)).stock, 1);
-            } else assert.deepEqual(await stock(x), { stock: 0, holds: 1 });
+            } else {
+              assert.equal(
+                (
+                  await b.query(
+                    "select release_square_checkout_reservation($1,'square_order_totals_changed') ok",
+                    [o.orderId],
+                  )
+                ).rows[0].ok,
+                false,
+              );
+              assert.deepEqual(await stock(x), { stock: 0, holds: 1 });
+            }
           }
         },
       );

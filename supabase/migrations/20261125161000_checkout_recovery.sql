@@ -18,6 +18,7 @@ create table public.checkout_recovery_jobs (
   status text not null default 'pending' check (status in ('pending', 'done', 'review')),
   next_attempt_at timestamptz not null,
   attempts integer not null default 0 check (attempts >= 0),
+  unresolved_observations integer not null default 0 check (unresolved_observations >= 0),
   lease_token uuid,
   lease_expires_at timestamptz,
   reason text check (reason ~ '^[a-z][a-z0-9_]{0,79}$'),
@@ -166,7 +167,7 @@ begin
   )
   select coalesce(jsonb_agg(jsonb_build_object(
     'id', id, 'kind', kind, 'orderId', order_id, 'eventId', event_id,
-    'leaseToken', lease_token, 'attempts', attempts
+    'leaseToken', lease_token, 'attempts', attempts, 'unresolvedObservations', unresolved_observations
   ) order by next_attempt_at, id), '[]'::jsonb)
   into jobs from claimed;
   return jobs;
@@ -207,6 +208,8 @@ begin
   set status = case when p_result = 'retry' then 'pending' else p_result end,
       next_attempt_at = case when p_result = 'retry' then p_next_attempt_at else next_attempt_at end,
       reason = p_reason,
+      unresolved_observations = unresolved_observations + case
+        when p_result in ('retry','review') and p_reason='inquiry_unresolved' then 1 else 0 end,
       lease_token = null,
       lease_expires_at = null
   where id = p_id and status = 'pending' and lease_token = p_lease_token;

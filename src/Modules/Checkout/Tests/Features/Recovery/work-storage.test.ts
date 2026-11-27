@@ -18,6 +18,7 @@ const job = {
   eventId: null,
   leaseToken: token,
   attempts: 1,
+  unresolvedObservations: 0,
 };
 const receipt = {
   eventId,

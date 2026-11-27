@@ -1,5 +1,10 @@
 import { z } from "zod";
 
+export class SquareEvidenceConflict extends Error {
+  constructor() {
+    super("square_evidence_conflict");
+  }
+}
 export class SquareTerminalCaptureConflict extends Error {
   constructor() {
     super("square_terminal_capture_conflict");
