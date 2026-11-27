@@ -46,7 +46,7 @@ SELECT 'duration',delivery_method,'','',count(*),
 UNION ALL
 SELECT 'missing_duration','','','',count(*),0,0,0 FROM health_state WHERE delivery_state IN ('shipped','fulfilled','picked_up','delivered') AND (seconds_elapsed IS NULL OR seconds_elapsed<0)
 UNION ALL
-SELECT 'missing_state','','','',count(*),0,0,0 FROM selected o LEFT JOIN health_state f ON o.order_id=f.order_id WHERE o.kind='order' AND nullIf(f.fact_id,'') IS NULL
+SELECT 'missing_state','','','',count(),0,0,0 FROM selected o LEFT JOIN health_state f ON o.order_id=f.order_id WHERE o.kind='order' AND nullIf(f.fact_id,'') IS NULL
  ) SELECT *,${attributionSql} FROM health_groups`;
 export const commerceHealthEndpoints = [endpoint("sole_analytics_health", sql)];
 export function compileCommerceHealthQueries(
