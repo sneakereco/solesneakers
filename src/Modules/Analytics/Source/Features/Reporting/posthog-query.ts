@@ -12,7 +12,13 @@ import {
   type ServerAnalyticsConfig,
 } from "../Configuration/server-config";
 
-import { validateCompiledQuery, type CompiledQuery } from "./query-contract";
+import {
+  CSV_EXECUTION,
+  ExportScopeError,
+  validateCompiledQuery,
+  type CompiledQuery,
+  type CsvExecution,
+} from "./query-contract";
 
 const QUERY_TIMEOUT_MS = 8_000;
 const endpointResponse = z.object({
@@ -26,6 +32,7 @@ const endpointResponse = z.object({
 });
 
 export type QueryDependencies = PostHogRequestDependencies & {
+  mode?: CsvExecution;
   config: ServerAnalyticsConfig | null;
 };
 
@@ -66,7 +73,7 @@ export async function executePostHogQuery(
       reason: "not-configured",
     });
   }
-  const compiled = validateCompiledQuery(query);
+  const compiled = validateCompiledQuery(query, deps.mode);
   if (!compiled) {
     throw new PostHogQueryError({ status: "permanent-failure", reason: "invalid-query" });
   }
@@ -90,6 +97,17 @@ export async function executePostHogQuery(
   }
 
   const parsed = endpointResponse.safeParse(response.data);
+  if (
+    deps.mode === CSV_EXECUTION &&
+    typeof response.data === "object" &&
+    response.data !== null &&
+    (("hasMore" in response.data && response.data.hasMore === true) ||
+      ("truncated" in response.data && response.data.truncated === true) ||
+      ("results" in response.data &&
+        Array.isArray(response.data.results) &&
+        response.data.results.length > limit))
+  )
+    throw new ExportScopeError();
   if (
     !parsed.success ||
     parsed.data.name !== endpoint ||

@@ -35,7 +35,7 @@ import {
   mapPaymentsResult,
   mapSalesResult,
 } from "./queries/financial";
-import type { CompiledQuery } from "./query-contract";
+import type { CompiledQuery, CsvExecution } from "./query-contract";
 
 export const commerceDateDefinitions = {
   order:
@@ -81,6 +81,7 @@ export async function executeCommerceReport(
 }
 
 export type ReportingDependencies = {
+  mode?: CsvExecution;
   dataset: DatasetScope | null;
   now: Date;
   history: HistoryEvidence;
@@ -186,6 +187,7 @@ async function getReportPeriod<T extends ReportId>(
         compileAcquisitionQueries(
           { ...ranked, sort: report === "overview" ? "sessions" : request.sort },
           dataset,
+          deps.mode,
         ),
       );
     if (report === "overview" || report === "products")
@@ -193,6 +195,7 @@ async function getReportPeriod<T extends ReportId>(
         compileProductQueries(
           { ...ranked, sort: report === "overview" ? "netMerchandise" : request.sort },
           dataset,
+          deps.mode,
         ),
       );
     if (!behavior) {

@@ -29,7 +29,7 @@ import {
   purchaseInSession,
   eligibleSessionEntry,
 } from "./behavior-source";
-import type { CompiledReportQueries } from "../query-contract";
+import type { CompiledReportQueries, CsvExecution } from "../query-contract";
 
 const ids = ["product", "variant", "brand", "category", "size"] as const;
 const axes = ["product", "variant", "brand", "category", "size"] as const;
@@ -109,11 +109,15 @@ export function productEndpoints(scope: DatasetScope) {
 export function compileProductQueries(
   request: ReportRequest,
   scope: DatasetScope,
+  mode?: CsvExecution,
 ): CompiledReportQueries {
   const [table, signals] = productEndpoints(scope);
   return {
     queries: {
-      products: compileEndpoint(table, request, scope, { limit: request.pageSize * 5 }),
+      products: compileEndpoint(table, request, scope, {
+        limit: request.pageSize * 5,
+        mode,
+      }),
       ...(request.report === "overview"
         ? {}
         : { signals: compileEndpoint(signals, request, scope, { limit: 1 }) }),

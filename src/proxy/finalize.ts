@@ -10,6 +10,12 @@ export function finalizeProxyResponse(
   pathname = "/",
 ): NextResponse {
   response.headers.set(security.proxy.requestIdHeader, requestId);
+  if (
+    pathname === "/api/admin/analytics" ||
+    pathname.startsWith("/api/admin/analytics/")
+  ) {
+    response.headers.set("Cache-Control", "private, no-store");
+  }
   applySecurityHeaders(response, undefined, pathname);
   return response;
 }

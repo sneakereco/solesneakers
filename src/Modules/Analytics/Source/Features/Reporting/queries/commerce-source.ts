@@ -11,6 +11,7 @@ import {
   REPORT_ENDPOINT_VERSIONS,
   validateCompiledQuery,
   type CompiledQuery,
+  type CsvExecution,
   type SavedReportEndpoint,
 } from "../query-contract";
 
@@ -110,7 +111,13 @@ export function compileEndpoint(
   def: SavedReportEndpoint,
   request: ReportRequest,
   scope: DatasetScope,
-  options: { comparison?: boolean; grouping?: string; limit: number; now?: Date },
+  options: {
+    comparison?: boolean;
+    grouping?: string;
+    limit: number;
+    now?: Date;
+    mode?: CsvExecution;
+  },
 ): CompiledQuery {
   if (
     !datasetScopeSchema.safeParse(scope).success ||
@@ -153,7 +160,7 @@ export function compileEndpoint(
     limit: options.limit,
     offset: 0,
   };
-  if (!validateCompiledQuery(query))
+  if (!validateCompiledQuery(query, options.mode))
     throw new RangeError("Invalid compiled commerce report.");
   return query;
 }

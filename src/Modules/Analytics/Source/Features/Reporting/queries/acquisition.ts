@@ -29,7 +29,7 @@ import {
   observedDimension,
 } from "./commerce-source";
 import { calendarBuckets, decomposed, localBucket } from "./financial";
-import type { CompiledReportQueries } from "../query-contract";
+import type { CompiledReportQueries, CsvExecution } from "../query-contract";
 
 const columns = [
   "sessions",
@@ -79,16 +79,19 @@ export function acquisitionEndpoints(scope: DatasetScope) {
 export function compileAcquisitionQueries(
   request: ReportRequest,
   scope: DatasetScope,
+  mode?: CsvExecution,
 ): CompiledReportQueries {
   const [purchase, discovery, ps, ds] = acquisitionEndpoints(scope);
   const queries: CompiledReportQueries["queries"] = {
     purchaseSession: compileEndpoint(purchase, request, scope, {
       limit: 4 * request.pageSize,
+      mode,
     }),
   };
   if (request.report !== "overview") {
     queries.discovery = compileEndpoint(discovery, request, scope, {
       limit: 4 * request.pageSize,
+      mode,
     });
     queries.purchaseSeries = compileEndpoint(ps, request, scope, { limit: 2000 });
     queries.discoverySeries = compileEndpoint(ds, request, scope, { limit: 2000 });

@@ -29,6 +29,21 @@ export const REPORT_ENDPOINT_VERSIONS = {
 type ReportEndpoint = keyof typeof REPORT_ENDPOINT_VERSIONS;
 
 export const MAX_POSTHOG_QUERY_ROWS = MAX_REPORT_BUCKETS;
+export const CSV_EXECUTION = Symbol("complete-aggregate-export");
+export type CsvExecution = typeof CSV_EXECUTION;
+export const CSV_AXIS_LIMIT = 5000;
+export class ExportScopeError extends Error {
+  constructor() {
+    super(
+      "The complete aggregate export could not fit or be verified. Narrow the filters or date range.",
+    );
+  }
+}
+export const rankedExportAxes: Partial<Record<ReportEndpoint, readonly string[]>> = {
+  sole_analytics_products: ["product", "variant", "brand", "category", "size"],
+  sole_analytics_acquisition: ["source", "channel", "campaign", "placement"],
+  sole_analytics_discovery: ["source", "channel", "campaign", "placement"],
+};
 
 const variable = z.union([z.string().max(256), z.number(), z.boolean(), z.null()]);
 export type EndpointVariable = z.infer<typeof variable>;
@@ -48,14 +63,30 @@ const querySchema = z.strictObject({
 
 export type CompiledQuery = z.infer<typeof querySchema>;
 
-export function validateCompiledQuery(query: CompiledQuery): CompiledQuery | null {
-  const parsed = querySchema.safeParse(query);
+const exportQuerySchema = querySchema.extend({
+  limit: z.number().int().min(1).max(30000),
+});
+export function validateCompiledQuery(
+  query: CompiledQuery,
+  mode?: CsvExecution,
+): CompiledQuery | null {
+  const expanded = mode === CSV_EXECUTION && query?.limit > MAX_POSTHOG_QUERY_ROWS;
+  const parsed = (expanded ? exportQuerySchema : querySchema).safeParse(query);
   if (
     !parsed.success ||
     REPORT_ENDPOINT_VERSIONS[parsed.data.endpoint] !== parsed.data.version
   ) {
     return null;
   }
+  if (
+    expanded &&
+    (parsed.data.limit !==
+      (rankedExportAxes[parsed.data.endpoint]?.length ?? 0) * CSV_AXIS_LIMIT ||
+      parsed.data.offset !== 0 ||
+      parsed.data.variables.page_start !== "0" ||
+      parsed.data.variables.page_end !== String(CSV_AXIS_LIMIT))
+  )
+    return null;
   return parsed.data;
 }
 
