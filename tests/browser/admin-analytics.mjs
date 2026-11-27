@@ -5,12 +5,17 @@ import { build } from "esbuild";
 import { chromium } from "@playwright/test";
 import postcss from "postcss";
 import tailwindcss from "tailwindcss";
+import { runSalesScenario, salesFixture, salesQuery } from "./admin-analytics-sales.mjs";
 
 const args = process.argv.slice(2);
 assert.ok(
-  !args.length || (args.length === 2 && args[0] === "--report" && args[1] === "overview"),
-  "Usage: node tests/browser/admin-analytics.mjs [--report overview]",
+  !args.length ||
+    (args.length === 2 &&
+      args[0] === "--report" &&
+      ["overview", "sales"].includes(args[1])),
+  "Usage: node tests/browser/admin-analytics.mjs [--report overview|sales]",
 );
+const selectedReport = args[1] ?? "overview";
 
 console.log("Bundling admin analytics browser fixture");
 const bundle = await build({
@@ -158,6 +163,12 @@ function fixtureMidnight(day) {
 console.log("Launching Chromium for the admin analytics fixture");
 const browser = await chromium.launch();
 try {
+  await run();
+} finally {
+  await browser.close();
+}
+
+async function run() {
   const page = await browser.newPage({
     viewport: { width: 1440, height: 980 },
     timezoneId: "Asia/Tokyo",
@@ -196,6 +207,7 @@ try {
   let exportMode = "csv";
   let holdMobile;
   const requests = [];
+  const exports = [];
 
   function fixture(params = new URLSearchParams()) {
     const from = params.get("from") ?? "2026-10-27";
@@ -280,6 +292,9 @@ try {
       };
     if (mode === "unavailable")
       return { ...meta, state: mode, coverage: [coverageIssue("warehouse")], data: null };
+    if (params.get("report") === "sales") return salesFixture(meta, compare);
+    if (selectedReport === "sales" && params.get("report") === "products")
+      return { ...meta, state: "unavailable", data: null };
 
     const selectedSummary = {
       ...summary,
@@ -437,6 +452,7 @@ try {
       });
     if (!url.pathname.startsWith("/api/admin/analytics/")) return route.abort();
     if (url.pathname.endsWith("/export")) {
+      exports.push(url);
       if (exportMode === "gate")
         return route.fulfill({ status: 200, contentType: "text/html", body: "Sign in" });
       if (exportMode === "limit")
@@ -446,7 +462,10 @@ try {
         });
       return route.fulfill({
         contentType: "text/csv; charset=utf-8",
-        body: "field,value,status\nsummary.confirmedOrders,8,known\n",
+        body:
+          url.searchParams.get("report") === "sales"
+            ? `field,value,status\nreport.data.totalCollected.cents,${fixture(url.searchParams).data.totalCollected.cents},observed\n`
+            : "field,value,status\nsummary.confirmedOrders,8,known\n",
       });
     }
     requests.push(url);
@@ -474,6 +493,8 @@ try {
   const analyticsLink = page.getByRole("link", { name: "Analytics", exact: true });
   await analyticsLink.click();
   await page.getByRole("status").getByText("Loading analytics report").waitFor();
+  if (selectedReport === "sales")
+    await page.goto(`${origin}/admin/analytics?${salesQuery}`);
   await page.clock.setFixedTime(new Date("2026-11-26T02:00:00Z"));
   assert.deepEqual(
     await page.evaluate(() => [
@@ -483,17 +504,16 @@ try {
     ["2026-11-26T02:00:00.000Z", "Asia/Tokyo"],
   );
   await page.waitForFunction(() => Boolean(window.finishAnalyticsLoad));
-  await page.evaluate((report) => window.finishAnalyticsLoad(report), fixture());
+  await page.evaluate(
+    (report) => window.finishAnalyticsLoad(report),
+    fixture(new URL(page.url()).searchParams),
+  );
   await page.getByRole("heading", { name: "Analytics", exact: true }).waitFor();
   assert.equal(await analyticsLink.getAttribute("aria-current"), "page");
   assert.equal(
     await page.locator("[data-admin-topbar]").getByText("Analytics").count(),
     1,
   );
-  await page.getByText("30 days · Eastern Time", { exact: true }).waitFor();
-  await page.waitForURL(/from=2026-10-27&to=2026-11-25/);
-  console.log("PASS: native admin navigation, loading state, and default range");
-
   const screenshots = process.env.ANALYTICS_BROWSER_SCREENSHOTS;
   if (screenshots) await mkdir(screenshots, { recursive: true });
   async function capture(name) {
@@ -504,6 +524,15 @@ try {
       fullPage: !name.startsWith("calendar-"),
     });
   }
+  if (selectedReport === "sales") {
+    await runSalesScenario({ page, requests, exports, capture });
+    assert.deepEqual(pageErrors, []);
+    return;
+  }
+
+  await page.getByText("30 days · Eastern Time", { exact: true }).waitFor();
+  await page.waitForURL(/from=2026-10-27&to=2026-11-25/);
+  console.log("PASS: native admin navigation, loading state, and default range");
   await capture("overview-desktop");
 
   const dateButton = page.getByRole("button", { name: /^Date range/ });
@@ -779,6 +808,4 @@ try {
   console.log(
     "PASS: Overview navigation, date dialog, real range selection, store-local comparisons, history, request races, coverage, exports, chart tables, and responsive layouts",
   );
-} finally {
-  await browser.close();
 }

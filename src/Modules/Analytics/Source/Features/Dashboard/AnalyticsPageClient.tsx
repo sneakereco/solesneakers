@@ -7,6 +7,7 @@ import {
   type OverviewData,
   type ReportEnvelope,
   type ReportId,
+  type SalesData,
 } from "../ReportContract/types";
 import { DataCoverage } from "./DataCoverage";
 import {
@@ -18,6 +19,7 @@ import {
 import { ReportFilters } from "./ReportFilters";
 import { ReportSkeleton } from "./ReportSkeleton";
 import { OverviewReport } from "./reports/OverviewReport";
+import { SalesReport } from "./reports/SalesReport";
 import {
   changeDashboardLocation,
   createRequestGuard,
@@ -37,11 +39,26 @@ type ReportViewState =
   | { status: "updating" }
   | { status: "error"; message: string };
 
-function ReportContent({ id, report }: { id: ReportId; report: DashboardReport }) {
+function ReportContent({
+  id,
+  report,
+  onRequestChange,
+}: {
+  id: ReportId;
+  report: DashboardReport;
+  onRequestChange: (change: DashboardChange) => void;
+}) {
   if (!report.data) return null;
   switch (id) {
     case "overview":
       return <OverviewReport report={report as ReportEnvelope<OverviewData>} />;
+    case "sales":
+      return (
+        <SalesReport
+          report={report as ReportEnvelope<SalesData>}
+          onRequestChange={onRequestChange}
+        />
+      );
     default:
       return (
         <p className="analytics-alert">The {reportNames[id]} view is unavailable.</p>
@@ -254,7 +271,13 @@ export function AnalyticsPageClient({
             datasetStartedAt={report.datasetStartedAt}
             partial={report.range.partial}
           />
-          {request && <ReportContent id={request.report} report={report} />}
+          {request && (
+            <ReportContent
+              id={request.report}
+              report={report}
+              onRequestChange={changeRequest}
+            />
+          )}
           {report.state === "unavailable" && (
             <button type="button" className="admin-button-secondary" onClick={retry}>
               Retry report

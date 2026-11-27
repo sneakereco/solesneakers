@@ -10,6 +10,11 @@ import { CalendarRangeFilter } from "./CalendarRangeFilter";
 import { formatPreviousPeriod } from "./format";
 import { filterLabel, filterNames, type DashboardChange } from "./request-state";
 
+const salesSelects = [
+  ["paymentMethod", "All payment methods"],
+  ["fulfillment", "All fulfillment types"],
+] as const;
+
 export function ReportFilters({
   request,
   onChange,
@@ -24,12 +29,14 @@ export function ReportFilters({
   if (request.source && !reportedSources.has(request.source))
     reportedSources.set(request.source, filterLabel(request.source));
   const showSources = request.report === "overview" && reportedSources.size > 0;
+  const showSalesFilters = request.report === "sales";
   const otherFilters = (
     Object.keys(filterNames) as Array<keyof ReportFilterValues>
   ).filter(
     (key) =>
       key !== "device" &&
       !(key === "source" && showSources) &&
+      !(showSalesFilters && salesSelects.some(([filter]) => key === filter)) &&
       request[key] !== undefined,
   );
 
@@ -78,6 +85,29 @@ export function ReportFilters({
             </select>
           </div>
         )}
+        {showSalesFilters &&
+          salesSelects.map(([filter, all]) => (
+            <div className="analytics-filter-field" key={filter}>
+              <label htmlFor={id + "-" + filter}>{filterNames[filter]}</label>
+              <select
+                id={id + "-" + filter}
+                value={request[filter] ?? ""}
+                onChange={(event) =>
+                  onChange({
+                    [filter]: (event.target.value ||
+                      undefined) as ReportRequest[typeof filter],
+                  })
+                }
+              >
+                <option value="">{all}</option>
+                {REPORT_FILTER_VALUES[filter].map((value) => (
+                  <option key={value} value={value}>
+                    {filterLabel(value)}
+                  </option>
+                ))}
+              </select>
+            </div>
+          ))}
         <div className="analytics-filter-field">
           <label htmlFor={`${id}-group`}>Group by</label>
           <select
