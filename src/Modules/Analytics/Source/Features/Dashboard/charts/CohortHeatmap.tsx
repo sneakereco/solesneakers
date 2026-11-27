@@ -52,6 +52,10 @@ export function CohortHeatmap({ cohorts }: { cohorts: CustomerCohort[] | null })
                 <td>{formatCount(cohort.buyers)}</td>
                 {months.map((month) => {
                   const rate = byMonth.get(month);
+                  const unelapsed =
+                    rate?.value === null &&
+                    rate.numerator === null &&
+                    rate.denominator === null;
                   const alpha =
                     rate && rate.value !== null ? 0.04 + rate.value * 0.22 : 0;
                   return (
@@ -59,14 +63,12 @@ export function CohortHeatmap({ cohorts }: { cohorts: CustomerCohort[] | null })
                       key={month}
                       style={{ backgroundColor: `rgba(9, 9, 11, ${alpha})` }}
                     >
-                      {rate ? (
-                        rate.value === null ? (
-                          "Unavailable"
-                        ) : (
-                          `${formatPercent(rate.value)} (${formatCount(rate.numerator)} / ${formatCount(rate.denominator)})`
-                        )
-                      ) : (
+                      {unelapsed ? (
                         <span aria-label="Not elapsed">—</span>
+                      ) : rate && rate.value !== null ? (
+                        `${formatPercent(rate.value)} (${formatCount(rate.numerator)} / ${formatCount(rate.denominator)})`
+                      ) : (
+                        "Unavailable"
                       )}
                     </td>
                   );

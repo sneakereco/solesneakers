@@ -117,6 +117,7 @@ const summary = {
   visitors: 31,
   sessions: 40,
   buyers: 7,
+  missingBuyerOrders: 0,
 };
 const product = {
   productId: "00000000-0000-4000-a000-000000000001",
@@ -282,6 +283,9 @@ try {
 
     const selectedSummary = {
       ...summary,
+      ...(mode === "review-coverage"
+        ? { confirmedOrders: 2, buyers: 0, missingBuyerOrders: 2 }
+        : {}),
       netMerchandise: money(
         params.get("device") === "mobile"
           ? 70_001
@@ -294,25 +298,44 @@ try {
       ...summary,
       confirmedOrders: 6,
       netMerchandise: money(112_000),
+      ...(mode === "review-coverage"
+        ? {
+            confirmedOrders: 2,
+            buyers: 1,
+            missingBuyerOrders: 1,
+            netMerchandise: { cents: 112_000, complete: false, missingCount: 2 },
+            averageOrderValue: { cents: 15_773, complete: false, missingCount: 1 },
+          }
+        : {}),
     };
     function seriesFrom(firstDay, totals) {
       const cents = totals.netMerchandise.cents;
+      const intervals = [];
+      for (let offset = 0; offset < days; ) {
+        const bucketStart = firstDay + offset * oneDay;
+        const weekday = new Date(bucketStart).getUTCDay();
+        const remaining = params.get("bucket") === "week" ? 7 - ((weekday + 6) % 7) : 1;
+        const stop = Math.min(days, offset + remaining);
+        intervals.push([bucketStart, firstDay + stop * oneDay]);
+        offset = stop;
+      }
       const weights =
-        days <= 2
+        intervals.length <= 2
           ? [1, 0]
-          : Array.from({ length: days }, (_, index) => [4, 7, 5, 8, 3, 5, 6][index % 7]);
+          : intervals.map((_, index) => [4, 7, 5, 8, 3, 5, 6][index % 7]);
       const sum = weights.reduce((total, weight) => total + weight, 0);
       let assigned = 0;
-      return Array.from({ length: days }, (_, index) => {
+      return intervals.map(([bucketStart, bucketEnd], index) => {
         const amount =
-          index === days - 1
+          index === intervals.length - 1
             ? cents - assigned
             : Math.floor((cents * weights[index]) / sum);
         assigned += amount;
         return {
-          startInclusive: fixtureMidnight(firstDay + index * oneDay),
-          endExclusive: fixtureMidnight(firstDay + (index + 1) * oneDay),
-          netMerchandise: money(amount),
+          startInclusive: fixtureMidnight(bucketStart),
+          endExclusive: fixtureMidnight(bucketEnd),
+          netMerchandise:
+            index === 0 ? { ...totals.netMerchandise, cents: amount } : money(amount),
           confirmedOrders: index === 0 ? totals.confirmedOrders : 0,
           sessions: index === 0 ? totals.sessions : 0,
           visitors: index === 0 ? totals.visitors : 0,
@@ -363,6 +386,7 @@ try {
             visitors: 0,
             sessions: 0,
             buyers: 0,
+            missingBuyerOrders: 0,
           },
           series: series.map((bucket) => ({
             ...bucket,
@@ -683,6 +707,72 @@ try {
     await capture(`calendar-${width}`);
     await dialog.getByRole("button", { name: "Cancel" }).click();
   }
+
+  mode = "review-coverage";
+  await page.setViewportSize({ width: 1440, height: 980 });
+  const comparison = page.getByRole("checkbox", { name: "Compare previous period" });
+  await comparison.uncheck();
+  await dateButton.click();
+  await start.fill("2026-10-27");
+  await end.fill("2026-11-19");
+  await apply.click();
+  await page.getByLabel("Group by", { exact: true }).selectOption("week");
+
+  async function assertPlotDates(priorCount) {
+    const plot = trend.locator(".analytics-series-plot");
+    await page.waitForFunction(
+      (expectedPriorCount) =>
+        document.querySelectorAll(".analytics-series-current circle").length === 4 &&
+        document.querySelectorAll(".analytics-series-prior circle").length ===
+          expectedPriorCount,
+      priorCount,
+    );
+    const { dates, points } = await plot.evaluate((chart) => {
+      const center = (element) => {
+        const { left, width } = element.getBoundingClientRect();
+        return left + width / 2;
+      };
+      return {
+        dates: [...chart.querySelectorAll(".analytics-series-dates span")].map(
+          (tick) => ({
+            label: tick.textContent,
+            x: center(tick),
+          }),
+        ),
+        points: [...chart.querySelectorAll(".analytics-series-current circle")].map(
+          center,
+        ),
+      };
+    });
+    assert.deepEqual(
+      dates.map(({ label }) => label),
+      ["Oct 27", "Nov 2", "Nov 16"],
+    );
+    for (const [tick, point] of [0, 1, 3].entries()) {
+      assert.ok(
+        Math.abs(dates[tick].x - points[point]) < 1,
+        `${dates[tick].label} should be centered on bucket ${point + 1}`,
+      );
+    }
+  }
+
+  await assertPlotDates(0);
+  await comparison.check();
+  await assertPlotDates(5);
+  assert.match(
+    await trend.locator(".analytics-series-current circle title").first().textContent(),
+    /^Selected period: Oct 27/,
+  );
+  await page
+    .getByText("Previous period · $1,120.00 · 2 missing values", { exact: true })
+    .waitFor();
+  await page
+    .getByText("Previous period · $157.73 · 1 missing value", { exact: true })
+    .waitFor();
+  await page
+    .getByText("Confirmed orders without a recorded buyer", { exact: true })
+    .waitFor();
+  await capture("overview-weekly-uneven");
 
   assert.ok(requests.length >= 14);
   assert.deepEqual(pageErrors, []);

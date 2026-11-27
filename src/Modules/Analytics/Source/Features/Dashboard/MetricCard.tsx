@@ -2,6 +2,7 @@ export function MetricCard({
   label,
   value,
   comparison,
+  comparisonCoverage,
   definition,
   coverage,
   emphasis = false,
@@ -9,6 +10,7 @@ export function MetricCard({
   label: string;
   value: string;
   comparison?: string | null;
+  comparisonCoverage?: string;
   definition?: string;
   coverage?: string;
   emphasis?: boolean;
@@ -22,7 +24,10 @@ export function MetricCard({
       <h2>{label}</h2>
       <p className="analytics-metric-value">{value}</p>
       {comparison !== undefined && comparison !== null && (
-        <p className="analytics-metric-comparison">Previous period · {comparison}</p>
+        <p className="analytics-metric-comparison">
+          Previous period · {comparison}
+          {comparisonCoverage && ` · ${comparisonCoverage}`}
+        </p>
       )}
       {definition && <p>{definition}</p>}
       {coverage && <p className="analytics-metric-comparison">{coverage}</p>}

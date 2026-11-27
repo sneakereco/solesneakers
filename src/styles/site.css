@@ -939,6 +939,7 @@ body:has([data-admin-shell]) [data-ui-select-option]:disabled {
   grid-template-rows: 10.5rem auto;
   gap: 0.3rem 0.55rem;
   padding-block: 0.35rem;
+  padding-inline-end: 0.25rem;
 }
 .analytics-series-plot svg {
   width: 100%;
@@ -983,11 +984,13 @@ body:has([data-admin-shell]) [data-ui-select-option]:disabled {
 }
 .analytics-series-dates {
   grid-column: 2;
-  display: flex;
-  justify-content: space-between;
+  position: relative;
+  min-height: 1.5em;
 }
-.analytics-series-dates span:only-child {
-  margin-inline: auto;
+.analytics-series-dates span {
+  position: absolute;
+  transform: translateX(-50%);
+  white-space: nowrap;
 }
 .analytics-chart-legend {
   margin-block: 0.55rem;

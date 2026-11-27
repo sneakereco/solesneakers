@@ -242,6 +242,7 @@ export type OverviewSummary = {
   visitors: number | null;
   sessions: number | null;
   buyers: number | null;
+  missingBuyerOrders: number;
 };
 export type OverviewData = {
   summary: OverviewSummary;

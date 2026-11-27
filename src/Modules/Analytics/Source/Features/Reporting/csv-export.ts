@@ -122,7 +122,7 @@ const components: Fields = Object.fromEntries(
     .map((k) => [k, money]),
 );
 const summary = {
-  ...fields("confirmedOrders visitors sessions buyers"),
+  ...fields("confirmedOrders visitors sessions buyers missingBuyerOrders"),
   netMerchandise: money,
   averageOrderValue: money,
   conversion: rate,

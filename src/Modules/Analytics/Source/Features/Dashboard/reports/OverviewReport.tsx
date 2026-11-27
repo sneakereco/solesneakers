@@ -44,6 +44,7 @@ export function OverviewReport({ report }: { report: ReportEnvelope<OverviewData
           value={formatMoney(summary.netMerchandise)}
           emphasis
           comparison={comparison && formatMoney(comparison.netMerchandise)}
+          comparisonCoverage={moneyCoverage(comparison?.netMerchandise ?? null)}
           definition="After discounts and product refunds"
           coverage={moneyCoverage(summary.netMerchandise)}
         />
@@ -57,6 +58,7 @@ export function OverviewReport({ report }: { report: ReportEnvelope<OverviewData
           label="Average order value"
           value={formatMoney(summary.averageOrderValue)}
           comparison={comparison && formatMoney(comparison.averageOrderValue)}
+          comparisonCoverage={moneyCoverage(comparison?.averageOrderValue ?? null)}
           definition="Products after discounts, before refunds"
           coverage={moneyCoverage(summary.averageOrderValue)}
         />
@@ -193,8 +195,24 @@ export function OverviewReport({ report }: { report: ReportEnvelope<OverviewData
               <dd>{formatCount(summary.sessions)}</dd>
             </div>
             <div>
-              <dt>Purchasing customers</dt>
-              <dd>{formatCount(summary.buyers)}</dd>
+              <dt>Recorded buyers</dt>
+              <dd>
+                {formatCount(summary.buyers)}
+                {comparison && (
+                  <small>Previous period · {formatCount(comparison.buyers)}</small>
+                )}
+              </dd>
+            </div>
+            <div>
+              <dt>Confirmed orders without a recorded buyer</dt>
+              <dd>
+                {formatCount(summary.missingBuyerOrders ?? null)}
+                {comparison && (
+                  <small>
+                    Previous period · {formatCount(comparison.missingBuyerOrders ?? null)}
+                  </small>
+                )}
+              </dd>
             </div>
           </dl>
         </ReportPanel>

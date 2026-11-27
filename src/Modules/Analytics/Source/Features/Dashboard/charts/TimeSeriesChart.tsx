@@ -24,6 +24,9 @@ const units = {
 
 export type TimeSeriesUnit = keyof typeof units;
 
+const plotWidth = 600;
+const plotInset = 6;
+
 const axisDate = new Intl.DateTimeFormat("en-US", {
   timeZone: REPORT_TIMEZONE,
   month: "short",
@@ -55,7 +58,9 @@ export function TimeSeriesChart({
   const high = Math.max(0, ...known) || (low === 0 ? 1 : 0);
   const positions = Math.max(buckets.length, comparison?.length ?? 0);
   const x = (index: number) =>
-    positions > 1 ? 6 + (index * 588) / (positions - 1) : 300;
+    positions > 1
+      ? plotInset + (index * (plotWidth - 2 * plotInset)) / (positions - 1)
+      : plotWidth / 2;
   const y = (value: number) => 7 + ((high - value) * 166) / (high - low);
   const tick = (value: number) =>
     unit === "netMerchandise"
@@ -105,12 +110,10 @@ export function TimeSeriesChart({
                 vectorEffect="non-scaling-stroke"
               >
                 <title>
-                  {label}:{" "}
-                  {formatStoreInterval(
+                  {`${label}: ${formatStoreInterval(
                     point.bucket.startInclusive,
                     point.bucket.endExclusive,
-                  )}{" "}
-                  · {formatChartValue(point.bucket[unit], metric.format)}
+                  )} · ${formatChartValue(point.bucket[unit], metric.format)}`}
                 </title>
               </circle>
             )
@@ -151,12 +154,12 @@ export function TimeSeriesChart({
                 </span>
               ))}
             </div>
-            <svg viewBox="0 0 600 180" preserveAspectRatio="none">
+            <svg viewBox={`0 0 ${plotWidth} 180`} preserveAspectRatio="none">
               {ticks.map((value) => (
                 <line
                   key={value}
                   x1="0"
-                  x2="600"
+                  x2={plotWidth}
                   y1={y(value)}
                   y2={y(value)}
                   vectorEffect="non-scaling-stroke"
@@ -167,7 +170,7 @@ export function TimeSeriesChart({
             </svg>
             <div className="analytics-series-dates">
               {labelIndices.map((index) => (
-                <span key={index}>
+                <span key={index} style={{ left: `${(x(index) * 100) / plotWidth}%` }}>
                   {axisDate.format(new Date(labelSeries[index].startInclusive))}
                 </span>
               ))}
