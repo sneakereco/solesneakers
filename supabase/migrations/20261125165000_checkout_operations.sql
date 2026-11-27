@@ -143,8 +143,9 @@ language sql stable security invoker set search_path = '' as $$
   ), first_expired_bound as (
     select order_id from (
       select order_id,lease_expires_at,id from public.checkout_recovery_jobs,observed
-      where order_id is not null and lease_expires_at<=t
-      union all select order_id,lease_expires_at,id from public.checkout_notification_outbox,observed where lease_expires_at<=t
+      where status in ('pending','review') and order_id is not null and lease_expires_at<=t
+      union all select order_id,lease_expires_at,id from public.checkout_notification_outbox,observed
+      where status<>'sent' and lease_expires_at<=t
     ) expired order by lease_expires_at,id limit 1
   ), jobs as (
     select count(*) as depth,min(next_attempt_at) filter(where status='pending' and next_attempt_at<=t) as due,

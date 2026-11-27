@@ -42,6 +42,99 @@ test("checkout operating health in the disposable database", async (t) => {
         },
       );
       await t.test(
+        "a sent compatibility row cannot bind an expired slot or hide a current expired mail obligation",
+        async () => {
+          const sentOrder = await seedOrder();
+          const liveOrder = await seedOrder();
+          // Roll back only this fixture's rows and clock adjustments. Use the normal
+          // service-role RPCs for acquiring, claiming, finishing and reading health.
+          await admin.query("begin");
+          try {
+            for (const { orderId: id } of [sentOrder, liveOrder]) {
+              await admin.query(
+                "insert into checkout_notification_outbox(order_id,tenant_id,kind,event_key) select id,tenant_id,'order_confirmation',$2 from orders where id=$1",
+                [id, randomUUID()],
+              );
+            }
+            await admin.query("set local role service_role");
+            const claim = async (id) =>
+              (await admin.query("select public.claim_checkout_mail(1,$1) rows", [id]))
+                .rows[0].rows[0];
+            const sent = await claim(sentOrder.orderId);
+            const slot = (
+              await admin.query(
+                "select public.acquire_checkout_dependency_lease('square',1,120) token",
+              )
+            ).rows[0].token;
+            assert.ok(slot);
+            assert.equal(
+              (
+                await admin.query(
+                  "select public.finish_checkout_notification($1,true) finished",
+                  [sent.id],
+                )
+              ).rows[0].finished,
+              true,
+            );
+            const persisted = (
+              await admin.query(
+                "select status,lease_token,lease_expires_at is not null as has_expiry from checkout_notification_outbox where id=$1",
+                [sent.id],
+              )
+            ).rows[0];
+            assert.deepEqual(persisted, {
+              status: "sent",
+              lease_token: sent.leaseToken,
+              has_expiry: true,
+            });
+            await admin.query("reset role");
+            await admin.query(
+              "update checkout_notification_outbox set lease_expires_at=clock_timestamp()-interval '20 minutes' where id=$1",
+              [sent.id],
+            );
+            await admin.query(
+              "update checkout_dependency_leases set lease_expires_at=clock_timestamp()-interval '10 minutes' where lease_token=$1",
+              [slot],
+            );
+            await admin.query("set local role service_role");
+            const {
+              readCheckoutHealth,
+              checkoutAlerts,
+              alertOrderReference,
+            } = require("../../../Source/Features/Operations/health-snapshot.ts");
+            const read = () =>
+              readCheckoutHealth({
+                read: async () =>
+                  (await admin.query("select public.read_checkout_health() snapshot"))
+                    .rows[0].snapshot,
+              });
+            const infra = await read();
+            const live = await claim(liveOrder.orderId);
+            await admin.query("reset role");
+            await admin.query(
+              "update checkout_notification_outbox set lease_expires_at=clock_timestamp()-interval '1 minute' where id=$1",
+              [live.id],
+            );
+            await admin.query("set local role service_role");
+            const mixed = await read();
+            assert.deepEqual([infra.expiredLeases, mixed.expiredLeases], [1, 2]);
+            for (const health of [infra, mixed]) {
+              assert.ok(checkoutAlerts(health).includes("expired_lease"));
+              assert.equal(health.reviewOrderId, populated?.legacyReview.orderId ?? null);
+            }
+            assert.deepEqual(
+              [
+                alertOrderReference(infra, "expired_lease"),
+                alertOrderReference(mixed, "expired_lease"),
+              ],
+              [null, liveOrder.orderId],
+            );
+          } finally {
+            await admin.query("rollback");
+          }
+        },
+      );
+      await t.test(
         "distinct trusted orders correlate unknown, pending, expired hold, overdue work, mail and lost mail lease independently of review rows",
         async () => {
           const owners = {};
