@@ -60,6 +60,27 @@ const errorCodes = new Set([
   "57P03",
 ]);
 
+// Keep fixture payloads private while retaining the exact owned assertion site.
+const browserSource = new RegExp(
+  String.raw`((?:src/Modules/Cart/Tests/Features/(?:ManageBasket/(?:purchase-capture|basket-state|retained-cart)|ValidateBasket/availability)\.browser|src/Modules/Checkout/Tests/Features/(?:Outcomes/checkout-outcome\.browser|Preparation/guest-context\.browser\.test)|tests/browser/(?:measurement-(?:trigger-sites|sdk-boundary|lifecycle)|fixtures/checkout-hardening))\.mjs:[1-9]\d{0,4}:[1-9]\d{0,3})\)?$`,
+);
+export function browserFailureDiagnostics(output) {
+  const types = new Set(),
+    codes = new Set(),
+    locations = new Set();
+  for (const raw of output.split(/\r?\n/)) {
+    const line = raw.replaceAll("\\", "/").replace(/^# /, "");
+    const error = /^\s*([A-Za-z]+)(?: \[([A-Z0-9_]+)\])?:/.exec(line);
+    if (error && (errorNames.has(error[1]) || error[1] === "TimeoutError")) {
+      types.add(error[1]);
+      if (errorCodes.has(error[2])) codes.add(error[2]);
+    }
+    const frame = /^\s+at /.test(line) ? browserSource.exec(line) : null;
+    if (frame && locations.size < 5) locations.add(frame[1]);
+  }
+  return { errorTypes: [...types], codes: [...codes], locations: [...locations] };
+}
+
 export function reportCheckoutFixtureError(error) {
   if (process.env.CHECKOUT_GATE_DIAGNOSTICS !== "true") return;
   let cause = error;
@@ -221,6 +242,11 @@ export async function createCheckoutGate(family) {
         summary,
       );
       console.log(`Checkout gate diagnostics ${family} ${name} ${diagnostics}`);
+      if (family === "browser")
+        console.log(
+          "Browser failure diagnostics " +
+            JSON.stringify(browserFailureDiagnostics(output)),
+        );
     }
     if (expectedFailure && !detected)
       throw Error(family + " fault injection inconclusive: " + name);
