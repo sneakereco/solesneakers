@@ -1099,7 +1099,12 @@ const checkoutLine = (id) => ({
 });
 async function checkoutOwnershipFixture(
   t,
-  { reviewAddress = false, stockZeroAfterPrepare = false } = {},
+  {
+    reviewAddress = false,
+    stockZeroAfterPrepare = false,
+    scopedAvailability = "available",
+    rejectPrepare = false,
+  } = {},
 ) {
   const heldLine = {
     ...checkoutLine("a"),
@@ -1113,6 +1118,7 @@ async function checkoutOwnershipFixture(
     fingerprint = "a".repeat(64);
   let holdSession,
     holdPrepare,
+    holdScoped,
     holdPay,
     permitOk = false;
   const requests = {
@@ -1158,6 +1164,11 @@ async function checkoutOwnershipFixture(
           const request = payments.paymentRequest(...args);
           return {
             ...request,
+            addEventListener: (event, callback) => {
+              if (event === "afterpay_shippingaddresschanged")
+                window.afterpayShipping = callback;
+              return request.addEventListener(event, callback);
+            },
             update: (...values) => {
               if (window.fixtureAppleEarlyError)
                 throw Error("Apple Pay total update failed");
@@ -1202,11 +1213,46 @@ async function checkoutOwnershipFixture(
             },
           };
         },
-        afterpayClearpay: async () => ({
-          attach: async () => {},
-          tokenize: async () => ({ status: "CANCEL" }),
-          destroy: async () => {},
-        }),
+        afterpayClearpay: async () => {
+          const counts = (window.afterpayCounts ??= {
+            created: 0,
+            destroyed: 0,
+            tokenized: 0,
+          });
+          counts.created++;
+          let live = true;
+          return {
+            attach: async () => {},
+            tokenize: async () => {
+              if (!live) throw Error("Fixture Afterpay handle was retired");
+              counts.tokenized++;
+              if (!window.approveAfterpay) return { status: "CANCEL" };
+              if (window.holdAfterpayToken)
+                await new Promise((resolve) => {
+                  window.releaseAfterpayToken = resolve;
+                });
+              return {
+                status: "OK",
+                token: "synthetic-afterpay",
+                details: {
+                  shipping: {
+                    contact: {
+                      addressLines: ["10 a St"],
+                      city: "Wilmington",
+                      state: "DE",
+                      postalCode: "19801",
+                      countryCode: "US",
+                    },
+                  },
+                },
+              };
+            },
+            destroy: async () => {
+              live = false;
+              counts.destroyed++;
+            },
+          };
+        },
       });
     },
     sessionRoute: async (route) => {
@@ -1219,11 +1265,14 @@ async function checkoutOwnershipFixture(
       if (url.pathname === "/api/cart/validate") {
         const input = route.request().postDataJSON();
         requests.validations.push(input);
+        if (!stockZeroAfterPrepare && input.order && holdScoped) await holdScoped;
         if (stockZeroAfterPrepare) {
           if (!requests.prepares.length)
             return route.fulfill({ json: { items: [heldLine], removed: [] } });
           const owns = input.order?.orderId === preparedOrderId;
-          const availability = owns ? "available" : "unavailable";
+          if (owns && holdScoped) await holdScoped;
+          const available = owns && scopedAvailability !== "unavailable";
+          const availability = available ? "available" : "unavailable";
           return route.fulfill({
             json: {
               contractVersion: 2,
@@ -1240,10 +1289,13 @@ async function checkoutOwnershipFixture(
                   productId: heldLine.productId,
                   variantId: heldLine.variantId,
                   requestedQuantity: 1,
-                  availableQuantity: owns ? 1 : 0,
+                  availableQuantity: available ? 1 : 0,
                   availability,
                   reason: availability,
-                  facts: heldLine,
+                  facts:
+                    owns && scopedAvailability === "price change"
+                      ? { ...heldLine, priceCents: heldLine.priceCents + 1 }
+                      : heldLine,
                   ...(owns ? { orderScoped: true } : {}),
                 },
               ],
@@ -1276,6 +1328,11 @@ async function checkoutOwnershipFixture(
       if (url.pathname === "/api/checkout/prepare") {
         requests.prepares.push(route.request().postDataJSON());
         if (holdPrepare) await holdPrepare;
+        if (rejectPrepare)
+          return route.fulfill({
+            status: 503,
+            json: { error: "Fixture preparation was unavailable" },
+          });
         if (reviewAddress && requests.prepares.length === 1)
           return route.fulfill({
             status: 409,
@@ -1360,6 +1417,16 @@ async function checkoutOwnershipFixture(
       holdPay = new Promise((resolve) => (release = resolve));
       return () => {
         holdPay = undefined;
+        release();
+      };
+    },
+    deferScoped() {
+      let release;
+      holdScoped = new Promise((resolve) => {
+        release = resolve;
+      });
+      return () => {
+        holdScoped = undefined;
         release();
       };
     },
@@ -1457,82 +1524,242 @@ for (const id of ["b", null])
       }
     },
   );
-test("same-owner visibility preserves active checkout method, billing and a single pending preparation", async (t) => {
-  const f = await checkoutOwnershipFixture(t),
-    { page } = f;
-  await expect.poll(() => f.requests.quotes.length).toBe(1);
-  await page.getByText("Use a different billing address", { exact: true }).click();
-  for (const [name, value] of [
-    ["Billing first name", "Bill"],
-    ["Billing last name", "Buyer"],
-    ["Billing address", "40 Billing St"],
-    ["Billing city", "Wilmington"],
-    ["Billing ZIP code", "19801"],
-  ])
-    await page.getByLabel(name, { exact: true }).fill(value);
-  await page.getByLabel("Billing state", { exact: true }).selectOption("DE");
-  await page.getByRole("radio", { name: "Afterpay", exact: true }).click();
-  const releasePrepare = f.deferPrepare(),
-    releaseSession = f.deferSession();
-  try {
-    await page
-      .getByRole("button", { name: "Continue with Afterpay", exact: true })
-      .click();
-    await expect.poll(() => f.requests.prepares.length).toBe(1);
-    await page.evaluate(() => {
-      window.originalBilling = document.querySelector(
-        '[aria-label="Billing first name"]',
-      );
-      document.dispatchEvent(new Event("visibilitychange"));
-    });
-    await expect.poll(() => page.evaluate(() => window.testCart.access)).toBe("checking");
-    const stillMounted = await page.evaluate(() => window.originalBilling.isConnected);
-    assert.equal(stillMounted, true);
-    await expect(page.getByRole("radio", { name: "Afterpay", exact: true })).toHaveCount(
-      0,
-    );
-    releasePrepare();
-    await page.waitForFunction(() => window.prepareRead && window.testSession.isLoading);
-    assert.equal(f.requests.permits, 0);
-    releaseSession();
-    await expect
-      .poll(() => f.requests.permits)
-      .toBe(1)
-      .catch(async (error) => {
-        console.error(
-          "Synthetic same-owner state",
-          (await page.locator("body").innerText()).slice(-1900),
-          {
-            quotes: f.requests.quotes.length,
-            prepares: f.requests.prepares.length,
-            validations: f.requests.validations.length,
-          },
+for (const stockZeroAfterPrepare of [false, true])
+  test(
+    "same-owner visibility preserves active checkout method, billing and a single pending preparation; last unit allocated=" +
+      stockZeroAfterPrepare,
+    async (t) => {
+      const f = await checkoutOwnershipFixture(t, { stockZeroAfterPrepare }),
+        { page } = f;
+      await expect.poll(() => f.requests.quotes.length).toBe(1);
+      await page.getByText("Use a different billing address", { exact: true }).click();
+      for (const [name, value] of [
+        ["Billing first name", "Bill"],
+        ["Billing last name", "Buyer"],
+        ["Billing address", "40 Billing St"],
+        ["Billing city", "Wilmington"],
+        ["Billing ZIP code", "19801"],
+      ])
+        await page.getByLabel(name, { exact: true }).fill(value);
+      await page.getByLabel("Billing state", { exact: true }).selectOption("DE");
+      await page.getByRole("radio", { name: "Afterpay", exact: true }).click();
+      const releasePrepare = f.deferPrepare(),
+        releaseSession = f.deferSession();
+      try {
+        await page
+          .getByRole("button", { name: "Continue with Afterpay", exact: true })
+          .click();
+        await expect.poll(() => f.requests.prepares.length).toBe(1);
+        await page.evaluate(() => {
+          window.originalBilling = document.querySelector(
+            '[aria-label="Billing first name"]',
+          );
+          document.dispatchEvent(new Event("visibilitychange"));
+        });
+        await expect
+          .poll(() => page.evaluate(() => window.testCart.access))
+          .toBe("checking");
+        const stillMounted = await page.evaluate(
+          () => window.originalBilling.isConnected,
         );
-        throw error;
-      });
-    await expect(page.getByText("Fixture payment paused", { exact: true })).toBeVisible();
-    await page.evaluate(() => window.testCart.recheckAvailability());
-    assert.deepEqual(f.requests.validations.at(-1).order, { orderId: preparedOrderId });
-    assert.ok(
-      await page.evaluate(
-        () =>
-          window.originalBilling.isConnected && window.originalBilling.value === "Bill",
-      ),
+        assert.equal(stillMounted, true);
+        await expect(
+          page.getByRole("radio", { name: "Afterpay", exact: true }),
+        ).toHaveCount(0);
+        releasePrepare();
+        await page.waitForFunction(
+          () => window.prepareRead && window.testSession.isLoading,
+        );
+        assert.equal(f.requests.permits, 0);
+        releaseSession();
+        await expect
+          .poll(() => f.requests.permits)
+          .toBe(1)
+          .catch(async (error) => {
+            console.error(
+              "Synthetic same-owner state",
+              (await page.locator("body").innerText()).slice(-1900),
+              {
+                quotes: f.requests.quotes.length,
+                prepares: f.requests.prepares.length,
+                validations: f.requests.validations.length,
+              },
+            );
+            throw error;
+          });
+        await expect(
+          page.getByText("Fixture payment paused", { exact: true }),
+        ).toBeVisible();
+        await page.evaluate(() => window.testCart.recheckAvailability());
+        assert.deepEqual(f.requests.validations.at(-1).order, {
+          orderId: preparedOrderId,
+        });
+        assert.ok(
+          await page.evaluate(
+            () =>
+              window.originalBilling.isConnected &&
+              window.originalBilling.value === "Bill",
+          ),
+        );
+        assert.equal(f.requests.prepares.length, 1);
+        assert.equal(
+          await page
+            .locator('[role="radio"]')
+            .filter({ hasText: "Afterpay" })
+            .first()
+            .getAttribute("aria-checked"),
+          "true",
+        );
+      } finally {
+        releasePrepare();
+        releaseSession();
+      }
+    },
+  );
+
+for (const scenario of [
+  "continue",
+  "replacement",
+  "no own hold",
+  "price change",
+  "failed prepare",
+  "late owner change",
+  "late replacement",
+  "changed quote",
+]) {
+  test("last-unit Afterpay during pending preparation: " + scenario, async (t) => {
+    const f = await checkoutOwnershipFixture(t, {
+      stockZeroAfterPrepare: scenario !== "changed quote",
+      scopedAvailability:
+        scenario === "no own hold"
+          ? "unavailable"
+          : scenario === "price change"
+            ? "price change"
+            : "available",
+      rejectPrepare: scenario === "failed prepare",
+    });
+    const { page } = f;
+    await page.getByRole("radio", { name: "Afterpay", exact: true }).click();
+    await page.evaluate(
+      (late) => {
+        window.approveAfterpay = true;
+        window.holdAfterpayToken = late;
+      },
+      scenario === "late owner change" || scenario === "late replacement",
     );
-    assert.equal(f.requests.prepares.length, 1);
-    assert.equal(
+    const releasePrepare = f.deferPrepare(),
+      releasePay = f.deferPay(),
+      releaseScoped = f.deferScoped(),
+      releaseSession = f.deferSession();
+    try {
       await page
-        .locator('[role="radio"]')
-        .filter({ hasText: "Afterpay" })
-        .first()
-        .getAttribute("aria-checked"),
-      "true",
-    );
-  } finally {
-    releasePrepare();
-    releaseSession();
-  }
-});
+        .getByRole("button", { name: "Continue with Afterpay", exact: true })
+        .click();
+      await expect.poll(() => f.requests.prepares.length).toBe(1);
+      if (scenario === "replacement") {
+        assert.equal(
+          await page.evaluate(() =>
+            window.testCart
+              .setCartItems([...window.testCart.items])
+              .then((r) => r.status),
+          ),
+          "saved",
+        );
+      }
+      await page.evaluate(() => document.dispatchEvent(new Event("visibilitychange")));
+      await expect
+        .poll(() => page.evaluate(() => window.testCart.access))
+        .toBe("checking");
+      const releaseQuote = scenario === "changed quote" ? f.deferQuote(true) : undefined;
+      releaseQuote?.();
+      releasePrepare();
+      await page.waitForFunction(() => window.prepareRead);
+      releaseSession();
+      if (scenario === "failed prepare") {
+        await expect(page.getByText("Fixture preparation was unavailable")).toBeVisible();
+      } else {
+        await expect
+          .poll(() =>
+            f.requests.validations.some((v) => v.order?.orderId === preparedOrderId),
+          )
+          .toBe(true);
+        assert.equal(f.requests.permits, 0);
+        releaseScoped();
+        if (["replacement", "no own hold", "price change"].includes(scenario)) {
+          await expect(
+            page.getByText(/Your cart changed. Review your items before paying/),
+          ).toBeVisible();
+        } else if (scenario === "changed quote") {
+          await expect(
+            page.getByText(/Checkout totals changed.*original order/),
+          ).toBeVisible();
+        } else if (scenario === "late replacement") {
+          await page.waitForFunction(() => window.releaseAfterpayToken);
+          assert.equal(
+            await page.evaluate(() =>
+              window.testCart
+                .setCartItems([...window.testCart.items])
+                .then((r) => r.status),
+            ),
+            "saved",
+          );
+          await page.evaluate(() => window.releaseAfterpayToken());
+          await expect(
+            page.getByText(/Your cart changed. Review your items before paying/),
+          ).toBeVisible();
+        } else if (scenario === "late owner change") {
+          await page.waitForFunction(() => window.releaseAfterpayToken);
+          f.changeOwner("b");
+          await page.evaluate(() =>
+            document.dispatchEvent(new Event("visibilitychange")),
+          );
+          await visible(page, [checkoutLine("b")]);
+          await page.evaluate(() => window.releaseAfterpayToken());
+          await expect(
+            page.getByRole("button", { name: "Refresh checkout" }),
+          ).toBeVisible();
+        } else {
+          await expect.poll(() => f.requests.pays).toBe(1);
+          assert.equal(f.requests.permits, 1);
+          assert.deepEqual(await page.evaluate(() => window.afterpayCounts), {
+            created: 1,
+            destroyed: 0,
+            tokenized: 1,
+          });
+          releasePay();
+          await expect
+            .poll(() => new URL(page.url()).pathname)
+            .toBe("/checkout/processing");
+        }
+      }
+      if (scenario !== "continue") {
+        assert.equal(f.requests.pays, 0);
+        assert.equal(
+          f.requests.permits,
+          scenario === "late owner change" || scenario === "late replacement" ? 1 : 0,
+        );
+        assert.ok(
+          await page.evaluate(
+            () =>
+              window.afterpayShipping?.({
+                addressLines: ["10 a St"],
+                city: "Wilmington",
+                state: "DE",
+                postalCode: "19801",
+                countryCode: "US",
+              })?.error,
+          ),
+        );
+      }
+      assert.equal(f.requests.prepares.length, 1);
+    } finally {
+      releasePrepare();
+      releasePay();
+      releaseScoped();
+      releaseSession();
+    }
+  });
+}
 for (const kind of ["count", "length"])
   test("outgoing " + kind + " overflow leaves readable cart editable", async (t) => {
     const existing =

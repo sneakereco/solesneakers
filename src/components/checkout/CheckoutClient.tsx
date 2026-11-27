@@ -225,6 +225,9 @@ function OwnerCheckout({
   } | null>(null);
   const [quoteRevision, setQuoteRevision] = useState(0);
   const requestSequence = useRef(0);
+  const lastQuote = useRef<{ current: () => boolean; fingerprint: string | null } | null>(
+    null,
+  );
   const didCaptureCheckoutStart = useRef(false);
 
   useEffect(() => {
@@ -320,6 +323,10 @@ function OwnerCheckout({
         .then((quote) => {
           if (!controller.signal.aborted && requestSequence.current === requestId) {
             setResolvedQuote({ key: quoteKey, observation: isCurrent });
+            lastQuote.current = {
+              current: isCurrent,
+              fingerprint: quote.quoteFingerprint,
+            };
             setQuoteState({ status: "ready", quote });
           }
         })
@@ -328,6 +335,7 @@ function OwnerCheckout({
             return;
           }
           setResolvedQuote({ key: quoteKey, observation: isCurrent });
+          lastQuote.current = { current: isCurrent, fingerprint: null };
           setQuoteState({
             status: "error",
             message:
@@ -420,8 +428,11 @@ function OwnerCheckout({
     context?: CheckoutPreparationContext,
   ): Promise<PreparedCheckout> {
     await requireOwner();
+    let verifiedReservation: (() => boolean) | undefined;
     const assertCurrentBasket = () => {
-      if (basketKey !== currentBasket.current)
+      if (
+        verifiedReservation ? !verifiedReservation() : basketKey !== currentBasket.current
+      )
         throw new Error("Your cart changed. Review your items before paying.");
     };
     assertCurrentBasket();
@@ -524,7 +535,10 @@ function OwnerCheckout({
           ? "Your cart changed. Review your items before paying."
           : "Your checkout changed. Review your current order.",
       );
-    assertCurrentBasket();
+    const reverified = !isCurrent();
+    // A successful prepare may have already reserved our last unit. Its scoped
+    // validation below must establish the original lines before a permit can issue.
+    if (!response.ok || !reverified) assertCurrentBasket();
     const observeOnly =
       data?.code === "CHECKOUT_RECOVERY_REQUIRED" &&
       z.uuid().safeParse(data?.orderId).success;
@@ -660,10 +674,39 @@ function OwnerCheckout({
       throw Error("Checking your original order status.");
     }
     const orderScope = { orderId: data.orderId, guestAccessToken };
-    if (readyScopeAction.current) {
-      const release = readyScopeAction.current(orderScope);
+    const registerScope = reverified
+      ? latestCart.current.scopeValidationToOrder
+      : readyScopeAction.current;
+    if (registerScope) {
+      const release = registerScope(orderScope);
       scopes?.register(data.orderId, guestAccessToken ?? null, release);
     } else pendingScope.current = orderScope;
+    if (reverified) {
+      verifiedReservation = await latestCart.current.verifyReservedBasket(
+        orderScope,
+        items,
+      );
+      await requireOwner();
+      const refreshedQuote = lastQuote.current;
+      if (!verifiedReservation()) {
+        attempt.requireRecovery(data.orderId);
+        setNeedsRecovery(true);
+        throw new Error("Your cart changed. Review your items before paying.");
+      }
+      if (
+        (refreshedQuote?.current() &&
+          refreshedQuote.fingerprint !== selectedQuote.quoteFingerprint) ||
+        Object.entries(selectedQuote.totals).some(
+          ([key, cents]) => data.totals[key] !== cents,
+        )
+      ) {
+        attempt.requireRecovery(data.orderId);
+        setNeedsRecovery(true);
+        throw new Error(
+          "Checkout totals changed. Check your original order before paying.",
+        );
+      }
+    }
     const assertFinancialAttempt = () => {
       if (
         lifetime.signal.aborted ||

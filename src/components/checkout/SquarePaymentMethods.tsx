@@ -666,7 +666,10 @@ export function SquarePaymentMethods({
   const submitCashAppRef = useRef(submitTokenizedWallet);
   submitCashAppRef.current = submitTokenizedWallet;
   const hasQuote = Boolean(quote);
-  const hasAfterpayQuote = quote?.completeness === "exact";
+  // An existing Afterpay request owns the pending prepare, including the interval
+  // between reserving the final unit and registering its order-scoped validation.
+  const keepAfterpayRequest =
+    quote?.completeness === "exact" || loadingProvider === "Afterpay";
   const [approvalQuoteKey, setApprovalQuoteKey] = useState<string | null>(null);
   // Keep the provider instance that owns an open approval until it delivers its result.
   const cashAppQuoteKey =
@@ -822,7 +825,7 @@ export function SquarePaymentMethods({
   }, [payments, hasQuote, fulfillment, appleRetry, lifecycles]);
 
   useEffect(() => {
-    if (!payments || !hasAfterpayQuote) {
+    if (!payments || !keepAfterpayRequest) {
       return;
     }
     const requests = walletRequests.current;
@@ -850,7 +853,8 @@ export function SquarePaymentMethods({
               : undefined,
           });
           request.addEventListener("afterpay_shippingaddresschanged", (value) => {
-            const context = afterpayContext.current;
+            const context =
+              active && requests.afterpay === request ? afterpayContext.current : null;
             if (context)
               context.fullAddressConfirmed = Boolean(
                 context.shippingAddress &&
@@ -890,7 +894,7 @@ export function SquarePaymentMethods({
         .dispose()
         .catch((methodError) => reportUnavailable("afterpay", "create", methodError));
     };
-  }, [payments, hasAfterpayQuote, fulfillment, methodRetries.afterpay, lifecycles]);
+  }, [payments, keepAfterpayRequest, fulfillment, methodRetries.afterpay, lifecycles]);
 
   useEffect(() => {
     if (!payments || !cashAppQuoteKey) {
@@ -1229,6 +1233,7 @@ export function SquarePaymentMethods({
       );
       setIsPaying(false);
     } finally {
+      afterpayContext.current = null;
       setLoadingProvider(null);
       updateTurnstileToken(null);
       if (turnstileWidget && window.turnstile && !turnstileTerminalError.current) {
@@ -1610,13 +1615,15 @@ export function SquarePaymentMethods({
           ?.reportValidity();
         throw new Error("Enter a complete US billing address.");
       }
+      const originalRequest =
+        method === "afterpay" ? walletRequests.current.afterpay : undefined;
       const prepared = await prepareWithAddressReview(method);
       setPaymentDialogOpen(true);
       const { checkout } = prepared;
       const paymentBilling = prepared.billing;
       if (method === "afterpay") {
         const request = walletRequests.current.afterpay;
-        if (!request) {
+        if (!request || request !== originalRequest) {
           throw new Error("Afterpay is still loading. Please try again.");
         }
         afterpayContext.current = {
@@ -1648,6 +1655,12 @@ export function SquarePaymentMethods({
           paymentMethod: {
             tokenize: async (details) => {
               await requireOwner?.();
+              checkout.assertCurrentBasket?.();
+              if (
+                method === "afterpay" &&
+                walletRequests.current.afterpay !== originalRequest
+              )
+                throw new Error("Afterpay changed. Review your order before continuing.");
               // Let Square own focus while its verification or wallet UI is open.
               flushSync(() => setProviderActive(true));
               try {

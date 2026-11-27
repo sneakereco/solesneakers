@@ -47,7 +47,13 @@ type Snapshot = ReturnType<typeof decodeSavedBasket> & StoredVersion;
 // Provider-local memory. An auth check can replace a storage connection without
 // replacing the verified shopper. Neither the credential nor this handle is serialized.
 export type OwnerValidationScope = {
-  current?: { owner: string | null; order: ValidationOrder; registration: symbol };
+  current?: {
+    owner: string | null;
+    order: ValidationOrder;
+    registration: symbol;
+    checked?: Promise<boolean>;
+    verified?: StoredVersion;
+  };
 };
 export type BasketView = {
   review: BasketReviewActions;
@@ -73,6 +79,7 @@ export const unavailableReview: BasketReviewActions = {
   applyStockConflicts: unavailableEdit,
   acceptPrice: unavailableEdit,
   scopeValidationToOrder: () => () => {},
+  verifyReservedBasket: () => Promise.resolve(() => false),
 };
 class OversizedBasket extends SavedBasketLimitError {
   constructor(
@@ -335,12 +342,14 @@ export class BasketStorage {
           const validation = this.validation;
           validation.current = { owner: this.userId, order: { ...order }, registration };
           this.pending = undefined;
-          void this.validate(true);
+          validation.current.checked = this.validate(true);
           return () => {
             if (validation.current?.registration === registration)
               validation.current = undefined;
           };
         },
+        verifyReservedBasket: (order, original) =>
+          this.verifyReservedBasket(order, original, eligible()),
         applyStockConflicts: (conflicts, recoveryRequired, isCurrentAttempt) =>
           this.reviewEdit(
             snapshot,
@@ -517,15 +526,81 @@ export class BasketStorage {
               ...originals.get(pairKey(item))!,
               item,
             }));
-            if (accepted.every((item, index) => item === snapshot.items[index]))
-              return true;
-            return this.save(rows, false, isCurrent, snapshot) === true;
+            const applied =
+              accepted.every((item, index) => item === snapshot.items[index]) ||
+              this.save(rows, false, isCurrent, snapshot) === true;
+            if (applied && snapshot.scope) snapshot.scope.verified = this.published;
+            return applied;
           }
         })) === true
       );
     } finally {
       if (this.pending === snapshot) this.pending = undefined;
     }
+  }
+
+  private async verifyReservedBasket(
+    order: ValidationOrder,
+    original: readonly CartItem[],
+    eligible: () => boolean,
+  ): Promise<() => boolean> {
+    const denied = () => false;
+    const scope = this.validation.current;
+    if (
+      !eligible() ||
+      !scope ||
+      scope.order.orderId !== order.orderId ||
+      scope.order.guestAccessToken !== order.guestAccessToken ||
+      !(await scope.checked)
+    )
+      return denied;
+
+    const verified = this.published;
+    const origin = contextOrigin();
+    if (
+      !origin ||
+      !verified ||
+      !scope.verified ||
+      !sameSnapshot(verified, scope.verified) ||
+      verified.items.length !== original.length
+    )
+      return denied;
+    const proofForOrder = () =>
+      this.proofs(origin, eligible)?.records.find(
+        (record) => record.orderId === order.orderId && record.origin === origin,
+      );
+    const proof = proofForOrder();
+    // Only the bound original units can establish availability for this payment.
+    if (
+      proof?.stage !== "pending" ||
+      subtractRows(verified.rows, proof, original)?.length !== 0
+    )
+      return denied;
+    if (
+      !verified.items.every((line, index) => {
+        const before = original[index];
+        return (
+          pairKey(line) === pairKey(before) &&
+          line.quantity === before.quantity &&
+          line.priceCents === before.priceCents &&
+          !line.availability &&
+          line.previousPriceCents === undefined
+        );
+      })
+    )
+      return denied;
+    return () => {
+      if (
+        !eligible() ||
+        this.validation.current !== scope ||
+        !sameSnapshot(verified, this.storedVersion())
+      )
+        return false;
+      const currentProof = proofForOrder();
+      return (
+        currentProof?.stage === "pending" && currentProof.captureId === proof.captureId
+      );
+    };
   }
   private save(
     rows: SavedLine[],

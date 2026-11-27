@@ -84,6 +84,10 @@ export interface BasketReviewActions {
     isCurrentAttempt?: () => boolean,
   ) => Promise<BasketMutationResult>;
   scopeValidationToOrder: (order: ValidationOrder) => () => void;
+  verifyReservedBasket: (
+    order: ValidationOrder,
+    original: readonly CartItem[],
+  ) => Promise<() => boolean>;
   resetSavedBasket: () => Promise<BasketMutationResult>;
 }
 export interface CartContextType extends CartPurchaseActions, BasketReviewActions {
