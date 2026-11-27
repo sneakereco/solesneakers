@@ -90,7 +90,7 @@ jobs:
         run: '"$RUNNER_TEMP/checkout-check" integration npm run test:jest:integration -- --runInBand'
 
       - name: Release reconciliation operation gates
-        run: node --test tests/database/migration-reconciliation.test.mjs tests/operations/migration-deployment.test.mjs tests/operations/admin-analytics-warehouse-bindings.test.mjs
+        run: node --test tests/database/migration-reconciliation.test.mjs tests/operations/migration-deployment.test.mjs tests/operations/admin-analytics-warehouse-bindings.test.mjs tests/operations/analytics-runtime-verification.test.mjs
 
       - name: Install the locked Playwright Chromium runtime
         run: ./node_modules/.bin/playwright install --with-deps chromium

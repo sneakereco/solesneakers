@@ -57,8 +57,12 @@ export function checkDeployment(environment, env, deployed) {
     "POSTHOG_QUERY_API_KEY",
     "ANALYTICS_IDENTITY_SECRET",
   ]) {
-    if (!env[key] || deployed[key] !== env[key]) throw Error();
+    const protectedValue =
+      !key.startsWith("NEXT_PUBLIC_") && deployed[key] === "[SENSITIVE]";
+    if (!env[key] || (!protectedValue && deployed[key] !== env[key])) throw Error();
   }
+  // Sensitive values cannot be downloaded. Both release workflows verify the
+  // running private configuration and compiled public settings after deploy.
 }
 if (process.argv[1]?.endsWith("check-analytics-deployment.mjs")) {
   try {
