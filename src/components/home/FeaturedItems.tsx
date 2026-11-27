@@ -207,14 +207,14 @@ export function FeaturedItems({
               <DiscoveryInsertion
                 allowed={allowSpecialty && !isClothing}
                 onDiscoveryChange={checkScrollButtons}
-                specialtyClassName="w-[78%] shrink-0 snap-start sm:w-[calc((100%-1.5rem)/2)] md:w-[calc((100%-3rem)/3)] lg:w-[calc((100%-6rem)/4)]"
+                specialtyClassName={`snap-center sm:snap-start ${featuredCardClassName}`}
                 items={featured.map((product) => ({
                   id: product.id,
                   node: (
                     <FeedbackLink
                       key={product.id}
                       href={`/store/${product.id}`}
-                      className={`group text-center ${isClothing ? `snap-center sm:snap-start ${clothingFeaturedCardClassName}` : `snap-start ${featuredCardClassName}`}`}
+                      className={`group snap-center text-center sm:snap-start ${isClothing ? clothingFeaturedCardClassName : featuredCardClassName}`}
                     >
                       <div className="relative h-48 w-full sm:h-52 md:h-56">
                         {product.primaryImage ? (
@@ -222,11 +222,7 @@ export function FeaturedItems({
                             src={product.primaryImage}
                             alt=""
                             fill
-                            sizes={
-                              isClothing
-                                ? "(min-width: 1024px) 25vw, (min-width: 768px) 33vw, (min-width: 640px) 50vw, 100vw"
-                                : "(min-width: 1024px) 25vw, (min-width: 768px) 33vw, (min-width: 640px) 50vw, 78vw"
-                            }
+                            sizes="(min-width: 1024px) 25vw, (min-width: 768px) 33vw, (min-width: 640px) 50vw, 100vw"
                             className="object-contain motion-safe:transition-transform motion-safe:duration-300 motion-safe:group-hover:scale-[1.03]"
                             quality={75}
                           />

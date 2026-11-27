@@ -151,9 +151,19 @@ it("claims only notifications for the requested paid order", async () => {
 
   await createCheckoutNotificationDependencies(admin, "order-1").claim(2);
 
-  expect(rpc).toHaveBeenCalledWith("claim_checkout_notifications_for_order", {
+  expect(rpc).toHaveBeenCalledWith("claim_checkout_notifications_v2", {
     p_limit: 2,
     p_order_id: "order-1",
+  });
+});
+
+it("uses the upgraded global claim without restricting it to an order", async () => {
+  const rpc = jest.fn().mockResolvedValue({ data: [], error: null });
+  await createCheckoutNotificationDependencies({
+    rpc,
+  } as unknown as AdminSupabaseClient).claim(3);
+  expect(rpc).toHaveBeenCalledWith("claim_checkout_notifications_v2", {
+    p_limit: 3,
   });
 });
 

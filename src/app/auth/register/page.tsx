@@ -5,6 +5,7 @@ import { redirect } from "next/navigation";
 
 import { createSupabaseServerClient } from "@/lib/supabase/server";
 import { RegisterForm } from "@/components/auth/register/RegisterForm";
+import { checkPublicStoreAccess } from "@/lib/store-access/check-public-store-access";
 
 export const metadata = pageMetadata(
   "Create an Account",
@@ -12,6 +13,9 @@ export const metadata = pageMetadata(
 );
 
 export default async function RegisterPage() {
+  const access = await checkPublicStoreAccess();
+  if (!access.allowed) redirect("/locked");
+
   const supabase = await createSupabaseServerClient();
   const {
     data: { user },

@@ -9,9 +9,12 @@ export const MAIL_FROM_NAME = "Solesneakers";
 
 export const SUPPORT_EMAIL = "SolesneakersLLC@yahoo.com";
 export const MAIL_REPLY_TO_EMAIL = SUPPORT_EMAIL;
+export const RESELLER_ORDER_NOTIFICATION_EMAIL = "SolesneakersLLC@yahoo.com";
 
 export const emailSubjects = {
   orderConfirmation: () => `Your ${EMAIL_DISPLAY_NAME} order is confirmed`,
+  resellerOrderPlaced: (orderId: string) =>
+    `New paid order #${shortOrderId(orderId)} | ${EMAIL_DISPLAY_NAME}`,
   pickupInstructions: (orderId: string) =>
     `Local pickup instructions for order #${shortOrderId(orderId)}`,
   orderLabelCreated: (orderId: string) =>

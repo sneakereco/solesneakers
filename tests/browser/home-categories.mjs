@@ -102,7 +102,7 @@ try {
   await mount();
   const section = page.getByRole("region", { name: "Shop by Category" });
   await page.getByRole("status").filter({ hasText: "Loading" }).waitFor();
-  assert.equal(await section.getByRole("link").count(), 4);
+  assert.equal(await section.getByRole("link").count(), 5);
   assert.equal(
     await section.getByRole("link", { name: "Designer Sneakers", exact: true }).count(),
     0,
@@ -110,16 +110,16 @@ try {
   releaseBrands();
   await section.getByRole("link", { name: "Designer Sneakers", exact: true }).waitFor();
   assert.equal(await section.getByRole("link").count(), 6);
-  for (const [name, category] of [
-    ["Designer Sneakers", "sneakers"],
-    ["Designer Bags & Accessories", "accessories"],
+  for (const [name, category, selectedBrands] of [
+    ["Designer Sneakers", "sneakers", ["prada", "gucci"]],
+    ["Accessories", "accessories", []],
   ]) {
     const href = await section
       .getByRole("link", { name, exact: true })
       .getAttribute("href");
     const params = new URL(href, "https://categories.test").searchParams;
     assert.equal(params.get("category"), category);
-    assert.deepEqual(params.getAll("brandIds"), ["prada", "gucci"]);
+    assert.deepEqual(params.getAll("brandIds"), selectedBrands);
   }
 
   for (const width of [1440, 768, 390]) {
@@ -184,7 +184,7 @@ try {
   await mount();
   const retry = page.getByRole("button", { name: "Retry designer collections" });
   await retry.waitFor();
-  assert.equal(await section.getByRole("link").count(), 4);
+  assert.equal(await section.getByRole("link").count(), 5);
   mode = "success";
   await retry.click();
   await section.getByRole("link", { name: "Designer Sneakers", exact: true }).waitFor();
@@ -192,7 +192,7 @@ try {
   for (mode of ["empty", "malformed"]) {
     await mount();
     await retry.waitFor();
-    assert.equal(await section.getByRole("link").count(), 4);
+    assert.equal(await section.getByRole("link").count(), 5);
     assert.equal(await section.getByRole("link", { name: /Designer/ }).count(), 0);
   }
   mode = "success";

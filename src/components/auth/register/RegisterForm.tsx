@@ -1,10 +1,12 @@
 "use client";
 
 import { useState, type FormEvent } from "react";
-import { useRouter, useSearchParams } from "next/navigation";
+import { useSearchParams } from "next/navigation";
 
 import { isPasswordValid } from "@/lib/validation/password";
 import { postAuthJson } from "@/lib/http/post-auth-json";
+import { ResponseError } from "@/lib/http/read-json-response";
+import { navigateAfterAuth } from "@/lib/auth/navigate-after-auth";
 import { AuthError } from "@/components/auth/ui/AuthError";
 import { AuthHeader } from "@/components/auth/ui/AuthHeader";
 import { authStyles } from "@/components/auth/ui/authStyles";
@@ -16,7 +18,6 @@ import { PasswordField } from "../login/PasswordField";
 import { PasswordRequirements } from "./PasswordRequirements";
 
 export function RegisterForm() {
-  const router = useRouter();
   const nextUrl = useSearchParams().get("next") || "/";
   const register = useAsyncAction();
   const [password, setPassword] = useState("");
@@ -54,8 +55,13 @@ export function RegisterForm() {
 
         setContinuing(true);
         const verifyUrl = `/auth/login?flow=verify-email&verifyFlow=signup&email=${encodeURIComponent(email)}${nextUrl !== "/" ? `&next=${encodeURIComponent(nextUrl)}` : ""}`;
-        router.push(verifyUrl);
+        navigateAfterAuth(verifyUrl);
       } catch (failure) {
+        if (failure instanceof ResponseError && failure.status === 423) {
+          setContinuing(true);
+          navigateAfterAuth("/locked");
+          return;
+        }
         setContinuing(false);
         setError(
           failure instanceof Error

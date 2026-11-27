@@ -2062,6 +2062,10 @@ export type Database = {
         Args: { p_limit: number; p_order_id: string }
         Returns: Json
       }
+      claim_checkout_notifications_v2: {
+        Args: { p_limit: number; p_order_id?: string; p_include_reseller?: boolean }
+        Returns: Json
+      }
       consume_square_checkout_reservation:
         | {
             Args: { p_order_id: string; p_square_payment_id: string }

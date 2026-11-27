@@ -1,8 +1,8 @@
 // src/components/auth/login/OtpLoginForm.tsx
 "use client";
 
-import { useRouter, useSearchParams } from "next/navigation";
-import { useSession } from "@/contexts/SessionContext";
+import { useSearchParams } from "next/navigation";
+import { navigateAfterAuth } from "@/lib/auth/navigate-after-auth";
 import { postAuthJson } from "@/lib/http/post-auth-json";
 
 import { EmailCodeFlow } from "./EmailCodeFlow";
@@ -16,8 +16,6 @@ export function OtpLoginForm({
   onRequiresEmailVerification,
   onBackToLogin,
 }: OtpLoginFormProps) {
-  const router = useRouter();
-  const { refreshSession } = useSession();
   const searchParams = useSearchParams();
   const nextUrl = searchParams.get("next") || "/";
 
@@ -48,16 +46,15 @@ export function OtpLoginForm({
     }
 
     if (json.isAdmin && json.requiresTwoFASetup) {
-      return router.push("/auth/2fa/setup");
+      return navigateAfterAuth("/auth/2fa/setup");
     }
     if (json.isAdmin && json.requiresTwoFAChallenge) {
-      return router.push("/auth/2fa/challenge");
+      return navigateAfterAuth("/auth/2fa/challenge");
     }
 
     // Redirect to where they came from or admin/home
     const destination = json.isAdmin ? "/admin" : nextUrl;
-    void refreshSession();
-    router.push(destination);
+    navigateAfterAuth(destination);
   }
 
   return (

@@ -1,7 +1,7 @@
 "use client";
 
 import { useState, type FormEvent } from "react";
-import { useRouter, useSearchParams } from "next/navigation";
+import { useSearchParams } from "next/navigation";
 
 import { AuthError } from "@/components/auth/ui/AuthError";
 import { AuthHeader } from "@/components/auth/ui/AuthHeader";
@@ -9,7 +9,7 @@ import { authStyles } from "@/components/auth/ui/authStyles";
 import { ActionButton } from "@/components/ui/ActionButton";
 import { FeedbackLink } from "@/components/ui/FeedbackLink";
 import { useAsyncAction } from "@/components/ui/useAsyncAction";
-import { useSession } from "@/contexts/SessionContext";
+import { navigateAfterAuth } from "@/lib/auth/navigate-after-auth";
 import { postAuthJson } from "@/lib/http/post-auth-json";
 
 import { PasswordField } from "./PasswordField";
@@ -25,8 +25,6 @@ export function PasswordLoginForm({
   onSwitchToOtp,
   onForgotPassword,
 }: PasswordLoginFormProps) {
-  const router = useRouter();
-  const { refreshSession } = useSession();
   const nextUrl = useSearchParams().get("next") || "/";
 
   const login = useAsyncAction();
@@ -63,12 +61,11 @@ export function PasswordLoginForm({
 
         setContinuing(true);
         if (result.isAdmin && result.requiresTwoFASetup)
-          return router.push("/auth/2fa/setup");
+          return navigateAfterAuth("/auth/2fa/setup");
         if (result.isAdmin && result.requiresTwoFAChallenge)
-          return router.push("/auth/2fa/challenge");
+          return navigateAfterAuth("/auth/2fa/challenge");
 
-        void refreshSession();
-        router.push(result.isAdmin ? "/admin" : nextUrl);
+        navigateAfterAuth(result.isAdmin ? "/admin" : nextUrl);
       } catch (failure) {
         setContinuing(false);
         setError(

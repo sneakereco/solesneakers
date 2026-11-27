@@ -1,8 +1,8 @@
 // src/components/auth/login/VerifyEmailForm.tsx
 "use client";
 
-import { useRouter, useSearchParams } from "next/navigation";
-import { useSession } from "@/contexts/SessionContext";
+import { useSearchParams } from "next/navigation";
+import { navigateAfterAuth } from "@/lib/auth/navigate-after-auth";
 import { postAuthJson } from "@/lib/http/post-auth-json";
 
 import { EmailCodeFlow } from "./EmailCodeFlow";
@@ -22,8 +22,6 @@ export function VerifyEmailForm({
   onVerified,
   onBackToLogin,
 }: VerifyEmailFormProps) {
-  const router = useRouter();
-  const { refreshSession } = useSession();
   const searchParams = useSearchParams();
   const nextUrl = searchParams.get("next") || "/";
 
@@ -53,11 +51,10 @@ export function VerifyEmailForm({
 
     // After successful verification, redirect to where they came from
     const destination = json.nextPath || nextUrl;
-    void refreshSession();
     if (onVerified) {
       onVerified(destination);
     } else {
-      router.push(destination);
+      navigateAfterAuth(destination);
     }
   }
 

@@ -8,6 +8,7 @@ import { getRequestIdFromHeaders } from "@/lib/http/request-id";
 import { logError } from "@/lib/utils/log";
 import { registerSchema } from "@/lib/validation/auth";
 import { isPasswordValid } from "@/lib/validation/password";
+import { checkPublicStoreAccess } from "@/lib/store-access/check-public-store-access";
 
 export async function POST(req: NextRequest) {
   const requestId = getRequestIdFromHeaders(req.headers);
@@ -27,6 +28,14 @@ export async function POST(req: NextRequest) {
       return NextResponse.json(
         { ok: false, error: "Password does not meet the required criteria.", requestId },
         { status: 400, headers: { "Cache-Control": "no-store" } },
+      );
+    }
+
+    const access = await checkPublicStoreAccess();
+    if (!access.allowed) {
+      return NextResponse.json(
+        { ok: false, error: access.error, requestId },
+        { status: access.status, headers: { "Cache-Control": "no-store" } },
       );
     }
 
