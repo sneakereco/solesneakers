@@ -3,7 +3,7 @@ import { LoadingState, Skeleton } from "@/components/ui/Skeleton";
 export const productGridClassName =
   "grid grid-cols-2 gap-x-2 gap-y-10 sm:grid-cols-3 lg:grid-cols-4 lg:gap-x-4 lg:gap-y-14";
 export const featuredCardClassName =
-  "w-[78%] shrink-0 sm:w-[calc((100%-1.5rem)/2)] md:w-[calc((100%-3rem)/3)] lg:w-[calc((100%-6rem)/4)]";
+  "w-full shrink-0 sm:w-[calc((100%-1.5rem)/2)] md:w-[calc((100%-3rem)/3)] lg:w-[calc((100%-6rem)/4)]";
 
 export const clothingFeaturedCardClassName =
   "w-full shrink-0 sm:w-[calc((100%-1.5rem)/2)] md:w-[calc((100%-3rem)/3)] lg:w-[calc((100%-6rem)/4)]";
