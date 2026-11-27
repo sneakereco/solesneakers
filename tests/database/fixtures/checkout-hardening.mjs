@@ -882,7 +882,8 @@ async function applyCheckoutSuffix(client, migrations, lease) {
   }
   const bootstrap = suffix.find(({ version }) => version === bootstrapVersion);
   assert.ok(bootstrap, "Missing reporting schema bootstrap migration");
-  const checkout = suffix.filter(({ version }) => version !== bootstrapVersion);
+  const checkout = suffix.filter(({ version }) => version < bootstrapVersion);
+  const forward = suffix.filter(({ version }) => version > bootstrapVersion);
   assert.deepEqual(
     checkout.map(({ version }) => version),
     [
@@ -915,7 +916,7 @@ async function applyCheckoutSuffix(client, migrations, lease) {
     2,
     "Both environment bootstrap cursors must exist before checkout",
   );
-  await applyMigrations(client, checkout);
+  await applyMigrations(client, [...checkout, ...forward]);
   assert.deepEqual(
     (await bootstrapRows()).rows,
     before,
