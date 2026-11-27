@@ -4,7 +4,7 @@ import { datasetScopeSchema, type DatasetScope } from "../../CommerceFacts/contr
 import { DATASET_IDS } from "../../Configuration/dataset";
 import {
   financialHistorySource,
-  warehouseSources,
+  postHogWarehouseTables,
 } from "../../EventDelivery/history-source";
 import type { ReportRequest, Rate, MoneyValue } from "../../ReportContract/types";
 import {
@@ -53,13 +53,13 @@ export const inRange = (col: string) =>
 export function commerceSourceFor(attributionColumn: "discovery" | "purchase_session") {
   return `WITH ranked_facts AS (
  SELECT *,row_number() OVER (PARTITION BY dataset_id,fact_id ORDER BY revision DESC,updated_at DESC) AS fact_rank
- FROM ${warehouseSources.finance.table}
+ FROM ${postHogWarehouseTables.finance}
  WHERE dataset_id={variables.dataset_id} AND environment={variables.environment}
 ), facts AS (
  SELECT * FROM ranked_facts WHERE fact_rank=1 AND currency='USD' AND effective_at >= ${instant(variable("activated_at"))}
 ), ranked_links AS (
  SELECT *,row_number() OVER (PARTITION BY dataset_id,order_id ORDER BY updated_at DESC,active ASC) AS link_rank
- FROM ${warehouseSources.purchases.table} WHERE dataset_id={variables.dataset_id}
+ FROM ${postHogWarehouseTables.purchases} WHERE dataset_id={variables.dataset_id}
 ), orders AS (
  SELECT order_id AS oid, buyer_key AS buyer, effective_at AS order_time, payload AS order_payload,
  ${firstPurchase} AS first_purchase_time FROM facts WHERE kind='order'

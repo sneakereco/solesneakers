@@ -32,6 +32,8 @@ const run = promisify(execFile);
 export const root = fileURLToPath(new URL("../../../", import.meta.url));
 const supabase = join(root, "node_modules", "supabase", "dist", "supabase.js");
 const historicalCutoff = "20260922120000";
+const shippingThrough = "20261127034000";
+const bootstrapVersion = "20261127134000";
 const projectPattern = /^checkout-hardening-test-[0-9a-f]{14}$/;
 const databasePattern = /^checkout_hardening_test_[0-9a-f]{14}$/;
 const projectLabel = "com.supabase.cli.project";
@@ -871,10 +873,68 @@ export function assertPopulatedRowsPreserved(before, after) {
   }
 }
 
+async function applyCheckoutSuffix(client, migrations, lease) {
+  const prefix = migrations.filter(({ version }) => version <= shippingThrough);
+  const suffix = migrations.slice(prefix.length);
+  if (!lease.bootstrapBeforeCheckout) {
+    await applyMigrations(client, suffix);
+    return;
+  }
+  const bootstrap = suffix.find(({ version }) => version === bootstrapVersion);
+  assert.ok(bootstrap, "Missing reporting schema bootstrap migration");
+  const checkout = suffix.filter(({ version }) => version !== bootstrapVersion);
+  assert.deepEqual(
+    checkout.map(({ version }) => version),
+    [
+      "20261127040000",
+      "20261127041000",
+      "20261127042000",
+      "20261127043000",
+      "20261127044000",
+      "20261127045000",
+      "20261127046000",
+      "20261127047000",
+    ],
+    "Bootstrap-first rehearsal must apply exactly the eight missing checkout migrations",
+  );
+  await applyMigrations(client, [bootstrap]);
+  await verifyRegistry(client, [...prefix, bootstrap]);
+  lease.preCheckoutVersions = (
+    await client.query(
+      "select version from supabase_migrations.schema_migrations order by version",
+    )
+  ).rows.map(({ version }) => version);
+  assert.equal(lease.preCheckoutVersions.length, 123);
+  const bootstrapRows = () =>
+    client.query(
+      "select environment, initialized_at from analytics_source.reporting_schema_bootstrap order by environment",
+    );
+  const before = (await bootstrapRows()).rows;
+  assert.equal(
+    before.length,
+    2,
+    "Both environment bootstrap cursors must exist before checkout",
+  );
+  await applyMigrations(client, checkout);
+  assert.deepEqual(
+    (await bootstrapRows()).rows,
+    before,
+    "Checkout migrations must preserve already-recorded reporting bootstrap cursors",
+  );
+}
+
 async function replay(client, { migrations }, lease) {
   await initializeRegistry(client, lease);
   if (lease.mode === "fresh") {
-    await applyMigrations(client, migrations);
+    if (lease.bootstrapBeforeCheckout) {
+      await applyMigrations(
+        client,
+        migrations.filter(({ version }) => version <= shippingThrough),
+      );
+      await applyCheckoutSuffix(client, migrations, lease);
+    } else {
+      await applyMigrations(client, migrations);
+    }
     const {
       rows: [counts],
     } = await client.query(
@@ -903,7 +963,6 @@ async function replay(client, { migrations }, lease) {
     const before = await populatedRows(client, catalog, order);
     const remaining = migrations.slice(prefix.length);
     // Rehearse the already-shipping schema before applying this branch's unpublished migrations.
-    const shippingThrough = "20261127034000";
     const shippingPrefix = migrations.filter(({ version }) => version <= shippingThrough);
     await applyMigrations(
       client,
@@ -942,7 +1001,7 @@ async function replay(client, { migrations }, lease) {
         [order.orderId],
       );
     const oldMail = (await historicalMail()).rows;
-    await applyMigrations(client, migrations.slice(shippingPrefix.length));
+    await applyCheckoutSuffix(client, migrations, lease);
     assert.deepEqual(
       (await shippingState()).rows,
       shippingBefore,
@@ -1003,9 +1062,18 @@ async function withAttachedFixture(lease, runTest) {
 export async function withCheckoutProject(
   mode,
   runTest,
-  { verifyFailedClone = false, onResourceReceipt = () => {} } = {},
+  {
+    verifyFailedClone = false,
+    onResourceReceipt = () => {},
+    bootstrapBeforeCheckout = false,
+  } = {},
 ) {
   assert.ok(mode === "fresh" || mode === "populated", "Unknown checkout database mode");
+  assert.equal(
+    typeof bootstrapBeforeCheckout,
+    "boolean",
+    "Expected a bootstrap ordering flag",
+  );
   const upstreamSocket = await localDockerSocket();
   const inventory = await readMigrations();
   const workspace = await mkdtemp(join(tmpdir(), "checkout-hardening-"));
@@ -1072,6 +1140,7 @@ export async function withCheckoutProject(
       url,
       schema: inventory.schema,
       containerId,
+      bootstrapBeforeCheckout,
     };
     const admin = await pg(url);
     try {
@@ -1090,6 +1159,7 @@ export async function withCheckoutProject(
       migrations: inventory.migrations.length,
       projectId,
       mode,
+      preCheckoutVersions: lease.preCheckoutVersions,
       childEnv: { [leaseKey]: JSON.stringify(lease) },
       withDatabase: (callback) => withAttachedFixture(lease, callback),
     });

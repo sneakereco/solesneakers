@@ -25,6 +25,12 @@ export const warehouseSources = {
     cursor: "updated_at",
   },
 } as const;
+// Source names describe the PostgreSQL exports. HogQL reads the connector's
+// materialized tables, which have the same Postgres prefix in both projects.
+export const postHogWarehouseTables = {
+  finance: "postgres_analytics_financial_export",
+  purchases: "postgres_analytics_purchase_link_export",
+} as const;
 export function financialHistorySource(source: DatasetScope["financialSource"]) {
   return source === "warehouse" ? warehouseSources.finance.table : null;
 }

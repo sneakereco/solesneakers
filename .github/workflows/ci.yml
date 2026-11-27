@@ -89,6 +89,9 @@ jobs:
       - name: Integration tests
         run: '"$RUNNER_TEMP/checkout-check" integration npm run test:jest:integration -- --runInBand'
 
+      - name: Release reconciliation operation gates
+        run: node --test tests/database/migration-reconciliation.test.mjs tests/operations/migration-deployment.test.mjs tests/operations/admin-analytics-warehouse-bindings.test.mjs
+
       - name: Install the locked Playwright Chromium runtime
         run: ./node_modules/.bin/playwright install --with-deps chromium
 
@@ -99,6 +102,9 @@ jobs:
 
       - name: Isolated checkout database gates
         run: npm run test:checkout:db
+
+      - name: Rehearse hosted bootstrap and checkout migration ordering
+        run: node --test --test-concurrency=1 tests/database/checkout-migration-order.test.mjs
 
       - name: Checkout Chromium gates
         run: npm run test:checkout:browser

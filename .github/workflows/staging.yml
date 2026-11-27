@@ -66,14 +66,11 @@ jobs:
         shell: bash
         run: SINGLE_STORE_DATABASE_URL="$SUPABASE_DB_URL" node scripts/single-store/check-migration-baseline.mjs
 
-      - name: Setup Supabase CLI
-        uses: supabase/setup-cli@46f7f98c7f948ad727d22c1e67fab04c223a0520 # v3.0.0
+      - name: Preview exact committed migrations with the locked CLI
+        run: SINGLE_STORE_DATABASE_URL="$SUPABASE_DB_URL" node scripts/single-store/deploy-migrations.mjs preview --plan "$RUNNER_TEMP/staging-migration-plan.json"
 
-      - name: Preview pending migrations
-        run: supabase db push --db-url "$SUPABASE_DB_URL" --dry-run
-
-      - name: Apply pending migrations
-        run: supabase db push --db-url "$SUPABASE_DB_URL"
+      - name: Apply the checked plan and verify complete migration history
+        run: SINGLE_STORE_DATABASE_URL="$SUPABASE_DB_URL" node scripts/single-store/deploy-migrations.mjs apply --plan "$RUNNER_TEMP/staging-migration-plan.json"
 
   deploy:
     needs: migrate
@@ -133,7 +130,7 @@ jobs:
           DEPLOYMENT_URL: ${{ needs.deploy.outputs.deployment_url }}
         run: |
           for attempt in 1 2 3 4 5 6; do
-            if curl --fail --silent --show-error --max-time 10 "$DEPLOYMENT_URL/api/readyz"; then
+            if curl --user-agent "Solesneakers-Readiness/1.0" --fail --silent --show-error --max-time 10 "$DEPLOYMENT_URL/api/readyz"; then
               exit 0
             fi
             if [ "$attempt" -lt 6 ]; then
