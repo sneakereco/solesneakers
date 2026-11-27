@@ -25,13 +25,13 @@ const brands = [
 ];
 
 describe("homepage collection destinations", () => {
-  it("opens the four regular collections with their intended category and condition", () => {
+  it("opens the regular collections with their intended category and condition", () => {
     const cards = getHomepageCategories(brands);
     expect(cards.map((card) => card.label)).toEqual([
       "Brand New",
       "Pre-Owned",
       "Designer Sneakers",
-      "Designer Bags & Accessories",
+      "Accessories",
       "Clothing",
       "Electronics",
     ]);
@@ -40,18 +40,18 @@ describe("homepage collection destinations", () => {
     ).toEqual([
       "/store?category=sneakers&condition=new",
       "/store?category=sneakers&condition=used",
+      "/store?category=accessories",
       "/store?category=clothing",
       "/store?category=electronics",
     ]);
   });
 
-  it.each([
-    ["Designer Sneakers", "sneakers"],
-    ["Designer Bags & Accessories", "accessories"],
-  ])("selects only the 14 designer brands for %s", (label, category) => {
-    const card = getHomepageCategories(brands).find((entry) => entry.label === label)!;
+  it("selects only the 14 designer brands for Designer Sneakers", () => {
+    const card = getHomepageCategories(brands).find(
+      (entry) => entry.label === "Designer Sneakers",
+    )!;
     const params = new URL(card.href!, "https://example.com").searchParams;
-    expect(params.get("category")).toBe(category);
+    expect(params.get("category")).toBe("sneakers");
     expect(params.getAll("brandIds").sort()).toEqual(
       [
         "designer-0",
@@ -84,11 +84,11 @@ describe("homepage collection destinations", () => {
   });
 
   it.each([{ brands: [] }, { brands: [{ id: "nike", label: "Nike" }] }])(
-    "never links to unrestricted designer collections when no designer brands resolve ($brands)",
+    "keeps accessories open and designer sneakers unavailable when no designer brands resolve ($brands)",
     ({ brands: availableBrands }) => {
       const cards = getHomepageCategories(availableBrands);
       expect(cards[2].href).toBeNull();
-      expect(cards[3].href).toBeNull();
+      expect(cards[3].href).toBe("/store?category=accessories");
       expect(cards[0].href).toBe("/store?category=sneakers&condition=new");
     },
   );
