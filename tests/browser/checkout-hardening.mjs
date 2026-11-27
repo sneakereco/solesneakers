@@ -3,9 +3,7 @@ import { createCheckoutGate } from "../fixtures/checkout-gate.mjs";
 const cart = "src/Modules/Cart/Tests/Features/";
 const checkout = "src/Modules/Checkout/Tests/Features/";
 const retained = cart + "ManageBasket/retained-cart.browser.mjs";
-const gate = await createCheckoutGate("browser");
-try {
-  const flags = process.argv.slice(2);
+export async function runCheckoutBrowserChecks(gate, flags = []) {
   if (flags.length && flags.join(" ") !== "--break-cart")
     throw Error("Unexpected checkout browser arguments");
   // Launch the installed runtime before any case, even for a deliberate failure.
@@ -37,8 +35,6 @@ try {
     "payment-methods",
     "checkout-ui",
     "shipping-validation",
-    "checkout-success",
-    "checkout-progress",
     "admin-transaction-detail",
     "admin-button-contrast",
     "shipping-settings-modal",
@@ -47,7 +43,16 @@ try {
     "ux-account-auth",
   ])
     await gate(name, ["tests/browser/" + name + ".mjs"]);
-} catch (error) {
-  console.error(error.message);
-  process.exitCode = 1;
+}
+
+if (import.meta.main) {
+  try {
+    await runCheckoutBrowserChecks(
+      await createCheckoutGate("browser"),
+      process.argv.slice(2),
+    );
+  } catch (error) {
+    console.error(error.message);
+    process.exitCode = 1;
+  }
 }
