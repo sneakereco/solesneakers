@@ -236,6 +236,7 @@ test("twenty verified shoppers sharing a network prepare, pay once and observe t
           require.cache[resolved].exports = { ...original, ...parts };
         }
         const log = () => {};
+        const backgroundCallbacks = [];
         const counts = { shippo: 0, calculate: 0, create: 0, pay: 0 };
         async function active(dependency) {
           const r = await admin.query(
@@ -255,6 +256,11 @@ test("twenty verified shoppers sharing a network prepare, pay once and observe t
           totalCents: 1580,
         };
         try {
+          // These handlers run directly, outside Next's request lifecycle. Capture
+          // after-response work while the fixture projects verified provider facts.
+          replace("next/server", {
+            after: (callback) => backgroundCallbacks.push(callback),
+          });
           globalThis.fetch = async (url) => {
             assert.equal(new URL(url).origin, "https://api.goshippo.com");
             await active("shippo");
@@ -503,6 +509,7 @@ test("twenty verified shoppers sharing a network prepare, pay once and observe t
               assert.equal(observed.status, "UNKNOWN");
               assert.equal(counts.pay, 0);
             }
+            const queuedBeforePayment = backgroundCallbacks.length;
             const response = await createDirectPaymentHandler(
               req("/api/checkout/pay", {
                 permit: permit.permit,
@@ -533,6 +540,10 @@ test("twenty verified shoppers sharing a network prepare, pay once and observe t
             const paid = await response.json();
             assert.equal(response.status, 202, JSON.stringify(paid));
             assert.equal(paid.status, "COMPLETED", JSON.stringify(paid));
+            assert.ok(
+              backgroundCallbacks.length > queuedBeforePayment,
+              "accepted payments retain after-response work",
+            );
             if (index === 0)
               assert.equal(
                 counts.pay,
