@@ -1,5 +1,9 @@
 import { checkNativeLaunchReport } from "./fixtures/admin-analytics/native-launch-report.mjs";
-import { ownedFixture } from "./analytics-test-fixture.mjs";
+import {
+  ownedFixture,
+  fixtureDatabase,
+  verifyFixtureTarget,
+} from "./analytics-test-fixture.mjs";
 import { testReportingHistory } from "./test-admin-analytics-history.mjs";
 import { testCommerceSources } from "./test-admin-analytics-sources.mjs";
 import assert from "node:assert/strict";
@@ -12,6 +16,7 @@ import payloads from "../src/Modules/Analytics/Tests/Features/CommerceFacts/payl
 
 // This runner commits fixture jobs to test independent sessions. Never accept a remote
 // endpoint, URL parameters/overrides, or a shared local application database.
+const database = fixtureDatabase(process.argv.slice(2));
 const connectionString = process.env.ANALYTICS_TEST_DATABASE_URL;
 assert(
   connectionString,
@@ -22,15 +27,16 @@ assert(
   ["postgresql:", "postgres:"].includes(url.protocol) &&
     url.hostname === "127.0.0.1" &&
     url.port === "60279" &&
-    url.pathname === "/admin_analytics_sdd" &&
+    url.pathname === "/" + database &&
     url.username === "supabase_admin" &&
     !url.search &&
     !url.hash,
   "Expected the isolated loopback admin analytics fixture",
 );
 const fixture = ownedFixture();
+verifyFixtureTarget(fixture, database);
 const fixtureSystem = fixture.sql(
-  "admin_analytics_sdd",
+  database,
   "select system_identifier from pg_control_system()",
 );
 const db = new Client({ connectionString, statement_timeout: 5000 });
@@ -101,7 +107,7 @@ try {
   );
   assert.deepEqual(
     (await db.query("select current_database() as db,current_user as owner")).rows[0],
-    { db: "admin_analytics_sdd", owner: "supabase_admin" },
+    { db: database, owner: "supabase_admin" },
   );
   assert.equal(
     (
@@ -150,7 +156,7 @@ try {
     "sole_analytics_staging_reader",
     "sole_analytics_production_reader",
   ]) {
-    const result = fixture.sql("admin_analytics_sdd", "set role " + role + ";\n" + audit);
+    const result = fixture.sql(database, "set role " + role + ";\n" + audit);
     assert.match(result, /PASS warehouse reader access/);
   }
   await db.query(
