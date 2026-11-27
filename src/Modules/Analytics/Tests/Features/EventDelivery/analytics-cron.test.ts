@@ -19,14 +19,12 @@ it("protects configuration inspection and does not claim or publish jobs", async
   const previous = process.env.CRON_SECRET;
   process.env.CRON_SECRET = "s".repeat(40);
   jest.mocked(runAnalyticsDrain).mockClear();
-  jest
-    .mocked(analyticsRuntimeIdentity)
-    .mockReturnValue({
-      enabled: true,
-      environment: "staging",
-      configurationSha256: "a".repeat(64),
-      publicBuildSha256: "b".repeat(64),
-    });
+  jest.mocked(analyticsRuntimeIdentity).mockReturnValue({
+    enabled: true,
+    environment: "staging",
+    configurationSha256: "a".repeat(64),
+    publicBuildSha256: "b".repeat(64),
+  });
   try {
     expect(
       (await GET(new Request("https://sole.test/api/cron/analytics?inspect=1"))).status,
