@@ -1,3 +1,4 @@
+import assert from "node:assert/strict";
 import { TZDate } from "@date-fns/tz";
 import { DatabaseSync } from "node:sqlite";
 import { parseReportRequest } from "../../../Source/Features/ReportContract/filters";
@@ -142,8 +143,9 @@ export function fixture() {
     },
     execute(query: CompiledQuery) {
       const endpoint = endpoints.find((e) => e.name === query.endpoint)!;
-      expect(query.version).toBe(endpoint.version);
-      expect(Object.keys(query.variables).sort()).toEqual(
+      assert.equal(query.version, endpoint.version);
+      assert.deepEqual(
+        Object.keys(query.variables).sort(),
         endpoint.variables.map((v) => v.code_name).sort(),
       );
       const sql = endpoint.sql.replace(/\{variables\.(\w+)\}/g, ":$1");

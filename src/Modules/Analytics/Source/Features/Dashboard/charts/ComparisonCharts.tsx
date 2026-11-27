@@ -11,7 +11,12 @@ import {
 } from "../format";
 import { ChartDataTable } from "./ChartDataTable";
 
-export type RankedBarRow = { key: string; label: string; value: ChartValue };
+export type RankedBarRow = {
+  key: string;
+  label: string;
+  value: ChartValue;
+  formattedValue?: string;
+};
 const headings: Record<ChartUnit, string> = {
   usd: "Amount (USD)",
   count: "Count",
@@ -33,14 +38,14 @@ export function RankedBars({
     return <p className="analytics-muted">No rows for the selected period.</p>;
   const known = rows.map((row) => chartNumber(row.value) ?? 0);
   const low = Math.min(0, ...known);
-  const high = Math.max(0, ...known);
+  const high = Math.max(unit === "percent" ? 1 : 0, ...known);
   const span = high - low || 1;
   const origin = (-low * 100) / span;
 
   return (
     <section aria-label={label}>
       <ol className="analytics-bars" aria-hidden="true">
-        {rows.map(({ key, label: name, value }) => {
+        {rows.map(({ key, label: name, value, formattedValue }) => {
           const amount = chartNumber(value);
           return (
             <li key={key}>
@@ -55,7 +60,7 @@ export function RankedBars({
                   />
                 )}
               </span>
-              <strong>{formatChartValue(value, unit)}</strong>
+              <strong>{formattedValue ?? formatChartValue(value, unit)}</strong>
             </li>
           );
         })}
@@ -63,11 +68,11 @@ export function RankedBars({
       <ChartDataTable
         caption={label}
         columns={["Name", valueLabel, "Coverage"]}
-        rows={rows.map(({ key, label: name, value }) => ({
+        rows={rows.map(({ key, label: name, value, formattedValue }) => ({
           key,
           label: name,
           values: [
-            formatChartValue(value, unit),
+            formattedValue ?? formatChartValue(value, unit),
             moneyCoverage(typeof value === "object" ? value : null) ?? "—",
           ],
         }))}

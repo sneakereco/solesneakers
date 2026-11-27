@@ -20,7 +20,7 @@ const commerceSelects = [
   ["paymentMethod", "All payment methods", filterNames.paymentMethod],
   ["fulfillment", "All fulfillment types", filterNames.fulfillment],
 ] as const;
-const audienceCommerceSelects = [
+const businessScopeSelects = [
   ...commerceSelects,
   ["customer", "All buyer types", "Buyer type"],
   ["status", "All order statuses", "Order status"],
@@ -42,10 +42,14 @@ export function ReportFilters({
   if (request.source && !reportedSources.has(request.source))
     reportedSources.set(request.source, filterLabel(request.source));
   const showSources = request.report === "overview" && reportedSources.size > 0;
-  const businessSelects = ["customers", "acquisition", "products"].includes(
-    request.report,
-  )
-    ? audienceCommerceSelects
+  const businessSelects = [
+    "customers",
+    "acquisition",
+    "products",
+    "payments",
+    "health",
+  ].includes(request.report)
+    ? businessScopeSelects
     : request.report === "sales"
       ? commerceSelects
       : [];

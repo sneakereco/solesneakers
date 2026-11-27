@@ -59,7 +59,7 @@ export function acquisitionLabel(value: string) {
 }
 
 export function hasReportBucketControl(id: ReportId) {
-  return id !== "customers" && id !== "products";
+  return id === "overview" || id === "sales" || id === "acquisition";
 }
 
 export type DashboardLocation = Omit<ReturnType<typeof parseReportLocation>, "apiParams">;

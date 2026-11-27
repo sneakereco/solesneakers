@@ -1309,7 +1309,8 @@ body:has(.analytics-calendar[open]) {
   .analytics-metrics {
     grid-template-columns: repeat(4, minmax(0, 1fr));
   }
-  .analytics-metrics-customers {
+  .analytics-metrics-customers,
+  .analytics-metrics-payments {
     grid-template-columns: repeat(3, minmax(0, 1fr));
   }
   .analytics-metrics-compact {

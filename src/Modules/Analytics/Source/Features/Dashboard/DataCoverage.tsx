@@ -22,6 +22,7 @@ export function DataCoverage({
   behaviorThrough,
   datasetStartedAt,
   partial,
+  emptyMessage,
 }: {
   coverage: CoverageIssue[];
   state: ReportEnvelope<unknown>["state"];
@@ -30,9 +31,11 @@ export function DataCoverage({
   behaviorThrough?: string | null;
   datasetStartedAt?: string | null;
   partial?: boolean;
+  emptyMessage?: string;
 }) {
   const warnings = [...new Set(coverage.map(({ message }) => message))];
-  const message = stateLabels[state];
+  const message =
+    state === "empty" ? (emptyMessage ?? stateLabels.empty) : stateLabels[state];
   return (
     <div className="analytics-coverage" data-state={state}>
       {(message || partial) && (

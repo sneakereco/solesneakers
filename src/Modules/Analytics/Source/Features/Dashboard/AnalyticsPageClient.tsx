@@ -6,7 +6,9 @@ import {
   REPORT_IDS,
   type AcquisitionData,
   type CustomersData,
+  type HealthData,
   type OverviewData,
+  type PaymentsData,
   type ProductsData,
   type ReportEnvelope,
   type SalesData,
@@ -21,8 +23,10 @@ import {
 import { ReportFilters } from "./ReportFilters";
 import { ReportSkeleton } from "./ReportSkeleton";
 import { AcquisitionReport } from "./reports/AcquisitionReport";
+import { CheckoutHealthReport } from "./reports/CheckoutHealthReport";
 import { CustomersReport } from "./reports/CustomersReport";
 import { OverviewReport } from "./reports/OverviewReport";
+import { PaymentsReport } from "./reports/PaymentsReport";
 import { ProductsReport } from "./reports/ProductsReport";
 import { SalesReport } from "./reports/SalesReport";
 import { acquisitionOptions, productOptions } from "./report-options";
@@ -92,9 +96,21 @@ function ReportContent({
           onRequestChange={onRequestChange}
         />
       );
-    default:
+    case "payments":
       return (
-        <p className="analytics-alert">The {reportNames[id]} view is unavailable.</p>
+        <PaymentsReport
+          report={report as ReportEnvelope<PaymentsData>}
+          request={request}
+          onRequestChange={onRequestChange}
+        />
+      );
+    case "health":
+      return (
+        <CheckoutHealthReport
+          report={report as ReportEnvelope<HealthData>}
+          request={request}
+          onRequestChange={onRequestChange}
+        />
       );
   }
 }
@@ -327,6 +343,11 @@ export function AnalyticsPageClient({
             behaviorThrough={report.behaviorThrough}
             datasetStartedAt={report.datasetStartedAt}
             partial={report.range.partial}
+            emptyMessage={
+              request?.report === "payments"
+                ? "No payment method activity recorded for the selected period."
+                : undefined
+            }
           />
           {location && (
             <ReportContent

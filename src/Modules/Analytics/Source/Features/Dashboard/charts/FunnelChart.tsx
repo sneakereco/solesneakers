@@ -35,12 +35,7 @@ export function FunnelChart({ steps }: { steps: FunnelStep[] }) {
       </ol>
       <ChartDataTable
         caption="Same-session funnel counts and rates"
-        columns={[
-          "Step",
-          "Sessions",
-          "Share of starting sessions",
-          "Share of previous step",
-        ]}
+        columns={["Step", "Sessions", "Share from start", "Share from previous step"]}
         rows={steps.map(({ step, sessions, fromStart, fromPrevious }) => ({
           key: step,
           label: stepsLabels[step],

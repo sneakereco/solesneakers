@@ -1,6 +1,7 @@
 import {
   REPORT_TIMEZONE,
   type MoneyValue,
+  type Rate,
   type ResolvedRange,
 } from "../ReportContract/types";
 
@@ -43,6 +44,15 @@ export function formatCount(value: number | null): string {
 
 export function formatPercent(value: number | null): string {
   return value === null ? UNAVAILABLE : percent.format(value);
+}
+
+export function rateFromCounts(numerator: number | null, total: number | null): Rate {
+  const denominator = Number.isSafeInteger(total) ? total : null;
+  return {
+    numerator,
+    denominator,
+    value: numerator !== null && denominator ? numerator / denominator : null,
+  };
 }
 
 export function moneyCoverage(value: MoneyValue | null): string | undefined {

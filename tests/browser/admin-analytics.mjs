@@ -11,14 +11,27 @@ import {
   audienceQueries,
   audienceScenarios,
 } from "./admin-analytics-audience.mjs";
+import {
+  paymentHealthFixture,
+  paymentHealthQueries,
+  paymentHealthScenarios,
+} from "./admin-analytics-payment-health.mjs";
 
 const args = process.argv.slice(2);
 assert.ok(
   !args.length ||
     (args.length === 2 &&
       args[0] === "--report" &&
-      ["overview", "sales", "customers", "acquisition", "products"].includes(args[1])),
-  "Usage: node tests/browser/admin-analytics.mjs [--report overview|sales|customers|acquisition|products]",
+      [
+        "overview",
+        "sales",
+        "customers",
+        "acquisition",
+        "products",
+        "payments",
+        "health",
+      ].includes(args[1])),
+  "Usage: node tests/browser/admin-analytics.mjs [--report overview|sales|customers|acquisition|products|payments|health]",
 );
 const selectedReport = args[1] ?? "overview";
 
@@ -494,7 +507,6 @@ async function run() {
     }
     requests.push(url);
     const device = url.searchParams.get("device");
-    const response = fixture(url.searchParams);
     if (mode === "gate")
       return route.fulfill({
         status: 403,
@@ -506,6 +518,10 @@ async function run() {
         status: 503,
         json: { error: "Analytics reporting is temporarily unavailable." },
       });
+    const id = url.searchParams.get("report");
+    const response = Object.hasOwn(paymentHealthQueries, id)
+      ? await paymentHealthFixture(id, url.searchParams, mode)
+      : fixture(url.searchParams);
     if (device === "mobile" && holdMobile) await holdMobile;
     await route.fulfill({ json: response }).catch((error) => {
       if (!route.request().failure()) throw error;
@@ -521,6 +537,8 @@ async function run() {
     await page.goto(`${origin}/admin/analytics?${salesQuery}`);
   else if (audienceQueries[selectedReport])
     await page.goto(`${origin}/admin/analytics?${audienceQueries[selectedReport]}`);
+  else if (paymentHealthQueries[selectedReport])
+    await page.goto(`${origin}/admin/analytics?${paymentHealthQueries[selectedReport]}`);
   await page.clock.setFixedTime(new Date("2026-11-26T02:00:00Z"));
   assert.deepEqual(
     await page.evaluate(() => [
@@ -530,10 +548,11 @@ async function run() {
     ["2026-11-26T02:00:00.000Z", "Asia/Tokyo"],
   );
   await page.waitForFunction(() => Boolean(window.finishAnalyticsLoad));
-  await page.evaluate(
-    (report) => window.finishAnalyticsLoad(report),
-    fixture(new URL(page.url()).searchParams),
-  );
+  const selectedParams = new URL(page.url()).searchParams;
+  const initialResult = Object.hasOwn(paymentHealthQueries, selectedReport)
+    ? await paymentHealthFixture(selectedReport, selectedParams, mode)
+    : fixture(selectedParams);
+  await page.evaluate((report) => window.finishAnalyticsLoad(report), initialResult);
   await page.getByRole("heading", { name: "Analytics", exact: true }).waitFor();
   assert.equal(await analyticsLink.getAttribute("aria-current"), "page");
   assert.equal(
@@ -557,6 +576,18 @@ async function run() {
   }
   if (audienceScenarios[selectedReport]) {
     await audienceScenarios[selectedReport]({ page, requests, exports, capture });
+    assert.deepEqual(pageErrors, []);
+    return;
+  }
+  if (paymentHealthScenarios[selectedReport]) {
+    await paymentHealthScenarios[selectedReport]({
+      page,
+      requests,
+      capture,
+      setMode: (next) => {
+        mode = next;
+      },
+    });
     assert.deepEqual(pageErrors, []);
     return;
   }
