@@ -1,6 +1,9 @@
 import test from "node:test";
 import assert from "node:assert/strict";
-import { verifyAnalyticsRuntime } from "../../scripts/verify-analytics-runtime.mjs";
+import {
+  verifyAnalyticsRuntime,
+  vercelAnalyticsTransport,
+} from "../../scripts/verify-analytics-runtime.mjs";
 import {
   analyticsConfigurationFingerprint,
   analyticsPublicBuildFingerprint,
@@ -103,4 +106,94 @@ test("preserves production's explicitly disabled fallback when public configurat
     ),
   );
   assert.equal(result.enabled, false);
+});
+
+const cliEnv = {
+  ...env,
+  VERCEL_TOKEN: "synthetic-vercel-credential",
+  VERCEL_ORG_ID: "team_yj8Rl9ibCXwtdttRrYPhnLcD",
+};
+test("authenticates the exact protected deployment through Vercel without forwarding the CLI token as a curl argument", async () => {
+  let calls = 0;
+  const transport = vercelAnalyticsTransport(cliEnv, async (command, args, options) => {
+    calls++;
+    assert.equal(command, "vercel");
+    assert.deepEqual(args.slice(0, 4), [
+      "curl",
+      env.DEPLOYMENT_URL + "/api/cron/analytics?inspect=1",
+      "--scope",
+      cliEnv.VERCEL_ORG_ID,
+    ]);
+    assert.ok(args.includes("Authorization: Bearer " + env.CRON_SECRET));
+    assert.ok(args.includes("--fail"));
+    assert.ok(args.includes("--max-redirs"));
+    for (const unsafe of [
+      "--token",
+      cliEnv.VERCEL_TOKEN,
+      "--location",
+      "-L",
+      "--config",
+      "--next",
+      "--yes",
+    ])
+      assert.equal(args.includes(unsafe), false);
+    assert.equal(options.env.VERCEL_TOKEN, cliEnv.VERCEL_TOKEN);
+    assert.ok(options.timeout <= 45000);
+    return { stdout: JSON.stringify(identity) + "\n200" };
+  });
+  assert.equal(
+    (await verifyAnalyticsRuntime("staging", cliEnv, transport)).runtimeVerified,
+    true,
+  );
+  assert.equal(calls, 1);
+});
+test("keeps provider process errors and credential-bearing output out of verification failures", async () => {
+  const transport = vercelAnalyticsTransport(cliEnv, () => {
+    throw Error("private " + cliEnv.VERCEL_TOKEN + " " + env.CRON_SECRET);
+  });
+  await assert.rejects(verifyAnalyticsRuntime("staging", cliEnv, transport), (error) => {
+    assert.equal(error.message, "analytics_runtime_inspection_unavailable");
+    assert.doesNotMatch(String(error), /synthetic|private/);
+    return true;
+  });
+});
+test("rejects invalid protected-access credentials before launching a process", () => {
+  for (const candidate of [
+    { ...cliEnv, VERCEL_TOKEN: "" },
+    { ...cliEnv, VERCEL_ORG_ID: "team_other" },
+  ])
+    assert.throws(
+      () => vercelAnalyticsTransport(candidate, () => assert.fail("unexpected process")),
+      /scope_invalid/,
+    );
+});
+test("keeps project and origin validation ahead of authenticated CLI access", async () => {
+  const transport = vercelAnalyticsTransport(cliEnv, () =>
+    assert.fail("unexpected process"),
+  );
+  await assert.rejects(
+    verifyAnalyticsRuntime("production", cliEnv, transport),
+    /scope_invalid/,
+  );
+  await assert.rejects(
+    verifyAnalyticsRuntime(
+      "staging",
+      { ...cliEnv, DEPLOYMENT_URL: "https://attacker.example" },
+      transport,
+    ),
+    /origin_invalid/,
+  );
+});
+test("does not count redirects or malformed CLI output as a verified deployment", async () => {
+  for (const stdout of [
+    "redirect\n302",
+    JSON.stringify(identity),
+    JSON.stringify(identity) + "\ninvalid",
+  ]) {
+    const transport = vercelAnalyticsTransport(cliEnv, async () => ({ stdout }));
+    await assert.rejects(
+      verifyAnalyticsRuntime("staging", cliEnv, transport),
+      /inspection_unavailable/,
+    );
+  }
 });

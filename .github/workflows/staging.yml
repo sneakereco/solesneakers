@@ -139,6 +139,9 @@ jobs:
           doppler-token: ${{ secrets.DOPPLER_TOKEN }}
           inject-env-vars: true
 
+      - name: Install Vercel CLI for protected verification
+        run: npm install --global vercel@59.16.0
+
       - name: Verify running analytics configuration and public build
         env:
           DEPLOYMENT_URL: ${{ needs.deploy.outputs.deployment_url }}

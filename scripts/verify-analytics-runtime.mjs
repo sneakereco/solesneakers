@@ -1,3 +1,63 @@
+import { execFile } from "node:child_process";
+import { promisify } from "node:util";
+
+// Use the caller's existing Vercel authentication for protected deployment URLs.
+// Keep curl redirects disabled and discard credential-bearing provider errors.
+export function vercelAnalyticsTransport(env, execute = promisify(execFile)) {
+  if (!env.VERCEL_TOKEN || env.VERCEL_ORG_ID !== "team_yj8Rl9ibCXwtdttRrYPhnLcD")
+    throw Error("analytics_runtime_scope_invalid");
+  return async (url, options) => {
+    try {
+      const { stdout } = await execute(
+        "vercel",
+        [
+          "curl",
+          url.href,
+          "--scope",
+          env.VERCEL_ORG_ID,
+          "--",
+          "--silent",
+          "--show-error",
+          "--fail",
+          "--connect-timeout",
+          "10",
+          "--max-time",
+          "20",
+          "--max-redirs",
+          "0",
+          "--proto",
+          "=https",
+          "--user-agent",
+          options.headers["User-Agent"],
+          "--header",
+          "Authorization: " + options.headers.Authorization,
+          "--write-out",
+          "\n%{http_code}",
+        ],
+        {
+          encoding: "utf8",
+          timeout: 45000,
+          maxBuffer: 64 * 1024,
+          env: {
+            ...process.env,
+            VERCEL_TOKEN: env.VERCEL_TOKEN,
+            VERCEL_ORG_ID: env.VERCEL_ORG_ID,
+            VERCEL_PROJECT_ID: env.VERCEL_PROJECT_ID,
+            VERCEL_TELEMETRY_DISABLED: "1",
+          },
+        },
+      );
+      const boundary = stdout.lastIndexOf("\n");
+      if (boundary < 0 || !/^\d{3}$/.test(stdout.slice(boundary + 1))) throw Error();
+      return new Response(stdout.slice(0, boundary), {
+        status: Number(stdout.slice(boundary + 1)),
+      });
+    } catch {
+      throw Error("analytics_runtime_inspection_unavailable");
+    }
+  };
+}
+
 import {
   analyticsConfigurationFingerprint,
   analyticsPublicBuildFingerprint,
@@ -64,7 +124,13 @@ export async function verifyAnalyticsRuntime(environment, env, transport = fetch
 if (process.argv[1]?.endsWith("verify-analytics-runtime.mjs")) {
   try {
     console.log(
-      JSON.stringify(await verifyAnalyticsRuntime(process.argv[2], process.env)),
+      JSON.stringify(
+        await verifyAnalyticsRuntime(
+          process.argv[2],
+          process.env,
+          vercelAnalyticsTransport(process.env),
+        ),
+      ),
     );
   } catch {
     console.error("Analytics deployed configuration could not be verified.");
