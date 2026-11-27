@@ -613,3 +613,7 @@ At implementation base `4324dee7`, the App Router tree contained 45 page files, 
 ### src/contexts/SessionContext.tsx
 
 - **Await owners** — SessionProvider → withRequestDeadline L141 · SessionProvider → fetch L142
+
+## Final origin and authorization coverage
+
+The current owner’s shipping configuration controls origin editing independently of order-list loading or 503. Four `ux-admin` origin cases cover opening and saving during failure and a held retry, closing the editor and hiding its toolbar after confirmed denial, and obtaining fresh configuration for a replacement staff owner. Captured stale saves issue no request. Row and label commands retain their separate writable-list requirement. The final reviewed source is `b3a1d4f8`; all 22 default browser runners passed. See the [final verification record](customer-admin-ux-implementation-2026-11-25/final-verification.json).
