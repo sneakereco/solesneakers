@@ -65,7 +65,10 @@ export function fixture() {
   db.function("toInt64OrNull", (v) =>
     v === null || !/^-?\d+$/.test(String(v)) ? null : Number(v),
   );
-  db.function("toDecimal128", (v, _scale) => v);
+  db.function("accurateCastOrNull", (v, type) => {
+    if (type !== "Decimal128(0)") throw new Error(`Unexpected fixture cast: ${type}`);
+    return v;
+  });
   db.function("toString", (v) => (v === null ? null : String(v)));
   db.function("parseDateTime64BestEffortOrNull", (v, _precision, _zone) => v || null);
   db.function("dateDiff", (_unit, a, b) =>

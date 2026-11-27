@@ -39,7 +39,7 @@ UNION ALL
 SELECT 'state',delivery_method,delivery_state,'',count(*),0,0,0 FROM health_state GROUP BY delivery_method,delivery_state
 UNION ALL
 SELECT 'duration',delivery_method,'','',count(*),
- sum(CASE WHEN 2*position BETWEEN population AND population+2 THEN toDecimal128(seconds_elapsed,0) ELSE 0 END),
+ sum(CASE WHEN 2*position BETWEEN population AND population+2 THEN accurateCastOrNull(seconds_elapsed,'Decimal128(0)') ELSE 0 END),
  sum(CASE WHEN 2*position BETWEEN population AND population+2 THEN 1 ELSE 0 END),
  max(CASE WHEN 10*(position-1)<9*population AND 10*position>=9*population THEN seconds_elapsed ELSE 0 END)
  FROM durations GROUP BY delivery_method

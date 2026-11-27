@@ -17,8 +17,9 @@ import {
 
 export const textField = (key: string, column = "payload") =>
   `nullIf(JSONExtractString(${column},'${key}'),'')`;
+// HogQL's toDecimal targets Decimal64. Keep Decimal128 for exact cents and sums.
 export const centsField = (key: string, column = "payload") =>
-  `toDecimal128(toInt64OrNull(JSONExtractRaw(${column},'${key}')),0)`;
+  `accurateCastOrNull(toInt64OrNull(JSONExtractRaw(${column},'${key}')),'Decimal128(0)')`;
 export const instant = (value: string) =>
   `parseDateTime64BestEffortOrNull(${value},6,'UTC')`;
 const variable = (key: string) => `{variables.${key}}`;
