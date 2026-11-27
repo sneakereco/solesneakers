@@ -18,6 +18,23 @@ const cartItem = {
 function gate() {
   return Promise.withResolvers();
 }
+
+export async function waitForPostHogPost(page, description, observed) {
+  if (observed()) return;
+  try {
+    await page.waitForResponse(
+      (response) =>
+        response.ok() &&
+        response.request().method() === "POST" &&
+        new URL(response.url()).hostname === "us.i.posthog.com" &&
+        observed(),
+      { timeout: 4500 },
+    );
+  } catch (cause) {
+    throw new Error(`Missing PostHog POST for ${description}`, { cause });
+  }
+}
+
 async function exercise(browser, bundle, scenario) {
   const ctx = await browser.newContext();
   const preference = gate(),
@@ -41,16 +58,21 @@ async function exercise(browser, bundle, scenario) {
   let authHold = false,
     identityReads = 0;
   const wire = [];
+  const peerWire = new Map();
   try {
     await ctx.route("**/*", async (route) => {
       const url = new URL(route.request().url());
       if (url.hostname === "us.i.posthog.com") {
         const bytes = route.request().postDataBuffer();
-        if (bytes) {
+        if (bytes && route.request().method() === "POST") {
           const payload = JSON.parse(
             (bytes[0] === 0x1f ? gunzipSync(bytes) : bytes).toString(),
           );
           wire.push(...payload.batch);
+          if (scenario === "peer") {
+            const tab = route.request().frame().page();
+            peerWire.set(tab, [...(peerWire.get(tab) ?? []), ...payload.batch]);
+          }
         }
         return route.fulfill({ json: {} });
       }
@@ -235,7 +257,11 @@ async function exercise(browser, bundle, scenario) {
       if (scenario === "fresh")
         await tab.getByRole("button", { name: "Allow analytics" }).click();
       await tab.waitForFunction(() => !!window.actions.context());
-      await tab.waitForTimeout(180);
+      if (scenario === "fresh") await tab.waitForTimeout(180);
+      else
+        await waitForPostHogPost(tab, `${scenario} checkout_started`, () =>
+          wire.some((e) => e.event === "checkout_started"),
+        );
       assert.equal(
         wire.filter((e) => e.event === "checkout_started").length,
         scenario === "fresh" ? 0 : 1,
@@ -263,17 +289,30 @@ async function exercise(browser, bundle, scenario) {
         buyer("a"),
       );
       assert.equal(identityReads, initial + 1);
-      await tab.waitForTimeout(100);
+      await waitForPostHogPost(tab, `${scenario} $identify`, () =>
+        wire.some((e) => e.event === "$identify"),
+      );
       const linked = wire.find((e) => e.event === "$identify");
       assert.equal(linked?.properties.$anon_distinct_id, prior.id);
       assert.equal(linked?.properties.$session_id, prior.session);
     } else {
       const first = await open("/store"),
         peer = await open("/store");
-      for (const tab of [first, peer])
+      for (const tab of [first, peer]) {
         await tab.waitForFunction(() =>
           window.actions.context()?.visitorId.startsWith("sole-buyer:"),
         );
+        // Settle each tab's expected traffic before taking the transition baseline.
+        await waitForPostHogPost(tab, "original account page view", () =>
+          peerWire
+            .get(tab)
+            ?.some(
+              (e) =>
+                e.event === "public_page_viewed" &&
+                e.properties.distinct_id === buyer("a"),
+            ),
+        );
+      }
       const originalEpoch = await peer.evaluate(() => window.actions.epoch());
       assert.equal(typeof originalEpoch, "number");
       const receipt = await peer.evaluate(() => window.actions.context().receiptId);
@@ -298,7 +337,14 @@ async function exercise(browser, bundle, scenario) {
       assert.equal(typeof nextEpoch, "number");
       assert.notEqual(nextEpoch, originalEpoch);
       await peer.evaluate(() => window.observe());
-      await peer.waitForTimeout(100);
+      await waitForPostHogPost(peer, "peer account page view", () =>
+        wire
+          .slice(cutoff)
+          .some(
+            (e) =>
+              e.event === "public_page_viewed" && e.properties.distinct_id === buyer("b"),
+          ),
+      );
       assert.ok(wire.slice(cutoff).some((e) => e.properties.distinct_id === buyer("b")));
       assert.ok(!wire.slice(cutoff).some((e) => e.properties.distinct_id === buyer("a")));
       account = null;
@@ -310,7 +356,15 @@ async function exercise(browser, bundle, scenario) {
       );
       const after = wire.length;
       await peer.evaluate(() => window.observe());
-      await peer.waitForTimeout(100);
+      await waitForPostHogPost(peer, "peer guest page view", () =>
+        wire
+          .slice(after)
+          .some(
+            (e) =>
+              e.event === "public_page_viewed" &&
+              !e.properties.distinct_id.startsWith("sole-buyer:"),
+          ),
+      );
       assert.ok(
         wire
           .slice(after)

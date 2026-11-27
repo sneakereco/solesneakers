@@ -1,7 +1,11 @@
 // Run: node tests/browser/measurement-sdk-boundary.mjs
 // Uses the installed PostHog SDK and intercepts its real browser transport.
 import assert from "node:assert/strict";
-import { checkMeasurementLifecycle } from "./measurement-lifecycle.mjs";
+import { setTimeout as delay } from "node:timers/promises";
+import {
+  checkMeasurementLifecycle,
+  waitForPostHogPost,
+} from "./measurement-lifecycle.mjs";
 import { gunzipSync } from "node:zlib";
 import { build } from "esbuild";
 import { chromium } from "playwright";
@@ -10,6 +14,13 @@ const projectKey = `phc_${"a".repeat(24)}`;
 
 const privateQueryKey = "phs_private_query_bundle_sentinel";
 const identitySecret = "analytics_identity_bundle_sentinel";
+const mockPostHogLatencyMs = 350;
+
+function posthogEvents(requests) {
+  return requests
+    .filter(({ method }) => method === "POST")
+    .flatMap(({ payload }) => payload?.batch ?? []);
+}
 
 const bundle = await build({
   stdin: {
@@ -347,6 +358,7 @@ try {
   const page = await browser.newPage();
   const errors = [];
   const transportRequests = [];
+  let delayBoundaryPosts = true;
   page.on("pageerror", (error) => errors.push(error.stack ?? error.message));
   await page.route("https://us.i.posthog.com/**", async (route) => {
     const bytes = route.request().postDataBuffer();
@@ -359,8 +371,18 @@ try {
     } catch {
       // A non-JSON request cannot satisfy the explicit checkout event assertion below.
     }
+    const method = route.request().method();
+    // Exercise transport latency for the expected captures before the privacy checks.
+    if (
+      delayBoundaryPosts &&
+      method === "POST" &&
+      payload?.batch?.some(({ event }) =>
+        ["checkout_started", "$identify"].includes(event),
+      )
+    )
+      await delay(mockPostHogLatencyMs);
     transportRequests.push({
-      method: route.request().method(),
+      method,
       url: route.request().url(),
       payload,
     });
@@ -453,11 +475,14 @@ try {
   assert.equal(result.finalCart.length, 1);
   assert.equal(result.finalCart[0].quantity, 1);
   assert.equal(result.failedCaptures, 2);
-  const checkoutRequest = transportRequests.find(
-    (request) =>
-      request.method === "POST" &&
-      request.payload?.batch?.some((event) => event.event === "checkout_started"),
-  );
+  const findCheckoutRequest = () =>
+    transportRequests.find(
+      (request) =>
+        request.method === "POST" &&
+        request.payload?.batch?.some((event) => event.event === "checkout_started"),
+    );
+  await waitForPostHogPost(page, "anonymous checkout_started", findCheckoutRequest);
+  const checkoutRequest = findCheckoutRequest();
   assert.ok(
     checkoutRequest,
     `checkout_started must reach the PostHog POST boundary: ${JSON.stringify(transportRequests)}`,
@@ -525,8 +550,20 @@ try {
   await page.waitForFunction(() =>
     window.actions.context()?.visitorId.startsWith("sole-buyer:"),
   );
-  await page.waitForTimeout(200);
-  const sent = transportRequests.flatMap((request) => request.payload?.batch ?? []);
+  const isBuyerCheckout = (event) =>
+    event.event === "checkout_started" && event.properties.distinct_id === buyerKey;
+  await waitForPostHogPost(
+    page,
+    "native $identify and identified checkout_started",
+    () => {
+      const sent = posthogEvents(transportRequests);
+      return (
+        sent.some((event) => event.event === "$identify") && sent.some(isBuyerCheckout)
+      );
+    },
+  );
+  delayBoundaryPosts = false;
+  const sent = posthogEvents(transportRequests);
   const identify = sent.find((event) => event.event === "$identify");
   assert.ok(identify, "native identify control reached real POST");
   assert.deepEqual(identify.properties, {
@@ -539,12 +576,7 @@ try {
   });
   assert.equal(identify.$set, undefined);
   assert.equal(identify.$set_once, undefined);
-  assert.ok(
-    sent.some(
-      (event) =>
-        event.event === "checkout_started" && event.properties.distinct_id === buyerKey,
-    ),
-  );
+  assert.ok(sent.some(isBuyerCheckout));
   const optional = await page.evaluate(() =>
     JSON.stringify({ ...localStorage, ...sessionStorage }),
   );
@@ -578,6 +610,8 @@ try {
   const context = await browser.newContext();
   const flow = await context.newPage();
   const flowWire = [];
+  const expectedPageEvents = ["public_page_viewed", "storefront_viewed"];
+  let delayPageViews = false;
   let choice = { choice: "unknown" };
   let offline = true;
   let preferencePosts = 0;
@@ -586,10 +620,20 @@ try {
       url = new URL(req.url());
     if (url.hostname === "us.i.posthog.com") {
       const bytes = req.postDataBuffer();
-      if (bytes)
-        flowWire.push(
-          JSON.parse((bytes[0] === 0x1f ? gunzipSync(bytes) : bytes).toString()),
+      if (bytes) {
+        const method = req.method();
+        const payload = JSON.parse(
+          (bytes[0] === 0x1f ? gunzipSync(bytes) : bytes).toString(),
         );
+        if (
+          delayPageViews &&
+          choice.choice === "accepted" &&
+          method === "POST" &&
+          payload?.batch?.some(({ event }) => expectedPageEvents.includes(event))
+        )
+          await delay(mockPostHogLatencyMs);
+        flowWire.push({ method, payload });
+      }
       return route.fulfill({ json: {} });
     }
     if (url.pathname === "/api/analytics/preferences") {
@@ -637,16 +681,16 @@ try {
     [[], [], ""],
   );
   await flow.evaluate(() => window.actions.capture());
+  delayPageViews = true;
   await flow.getByRole("button", { name: "Allow analytics" }).click();
   await flow.getByRole("button", { name: "Privacy choices" }).waitFor();
-  await flow.waitForTimeout(200);
-  assert.deepEqual(
-    flowWire
-      .flatMap((req) => req.batch)
-      .map((ev) => ev.event)
-      .sort(),
-    ["public_page_viewed", "storefront_viewed"],
-  );
+  const pageEvents = () => posthogEvents(flowWire).map(({ event }) => event);
+  await waitForPostHogPost(flow, "page views after consent", () => {
+    const events = pageEvents();
+    return expectedPageEvents.every((event) => events.includes(event));
+  });
+  delayPageViews = false;
+  assert.deepEqual(pageEvents().sort(), expectedPageEvents);
   const peer = await flow.context().newPage();
   await peer.goto("https://soles-stg.vercel.app/store");
   await peer.evaluate(() => {
