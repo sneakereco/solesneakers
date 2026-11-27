@@ -5,19 +5,34 @@ import { usePathname } from "next/navigation";
 
 import { Footer } from "@/components/shell/Footer";
 import { StorefrontHeader } from "@/components/shell/StorefrontHeader";
-import { captureStorefrontViewed } from "@/lib/measurement/client";
-import { enteredStorefront } from "@/lib/measurement/triggers";
+import {
+  captureStorefrontViewed,
+  enteredStorefront,
+} from "@/Modules/Analytics/Source/Features/VisitorMeasurement/triggers";
+import { useViewGrant } from "@/Modules/Analytics/Source/Features/VisitorMeasurement/view-grant";
 
 export function ClientShell({ children }: { children: React.ReactNode }) {
+  const grant = useViewGrant();
   const pathname = usePathname();
   const previousPathname = useRef<string | null>(null);
+  const lastGrant = useRef<string | null>(null);
 
   useEffect(() => {
-    if (enteredStorefront(previousPathname.current, pathname)) {
+    if (!grant) {
+      if (pathname !== "/store") previousPathname.current = pathname;
+      return;
+    }
+    if (
+      enteredStorefront(
+        lastGrant.current === grant ? previousPathname.current : null,
+        pathname,
+      )
+    ) {
       captureStorefrontViewed();
     }
     previousPathname.current = pathname;
-  }, [pathname]);
+    lastGrant.current = grant;
+  }, [grant, pathname]);
 
   useEffect(() => {
     document.body.dataset.route = "store";

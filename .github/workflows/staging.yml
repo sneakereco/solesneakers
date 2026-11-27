@@ -101,6 +101,9 @@ jobs:
       - name: Pull Vercel project configuration
         run: npx --yes vercel@59.16.0 pull --yes --environment=production --token="$VERCEL_TOKEN"
 
+      - name: Verify analytics runtime and public build pairing
+        run: node scripts/check-analytics-deployment.mjs staging
+
       - name: Build and deploy staging source
         id: deploy
         shell: bash

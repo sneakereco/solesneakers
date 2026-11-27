@@ -3,6 +3,7 @@
 import { usePathname } from "next/navigation";
 
 const routeTitles: Array<[string, string]> = [
+  ["/admin/analytics", "Analytics"],
   ["/admin/inventory/create", "Add product"],
   ["/admin/inventory", "Inventory"],
   ["/admin/featured-items", "Featured items"],

@@ -2,7 +2,10 @@ import type {
   SquarePaymentEventResult,
   SquarePaymentSnapshot,
 } from "@/lib/square/payment-event";
-import type { SquarePaymentDetails } from "@/lib/square/payment-details";
+import type {
+  squareSourceEvidence,
+  SquarePaymentDetails,
+} from "@/lib/square/payment-details";
 
 type LocalOrder = {
   id: string;
@@ -19,6 +22,7 @@ type SquareOrder = {
 };
 
 type SquarePayment = {
+  sourceEvidence?: ReturnType<typeof squareSourceEvidence>;
   details?: SquarePaymentDetails;
   id: string;
   orderId: string;
@@ -86,6 +90,7 @@ export async function reconcilePendingSquarePayment(
     amountCents: payment.amountCents,
     currency: payment.currency,
     riskLevel: payment.riskLevel,
+    ...(payment.sourceEvidence ? { sourceEvidence: payment.sourceEvidence } : {}),
     ...(payment.details ? { details: payment.details } : {}),
   });
   return "processed";

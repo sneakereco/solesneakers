@@ -72,7 +72,7 @@ export async function GET(
         "CDN-Cache-Control": "public, s-maxage=300",
         "Vercel-CDN-Cache-Control": "public, s-maxage=300",
         // Add ETag for better cache validation
-        ETag: `"${product.id}-${product.updated_at || product.created_at}"`,
+        ETag: `"catalog-v2-${product.id}-${product.updated_at || product.created_at}"`,
       },
     });
   } catch (error) {

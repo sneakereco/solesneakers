@@ -1,5 +1,11 @@
 "use client";
 
+import {
+  formatCount,
+  formatMoney,
+  moneyCoverage,
+} from "@/Modules/Analytics/Source/Features/Dashboard/format";
+import type { MoneyValue } from "@/Modules/Analytics/Source/Features/ReportContract/types";
 import { useAdminRead } from "@/components/admin/useAdminRead";
 import { AdminSkeleton, AdminReadStatus } from "@/components/admin/AdminSkeletons";
 import { fetchJsonWithDeadline } from "@/lib/http/request-deadline";
@@ -38,20 +44,51 @@ async function loadDashboard(signal: AbortSignal) {
     throw new Error("Incomplete dashboard");
   return { productsCount: products.total, orders: activity.orders };
 }
+function loadSummary(signal: AbortSignal) {
+  return fetchJsonWithDeadline<{
+    state: string;
+    ingestionAsOf: string | null;
+    netMerchandise: MoneyValue | null;
+    confirmedOrders: number | null;
+  }>("/api/admin/analytics/summary", "Financial summary unavailable", signal);
+}
+
 export default function DashboardPage() {
   const read = useAdminRead(loadDashboard, "dashboard");
+  const financial = useAdminRead(loadSummary, "financial summary");
   const { orders = [], productsCount } = read.data ?? {};
-  const completedOrders = orders.filter((order) =>
-    ["paid", "shipped", "completed"].includes(order.status ?? ""),
-  );
-  const revenue = completedOrders.reduce(
-    (sum, order) => sum + Number(order.total ?? 0),
-    0,
-  );
-
+  const summary = financial.data;
+  const qualifier = summary?.state === "stale" ? " · Stale" : "";
+  const freshness = summary?.ingestionAsOf
+    ? "Source observed through " +
+      new Intl.DateTimeFormat("en-US", {
+        dateStyle: "medium",
+        timeStyle: "short",
+        timeZone: "America/New_York",
+      }).format(new Date(summary.ingestionAsOf)) +
+      " ET."
+    : "Source freshness unavailable.";
+  const coverage = [moneyCoverage(summary?.netMerchandise ?? null), freshness]
+    .filter(Boolean)
+    .join(" ");
   const stats = [
-    { label: "Revenue", value: `$${revenue.toFixed(2)}`, icon: DollarSign },
-    { label: "Orders", value: String(completedOrders.length), icon: ShoppingCart },
+    {
+      label: "Net product sales · Last 30 days" + qualifier,
+      value:
+        financial.pending && !summary
+          ? "Loading…"
+          : formatMoney(summary?.netMerchandise ?? null),
+      note: coverage,
+      icon: DollarSign,
+    },
+    {
+      label: "Confirmed orders · Last 30 days" + qualifier,
+      value:
+        financial.pending && !summary
+          ? "Loading…"
+          : formatCount(summary?.confirmedOrders ?? null),
+      icon: ShoppingCart,
+    },
     { label: "Products", value: String(productsCount), icon: Package },
   ];
 
@@ -83,9 +120,16 @@ export default function DashboardPage() {
       </section>
 
       <AdminReadStatus read={read} label="Loading dashboard" shape="metrics" />
+      {financial.error && (
+        <AdminReadStatus
+          read={financial}
+          label="Loading financial summary"
+          shape="metrics"
+        />
+      )}
       {read.data && (
         <div className="grid gap-3 sm:grid-cols-3 sm:gap-6">
-          {stats.map(({ label, value, icon: Icon }) => (
+          {stats.map(({ label, value, note, icon: Icon }) => (
             <div
               key={label}
               className="rounded-xl border border-zinc-800/70 bg-zinc-900 p-5 sm:p-6"
@@ -101,6 +145,7 @@ export default function DashboardPage() {
               <span className="text-3xl font-semibold tracking-[-0.04em] text-white">
                 {value}
               </span>
+              {note && <p className="text-sm text-zinc-400">{note}</p>}
             </div>
           ))}
         </div>

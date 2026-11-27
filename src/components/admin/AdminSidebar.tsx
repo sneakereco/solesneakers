@@ -5,6 +5,7 @@ import { FeedbackLink as Link } from "@/components/ui/FeedbackLink";
 import { usePathname } from "next/navigation";
 import {
   ChevronDown,
+  ChartNoAxesColumnIncreasing,
   ExternalLink,
   Gift,
   LayoutDashboard,
@@ -36,6 +37,12 @@ type NavGroup = {
 
 const navItems: Array<NavLink | NavGroup> = [
   { type: "link", href: "/admin/dashboard", label: "Overview", icon: LayoutDashboard },
+  {
+    type: "link",
+    href: "/admin/analytics",
+    label: "Analytics",
+    icon: ChartNoAxesColumnIncreasing,
+  },
   { type: "link", href: "/admin/inventory", label: "Inventory", icon: Package },
   { type: "link", href: "/admin/featured-items", label: "Featured", icon: Sparkles },
   {
@@ -155,8 +162,10 @@ export function AdminSidebar({
                 <Link
                   key={item.href}
                   href={item.href}
-                  onNavigate={closeMenu}
                   className={itemClass(active)}
+                  prefetch={item.href === "/admin/analytics" ? false : undefined}
+                  aria-current={active ? "page" : undefined}
+                  onNavigate={closeMenu}
                 >
                   {createElement(item.icon, {
                     className: `h-4 w-4 ${active ? "text-black" : "text-zinc-500 group-hover:text-white"}`,

@@ -1,7 +1,5 @@
 import { initBotId } from "botid/client/core";
 
-import { initializeMeasurement } from "@/lib/measurement/client";
-
 initBotId({
   protect: [
     {
@@ -36,5 +34,3 @@ initBotId({
     },
   ],
 });
-
-initializeMeasurement();

@@ -1,6 +1,7 @@
 // app/admin/inventory/actions.ts
 "use server";
 
+import { createStaffCostReader } from "@/repositories/staff-cost-reader";
 import { readInventoryData } from "./initial-read";
 
 import { ProductService } from "@/services/product-service";
@@ -19,7 +20,7 @@ interface InventoryFilters {
 
 export async function getInventoryProducts(filters: InventoryFilters = {}) {
   return readInventoryData(async (supabase, tenantId) => {
-    const service = new ProductService(supabase);
+    const service = new ProductService(supabase, createStaffCostReader(supabase));
 
     const {
       q,

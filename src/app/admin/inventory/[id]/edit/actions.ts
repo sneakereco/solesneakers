@@ -1,6 +1,7 @@
 // app/admin/inventory/[id]/edit/actions.ts
 "use server";
 
+import { createStaffCostReader } from "@/repositories/staff-cost-reader";
 import { readInventoryData } from "../../initial-read";
 
 import { TagTaxonomyRepository } from "@/repositories/tag-taxonomy-repo";
@@ -10,7 +11,7 @@ import { loadSpecialtyProductDraft } from "@/Modules/SpecialtyProducts/Source/Fe
 
 export async function getEditFormInitialData(productId: string) {
   return readInventoryData(async (supabase, tenantId, signal) => {
-    const productService = new ProductService(supabase);
+    const productService = new ProductService(supabase, createStaffCostReader(supabase));
     const taxonomyRepo = new TagTaxonomyRepository(supabase);
 
     const [product, brandsData, modelsData, sizesData] = await Promise.all([

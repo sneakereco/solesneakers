@@ -1,5 +1,6 @@
 "use client";
 
+import { notifySessionUpdate } from "@/lib/auth/session-events";
 import { useState, type FormEvent } from "react";
 import { useRouter } from "next/navigation";
 
@@ -88,6 +89,7 @@ export function ForgotPasswordForm({ onBackToLogin }: ForgotPasswordFormProps) {
           );
           if (verified.ok !== true) throw new Error("Invalid or expired reset code.");
 
+          notifySessionUpdate();
           if (verified.requiresTwoFASetup || verified.requiresTwoFAChallenge) {
             setContinuing(true);
             router.push(
@@ -117,7 +119,7 @@ export function ForgotPasswordForm({ onBackToLogin }: ForgotPasswordFormProps) {
         setConfirmation("");
         setCode("");
         setStep("complete");
-        window.dispatchEvent(new Event("sessionUpdate"));
+        notifySessionUpdate();
       } catch (failure) {
         setContinuing(false);
         if (failure instanceof ResponseError && failure.status === 409) {

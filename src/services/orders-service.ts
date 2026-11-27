@@ -1,3 +1,5 @@
+import { hydrateStaffOrderCosts } from "@/repositories/staff-order-costs";
+import type { StaffCostReader } from "@/repositories/staff-cost-reader";
 // src/services/orders-service.ts
 // DEBUGGING VERSION - Heavily instrumented with logs
 
@@ -30,6 +32,7 @@ export class OrdersService {
   constructor(
     private readonly supabase: TypedSupabaseClient,
     private readonly adminSupabase?: AdminSupabaseClient,
+    private readonly costs?: StaffCostReader,
   ) {
     this.ordersRepo = new OrdersRepository(supabase);
     this.orderEventsRepo = new OrderEventsRepository(supabase);
@@ -346,7 +349,7 @@ export class OrdersService {
     fulfillmentStatus?: string;
     limit?: number;
   }) {
-    return this.ordersRepo.listOrders(params);
+    return hydrateStaffOrderCosts(await this.ordersRepo.listOrders(params), this.costs);
   }
 
   async listOrdersPaged(params?: {
@@ -358,7 +361,8 @@ export class OrdersService {
     incomplete?: boolean;
     includeAll?: boolean;
   }) {
-    return this.ordersRepo.listOrdersPaged(params);
+    const result = await this.ordersRepo.listOrdersPaged(params);
+    return { ...result, orders: await hydrateStaffOrderCosts(result.orders, this.costs) };
   }
 
   async markRefunded(orderId: string, amount: number) {

@@ -8,13 +8,18 @@ import { ChevronDown } from "lucide-react";
 
 import { useCart } from "@/components/cart/CartProvider";
 import { Toast } from "@/components/ui/Toast";
-import { captureProductViewed } from "@/lib/measurement/client";
-import type { ProductWithDetails } from "@/types/domain/product";
+import { useViewGrant } from "@/Modules/Analytics/Source/Features/VisitorMeasurement/view-grant";
+import {
+  captureProductViewed,
+  captureStockoutView,
+  captureVariantSelection,
+} from "@/Modules/Analytics/Source/Features/VisitorMeasurement/triggers";
+import type { StorefrontProduct } from "@/types/domain/product";
 
 import { SpecialtyProductCard } from "@/Modules/SpecialtyProducts/Source/Features/Discovery/SpecialtyProductCard";
 
 interface ProductDetailProps {
-  product: ProductWithDetails;
+  product: StorefrontProduct;
 }
 
 type AddFeedback = { status: "checking" | "success" | "error" };
@@ -58,6 +63,7 @@ function OrdinaryProductDetail({ product }: ProductDetailProps) {
   const cartUnavailable = !isReady && validationStatus === "error";
   const addInFlight = useRef(false);
   const [addFeedback, setAddFeedback] = useState<AddFeedback | null>(null);
+  const grant = useViewGrant();
   const viewedProductId = useRef<string | null>(null);
   const initialVariant =
     product.variants.find((variant) => variant.stock > 0) ?? product.variants[0];
@@ -87,12 +93,14 @@ function OrdinaryProductDetail({ product }: ProductDetailProps) {
   const conditionLabel = getConditionLabel(product.condition);
 
   useEffect(() => {
-    if (viewedProductId.current === product.id) {
+    if (!grant || viewedProductId.current === grant + product.id) {
       return;
     }
-    viewedProductId.current = product.id;
+    viewedProductId.current = grant + product.id;
     captureProductViewed(product.id);
-  }, [product.id]);
+    if (product.variants.length && product.variants.every((v) => v.stock === 0))
+      captureStockoutView(product.id);
+  }, [grant, product.id, product.variants]);
 
   useEffect(() => {
     const current = product.variants.find((variant) => variant.id === selectedVariantId);
@@ -221,9 +229,13 @@ function OrdinaryProductDetail({ product }: ProductDetailProps) {
                   <ActionButton
                     key={variant.id}
                     type="button"
-                    disabled={isUnavailable}
+                    aria-disabled={isUnavailable}
                     aria-pressed={isSelected}
-                    onClick={() => setSelectedVariantId(variant.id)}
+                    onClick={() => {
+                      if (grant)
+                        captureVariantSelection(product.id, variant.id, !isUnavailable);
+                      if (!isUnavailable) setSelectedVariantId(variant.id);
+                    }}
                     className={`min-h-[3.25rem] min-w-[3.25rem] border px-3 py-2 text-sm transition-colors ${
                       isSelected
                         ? "border-black shadow-[inset_0_0_0_1px_#000]"

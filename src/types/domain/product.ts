@@ -16,3 +16,9 @@ export type ProductWithDetails = ProductRow & {
   variants: Array<ProductVariantRow & { size: TaxonomyReference }>;
   images: ProductImageRow[];
 };
+
+export type StorefrontProduct = Omit<ProductWithDetails, "variants"> & {
+  variants: Array<
+    Omit<ProductWithDetails["variants"][number], "unit_cost_cents" | "unit_cost_recorded">
+  >;
+};

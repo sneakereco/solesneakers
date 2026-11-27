@@ -1,5 +1,6 @@
+import { SquareClient } from "square";
 import { reconcilePendingSquarePayment } from "@/lib/square/payment-reconciliation";
-import { squarePaymentDetails } from "@/lib/square/payment-details";
+import { squarePaymentDetails, squareSourceEvidence } from "@/lib/square/payment-details";
 
 describe("reconcilePendingSquarePayment", () => {
   it("processes the locally recorded direct payment when its webhook is delayed", async () => {
@@ -8,6 +9,22 @@ describe("reconcilePendingSquarePayment", () => {
       fulfillmentAuthorized: true,
       orderId: "local-order-1",
     });
+    // Exercise the same SDK get/deserialize/evidence path used by the order route.
+    const response = Response.json({
+      payment: {
+        id: "payment-1",
+        updated_at: "2026-09-06T00:00:01-04:00",
+        card_details: {
+          card_payment_timeline: { captured_at: "2026-09-05T23:59:59-04:00" },
+        },
+      },
+    });
+    const square = new SquareClient({
+      token: "fixture",
+      fetch: () => Promise.resolve(response),
+    });
+    const { payment } = await square.payments.get({ paymentId: "payment-1" });
+    if (!payment) throw new Error("fixture payment missing");
     const result = await reconcilePendingSquarePayment("local-order-1", {
       getLocalOrder: jest.fn().mockResolvedValue({
         id: "local-order-1",
@@ -31,6 +48,7 @@ describe("reconcilePendingSquarePayment", () => {
         riskLevel: "NORMAL",
         createdAt: "2026-09-05T18:03:33.155Z",
         versionToken: "version-1",
+        sourceEvidence: squareSourceEvidence(payment),
         details: squarePaymentDetails({
           sourceType: "WALLET",
           walletDetails: { brand: "CASH_APP" },
@@ -52,6 +70,10 @@ describe("reconcilePendingSquarePayment", () => {
       amountCents: 10825,
       currency: "USD",
       riskLevel: "NORMAL",
+      sourceEvidence: {
+        capturedAt: "2026-09-05T23:59:59-04:00",
+        resolvedAt: "2026-09-06T00:00:01-04:00",
+      },
       details: expect.objectContaining({ payment_method: "cashAppPay" }),
     });
   });

@@ -1,3 +1,7 @@
+jest.mock("@/Modules/Analytics/Source/Features/EventDelivery/delivery-runtime", () => ({
+  scheduleAnalyticsDrain: jest.fn(),
+}));
+import { scheduleAnalyticsDrain } from "@/Modules/Analytics/Source/Features/EventDelivery/delivery-runtime";
 jest.mock("@/lib/square/config", () => ({
   getSquareConfig: jest.fn(() => ({
     environment: "sandbox",
@@ -45,6 +49,7 @@ function webhookRequest(body: string, signature = "signature"): Request {
 describe("POST /api/webhooks/square", () => {
   beforeEach(() => {
     jest.restoreAllMocks();
+    jest.mocked(scheduleAnalyticsDrain).mockClear();
     mockSynchronizeShippingAddress.mockResolvedValue("synced");
   });
 
@@ -56,6 +61,7 @@ describe("POST /api/webhooks/square", () => {
 
     expect(response.status).toBe(401);
     expect(process).not.toHaveBeenCalled();
+    expect(scheduleAnalyticsDrain).not.toHaveBeenCalled();
   });
 
   it("acknowledges a verified and durably processed event", async () => {
@@ -75,6 +81,7 @@ describe("POST /api/webhooks/square", () => {
     const response = await POST(webhookRequest(body));
 
     expect(response.status).toBe(200);
+    expect(scheduleAnalyticsDrain).toHaveBeenCalledTimes(1);
     expect(SquarePaymentEventProcessor.prototype.process).toHaveBeenCalledWith(body);
     expect(mockCreateSyncDependencies).toHaveBeenCalledWith(expect.anything());
     expect(mockSynchronizeShippingAddress).toHaveBeenCalledWith(processed, {
@@ -99,6 +106,7 @@ describe("POST /api/webhooks/square", () => {
     const response = await POST(webhookRequest('{"event_id":"event-1"}'));
 
     expect(response.status).toBe(500);
+    expect(scheduleAnalyticsDrain).not.toHaveBeenCalled();
   });
 
   it("returns a retryable error when durable processing fails", async () => {
@@ -110,5 +118,6 @@ describe("POST /api/webhooks/square", () => {
     const response = await POST(webhookRequest('{"event_id":"event-1"}'));
 
     expect(response.status).toBe(500);
+    expect(scheduleAnalyticsDrain).not.toHaveBeenCalled();
   });
 });

@@ -16,7 +16,8 @@ import type { CartItem } from "@/types/domain/cart";
 import type { OrderStatusResponse } from "@/types/domain/checkout";
 import type { CartCheckoutSnapshot } from "@/lib/cart/checkout-snapshot";
 import { useSession } from "@/contexts/SessionContext";
-import { captureProductAddedToCart } from "@/lib/measurement/client";
+import { useViewGrant } from "@/Modules/Analytics/Source/Features/VisitorMeasurement/view-grant";
+import { captureProductAddedToCart } from "@/Modules/Analytics/Source/Features/VisitorMeasurement/triggers";
 import { withRequestDeadline } from "@/lib/http/request-deadline";
 import { readJsonResponse } from "@/lib/http/read-json-response";
 
@@ -61,6 +62,11 @@ export function CartProvider({
 }) {
   const { user, isLoading, isSessionUnavailable, refreshSession, isIdentityCurrent } =
     useSession();
+  const grant = useViewGrant();
+  const currentGrant = useRef(grant);
+  useLayoutEffect(() => {
+    currentGrant.current = grant;
+  }, [grant]);
   const owner = user?.id ?? null;
   const unresolved = Boolean(isLoading || isSessionUnavailable);
   const cart = useMemo(
@@ -294,8 +300,15 @@ export function CartProvider({
         writeError: error && error.cart === cart ? error.message : null,
         writePending: Boolean(cart && saving === cart),
         addItem: async (item) => {
+          const originalGrant = currentGrant.current;
           const saved = await write((service) => service.addItem(item, current));
-          if (saved) captureProductAddedToCart(item.productId, item.variantId);
+          if (
+            saved &&
+            current() &&
+            originalGrant &&
+            currentGrant.current === originalGrant
+          )
+            captureProductAddedToCart(item.productId, item.variantId);
           return saved;
         },
         updateQuantity: (productId, variantId, quantity) =>

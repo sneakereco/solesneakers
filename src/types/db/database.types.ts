@@ -57,6 +57,208 @@ export type Database = {
           },
         ]
       }
+      analytics_consent_receipts: {
+        Row: {
+          dataset_id: string
+          granted_at: string
+          receipt_id: string
+          revoked_at: string | null
+        }
+        Insert: {
+          dataset_id: string
+          granted_at?: string
+          receipt_id?: string
+          revoked_at?: string | null
+        }
+        Update: {
+          dataset_id?: string
+          granted_at?: string
+          receipt_id?: string
+          revoked_at?: string | null
+        }
+        Relationships: [
+          {
+            foreignKeyName: "analytics_consent_receipts_dataset_id_fkey"
+            columns: ["dataset_id"]
+            referencedRelation: "analytics_datasets"
+            referencedColumns: ["dataset_id"]
+          },
+        ]
+      }
+      analytics_datasets: {
+        Row: {
+          activated_at: string
+          behavior_archive_cutoff: string | null
+          dataset_id: string
+          environment: string
+          financial_source: string
+          schema_version: number
+        }
+        Insert: {
+          activated_at: string
+          behavior_archive_cutoff?: string | null
+          dataset_id: string
+          environment: string
+          financial_source?: string
+          schema_version?: number
+        }
+        Update: {
+          activated_at?: string
+          behavior_archive_cutoff?: string | null
+          dataset_id?: string
+          environment?: string
+          financial_source?: string
+          schema_version?: number
+        }
+        Relationships: []
+      }
+      analytics_fact_versions: {
+        Row: {
+          dataset_id: string
+          effective_at: string
+          export_updated_at: string
+          fact: Json
+          fact_id: string
+          kind: string
+          recorded_at: string
+          revision: number
+        }
+        Insert: {
+          dataset_id: string
+          effective_at: string
+          export_updated_at?: string
+          fact: Json
+          fact_id: string
+          kind: string
+          recorded_at: string
+          revision: number
+        }
+        Update: {
+          dataset_id?: string
+          effective_at?: string
+          export_updated_at?: string
+          fact?: Json
+          fact_id?: string
+          kind?: string
+          recorded_at?: string
+          revision?: number
+        }
+        Relationships: [
+          {
+            foreignKeyName: "analytics_fact_versions_dataset_id_fkey"
+            columns: ["dataset_id"]
+            referencedRelation: "analytics_datasets"
+            referencedColumns: ["dataset_id"]
+          },
+        ]
+      }
+      analytics_order_context: {
+        Row: {
+          buyer_key: string | null
+          dataset_id: string
+          device: string | null
+          discovery: Json | null
+          line_snapshots: Json
+          order_id: string
+          order_snapshot: Json | null
+          purchase_session: Json | null
+          receipt_id: string | null
+          session_id: string | null
+          tracked_publication_id: string
+          visitor_id: string | null
+        }
+        Insert: {
+          buyer_key?: string | null
+          dataset_id: string
+          device?: string | null
+          discovery?: Json | null
+          line_snapshots: Json
+          order_id: string
+          order_snapshot?: Json | null
+          purchase_session?: Json | null
+          receipt_id?: string | null
+          session_id?: string | null
+          tracked_publication_id?: string
+          visitor_id?: string | null
+        }
+        Update: {
+          buyer_key?: string | null
+          dataset_id?: string
+          device?: string | null
+          discovery?: Json | null
+          line_snapshots?: Json
+          order_id?: string
+          order_snapshot?: Json | null
+          purchase_session?: Json | null
+          receipt_id?: string | null
+          session_id?: string | null
+          tracked_publication_id?: string
+          visitor_id?: string | null
+        }
+        Relationships: [
+          {
+            foreignKeyName: "analytics_order_context_dataset_id_fkey"
+            columns: ["dataset_id"]
+            referencedRelation: "analytics_datasets"
+            referencedColumns: ["dataset_id"]
+          },
+          {
+            foreignKeyName: "analytics_order_context_dataset_id_receipt_id_fkey"
+            columns: ["dataset_id", "receipt_id"]
+            referencedRelation: "analytics_consent_receipts"
+            referencedColumns: ["dataset_id", "receipt_id"]
+          },
+        ]
+      }
+      analytics_publication_outbox: {
+        Row: {
+          attempts: number
+          dataset_id: string
+          delivered_at: string | null
+          fact_id: string
+          failure_category: string | null
+          id: string
+          lease_expires_at: string | null
+          lease_token: string | null
+          next_attempt_at: string
+          revision: number
+          status: string
+        }
+        Insert: {
+          attempts?: number
+          dataset_id: string
+          delivered_at?: string | null
+          fact_id: string
+          failure_category?: string | null
+          id?: string
+          lease_expires_at?: string | null
+          lease_token?: string | null
+          next_attempt_at?: string
+          revision: number
+          status?: string
+        }
+        Update: {
+          attempts?: number
+          dataset_id?: string
+          delivered_at?: string | null
+          fact_id?: string
+          failure_category?: string | null
+          id?: string
+          lease_expires_at?: string | null
+          lease_token?: string | null
+          next_attempt_at?: string
+          revision?: number
+          status?: string
+        }
+        Relationships: [
+          {
+            foreignKeyName: "analytics_publication_outbox_dataset_id_fact_id_revision_fkey"
+            columns: ["dataset_id", "fact_id", "revision"]
+            referencedRelation: "analytics_fact_versions"
+            referencedColumns: ["dataset_id", "fact_id", "revision"]
+          },
+        ]
+      }
       checkout_notification_outbox: {
         Row: {
           attempts: number
@@ -896,6 +1098,7 @@ export type Database = {
           stock: number
           tenant_id: string
           unit_cost_cents: number
+          unit_cost_recorded: boolean
           updated_at: string
         }
         Insert: {
@@ -909,6 +1112,7 @@ export type Database = {
           stock?: number
           tenant_id: string
           unit_cost_cents?: number
+          unit_cost_recorded?: boolean
           updated_at?: string
         }
         Update: {
@@ -922,6 +1126,7 @@ export type Database = {
           stock?: number
           tenant_id?: string
           unit_cost_cents?: number
+          unit_cost_recorded?: boolean
           updated_at?: string
         }
         Relationships: [
@@ -2045,6 +2250,82 @@ export type Database = {
         Args: { accepted_label: string; candidate_id: string }
         Returns: Json
       }
+      analytics_append_fact: { Args: { p_fact: Json }; Returns: string }
+      analytics_claim_batch: {
+        Args: { p_dataset_id: string; p_lease_seconds: number; p_limit: number }
+        Returns: Json
+      }
+      analytics_claim_publications: {
+        Args: { p_dataset_id: string; p_lease_seconds: number; p_limit: number }
+        Returns: {
+          attempt: number
+          environment: string
+          fact: Json
+          lease_expires_at: string
+          lease_token: string
+          publication_id: string
+        }[]
+      }
+      analytics_complete_publication: {
+        Args: { p_dataset_id: string; p_id: string; p_lease_token: string }
+        Returns: boolean
+      }
+      analytics_fact_scalar_schemas: { Args: never; Returns: Json }
+      analytics_fail_publication: {
+        Args: {
+          p_category: string
+          p_dataset_id: string
+          p_id: string
+          p_lease_token: string
+          p_retry_after_seconds: number
+          p_terminal: boolean
+        }
+        Returns: boolean
+      }
+      analytics_record_operational_outcome: {
+        Args: { p_dataset_id: string; p_outcome: Json }
+        Returns: undefined
+      }
+      activate_analytics_dataset: { Args: { p_environment: string; p_at: string; p_history_mode: string }; Returns: Json }
+      analytics_refresh_claim: { Args: { p_dataset_id: string }; Returns: Json }
+      analytics_refresh_snapshot: { Args: { p_dataset_id: string; p_token: string }; Returns: Json }
+      analytics_refresh_finish: { Args: { p_dataset_id: string; p_token: string; p_result: string; p_observed_at: string | null }; Returns: boolean }
+      analytics_native_probe: { Args: { p_dataset_id: string }; Returns: Json }
+      analytics_record_native_retention: { Args: { p_dataset_id: string; p_months: number | null; p_retained_from: string | null; p_verified_at: string }; Returns: boolean }
+      analytics_native_advance: { Args: { p_dataset_id: string; p_last_id: string }; Returns: boolean }
+      analytics_has_active_journey_link: {
+        Args: { p_dataset_id: string; p_order_id: string; p_session_id: string }
+        Returns: boolean
+      }
+      analytics_read_history_evidence: {
+        Args: { p_dataset_id: string }
+        Returns: Json
+      }
+      analytics_reconciliation_snapshot: {
+        Args: { p_dataset_id: string; p_end: string; p_limit: number; p_start: string }
+        Returns: Json
+      }
+      analytics_reconciliation_source: {
+        Args: { p_dataset_id: string; p_end: string; p_start: string }
+        Returns: Json
+      }
+      analytics_revoke_receipt: {
+        Args: { p_dataset_id: string; p_receipt_id: string }
+        Returns: boolean
+      }
+      analytics_snapshot_catalog_label: {
+        Args: { p_raw: string }
+        Returns: string
+      }
+      analytics_valid_acquisition: {
+        Args: { p_dimensions: Json }
+        Returns: boolean
+      }
+      analytics_valid_lines: { Args: { p_lines: Json }; Returns: boolean }
+      analytics_valid_payload: {
+        Args: { p_kind: string; p_payload: Json }
+        Returns: boolean
+      }
       attach_square_checkout_order: {
         Args: {
           p_order_id: string
@@ -2224,6 +2505,10 @@ export type Database = {
             }
             Returns: Json
           }
+      reserve_square_checkout_inventory_with_analytics: {
+        Args: { p_checkout: Json; p_analytics: Json }
+        Returns: Json
+      }
       reserve_square_checkout_inventory_with_address: {
         Args: {
           p_cart_hash: string

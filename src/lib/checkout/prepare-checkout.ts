@@ -1,4 +1,5 @@
-import { timingSafeEqual } from "node:crypto";
+import type { OperationalOutcome } from "@/Modules/Analytics/Source/Features/CommerceFacts/operational-outcome";
+import { randomUUID, timingSafeEqual } from "node:crypto";
 
 import type { NextRequest } from "next/server";
 
@@ -41,9 +42,12 @@ import type {
   ReserveCheckoutInput,
 } from "@/repositories/checkout-reservation-repo";
 
+import type { SourceContext } from "@/Modules/Analytics/Source/Features/CommerceFacts/source-context";
+
 type CheckoutSession = { user: { id: string; email: string } } | null;
 
 export type PrepareCheckoutDependencies = {
+  outcome?(value: OperationalOutcome): void;
   shippingConfirmationSecret(): string;
   validateShippingAddress(address: ShippingAddress): Promise<ShippingValidationResult>;
   findTenantId(): Promise<string | null>;
@@ -66,6 +70,11 @@ export type PrepareCheckoutDependencies = {
   ): Promise<ResolvedCheckoutCart>;
   quote(input: CheckoutPricingQuoteInput): Promise<CheckoutPricingQuote>;
   calculateSquareOrder(input: SquareCheckoutOrderPayloadInput): Promise<CheckoutTotals>;
+  resolveAnalyticsContext?(
+    email: string,
+    totals: CheckoutTotals,
+    tracking: unknown,
+  ): Promise<SourceContext | null>;
   reserve(input: ReserveCheckoutInput): Promise<CheckoutReservationResult>;
   createGuestAccessToken(orderId: string): Promise<string>;
   getSquareClientConfig(): {
@@ -139,6 +148,20 @@ export async function prepareCheckoutHandler(
   request: NextRequest,
   deps: PrepareCheckoutDependencies,
 ): Promise<Response> {
+  const started = deps.now().toISOString();
+  let stage: OperationalOutcome["stage"] = "checkout";
+  let method: OperationalOutcome["method"] = null;
+  const failure = (reason: OperationalOutcome["reason"]) =>
+    deps.outcome?.({
+      attemptId: randomUUID(),
+      orderId: null,
+      stage,
+      outcome: "failed",
+      reason,
+      method,
+      effectiveAt: started,
+      resolvedAt: deps.now().toISOString(),
+    });
   try {
     const tenantId = await deps.findTenantId();
     if (!tenantId) {
@@ -151,6 +174,8 @@ export async function prepareCheckoutHandler(
     const paymentConfig = deps.getSquareClientConfig();
     const bot = await deps.verifyBrowser();
     if (!bot.allowed) {
+      stage = "verification";
+      failure(bot.reason === "bot" ? "blocked" : "unavailable");
       return json(
         { error: "Checkout verification failed" },
         bot.reason === "bot" ? 403 : 503,
@@ -163,6 +188,7 @@ export async function prepareCheckoutHandler(
     if (!parsed.success) {
       return json({ error: "Invalid checkout request" }, 400);
     }
+    method = parsed.data.paymentMethod;
     const clientIp = deps.getClientIp(request);
     if (!clientIp) {
       return json({ error: "Checkout protection is temporarily unavailable" }, 503);
@@ -218,6 +244,8 @@ export async function prepareCheckoutHandler(
         deviceSessionId: parsed.data.deviceSessionId,
       });
       if (!validationAttempt.allowed) {
+        stage = "verification";
+        failure("blocked");
         return json(
           { error: "Too many address checks; please try again later" },
           429,
@@ -229,6 +257,8 @@ export async function prepareCheckoutHandler(
       const validation = await deps.validateShippingAddress(parsed.data.shippingAddress);
       if (validation.status !== "valid") {
         const unavailable = validation.status === "unavailable";
+        stage = "verification";
+        failure(unavailable ? "unavailable" : "verification");
         return json(
           {
             code: unavailable
@@ -325,6 +355,7 @@ export async function prepareCheckoutHandler(
       deviceSessionId: parsed.data.deviceSessionId,
     });
     if (!attempt.allowed) {
+      failure("blocked");
       return json(
         { error: "Too many checkout attempts; please try again later" },
         429,
@@ -334,6 +365,7 @@ export async function prepareCheckoutHandler(
       );
     }
 
+    stage = "reservation";
     let reservation: CheckoutReservationResult | null = null;
     let cart: ResolvedCheckoutCart;
     let pricing: CheckoutPricingQuote;
@@ -392,7 +424,16 @@ export async function prepareCheckoutHandler(
 
     if (!reservation) {
       const expiresAt = new Date(deps.now().getTime() + 15 * 60 * 1000);
+      const analyticsContext =
+        (await deps
+          .resolveAnalyticsContext?.(
+            buyerEmail,
+            calculatedTotals,
+            parsed.data.trackingContext,
+          )
+          .catch(() => null)) ?? null;
       reservation = await deps.reserve({
+        analyticsContext,
         pickupContact: parsed.data.pickupContact,
         tenantId,
         userId: session?.user.id ?? null,
@@ -489,6 +530,14 @@ export async function prepareCheckoutHandler(
       reservation.reused ? 200 : 201,
     );
   } catch (error) {
+    failure(
+      error !== null &&
+        typeof error === "object" &&
+        "message" in error &&
+        error.message === "checkout_inventory_unavailable"
+        ? "inventory"
+        : "unavailable",
+    );
     deps.reportError(error);
     return json({ error: "Checkout is temporarily unavailable" }, 503);
   }

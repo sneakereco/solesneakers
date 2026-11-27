@@ -1,11 +1,11 @@
-import type { ProductWithDetails } from "@/types/domain/product";
+import type { StorefrontProduct } from "@/types/domain/product";
 import { DiscoveryInsertion } from "@/Modules/SpecialtyProducts/Source/Features/Discovery/DiscoveryInsertion";
 
 import { ProductCard } from "./ProductCard";
 import { productGridClassName } from "./StoreSkeletons";
 
 interface ProductGridProps {
-  products: ProductWithDetails[];
+  products: StorefrontProduct[];
   storeHref?: string;
   view?: "grid" | "list";
   allowSpecialty?: boolean;

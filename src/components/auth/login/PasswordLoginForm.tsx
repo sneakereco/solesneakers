@@ -1,5 +1,6 @@
 "use client";
 
+import { notifySessionUpdate } from "@/lib/auth/session-events";
 import { useState, type FormEvent } from "react";
 import { useSearchParams } from "next/navigation";
 
@@ -58,6 +59,7 @@ export function PasswordLoginForm({
           return;
         }
         if (result.ok !== true) throw new Error("Could not sign in. Please try again.");
+        notifySessionUpdate();
 
         setContinuing(true);
         if (result.isAdmin && result.requiresTwoFASetup)

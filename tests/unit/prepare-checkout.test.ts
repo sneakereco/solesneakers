@@ -1,4 +1,7 @@
 import { prepareCheckoutHandler } from "@/lib/checkout/prepare-checkout";
+import { CheckoutReservationRepository } from "@/repositories/checkout-reservation-repo";
+import { createClient } from "@supabase/supabase-js";
+import type { Database } from "@/types/db/database.types";
 import { createCheckoutQuoteFingerprint } from "@/lib/checkout/checkout-quote-fingerprint";
 import {
   futureCartHashFixture,
@@ -49,6 +52,26 @@ function request(quoteFingerprint = QUOTE_FINGERPRINT) {
   }) as never;
 }
 
+it("keeps an optional identity outage outside the accepted checkout and its abuse evidence", async () => {
+  const deps = {
+    ...dependencies(),
+    resolveAnalyticsContext: jest
+      .fn()
+      .mockRejectedValue(new Error("identity unavailable")),
+    outcome: jest.fn(),
+  };
+  const body = await (request() as Request).json();
+  const req = new Request("https://shop.example.com/api/checkout/prepare", {
+    method: "POST",
+    body: JSON.stringify({ ...body, trackingContext: { consent: true } }),
+  });
+  const response = await prepareCheckoutHandler(req as never, deps);
+  expect(response.status).toBe(201);
+  const reserved = deps.reserve.mock.calls[0][0];
+  expect(reserved.analyticsContext).toBeNull();
+  expect(reserved.protectionEvidence).not.toHaveProperty("trackingContext");
+  expect(deps.outcome).not.toHaveBeenCalled();
+});
 function dependencies() {
   const item = {
     productId: PRODUCT_ID,
@@ -567,4 +590,33 @@ describe("shipping deliverability gate", () => {
       expect.objectContaining({ pickupContact }),
     );
   });
+});
+
+it("preserves inventory reason from a structured reservation RPC error", async () => {
+  const db = createClient<Database>("http://localhost:54321", "fixture", {
+    auth: { persistSession: false },
+    global: {
+      fetch: () =>
+        Promise.resolve(
+          Response.json(
+            {
+              code: "P0001",
+              message: "checkout_inventory_unavailable",
+              details: null,
+              hint: null,
+            },
+            { status: 400 },
+          ),
+        ),
+    },
+  });
+  const repo = new CheckoutReservationRepository(db);
+  const outcome = jest.fn();
+  const result = await prepareCheckoutHandler(request(), {
+    ...dependencies(),
+    reserve: (input) => repo.reserve(input),
+    outcome,
+  });
+  expect(result.status).toBe(503);
+  expect(outcome).toHaveBeenCalledWith(expect.objectContaining({ reason: "inventory" }));
 });

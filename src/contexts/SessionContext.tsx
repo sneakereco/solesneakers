@@ -10,6 +10,7 @@ import {
   useState,
 } from "react";
 
+import { SESSION_UPDATE, SESSION_REVALIDATING } from "@/lib/auth/session-events";
 import { isProfileRole, type ProfileRole } from "@/config/constants/roles";
 import { readJsonResponse } from "@/lib/http/read-json-response";
 import { withRequestDeadline } from "@/lib/http/request-deadline";
@@ -24,6 +25,8 @@ interface SessionContextValue {
   role: ProfileRole | null;
   isAuthenticated: boolean;
   isLoading: boolean;
+  sessionRevision: number;
+  sessionAvailable: boolean;
   isSessionUnavailable: boolean;
   hasRefreshed: boolean;
   refreshSession: () => Promise<void>;
@@ -86,6 +89,7 @@ export function SessionProvider({
   const [hasRefreshed, setHasRefreshed] = useState(false);
   const active = useRef<AbortController | null>(null);
 
+  const [sessionRevision, setSessionRevision] = useState(0);
   const verifiedOwner = useRef<string | null | undefined>(
     initialUnavailable ? undefined : (initialUser?.id ?? null),
   );
@@ -109,6 +113,7 @@ export function SessionProvider({
     serverSeed.role !== initialRole ||
     serverSeed.unavailable !== initialUnavailable
   ) {
+    setSessionRevision((revision) => revision + 1);
     setServerSeed({
       readId: serverReadId,
       user: initialUser,
@@ -136,6 +141,7 @@ export function SessionProvider({
     const controller = new AbortController();
     active.current = controller;
     verifiedOwner.current = undefined;
+    window.dispatchEvent(new Event(SESSION_REVALIDATING));
     setIsLoading(true);
     try {
       const data = await withRequestDeadline(async (signal) => {
@@ -153,18 +159,47 @@ export function SessionProvider({
       if (active.current === controller) {
         active.current = null;
         setIsLoading(false);
+        setSessionRevision((revision) => revision + 1);
       }
     }
   }, []);
 
   // Listen for session update events (triggered by login/logout)
   useEffect(() => {
-    const handleSessionUpdate = () => {
+    const channelName = "sole-auth-session-changed";
+    let channel: BroadcastChannel | null = null;
+    try {
+      channel = new BroadcastChannel(channelName);
+    } catch {
+      /* Storage events support older browsers. */
+    }
+    const refresh = () => {
       void refreshSession();
     };
-
-    window.addEventListener("sessionUpdate", handleSessionUpdate);
-    return () => window.removeEventListener("sessionUpdate", handleSessionUpdate);
+    if (channel) channel.onmessage = refresh;
+    const stored = (event: StorageEvent) => {
+      if (event.key === channelName && event.newValue === "changed") refresh();
+    };
+    const changed = () => {
+      refresh();
+      if (channel) {
+        channel.postMessage("changed");
+      } else {
+        try {
+          window.localStorage.setItem(channelName, "changed");
+          window.localStorage.removeItem(channelName);
+        } catch {
+          /* Refresh again on resumption. */
+        }
+      }
+    };
+    window.addEventListener(SESSION_UPDATE, changed);
+    window.addEventListener("storage", stored);
+    return () => {
+      channel?.close();
+      window.removeEventListener(SESSION_UPDATE, changed);
+      window.removeEventListener("storage", stored);
+    };
   }, [refreshSession]);
 
   return (
@@ -177,6 +212,8 @@ export function SessionProvider({
         isSessionUnavailable,
         hasRefreshed,
         refreshSession,
+        sessionAvailable: !isSessionUnavailable,
+        sessionRevision,
         isIdentityCurrent,
       }}
     >

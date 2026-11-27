@@ -2,6 +2,34 @@
 import type { TypedSupabaseClient } from "@/lib/supabase/server";
 import { ProductRepository, type ProductFilters } from "@/repositories/product-repo";
 
+import type { StorefrontProduct } from "@/types/domain/product";
+
+function publicProduct(product: StorefrontProduct): StorefrontProduct {
+  type Variant = StorefrontProduct["variants"][number];
+  const publicKeys = [
+    "id",
+    "product_id",
+    "tenant_id",
+    "size_id",
+    "sku",
+    "stock",
+    "sale_price_cents",
+    "sort_order",
+    "created_at",
+    "updated_at",
+    "size",
+  ] as const satisfies readonly (keyof Variant)[];
+  const variants = product.variants.map(
+    (variant) =>
+      Object.fromEntries(
+        publicKeys
+          .filter((key) => Object.hasOwn(variant, key))
+          .map((key) => [key, variant[key]]),
+      ) as Variant,
+  );
+  return { ...product, variants };
+}
+
 export class StorefrontService {
   private productRepo: ProductRepository;
 
@@ -10,13 +38,17 @@ export class StorefrontService {
   }
 
   async listProducts(filters: ProductFilters) {
-    return this.productRepo.list(await this.resolveCanonicalSearch(filters));
+    const result = await this.productRepo.list(
+      await this.resolveCanonicalSearch(filters),
+    );
+    return { ...result, products: result.products.map(publicProduct) };
   }
 
   async getProductById(id: string, opts?: { includeOutOfStock?: boolean }) {
-    return this.productRepo.getById(id, {
+    const product = await this.productRepo.getById(id, {
       includeOutOfStock: opts?.includeOutOfStock,
     });
+    return product ? publicProduct(product) : null;
   }
 
   async listFilters(opts?: { includeOutOfStock?: boolean; filters?: ProductFilters }) {

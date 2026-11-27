@@ -1,3 +1,4 @@
+import { scheduleAnalyticsDrain } from "@/Modules/Analytics/Source/Features/EventDelivery/delivery-runtime";
 import type { NextRequest } from "next/server";
 
 import { expireCheckoutReservations } from "@/lib/checkout/expire-checkout-reservations";
@@ -51,6 +52,7 @@ export async function GET(request: NextRequest): Promise<Response> {
         }),
     });
 
+    if (result.released > 0) scheduleAnalyticsDrain();
     return Response.json(
       { ...result, requestId },
       {

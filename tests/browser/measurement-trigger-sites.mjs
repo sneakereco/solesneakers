@@ -10,16 +10,19 @@ const bundle = await build({
     loader: "tsx",
     contents: `
       import React from "react";
+      import { flushSync } from "react-dom";
       import { createRoot } from "react-dom/client";
       import { ClientShell } from "./src/components/shell/ClientShell";
       import { CartProvider, useCart } from "./src/components/cart/CartProvider";
+      import { SearchOverlay } from "./src/components/search/SearchOverlay";
       import { ProductDetail } from "./src/components/store/ProductDetail";
       import { CheckoutClient } from "./src/components/checkout/CheckoutClient";
       import CheckoutPage from "./src/app/checkout/page";
-      import { isApprovedMeasurementHostname } from "./src/lib/measurement/host-gate";
-      import { sanitizeMeasurementEvent } from "./src/lib/measurement/contract";
+      import { isApprovedMeasurementHostname } from "./src/Modules/Analytics/Source/Features/VisitorMeasurement/host-gate";
+      import { sanitizeMeasurementEvent } from "./src/Modules/Analytics/Source/Features/VisitorMeasurement/contract";
 
-      const test = window.measurementTriggerTest = { events: [] };
+      window.testGrant = "consented";
+      const test = window.measurementTriggerTest = { events: [], payloads: [] };
       const assert = {
         deepEqual(actual, expected, message) {
           if (JSON.stringify(actual) !== JSON.stringify(expected)) {
@@ -41,7 +44,7 @@ const bundle = await build({
         isApprovedMeasurementHostname("soles-pro-preview.vercel.app", "production"),
       ], [true, false, true, false, false, false, false, false, false, false], "exact host/environment matrix");
       const privacyProbe = sanitizeMeasurementEvent("storefront_viewed", {
-        storefront: "sole", environment: "production", schema_version: 1,
+        storefront: "sole", environment: "production", schema_version: 2,
         pathname: "/store", $geoip_disable: false, $current_url: "https://unsafe.example/",
       });
       if (!privacyProbe || privacyProbe.properties.$geoip_disable !== true) {
@@ -123,6 +126,73 @@ const bundle = await build({
         ["product_viewed", "product_viewed"],
         "true product remount must emit a new view",
       );
+      await resetRoot();
+      test.events=[];
+      const soldOut={...product.variants[0],stock:0,id:"123e4567-e89b-42d3-a456-426614174002",size:{id:"size-2",label:"11"}};
+      await render(<CartProvider><ProductDetail product={{...product,variants:[product.variants[0],soldOut]}} /></CartProvider>);
+      const sizes=rootElement.querySelectorAll("fieldset button");
+      sizes[1].click();
+      sizes[1].focus();
+      test.keyboardReady=true;
+      while(!test.keyboardDone)await pause();
+      assert.deepEqual([sizes[1].getAttribute("aria-disabled"),sizes[0].getAttribute("aria-pressed"),sizes[1].getAttribute("aria-pressed")],["true","true","false"],"unavailable size cannot change selection");
+      sizes[0].click();
+      assert.deepEqual(test.events,["product_viewed","unavailable_size_requested","unavailable_size_requested","variant_selected"],"size intent differs from successful available selection");
+      await resetRoot();
+      test.events=[];
+      await render(<CartProvider><ProductDetail product={{...product,variants:[soldOut]}} /></CartProvider>);
+      assert.deepEqual(test.events,["product_viewed","out_of_stock_viewed"],"all known variants unavailable at view");
+      await resetRoot();test.events=[];test.payloads=[];
+      const realFetch = window.fetch;
+      let finishStale, finishHeld;
+      let heldRequests = 0;
+      window.fetch=async (url,...args)=>{
+        if(typeof url!=="string" || !url.startsWith("/api/store/products"))return realFetch(url,...args);
+        if(url.includes("stale"))return new Promise(resolve=>{finishStale=()=>resolve(Response.json({products:[product],total:99}));});
+        if (url.includes("held")) {
+          heldRequests++;
+          return new Promise(resolve => {
+            finishHeld = () => resolve(Response.json({ products: [product], total: 1 }));
+          });
+        }
+        if(url.includes("failed"))return new Response(null,{status:503});
+        return Response.json(url.includes("Sole")?{products:[{...product,brand:{id:product.id,label:"Sole"}}],total:1}:{products:[],total:0});
+      };
+      const renderSearch = () => render(<SearchOverlay isOpen={true} onClose={() => {}} />);
+      window.searchOwner = "customer-A";
+      window.searchRevision = 0;
+      await renderSearch();
+      const search=async text=>{
+        const field = document.querySelector('dialog[open] [role="searchbox"]');
+        if (!(field instanceof HTMLInputElement)) {
+          throw new Error("Could not find the open search dialog's searchbox");
+        }
+        Object.getOwnPropertyDescriptor(HTMLInputElement.prototype,"value").set.call(field,text);
+        field.dispatchEvent(new Event("input",{bubbles:true}));await new Promise(r=>setTimeout(r,360));
+      };
+      await search("stale");await search("Sole");finishStale();await pause();
+      await search("failed");await search("private@example.com");
+      assert.deepEqual(test.payloads,[{event:"catalog_search_results",result_count:1,concept_kind:"brand",concept_id:product.id},{event:"catalog_search_results",result_count:0}],"only current successful safe search evidence");
+      test.payloads = [];
+      await search("held");
+      assert.deepEqual(heldRequests,1,"original owner's request started");
+      window.testGrant = null;
+      await renderSearch();
+      window.searchOwner = "customer-B";
+      window.searchRevision++;
+      window.testGrant = "consented";
+      await renderSearch();
+      finishHeld();
+      await pause();
+      const heldLink = document.querySelector('dialog[open] a[href="/store/' + product.id + '"]');
+      assert.deepEqual(heldLink?.textContent.includes(product.name),true,"the current search result remains usable");
+      assert.deepEqual(test.payloads,[],"a new verified owner cannot capture the original owner's held result under the same receipt");
+      await new Promise(resolve=>setTimeout(resolve,350));
+      assert.deepEqual(heldRequests,1,"changing owner must not refetch the open search");
+      await search("Sole");
+      assert.deepEqual(test.payloads,[{event:"catalog_search_results",result_count:1,concept_kind:"brand",concept_id:product.id}],"the new owner's own successful search emits once");
+      window.searchOwner = null;
+      window.fetch=realFetch;
 
       await resetRoot();
       test.events = [];
@@ -158,6 +228,22 @@ const bundle = await build({
       await resetRoot();
       test.events = [];
       sessionStorage.clear();
+      for (const initialGrant of [null, "previous-receipt"]) {
+        window.testGrant = initialGrant;
+        await render(<CartProvider><CartProbe /></CartProvider>);
+        const saved = addItem({
+          productId: product.id, variantId: product.variants[0].id, sizeLabel: "10",
+          brand: "Sole", name: product.name, titleDisplay: product.name,
+          priceCents: 10000, imageUrl: "/shoe.png", maxStock: 1,
+        });
+        window.testGrant = "new-receipt";
+        flushSync(() => root.render(<CartProvider><CartProbe /></CartProvider>));
+        assert.deepEqual(await saved,true,"grant transition preserves the committed cart write");
+        assert.deepEqual(test.events,[],"later consent cannot publish a preexisting cart action");
+        await resetRoot();
+        sessionStorage.clear();
+      }
+      window.testGrant = "consented";
       const originalSetItem = Storage.prototype.setItem;
       Storage.prototype.setItem = () => { throw new Error("storage unavailable"); };
       await render(<CartProvider><CartProbe /></CartProvider>);
@@ -220,6 +306,7 @@ const bundle = await build({
         quantity: 1,
       }]));
       await render(<CartProvider><CheckoutClient initialData={initialData} /></CartProvider>);
+      for(let attempt=0;attempt<50 && !test.events.length;attempt++)await pause();
       assert.deepEqual(test.events, ["checkout_started"], "ready nonempty checkout must emit once");
       await render(<CartProvider><CheckoutClient initialData={initialData} /></CartProvider>);
       assert.deepEqual(test.events, ["checkout_started"], "usable checkout rerender must not duplicate");
@@ -246,14 +333,12 @@ const bundle = await build({
       setup(builder) {
         const mocks = new Map([
           [
-            "@/lib/measurement/client",
-            `
-          const emit = name => window.measurementTriggerTest.events.push(name);
-          export const captureStorefrontViewed = () => emit("storefront_viewed");
-          export const captureProductViewed = () => emit("product_viewed");
-          export const captureProductAddedToCart = () => emit("product_added_to_cart");
-          export const captureCheckoutStarted = () => emit("checkout_started");
-        `,
+            "@/Modules/Analytics/Source/Features/VisitorMeasurement/client",
+            "export { getCheckoutTrackingContext } from './src/Modules/Analytics/Source/Features/VisitorMeasurement/client'; export const getVerifiedMeasurementEpoch=()=>window.testGrant?(window.searchRevision??0):null;",
+          ],
+          [
+            "@/Modules/Analytics/Source/Features/VisitorMeasurement/view-grant",
+            "export const useViewGrant = () => window.testGrant; export const useCheckoutMeasurement=()=>'ready';",
           ],
           [
             "next/navigation",
@@ -287,7 +372,7 @@ const bundle = await build({
           ["@/lib/utils/log", "export const logError = () => {};"],
           [
             "@/contexts/SessionContext",
-            "const session={user:null,isIdentityCurrent:owner=>owner===null}; export const useSession=()=>session;",
+            "const isIdentityCurrent=owner=>owner===(window.searchOwner??null); export const useSession=()=>({user:window.searchOwner?{id:window.searchOwner}:null,sessionRevision:window.searchRevision??0,isIdentityCurrent});",
           ],
           [
             "@/components/checkout/CheckoutContactSection",
@@ -326,6 +411,15 @@ const bundle = await build({
             "export const clearIdempotencyKeyFromStorage = () => {};",
           ],
         ]);
+        builder.onResolve({ filter: /^\.\/client$/ }, (args) =>
+          args.importer.endsWith("triggers.ts")
+            ? { path: "capture-test", namespace: "measurement-test" }
+            : null,
+        );
+        mocks.set(
+          "capture-test",
+          "export const capture = event => {window.measurementTriggerTest.events.push(event.event);window.measurementTriggerTest.payloads.push(event);};",
+        );
         builder.onResolve({ filter: /.*/ }, (args) =>
           mocks.has(args.path)
             ? { path: args.path, namespace: "measurement-test" }
@@ -357,13 +451,29 @@ try {
   const page = await browser.newPage();
   const errors = [];
   let outgoingProbe = null;
-  page.on("pageerror", (error) => errors.push(error.message));
+  page.on("pageerror", (error) => errors.push(error.stack || error.message));
   await page.route("http://measurement.test/measurement-probe", (route) => {
     outgoingProbe = JSON.parse(route.request().postData());
     return route.fulfill({ status: 200, contentType: "application/json", body: "{}" });
   });
   await page.route("**/api/cart/validate", (route) =>
-    route.fulfill({ status: 200, contentType: "application/json", body: '{"items":[]}' }),
+    route.fulfill({
+      json: {
+        items: route
+          .request()
+          .postDataJSON()
+          .items.map((item) => ({
+            ...item,
+            sizeLabel: "10",
+            brand: "Sole",
+            name: "Air Runner",
+            titleDisplay: "Air Runner",
+            priceCents: 10000,
+            imageUrl: "/shoe.png",
+            maxStock: 1,
+          })),
+      },
+    }),
   );
   await page.route("**/api/checkout/quote", (route) =>
     route.fulfill({
@@ -390,12 +500,21 @@ try {
   );
   await page.goto("http://measurement.test/");
   await page.addScriptTag({ content: bundle.outputFiles[0].text });
+  await page.waitForFunction(() => window.measurementTriggerTest?.keyboardReady === true);
+  await page.keyboard.press("Enter");
+  await page.evaluate(() => {
+    window.measurementTriggerTest.keyboardDone = true;
+  });
   await page.waitForFunction(() => window.measurementTriggerTest?.complete === true);
+  const failure = await page.evaluate(() => window.measurementTriggerTest.failure);
+  assert.equal(failure, undefined, failure);
   assert.deepEqual(errors, []);
   assert.equal(outgoingProbe.event, "storefront_viewed");
   assert.equal(outgoingProbe.properties.$geoip_disable, true);
   assert.equal("$current_url" in outgoingProbe.properties, false);
-  console.log("PASS browser trigger sites: storefront, product, cart, checkout");
+  console.log(
+    "PASS browser trigger sites: storefront, safe search, size selection with mouse and keyboard, stockout, cart, checkout",
+  );
 } finally {
   await browser.close();
 }

@@ -173,6 +173,7 @@ describe("CheckoutReservationRepository", () => {
 
     await expect(
       repo.reserve({
+        analyticsContext: null,
         tenantId: "tenant-1",
         userId: null,
         guestEmail: "buyer@example.com",
@@ -234,9 +235,9 @@ describe("CheckoutReservationRepository", () => {
       squareOrderId: null,
     });
 
-    expect(rpc).toHaveBeenCalledWith(
-      "reserve_square_checkout_inventory",
-      expect.objectContaining({
+    expect(rpc).toHaveBeenCalledWith("reserve_square_checkout_inventory_with_analytics", {
+      p_analytics: null,
+      p_checkout: expect.objectContaining({
         p_subtotal_cents: 12500,
         p_shipping_cents: 1500,
         p_tax_cents: 980,
@@ -262,7 +263,7 @@ describe("CheckoutReservationRepository", () => {
           }),
         ],
       }),
-    );
+    });
   });
 
   it("rejects a malformed reservation response", async () => {
@@ -271,6 +272,7 @@ describe("CheckoutReservationRepository", () => {
 
     await expect(
       repo.reserve({
+        analyticsContext: null,
         tenantId: "tenant-1",
         userId: null,
         guestEmail: "buyer@example.com",

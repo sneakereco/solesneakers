@@ -1,6 +1,7 @@
 // src/components/account/AccountProfile.tsx
 "use client";
 
+import { notifySessionUpdate } from "@/lib/auth/session-events";
 import { useLayoutEffect, useRef, useState, type FormEvent } from "react";
 import { useRouter } from "next/navigation";
 import { Eye, EyeOff } from "lucide-react";
@@ -732,7 +733,7 @@ function AccountDetails({
         );
         if (!response.ok) throw new Error("Sign out failed");
         setSignedOut(true);
-        window.dispatchEvent(new Event("sessionUpdate"));
+        notifySessionUpdate();
         router.replace("/");
         router.refresh();
       } catch {

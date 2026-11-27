@@ -1,5 +1,6 @@
 "use client";
 
+import { notifySessionUpdate } from "@/lib/auth/session-events";
 import { useAsyncAction } from "@/components/ui/useAsyncAction";
 import { RequestError } from "@/components/ui/RequestError";
 import { LoadingState, Skeleton } from "@/components/ui/Skeleton";
@@ -86,7 +87,7 @@ export function Navbar({
           fetch("/api/auth/logout", { method: "POST", signal }),
         );
         if (!response.ok) throw new Error("Could not sign out");
-        window.dispatchEvent(new CustomEvent("sessionUpdate"));
+        notifySessionUpdate();
         window.location.href = "/";
       })
       .catch(() => setLogoutError(true));

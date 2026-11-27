@@ -1,5 +1,7 @@
 "use client";
 
+import { getCheckoutTrackingContext } from "@/Modules/Analytics/Source/Features/VisitorMeasurement/client";
+
 import { useEffect, useMemo, useRef, useState } from "react";
 import { FeedbackLink as Link, DocumentFeedbackLink } from "@/components/ui/FeedbackLink";
 import { useSession } from "@/contexts/SessionContext";
@@ -49,8 +51,8 @@ import type {
   CheckoutPageData,
 } from "@/lib/checkout/checkout-page-data";
 import { ShippingAddressValidationError } from "@/lib/checkout/shipping-address-validation";
-import { captureCheckoutStarted } from "@/lib/measurement/client";
-import { hasUsableCheckout } from "@/lib/measurement/triggers";
+import { useCheckoutStart } from "@/Modules/Analytics/Source/Features/VisitorMeasurement/use-checkout-start";
+import { hasUsableCheckout } from "@/Modules/Analytics/Source/Features/VisitorMeasurement/triggers";
 
 type Fulfillment = "ship" | "pickup";
 
@@ -113,6 +115,7 @@ type CheckoutPreparePayload = {
   shippingAddressOverride?: boolean;
   idempotencyKey: string;
   deviceSessionId: string;
+  trackingContext?: ReturnType<typeof getCheckoutTrackingContext>;
 };
 
 export function buildCheckoutPreparePayload(
@@ -180,23 +183,6 @@ function CheckoutForm({
   if (!ready && resolvedQuoteKey !== null) setResolvedQuoteKey(null);
   const [quoteRevision, setQuoteRevision] = useState(0);
   const requestSequence = useRef(0);
-  const didCaptureCheckoutStart = useRef(false);
-
-  useEffect(() => {
-    if (
-      didCaptureCheckoutStart.current ||
-      !hasUsableCheckout({
-        cartReady: sameOwner && isReady,
-        itemCount: items.length,
-        isRedirecting,
-      })
-    ) {
-      return;
-    }
-    didCaptureCheckoutStart.current = true;
-    captureCheckoutStarted();
-  }, [sameOwner, isReady, items.length, isRedirecting]);
-
   const checkoutItems = useMemo(
     () =>
       items.map((item) => ({
@@ -205,6 +191,10 @@ function CheckoutForm({
         quantity: item.quantity,
       })),
     [items],
+  );
+  useCheckoutStart(
+    hasUsableCheckout({ cartReady: ready, itemCount: items.length, isRedirecting }),
+    JSON.stringify(checkoutItems),
   );
   const shippingAddress = useMemo(
     () => (fulfillment === "ship" ? normalizedAddress(address) : null),
@@ -386,6 +376,7 @@ function CheckoutForm({
         shippingAddressOverride: context?.shippingAddressOverride,
         idempotencyKey,
         deviceSessionId,
+        trackingContext: getCheckoutTrackingContext(),
       }),
     ).catch(() => {
       throw new Error("Order preparation is unavailable. Please try again.");

@@ -3,6 +3,9 @@ import type { InventoryIdentity } from "@/lib/validation/product";
 import type { TypedSupabaseClient } from "@/lib/supabase/server";
 import type { Tables, TablesInsert, TablesUpdate } from "@/types/db/database.types";
 
+import type { StorefrontProduct } from "@/types/domain/product";
+import type { StaffCostReader } from "./staff-cost-reader";
+
 export interface ProductFilters {
   q?: string;
   category?: string[];
@@ -41,12 +44,8 @@ type ModelRow = Tables<"tag_models">;
 type SizeRow = Tables<"tag_sizes">;
 type SearchableProductRow = Pick<ProductRow, "id" | "name">;
 
-export type ProductWithDetails = ProductRow & {
-  brand: { id: string; label: string };
-  model: { id: string; label: string } | null;
-  variants: Array<VariantRow & { size: { id: string; label: string } }>;
-  images: ImageRow[];
-};
+const productDetailsProjection =
+  "*, brand:tag_brands(*), model:tag_models(*), variants:product_variants(id, product_id, tenant_id, size_id, sku, stock, sale_price_cents, sort_order, created_at, updated_at, size:tag_sizes(*)), images:product_images(*)";
 
 export type CartVariantDetails = {
   variantId: string;
@@ -70,15 +69,15 @@ export type InventoryExportRow = {
   type: string;
   condition: string;
   salePriceCents: number;
-  unitCostCents: number;
+  unitCostCents: number | null;
   stock: number;
 };
 
 type VariantExportRow = {
+  id: string;
   sku: string | null;
   size?: { canonical_label: string | null };
   sale_price_cents: number | null;
-  unit_cost_cents: number | null;
   stock: number | null;
   product?: {
     name: string | null;
@@ -129,7 +128,9 @@ type SizeAvailabilityRow = {
 type ProductWithRelations = ProductRow & {
   brand?: BrandRow;
   model?: ModelRow | null;
-  variants?: Array<VariantRow & { size?: SizeRow }>;
+  variants?: Array<
+    Omit<VariantRow, "unit_cost_cents" | "unit_cost_recorded"> & { size?: SizeRow }
+  >;
   images?: ImageRow[];
 };
 
@@ -280,16 +281,14 @@ export class ProductRepository {
   async listForReconciliation(
     tenantId: string,
     archivedStatus: ProductFilters["archivedStatus"] = "active",
-  ): Promise<ProductWithDetails[]> {
+  ): Promise<StorefrontProduct[]> {
     const rows: ProductWithRelations[] = [];
     let offset = 0;
 
     while (true) {
       let query = this.supabase
         .from("products")
-        .select(
-          "*, brand:tag_brands(*), model:tag_models(*), variants:product_variants(*, size:tag_sizes(*)), images:product_images(*)",
-        )
+        .select(productDetailsProjection)
         .eq("tenant_id", tenantId);
 
       query = this.applyArchivedFilter(query, archivedStatus).order("created_at", {
@@ -318,13 +317,16 @@ export class ProductRepository {
     return rows.map((row) => this.transformProduct(row));
   }
 
-  async exportInventoryRows(filters: ProductFilters): Promise<InventoryExportRow[]> {
+  async exportInventoryRows(
+    filters: ProductFilters,
+    costs: StaffCostReader,
+  ): Promise<InventoryExportRow[]> {
     const includeOutOfStock = Boolean(filters.includeOutOfStock);
 
     let query = this.supabase
       .from("product_variants")
       .select(
-        "sku, size:tag_sizes(canonical_label), sale_price_cents, unit_cost_cents, stock, product:products!inner(name, condition, is_active, is_out_of_stock, tenant_id, category)",
+        "id, sku, size:tag_sizes(canonical_label), sale_price_cents, stock, product:products!inner(name, condition, is_active, is_out_of_stock, tenant_id, category)",
       )
       .eq("product.is_active", true);
 
@@ -370,6 +372,7 @@ export class ProductRepository {
     }
 
     const rows = (data ?? []) as VariantExportRow[];
+    const cost = await costs.variants(rows.map((row) => row.id));
 
     return rows
       .map((row) => {
@@ -384,6 +387,7 @@ export class ProductRepository {
           return null;
         }
 
+        const current = cost(row.id);
         return {
           sku,
           name,
@@ -391,7 +395,10 @@ export class ProductRepository {
           type,
           condition,
           salePriceCents: Number(row.sale_price_cents ?? 0),
-          unitCostCents: Number(row.unit_cost_cents ?? 0),
+          unitCostCents:
+            current.unit_cost_recorded || current.unit_cost_cents > 0
+              ? current.unit_cost_cents
+              : null,
           stock: Number(row.stock ?? 0),
         } satisfies InventoryExportRow;
       })
@@ -624,9 +631,7 @@ export class ProductRepository {
       detailIdBatches.map(async (idBatch) => {
         let detailQuery = this.supabase
           .from("products")
-          .select(
-            "*, brand:tag_brands(*), model:tag_models(*), variants:product_variants(*, size:tag_sizes(*)), images:product_images(*)",
-          )
+          .select(productDetailsProjection)
           .in("id", idBatch)
           .eq("is_active", true);
         detailQuery = this.applyArchivedFilter(detailQuery, archivedStatus);
@@ -664,9 +669,7 @@ export class ProductRepository {
       details.map((raw) => [raw.id, this.transformProduct(raw as ProductWithRelations)]),
     );
 
-    const products = ids
-      .map((id) => byId.get(id))
-      .filter(Boolean) as ProductWithDetails[];
+    const products = ids.map((id) => byId.get(id)).filter(Boolean) as StorefrontProduct[];
 
     return {
       products,
@@ -950,12 +953,10 @@ export class ProductRepository {
       includeInactive?: boolean;
       archivedStatus?: ProductFilters["archivedStatus"];
     },
-  ): Promise<ProductWithDetails | null> {
+  ): Promise<StorefrontProduct | null> {
     let query = this.supabase
       .from("products")
-      .select(
-        "*, brand:tag_brands(*), model:tag_models(*), variants:product_variants(*, size:tag_sizes(*)), images:product_images(*)",
-      )
+      .select(productDetailsProjection)
       .eq("id", id);
     if (!opts?.includeInactive) {
       query = query.eq("is_active", true);
@@ -1129,13 +1130,13 @@ export class ProductRepository {
     const { data, error } = await this.supabase
       .from("product_variants")
       .insert(variant)
-      .select()
+      .select("id")
       .single();
 
     if (error) {
       throw error;
     }
-    return data as VariantRow;
+    return data;
   }
 
   async updateVariant(id: string, variant: VariantUpdate) {
@@ -1143,13 +1144,13 @@ export class ProductRepository {
       .from("product_variants")
       .update(variant)
       .eq("id", id)
-      .select()
+      .select("id")
       .single();
 
     if (error) {
       throw error;
     }
-    return data as VariantRow;
+    return data;
   }
 
   async deleteVariant(id: string) {
@@ -1483,7 +1484,7 @@ export class ProductRepository {
     return Array.from(conditions);
   }
 
-  private transformProduct(raw: ProductWithRelations): ProductWithDetails {
+  private transformProduct(raw: ProductWithRelations): StorefrontProduct {
     const variants = Array.isArray(raw.variants) ? raw.variants : [];
     const images = Array.isArray(raw.images) ? raw.images : [];
     if (!raw.brand) {

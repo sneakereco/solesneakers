@@ -52,12 +52,11 @@ const mapShippoError = (error: string): string => {
 };
 
 // Convert dollar string to cents
-const dollarsToCents = (dollars: string | null | undefined): number => {
-  if (!dollars) {
-    return 0;
-  }
-  const num = parseFloat(dollars);
-  return Math.round(num * 100);
+const dollarsToCents = (dollars: string | null | undefined): number | null => {
+  if (!dollars || !/^[0-9]+(?:[.][0-9]{1,2})?$/.test(dollars)) return null;
+  const [whole, fraction = ""] = dollars.split(".");
+  const cents = Number(whole) * 100 + Number(fraction.padEnd(2, "0"));
+  return Number.isSafeInteger(cents) ? cents : null;
 };
 
 const policyMessages: Record<ShippingLabelPolicyCode, string> = {
@@ -199,7 +198,8 @@ export async function POST(request: NextRequest) {
     const trackingNumber = transaction.trackingNumber;
     const trackingUrl = transaction.trackingUrl;
     const labelUrl = transaction.labelUrl;
-    const shippingCostCents = dollarsToCents(transaction.rate);
+    const shippingCostCents =
+      transaction.currency === "USD" ? dollarsToCents(transaction.rate) : null;
 
     if (!trackingNumber) {
       return NextResponse.json(

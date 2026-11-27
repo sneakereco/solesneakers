@@ -1,4 +1,5 @@
 // app/api/admin/orders/route.ts
+import { createStaffCostReader } from "@/repositories/staff-cost-reader";
 import type { NextRequest } from "next/server";
 import { NextResponse } from "next/server";
 import { z } from "zod";
@@ -21,7 +22,11 @@ export async function GET(request: NextRequest) {
   try {
     await requireAdminApi();
     const supabase = await createSupabaseServerClient();
-    const service = new OrdersService(supabase);
+    const service = new OrdersService(
+      supabase,
+      undefined,
+      createStaffCostReader(supabase),
+    );
 
     const searchParams = request.nextUrl.searchParams;
     const statusesRaw = searchParams.getAll("status").filter(Boolean);

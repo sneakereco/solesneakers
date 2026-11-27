@@ -1,3 +1,5 @@
+import { scheduleOperationalOutcome } from "@/Modules/Analytics/Source/Features/CommerceFacts/operational-outcome";
+import { resolveCheckoutSourceContext } from "@/Modules/Analytics/Source/Features/CommerceFacts/source-context";
 import { validateShippingAddress } from "@/lib/shipping/validate-shipping-address";
 import { assertCheckoutOpen } from "@/lib/checkout/checkout-access";
 import { env } from "@/config/env";
@@ -53,6 +55,8 @@ export function createPrepareCheckoutDependencies(
     resolveCart: (tenantId, items) => resolveCheckoutCart(products, tenantId, items),
     quote: (input) => pricing.quote(input),
     calculateSquareOrder: (input) => getSquareOrders().calculate(input),
+    outcome: scheduleOperationalOutcome,
+    resolveAnalyticsContext: resolveCheckoutSourceContext,
     reserve: (input) => reservations.reserve(input),
     createGuestAccessToken: async (orderId) =>
       (await accessTokens.createToken({ orderId })).token,

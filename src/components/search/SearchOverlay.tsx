@@ -13,6 +13,9 @@ import { LoadingState, Skeleton } from "@/components/ui/Skeleton";
 import { fetchJsonWithDeadline } from "@/lib/http/request-deadline";
 import { ModalPortal } from "@/components/ui/ModalPortal";
 import { logError } from "@/lib/utils/log";
+import { getVerifiedMeasurementEpoch } from "@/Modules/Analytics/Source/Features/VisitorMeasurement/client";
+import { captureCatalogSearchResults } from "@/Modules/Analytics/Source/Features/VisitorMeasurement/triggers";
+import { useViewGrant } from "@/Modules/Analytics/Source/Features/VisitorMeasurement/view-grant";
 
 interface SearchOverlayProps {
   isOpen: boolean;
@@ -126,6 +129,11 @@ export function SearchOverlay({
   onSearch,
 }: SearchOverlayProps) {
   const router = useRouter();
+  const grant = useViewGrant();
+  const currentGrant = useRef(grant);
+  useEffect(() => {
+    currentGrant.current = grant;
+  }, [grant]);
   const requestGeneration = useRef(0);
   const inputRef = useRef<HTMLInputElement>(null);
   const closeTimerRef = useRef<number | null>(null);
@@ -188,6 +196,8 @@ export function SearchOverlay({
   useEffect(() => {
     if (!isOpen || isClosing || !normalizedQuery) return;
 
+    const originalGrant = currentGrant.current;
+    const originalEpoch = originalGrant ? getVerifiedMeasurementEpoch() : null;
     const controller = new AbortController();
     const generation = requestGeneration.current;
     const stillOwned = () =>
@@ -210,6 +220,15 @@ export function SearchOverlay({
           )
         )
           throw new Error("Invalid search results");
+        if (
+          originalGrant &&
+          currentGrant.current === originalGrant &&
+          originalEpoch !== null &&
+          getVerifiedMeasurementEpoch() === originalEpoch &&
+          typeof data.total === "number"
+        ) {
+          captureCatalogSearchResults(data.total, normalizedQuery, data.products);
+        }
         setResponse({
           query: normalizedQuery,
           products: data.products,

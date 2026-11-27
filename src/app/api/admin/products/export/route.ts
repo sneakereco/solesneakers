@@ -1,4 +1,5 @@
 // app/api/admin/products/export/route.ts
+import { createStaffCostReader } from "@/repositories/staff-cost-reader";
 import { NextResponse } from "next/server";
 import { z } from "zod";
 
@@ -47,7 +48,7 @@ export async function GET(request: Request) {
 
   const { q, category, condition, stockStatus } = parsed.data;
 
-  const service = new ProductService(supabase);
+  const service = new ProductService(supabase, createStaffCostReader(supabase));
   const rows = await service.exportInventory({
     tenantId,
     q,
@@ -73,7 +74,7 @@ export async function GET(request: Request) {
         csvEscape(r.type),
         csvEscape(r.condition),
         csvEscape(formatMoney(r.salePriceCents)),
-        csvEscape(formatMoney(r.unitCostCents)),
+        r.unitCostCents === null ? "" : csvEscape(formatMoney(r.unitCostCents)),
         String(r.stock),
       ].join(","),
     );
