@@ -2,7 +2,7 @@ import { setTimeout as delay } from "node:timers/promises";
 
 const retryDelayMs = 2_000;
 
-export const NATIVE_MARKERS_PENDING_EXIT_CODE = 75;
+export const OBSERVATION_PENDING_EXIT_CODE = 75;
 
 export class NativeMarkersPendingError extends Error {
   name = "NativeMarkersPendingError";

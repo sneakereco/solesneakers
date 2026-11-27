@@ -269,7 +269,7 @@ test("pending native readbacks do not hide native or warehouse failures", async 
   for (const failedSource of ["native", "warehouse"]) {
     const h = harness((source, at) => {
       if (source === "native" && at === 0) return { code: 75 };
-      if (source === failedSource) return { code: source === "native" ? 1 : 75 };
+      if (source === failedSource) return { code: 1 };
     });
     const result = await h.run();
     assert.equal(result.status, "failed");
@@ -283,6 +283,35 @@ test("a window with only pending native readbacks remains pending", async () => 
   const result = await h.run();
   assert.equal(result.status, "pending");
   assert.deepEqual(result.native, { attempted: 2, failed: 0, pending: 2 });
+  assert.deepEqual(result.failures, {});
+});
+
+test("warehouse progress completes the window despite one pending partition", async () => {
+  const h = harness((source, at) =>
+    source === "warehouse" && at === 0 ? { code: 75 } : {},
+  );
+  const result = await h.run();
+  assert.equal(result.status, "completed");
+  assert.equal(result.warehouse.pending, 1);
+  assert.equal(result.warehouse.failed, 0);
+});
+
+test("a pending warehouse partition does not hide a warehouse worker failure", async () => {
+  const h = harness((source, at) => {
+    if (source === "warehouse" && at === 0) return { code: 75 };
+    if (source === "warehouse" && at === 10_000) return { code: 1 };
+  });
+  const result = await h.run();
+  assert.equal(result.status, "failed");
+  assert.equal(result.warehouse.pending, 1);
+  assert.equal(result.warehouse.failed, 1);
+});
+
+test("a window with only pending warehouse partitions remains pending", async () => {
+  const h = harness((source) => (source === "warehouse" ? { code: 75 } : {}));
+  const result = await h.run();
+  assert.equal(result.status, "pending");
+  assert.equal(result.warehouse.pending, result.warehouse.attempted);
   assert.deepEqual(result.failures, {});
 });
 

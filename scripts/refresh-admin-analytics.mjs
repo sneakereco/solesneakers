@@ -4,8 +4,8 @@ import { readFileSync } from "node:fs";
 import { createClient } from "@supabase/supabase-js";
 import { requireAnalytics } from "./analytics-operator-runtime.mjs";
 import {
-  NATIVE_MARKERS_PENDING_EXIT_CODE,
   NativeMarkersPendingError,
+  OBSERVATION_PENDING_EXIT_CODE,
   readNativeMarkers,
 } from "./analytics-native-readback.mjs";
 
@@ -103,6 +103,7 @@ try {
     const job = await rpc("analytics_refresh_claim");
     if (!job || !/^[a-f\d]{0,32}$/.test(job.prefix)) throw Error();
     const args = { p_token: job.token };
+    let hardFailure = false;
     let status = "retry",
       observedAt = null;
     try {
@@ -111,6 +112,12 @@ try {
         ["finance", financeObservation],
         ["links", linkObservation],
       ];
+      if (
+        typeof before?.observedAt !== "string" ||
+        !Number.isFinite(Date.parse(before.observedAt)) ||
+        !sections.every(([key]) => Array.isArray(before[key]))
+      )
+        throw Error("Invalid observation snapshot");
       status = "matched";
       for (const [kind, definition] of sections) {
         if (before[kind].length > 500) {
@@ -123,6 +130,8 @@ try {
       }
       if (status === "matched") {
         const after = await rpc("analytics_refresh_snapshot", args);
+        if (!sections.every(([key]) => Array.isArray(after?.[key])))
+          throw Error("Invalid observation snapshot");
         if (!sections.every(([key]) => isDeepStrictEqual(before[key], after[key])))
           status =
             job.prefix.length < 8 && sections.some(([key]) => before[key].length > 1)
@@ -132,6 +141,7 @@ try {
       }
     } catch {
       status = exhaustedBytes ? "split" : "retry";
+      hardFailure = !exhaustedBytes;
     }
     if (
       !(await rpc("analytics_refresh_finish", {
@@ -142,9 +152,15 @@ try {
     )
       throw Error();
     console.log(
-      JSON.stringify({ environment, source, status, depth: job.prefix.length }),
+      JSON.stringify({
+        environment,
+        source,
+        status: status === "retry" && !hardFailure ? "partition-pending" : status,
+        depth: job.prefix.length,
+      }),
     );
-    if (status === "retry") process.exitCode = 1;
+    if (hardFailure) process.exitCode = 1;
+    else if (status === "retry") process.exitCode = OBSERVATION_PENDING_EXIT_CODE;
   } else {
     // Owned observation settings file contains only a project ID, dates and confirmations.
     const evidence = JSON.parse(readFileSync(values.attestation, "utf8"));
@@ -158,7 +174,15 @@ try {
       process.env.NEXT_PUBLIC_POSTHOG_ENABLED !== "true"
     )
       throw Error();
-    const checked = new Date().toISOString();
+    const checked = await rpc("analytics_observer_clock");
+    if (
+      typeof checked !== "string" ||
+      !/^\d{4}-\d{2}-\d{2}T\d{2}:\d{2}:\d{2}(?:\.\d{1,6})?(?:Z|[+-]\d{2}:\d{2})$/.test(
+        checked,
+      ) ||
+      !Number.isFinite(Date.parse(checked))
+    )
+      throw Error("Native observer clock unavailable");
     const { months, retainedFrom } = await feature(
       "Configuration/operator-pairing",
     ).readNativeRetention(config, process.env.POSTHOG_OPERATOR_API_KEY);
@@ -228,7 +252,7 @@ try {
         status: "markers-pending",
       }),
     );
-    process.exitCode = NATIVE_MARKERS_PENDING_EXIT_CODE;
+    process.exitCode = OBSERVATION_PENDING_EXIT_CODE;
   } else {
     console.error(
       "Observation unavailable. A later scheduled run can retry the finite proof.",
