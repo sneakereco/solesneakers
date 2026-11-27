@@ -1,4 +1,7 @@
-import { sanitizeLifecycleEvent } from "../../../Source/Features/Operations/lifecycle-event";
+import {
+  sanitizeLifecycleEvent,
+  checkoutFailureCategory,
+} from "../../../Source/Features/Operations/lifecycle-event";
 import { log, logError } from "@/lib/utils/log";
 
 const requestId = "10000000-0000-4000-8000-000000000001";
@@ -129,4 +132,29 @@ it("keeps the original response and exception when the real sink or correlation 
   };
   expect(() => log(entry)).not.toThrow();
   expect(() => logError(original, entry)).not.toThrow();
+});
+
+it("keeps bounded preparation failure categories and discards arbitrary failure details", () => {
+  expect(
+    sanitizeLifecycleEvent({ phase: "tokenize", failureCategory: "database" }),
+  ).toMatchObject({ phase: "tokenize", failureCategory: "database" });
+  const safe = sanitizeLifecycleEvent({
+    phase: "SYNTHETIC_SECRET",
+    failureCategory: "SYNTHETIC_SECRET",
+    error: "SYNTHETIC_SECRET",
+  });
+  expect(JSON.stringify(safe)).not.toContain("SYNTHETIC_SECRET");
+});
+
+it.each([
+  [Error("checkout_provider_busy"), "capacity"],
+  [Object.assign(Error("private address"), { name: "TimeoutError" }), "timeout"],
+  [{ code: "PGRST116", message: "private token" }, "database"],
+  [{ code: "08006", details: "private connection" }, "database"],
+  [Error("square_configuration_invalid"), "configuration"],
+  [Error("fetch failed"), "dependency"],
+  [Error("SYNTHETIC_SECRET"), "unexpected"],
+  [{ code: "SYNTHETIC_SECRET" }, "unexpected"],
+])("classifies only bounded checkout failure categories for %j", (error, expected) => {
+  expect(checkoutFailureCategory(error)).toBe(expected);
 });

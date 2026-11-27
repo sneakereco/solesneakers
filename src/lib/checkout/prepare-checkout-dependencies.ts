@@ -1,3 +1,4 @@
+import { checkoutFailureCategory } from "@/Modules/Checkout/Source/Features/Operations/lifecycle-event";
 import { deadlineFetch } from "@/Modules/Checkout/Source/Features/Recovery/recovery-worker";
 import { CheckoutProviderCapacity } from "@/lib/checkout/checkout-attempt-limit";
 import { checkoutAdmissionBudgets } from "@/Modules/Checkout/Source/Features/Operations/admission";
@@ -112,8 +113,14 @@ export function createPrepareCheckoutDependencies(
         ),
       ),
     releaseReservation: (orderId, reason) => reservations.release(orderId, reason),
-    reportError: (error) =>
-      logError(error, { layer: "api", route: "/api/checkout/prepare", requestId }),
+    reportError: (error, context) =>
+      logError(error, {
+        layer: "api",
+        route: "/api/checkout/prepare",
+        requestId,
+        ...context,
+        failureCategory: checkoutFailureCategory(error),
+      }),
     now: () => new Date(),
   };
 }

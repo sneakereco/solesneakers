@@ -123,7 +123,10 @@ export type PrepareCheckoutDependencies = {
     idempotencyKey: string,
   ): Promise<void>;
   releaseReservation(orderId: string, reason: string): Promise<boolean>;
-  reportError(error: unknown): void;
+  reportError(
+    error: unknown,
+    context?: { phase: "load" | "create" | "attach" | "tokenize"; orderId?: string },
+  ): void;
   now(): Date;
 };
 
@@ -193,6 +196,15 @@ export async function prepareCheckoutHandler(
   request: NextRequest,
   deps: PrepareCheckoutDependencies,
 ): Promise<Response> {
+  let phase: "load" | "create" | "attach" | "tokenize" = "load";
+  let failureOrderId: string | undefined;
+  const issueGuestToken = (orderId: string, isGuest: boolean) => {
+    if (isGuest) {
+      phase = "tokenize";
+      failureOrderId = orderId;
+    }
+    return guestToken(orderId, isGuest, deps);
+  };
   const effectiveAt = deps.now().toISOString();
   let stage: OperationalOutcome["stage"] = "checkout";
   let method: OperationalOutcome["method"] = null;
@@ -535,7 +547,7 @@ export async function prepareCheckoutHandler(
                 },
               }
             : {}),
-          guestAccessToken: await guestToken(existing.orderId, !session, deps),
+          guestAccessToken: await issueGuestToken(existing.orderId, !session),
           paymentConfig,
         },
         parsed.data.recoveryOnly ? 200 : 409,
@@ -606,13 +618,15 @@ export async function prepareCheckoutHandler(
           expiresAt: reservation.expiresAt,
           reused: true,
           totals: totals(existing),
-          guestAccessToken: await guestToken(existing.orderId, !session, deps),
+          guestAccessToken: await issueGuestToken(existing.orderId, !session),
           paymentConfig,
         },
         200,
       );
     }
 
+    phase = "create";
+    failureOrderId = reservation.orderId;
     const squareOrder = await deps.createSquareOrder({
       pickupContact: parsed.data.pickupContact,
       localOrderId: reservation.orderId,
@@ -650,6 +664,7 @@ export async function prepareCheckoutHandler(
       );
     }
     // An ambiguous attach may have committed. Retry the same preparation key.
+    phase = "attach";
     await deps.attachSquareOrder(reservation.orderId, squareOrder);
 
     return json(
@@ -658,7 +673,7 @@ export async function prepareCheckoutHandler(
         expiresAt: reservation.expiresAt,
         reused: reservation.reused,
         totals: totals(squareOrder),
-        guestAccessToken: await guestToken(reservation.orderId, !session, deps),
+        guestAccessToken: await issueGuestToken(reservation.orderId, !session),
         paymentConfig,
       },
       reservation.reused ? 200 : 201,
@@ -677,7 +692,7 @@ export async function prepareCheckoutHandler(
       "message" in error &&
       error.message === "checkout_inventory_unavailable";
     failure(unavailableInventory ? "inventory" : "unavailable");
-    deps.reportError(error);
+    deps.reportError(error, { phase, orderId: failureOrderId });
     return json({ error: "Checkout is temporarily unavailable" }, 503);
   }
 }
