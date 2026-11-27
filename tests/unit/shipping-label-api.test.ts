@@ -136,8 +136,14 @@ describe("POST /api/admin/shipping/labels", () => {
   });
 
   it("schedules the persisted label notification without claiming email was sent", async () => {
+    const error = jest.spyOn(console, "error").mockImplementation(() => {});
+    const info = jest.spyOn(console, "info").mockImplementation(() => {});
     const response = await POST(request());
     expect(response.status).toBe(200);
+    expect(error).not.toHaveBeenCalled();
+    expect(info).toHaveBeenCalledWith(expect.stringContaining("shipping_label_created"));
+    error.mockRestore();
+    info.mockRestore();
     expect(OrdersRepository).toHaveBeenLastCalledWith({ role: "service" });
     expect(mockMarkReadyToShip).toHaveBeenCalledWith(
       orderId,

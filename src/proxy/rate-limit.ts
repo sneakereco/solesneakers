@@ -76,30 +76,6 @@ function getLimiter(bucket: string, maxRequests: number, window: string): Rateli
   return instance;
 }
 
-function maskIpForLog(ip: string): string {
-  if (ip === "unknown") {
-    return ip;
-  }
-
-  if (ip.includes(".")) {
-    const parts = ip.split(".");
-    if (parts.length === 4) {
-      return `${parts[0]}.${parts[1]}.${parts[2]}.xxx`;
-    }
-    return ip;
-  }
-
-  if (ip.includes(":")) {
-    const parts = ip.split(":").filter(Boolean);
-    if (parts.length >= 2) {
-      return `${parts[0]}:${parts[1]}::/??`;
-    }
-    return ip;
-  }
-
-  return ip;
-}
-
 type Policy = { bucket: string; maxRequests: number; window: string };
 
 function isCheckoutTraffic(path: string, method: string) {
@@ -216,7 +192,6 @@ export async function applyRateLimit(
       route: pathname,
       method: request.method,
       event: "rate_limit_missing_ip",
-      ip: "unknown",
     });
     return null;
   }
@@ -254,7 +229,7 @@ export async function applyRateLimit(
       status: rateLimit.blockStatus,
       event: "rate_limit_exceeded",
       bucket: policy.bucket,
-      ip: maskIpForLog(clientIp),
+
       limit: result.limit,
       remaining: result.remaining,
       reset: result.reset,
@@ -280,12 +255,7 @@ export async function applyRateLimit(
     response.headers.set("Cache-Control", "no-store");
 
     return response;
-  } catch (err) {
-    const cause =
-      err instanceof Error && err.cause && typeof err.cause === "object"
-        ? (err.cause as { code?: unknown; message?: unknown })
-        : null;
-
+  } catch {
     // Fail open on Upstash errors
     log({
       level: "error",
@@ -295,10 +265,6 @@ export async function applyRateLimit(
       route: pathname,
       method: request.method,
       event: "rate_limit_outage",
-      ip: maskIpForLog(clientIp),
-      error: err instanceof Error ? err.message : String(err),
-      error_code: typeof cause?.code === "string" ? cause.code : null,
-      error_cause: typeof cause?.message === "string" ? cause.message : null,
     });
     return null;
   }

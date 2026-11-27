@@ -387,6 +387,21 @@ export type Database = {
           },
         ]
       }
+      checkout_worker_heartbeats: {
+        Row: {
+          completed_at: string
+          worker: string
+        }
+        Insert: {
+          completed_at: string
+          worker: string
+        }
+        Update: {
+          completed_at?: string
+          worker?: string
+        }
+        Relationships: []
+      }
       contact_messages: {
         Row: {
           created_at: string
@@ -2169,6 +2184,16 @@ export type Database = {
         }
         Returns: boolean
       }
+      finish_checkout_mail_disposition: {
+        Args: {
+          p_id: string
+          p_outcome: string
+          p_phase?: string
+          p_reply?: number
+          p_token: string
+        }
+        Returns: string
+      }
       finish_checkout_notification: {
         Args: { p_notification_id: string; p_succeeded: boolean }
         Returns: boolean
@@ -2248,6 +2273,7 @@ export type Database = {
         }
         Returns: Json
       }
+      read_checkout_health: { Args: never; Returns: Json }
       receive_checkout_square_event: {
         Args: {
           p_event_id: string
@@ -2276,6 +2302,10 @@ export type Database = {
           p_square_order_id: string
         }
         Returns: Json
+      }
+      record_checkout_worker_heartbeat: {
+        Args: { p_worker: string }
+        Returns: undefined
       }
       record_shippo_tracking_update: {
         Args: {

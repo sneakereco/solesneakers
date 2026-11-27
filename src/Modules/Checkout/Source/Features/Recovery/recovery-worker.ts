@@ -1,3 +1,4 @@
+import { log } from "@/lib/utils/log";
 import type {
   CheckoutDependency,
   CheckoutDependencyLeaseRepository,
@@ -161,6 +162,14 @@ export async function runCheckoutRecovery(
           ...(result === "retry"
             ? { nextAttemptAt: new Date(Date.now() + delay).toISOString() }
             : {}),
+        });
+        log({
+          level: owned && result === "done" ? "info" : "warn",
+          layer: "job",
+          message: owned ? "checkout_worker" : "checkout_lease",
+          operation: "recovery",
+          outcome: owned ? result : "lost",
+          orderId: job.orderId,
         });
         if (owned) summary[result]++;
       },

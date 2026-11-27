@@ -1,3 +1,4 @@
+import { log } from "@/lib/utils/log";
 import { createHmac } from "node:crypto";
 import type { VerifiedAttemptFacts } from "@/Modules/Checkout/Source/Features/Payments/attempt-contract";
 import type { PaymentMethod } from "@/lib/checkout/payment-permit";
@@ -126,7 +127,15 @@ export class SquarePaymentsGateway {
   }
 
   async create(input: DirectPaymentInput): Promise<DirectPaymentResult> {
-    const response = await this.payments.create(this.request(input));
+    const request = this.request(input);
+    log({
+      level: "info",
+      layer: "service",
+      message: "checkout_gateway_call",
+      orderId: input.localOrderId,
+      attemptId: input.attemptId,
+    });
+    const response = await this.payments.create(request);
     const payment = parsePayment(response.payment);
     const source = payment.details?.source_type;
     const correctMethod =

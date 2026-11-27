@@ -19,7 +19,7 @@ import {
   ShippingLabelPolicyError,
   type ShippingLabelPolicyCode,
 } from "@/lib/shipping/label-purchase-policy";
-import { logError } from "@/lib/utils/log";
+import { log, logError } from "@/lib/utils/log";
 import { AddressesRepository } from "@/repositories/addresses-repo";
 import { ShippingCarriersRepository } from "@/repositories/shipping-carriers-repo";
 
@@ -129,8 +129,8 @@ export async function POST(request: NextRequest) {
         layer: "api",
         requestId,
         orderId,
-        rateId,
-        message: "Shippo rate retrieval failed",
+        route: "/api/admin/shipping/labels",
+        event: "shippo_rate_retrieval_failed",
       });
       return NextResponse.json(
         { error: "Unable to verify the selected Shippo rate.", requestId },
@@ -172,8 +172,8 @@ export async function POST(request: NextRequest) {
         layer: "api",
         requestId,
         orderId,
-        rateId,
-        message: "Shippo label purchase failed",
+        route: "/api/admin/shipping/labels",
+        event: "shippo_purchase_label_failed",
       });
 
       return NextResponse.json({ error: mappedError, requestId }, { status: 502 });
@@ -183,11 +183,12 @@ export async function POST(request: NextRequest) {
       const errorText = transaction.messages?.[0]?.text ?? "Transaction not successful";
       const mappedError = mapShippoError(errorText);
 
-      logError(new Error(`Shippo transaction failed: ${errorText}`), {
+      logError(null, {
         layer: "api",
         requestId,
         orderId,
-        transactionStatus: transaction.status,
+        route: "/api/admin/shipping/labels",
+        event: "shippo_purchase_label_failed",
       });
 
       return NextResponse.json(
@@ -232,15 +233,13 @@ export async function POST(request: NextRequest) {
     scheduleCheckoutNotifications(orderId);
 
     // Log successful label creation
-    logError(new Error("Label created successfully"), {
+    log({
+      level: "info",
       layer: "api",
+      message: "shipping_label_created",
+      route: "/api/admin/shipping/labels",
       requestId,
       orderId,
-      carrier,
-      trackingNumber,
-      cost: shippingCostCents,
-      createdBy: adminUserId,
-      level: "info",
     });
 
     return NextResponse.json({

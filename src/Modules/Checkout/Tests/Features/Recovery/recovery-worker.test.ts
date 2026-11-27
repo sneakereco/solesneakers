@@ -208,7 +208,7 @@ it("drains independent emails across claims and preserves ambiguous handoff", as
     beginHandoff: () => Promise.resolve(true),
     finish: (_n, outcome) => {
       outcomes.push(outcome);
-      return Promise.resolve(true);
+      return Promise.resolve(outcome === "sent" ? "sent" : "failed");
     },
   });
   expect(result).toEqual({ sent: 5, failed: 2, remaining: 1 });
@@ -251,4 +251,30 @@ it("classifies only explicit single-recipient negative replies from installed No
     }),
   ])
     expect(SmtpRefusal.fromProvider(error, "buyer@example.invalid")).toBeNull();
+});
+it("counts persisted sent even after the post-delivery order event failed", async () => {
+  const once = [
+    {
+      id: "fixture",
+      leaseToken: "owned",
+      kind: "order_confirmation" as const,
+      payload: {},
+      orderId: "fixture-order",
+    },
+  ];
+  const finish = jest.fn().mockResolvedValue("sent");
+  const summary = await drainNotifications(config, {
+    claim: () => Promise.resolve(once.splice(0)),
+    remaining: () => Promise.resolve(0),
+    acquireDependencyLease: () => Promise.resolve("slot"),
+    releaseDependencyLease: async () => {},
+    beginHandoff: () => Promise.resolve(true),
+    send: async (_n, _s, begin) => {
+      await begin();
+      throw Error("post_delivery_order_event_failed");
+    },
+    finish,
+  });
+  expect(finish).toHaveBeenCalledWith(expect.anything(), "review", undefined);
+  expect(summary).toEqual({ sent: 1, failed: 0, remaining: 0 });
 });

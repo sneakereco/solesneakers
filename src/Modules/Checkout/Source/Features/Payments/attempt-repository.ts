@@ -1,3 +1,4 @@
+import { log } from "@/lib/utils/log";
 import type { AdminSupabaseClient } from "@/lib/supabase/service-role";
 import {
   beginDispatchSchema,
@@ -53,6 +54,15 @@ export class CheckoutPaymentAttemptRepository {
       (row.data.state === "ready" && row.data.method !== method)
     )
       throw new Error("Invalid checkout attempt response");
+    log({
+      level: "info",
+      layer: "repository",
+      message: "checkout_attempt",
+      orderId,
+      attemptId: row.data.id,
+      state: row.data.state,
+      outcome: "observed",
+    });
     return row.data;
   }
 
@@ -75,6 +85,15 @@ export class CheckoutPaymentAttemptRepository {
         decision.data.attempt.requestDigest !== requestDigest)
     )
       throw new Error("Invalid checkout dispatch decision");
+    log({
+      level: "info",
+      layer: "repository",
+      message: "checkout_attempt",
+      orderId: decision.data.attempt.orderId,
+      attemptId,
+      state: decision.data.attempt.state,
+      outcome: decision.data.kind,
+    });
     return decision.data;
   }
 
@@ -109,6 +128,14 @@ export class CheckoutPaymentAttemptRepository {
         row.data.requestDigest !== verifiedFacts.requestDigest)
     )
       throw new Error("Invalid checkout outcome response");
+    log({
+      level: "info",
+      layer: "repository",
+      message: "checkout_attempt",
+      orderId: row.data.orderId,
+      attemptId,
+      state: row.data.state,
+    });
     return row.data;
   }
 }

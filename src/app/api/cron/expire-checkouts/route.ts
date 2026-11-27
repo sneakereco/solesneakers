@@ -1,3 +1,4 @@
+import { recordWorkerHeartbeat } from "@/Modules/Checkout/Source/Features/Operations/health-snapshot";
 import type { NextRequest } from "next/server";
 
 import {
@@ -24,10 +25,12 @@ export async function GET(request: NextRequest): Promise<Response> {
       );
     }
 
+    const db = createSupabaseAdminClient();
     const result = await runCheckoutRecovery(
       recoverySettings,
-      createCheckoutRecoveryDependencies(createSupabaseAdminClient()),
+      createCheckoutRecoveryDependencies(db),
     );
+    await recordWorkerHeartbeat(db, "recovery");
     return Response.json(
       { ...result, requestId },
       {

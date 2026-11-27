@@ -34,6 +34,7 @@ export const security = {
       "/api/webhooks/square",
       "/api/cron/expire-checkouts",
       "/api/cron/checkout-notifications",
+      "/api/cron/checkout-health",
       "/api/healthz",
       "/api/readyz",
     ],

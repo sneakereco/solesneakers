@@ -1,3 +1,4 @@
+import { log } from "@/lib/utils/log";
 import type { CheckoutNotification } from "@/lib/checkout/checkout-notification-worker";
 import {
   drainBatches,
@@ -68,7 +69,7 @@ export type DrainDependencies = DependencyLeases & {
     n: ClaimedNotification,
     outcome: MailOutcome,
     refusal?: SmtpRefusal,
-  ): Promise<boolean>;
+  ): Promise<"sent" | "failed" | "review" | null>;
   remaining(): Promise<number>;
 };
 export async function drainNotifications(
@@ -81,6 +82,7 @@ export async function drainNotifications(
     (n) => deps.claim(n),
     async (n, stop) => {
       let handoff = false;
+      let sendFailed = false;
       let outcome: MailOutcome = "retry";
       let rejection: SmtpRefusal | undefined;
       try {
@@ -94,13 +96,30 @@ export async function drainNotifications(
         });
         outcome = completed ? "sent" : "deferred";
       } catch (error) {
+        sendFailed = true;
         if (handoff && error instanceof SmtpRefusal) {
           rejection = error;
           outcome = "rejected";
         } else outcome = handoff ? "review" : "retry";
       }
-      const owned = await deps.finish(n, outcome, rejection);
-      if (owned && outcome === "sent") result.sent++;
+      const persisted = await deps.finish(n, outcome, rejection);
+      if (persisted === "sent" && sendFailed) {
+        log({
+          level: "warn",
+          layer: "job",
+          message: "checkout_notification_post_delivery_failed",
+          orderId: n.orderId,
+        });
+      }
+      if (!persisted)
+        log({
+          level: "warn",
+          layer: "job",
+          message: "checkout_lease",
+          operation: "mail",
+          outcome: "lost",
+        });
+      if (persisted === "sent") result.sent++;
       else result.failed++;
     },
   );

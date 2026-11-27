@@ -1,3 +1,4 @@
+import { log } from "@/lib/utils/log";
 import {
   checkoutAdmissionBudgets,
   type CheckoutAdmissionBudgets,
@@ -32,9 +33,25 @@ export class CheckoutDependencyLeaseRepository {
           : input.limit,
       p_lease_seconds: input.leaseSeconds,
     });
-    if (error) throw error;
+    if (error) {
+      log({
+        level: "warn",
+        layer: "repository",
+        message: "checkout_lease",
+        operation: input.dependency,
+        outcome: "unavailable",
+      });
+      throw error;
+    }
     const token = leaseTokenSchema.safeParse(data);
     if (!token.success) throw new Error("Invalid checkout dependency lease");
+    log({
+      level: "info",
+      layer: "repository",
+      message: "checkout_lease",
+      operation: input.dependency,
+      outcome: token.data ? "acquired" : "busy",
+    });
     return token.data;
   }
 
@@ -42,6 +59,14 @@ export class CheckoutDependencyLeaseRepository {
     const { error } = await this.client.rpc("release_checkout_dependency_lease", {
       p_token: token,
     });
-    if (error) throw error;
+    if (error) {
+      log({
+        level: "warn",
+        layer: "repository",
+        message: "checkout_lease",
+        outcome: "release_failed",
+      });
+      throw error;
+    }
   }
 }

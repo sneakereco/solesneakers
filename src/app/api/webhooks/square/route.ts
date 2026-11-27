@@ -1,3 +1,5 @@
+import { observeCheckoutRequest } from "@/Modules/Checkout/Source/Features/Operations/request-metrics";
+import { getRequestIdFromHeaders } from "@/lib/http/request-id";
 import { NextResponse } from "next/server";
 import {
   normalizeSquareReceipt,
@@ -10,7 +12,15 @@ import { promptSquareReceipt } from "@/lib/square/financial-inquiry-dependencies
 import { verifySquareWebhookSignature } from "@/lib/square/webhook";
 import { createSupabaseAdminClient } from "@/lib/supabase/service-role";
 const headers = { "Cache-Control": "no-store" };
-export async function POST(request: Request) {
+export function POST(request: Request) {
+  return observeCheckoutRequest(
+    "/api/webhooks/square",
+    "POST",
+    getRequestIdFromHeaders(request.headers),
+    () => receive(request),
+  );
+}
+async function receive(request: Request) {
   try {
     const rawBody = await readSquareWebhookBody(request);
     const config = getSquareConfig();

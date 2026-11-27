@@ -16,11 +16,6 @@ export function checkBot(request: NextRequest, requestId: string): NextResponse 
   const userAgentTrimmed = userAgentRaw.trim();
   const userAgentLower = userAgentTrimmed.toLowerCase();
 
-  const userAgentForLog =
-    userAgentTrimmed.length > bot.maxLoggedUserAgentLength
-      ? `${userAgentTrimmed.slice(0, bot.maxLoggedUserAgentLength)}…`
-      : userAgentTrimmed;
-
   const blockBot = (logMessage: string, errorMessage: string): NextResponse => {
     log({
       level: "warn",
@@ -30,7 +25,6 @@ export function checkBot(request: NextRequest, requestId: string): NextResponse 
       route: pathname,
       status: bot.blockStatus,
       event: "bot_mitigation",
-      userAgent: userAgentForLog,
     });
 
     return NextResponse.json(

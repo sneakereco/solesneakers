@@ -1,3 +1,4 @@
+import { log } from "@/lib/utils/log";
 import { CheckoutDependencyLeaseRepository } from "@/Modules/Checkout/Source/Features/Recovery/dependency-lease";
 import { randomUUID } from "node:crypto";
 import { Redis } from "@upstash/redis";
@@ -28,6 +29,31 @@ type RedisEvalClient = {
   eval(script: string, keys: string[], args: string[]): Promise<unknown>;
 };
 
+async function observeAdmission(
+  operation: AdmissionInput["kind"] | "address" | "coarse",
+  decide: () => Promise<AdmissionDecision>,
+) {
+  try {
+    const result = await decide();
+    log({
+      level: "info",
+      layer: "service",
+      message: "checkout_admission",
+      operation,
+      outcome: result.allowed ? "allowed" : "denied",
+    });
+    return result;
+  } catch (error) {
+    log({
+      level: "warn",
+      layer: "service",
+      message: "checkout_admission",
+      operation,
+      outcome: "unavailable",
+    });
+    throw error;
+  }
+}
 export class CheckoutAttemptLimiter {
   private readonly admittedAddressRequests = new WeakSet<CheckoutAttemptIdentity>();
   constructor(
@@ -36,19 +62,25 @@ export class CheckoutAttemptLimiter {
     private readonly client?: Pick<AdminSupabaseClient, "rpc">,
   ) {}
   admit(input: AdmissionInput) {
-    return admitCheckout(input, {
-      budgets: this.budgets,
-      consume: (w) => this.consume(w),
-      financial: this.client ? (i) => financialAdmission(this.client!, i) : undefined,
-    });
+    return observeAdmission(input.kind, () =>
+      admitCheckout(input, {
+        budgets: this.budgets,
+        consume: (w) => this.consume(w),
+        financial: this.client ? (i) => financialAdmission(this.client!, i) : undefined,
+      }),
+    );
   }
   coarse(ip: string) {
-    if (!ip || !this.budgets) throw Error("checkout_protection_unavailable");
-    return this.consume(coarseWindows(ip, this.budgets));
+    return observeAdmission("coarse", () => {
+      if (!ip || !this.budgets) throw Error("checkout_protection_unavailable");
+      return this.consume(coarseWindows(ip, this.budgets));
+    });
   }
   check(identity: CheckoutAttemptIdentity) {
     if (this.admittedAddressRequests.delete(identity)) {
-      return this.consume([preparationWindow(identity.shopperBinding, identity.eventId)]);
+      return observeAdmission("new_prepare", () =>
+        this.consume([preparationWindow(identity.shopperBinding, identity.eventId)]),
+      );
     }
     return this.admit({
       kind: "new_prepare",
@@ -58,16 +90,18 @@ export class CheckoutAttemptLimiter {
     });
   }
   async checkAddressValidation(identity: CheckoutAttemptIdentity) {
-    if (!this.budgets) throw Error("checkout_protection_unavailable");
-    const decision = await this.consume([
-      {
-        key: "address:" + identity.shopperBinding,
-        limit: 20,
-        windowMs: 1800000,
-        member: randomUUID(),
-      },
-      ...coarseWindows(identity.clientIp, this.budgets),
-    ]);
+    const decision = await observeAdmission("address", () => {
+      if (!this.budgets) throw Error("checkout_protection_unavailable");
+      return this.consume([
+        {
+          key: "address:" + identity.shopperBinding,
+          limit: 20,
+          windowMs: 1800000,
+          member: randomUUID(),
+        },
+        ...coarseWindows(identity.clientIp, this.budgets),
+      ]);
+    });
     // The same server-owned request may proceed to its distinct preparation allowance
     // after address validation, even if a new coarse window has since opened.
     if (decision.allowed) this.admittedAddressRequests.add(identity);

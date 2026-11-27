@@ -13,6 +13,7 @@ export function createSquareClient(options?: {
 
   return new SquareClient({
     token: config.accessToken,
+    logging: { silent: true },
     environment:
       config.environment === "production"
         ? SquareEnvironment.Production

@@ -1,3 +1,4 @@
+import { observeCheckoutRequest } from "@/Modules/Checkout/Source/Features/Operations/request-metrics";
 import type { NextRequest } from "next/server";
 import { NextResponse } from "next/server";
 
@@ -16,9 +17,14 @@ import {
 } from "@/Modules/Cart/Source/Features/ValidateBasket/validation-contract";
 import { readOwnHolds } from "@/Modules/Cart/Source/Features/ValidateBasket/own-hold";
 
-export async function POST(request: NextRequest) {
+export function POST(request: NextRequest) {
   const requestId = getRequestIdFromHeaders(request.headers);
 
+  return observeCheckoutRequest("/api/cart/validate", "POST", requestId, () =>
+    validate(request, requestId),
+  );
+}
+async function validate(request: NextRequest, requestId: string) {
   try {
     const body = await request.json().catch(() => null);
     const parsed = cartValidateSchema.safeParse(body ?? {});

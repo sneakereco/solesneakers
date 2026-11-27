@@ -94,4 +94,77 @@ begin
 end;
 $$;
 
+create table public.checkout_worker_heartbeats (
+  worker text primary key check (worker in ('recovery','mail')),
+  completed_at timestamptz not null
+);
+alter table public.checkout_worker_heartbeats enable row level security;
+revoke all on public.checkout_worker_heartbeats from public, anon, authenticated, service_role;
+grant select, insert, update on public.checkout_worker_heartbeats to service_role;
+
+create function public.record_checkout_worker_heartbeat(p_worker text) returns void
+language sql security invoker set search_path = '' as $$
+  insert into public.checkout_worker_heartbeats(worker,completed_at) values(p_worker,clock_timestamp())
+  on conflict(worker) do update set completed_at=greatest(excluded.completed_at,checkout_worker_heartbeats.completed_at);
+$$;
+
+-- finish_checkout_mail retains its boolean API. Its row lock lasts until this
+-- transaction ends, so a stale token cannot read a later sender's disposition.
+create function public.finish_checkout_mail_disposition(
+  p_id uuid,p_token uuid,p_outcome text,p_reply integer default null,p_phase text default null
+) returns text language plpgsql security invoker set search_path = '' as $$
+begin
+  if not public.finish_checkout_mail(p_id,p_token,p_outcome,p_reply,p_phase) then return null; end if;
+  return (select status from public.checkout_notification_outbox where id=p_id);
+end;
+$$;
+
+-- One MVCC snapshot; no provider requests, queue claims, or raw query text.
+create function public.read_checkout_health() returns jsonb
+language sql stable security invoker set search_path = '' as $$
+  with observed as (select statement_timestamp() as t), reviews as (
+    select order_id, next_attempt_at as since from public.checkout_recovery_jobs where status='review'
+    union all select order_id, updated_at from public.checkout_notification_outbox where status='review'
+    union all select id, created_at from public.orders where checkout_financial_review is not null
+  ), attempts as (
+    select min(coalesce(dispatched_at,created_at)) filter(where state in ('dispatch_started','unknown')) as unknown_since,
+      min(coalesce(dispatched_at,created_at)) filter(where state='pending') as pending_since
+    from public.checkout_payment_attempts where state in ('dispatch_started','unknown','pending')
+  ), jobs as (
+    select count(*) as depth,min(next_attempt_at) filter(where status='pending' and next_attempt_at<=t) as due,
+      count(*) filter(where lease_expires_at<=t) as expired
+    from public.checkout_recovery_jobs, observed where status in ('pending','review')
+  ), mail as (
+    select count(*) as depth,min(created_at) as oldest,count(*) filter(where lease_expires_at<=t) as expired
+    from public.checkout_notification_outbox, observed where status<>'sent'
+  ), slots as (
+    select count(*) filter(where dependency='square' and lease_expires_at>t) as square,
+      count(*) filter(where dependency='shippo' and lease_expires_at>t) as shippo,
+      count(*) filter(where dependency='smtp' and lease_expires_at>t) as smtp,
+      count(*) filter(where lease_expires_at<=t) as expired from public.checkout_dependency_leases,observed
+  )
+  select jsonb_build_object(
+    'observedAt',t,'recoveryLastSeenAt',(select completed_at from public.checkout_worker_heartbeats where worker='recovery'),
+    'mailLastSeenAt',(select completed_at from public.checkout_worker_heartbeats where worker='mail'),
+    'oldestPendingMs',greatest(0,floor(1000*extract(epoch from t-attempts.pending_since))),
+    'oldestUnknownMs',greatest(0,floor(1000*extract(epoch from t-attempts.unknown_since))),
+    'oldestDueMs',greatest(0,floor(1000*extract(epoch from t-jobs.due))),
+    'expiredHoldLagMs',greatest(0,floor(1000*extract(epoch from t-(select min(expires_at) from public.inventory_reservations where status='active' and expires_at<=t)))),
+    'oldestNotificationMs',greatest(0,floor(1000*extract(epoch from t-mail.oldest))),
+    'webhookLagMs',greatest(0,floor(1000*extract(epoch from t-(select min(received_at) from public.square_webhook_events where processed_at is null)))),
+    'queueDepth',jobs.depth,'notificationDepth',mail.depth,'reviewCount',(select count(*) from reviews),
+    'reviewOrderId',(select order_id from reviews where order_id is not null order by since,order_id limit 1),
+    'squareLeases',slots.square,'shippoLeases',slots.shippo,'smtpLeases',slots.smtp,
+    'expiredLeases',slots.expired+jobs.expired+mail.expired,
+    'activeConnections',(select sum(numbackends) from pg_catalog.pg_stat_database),
+    'maxConnections',current_setting('max_connections')::int,
+    'waitingLocks',(select count(*) from pg_catalog.pg_locks l join pg_catalog.pg_stat_activity a on a.pid=l.pid where not l.granted and a.datname=current_database()),
+    'pauseNewCheckouts',c.pause_new_checkouts,'pausePaymentDispatch',c.pause_payment_dispatch)
+  from observed,attempts,jobs,mail,slots,public.checkout_operational_controls c where c.singleton;
+$$;
+
+revoke all on function public.record_checkout_worker_heartbeat(text), public.read_checkout_health(),
+  public.finish_checkout_mail_disposition(uuid,uuid,text,integer,text) from public,anon,authenticated;
+grant execute on function public.record_checkout_worker_heartbeat(text), public.read_checkout_health(),
+  public.finish_checkout_mail_disposition(uuid,uuid,text,integer,text) to service_role;
 commit;

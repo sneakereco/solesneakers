@@ -283,14 +283,14 @@ export function createCheckoutMailDrainDependencies(
       return data === true;
     },
     async finish(n, outcome, refusal) {
-      const { data, error } = await admin.rpc("finish_checkout_mail", {
+      const { data, error } = await admin.rpc("finish_checkout_mail_disposition", {
         p_id: n.id,
         p_token: n.leaseToken,
         p_outcome: outcome,
         ...(refusal ? { p_reply: refusal.reply, p_phase: refusal.phase } : {}),
       });
       if (error) throw error;
-      return data === true;
+      return z.enum(["sent", "failed", "review"]).nullable().parse(data);
     },
     send: (n, signal, begin) => deliver(admin, n, { signal, begin }),
     async remaining() {

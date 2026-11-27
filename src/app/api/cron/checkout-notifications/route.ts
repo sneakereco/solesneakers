@@ -1,3 +1,4 @@
+import { recordWorkerHeartbeat } from "@/Modules/Checkout/Source/Features/Operations/health-snapshot";
 import type { NextRequest } from "next/server";
 
 import { createCheckoutMailDrainDependencies } from "@/lib/checkout/checkout-notification-dependencies";
@@ -21,10 +22,12 @@ export async function GET(request: NextRequest): Promise<Response> {
   }
 
   try {
+    const db = createSupabaseAdminClient();
     const result = await drainNotifications(
       recoverySettings,
-      createCheckoutMailDrainDependencies(createSupabaseAdminClient()),
+      createCheckoutMailDrainDependencies(db),
     );
+    await recordWorkerHeartbeat(db, "mail");
     return Response.json(
       { ...result, requestId },
       {
