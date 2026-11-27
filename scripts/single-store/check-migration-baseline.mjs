@@ -74,7 +74,7 @@ async function recordedVersions(connectionString) {
   }
 }
 
-function validatePrefix(known, recorded) {
+export function validatePrefix(known, recorded) {
   const blockers = [];
   if (
     recorded.some((version) => !/^\d{14}$/.test(version) || !known.includes(version)) ||

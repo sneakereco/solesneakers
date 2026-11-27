@@ -23,9 +23,14 @@ async function exercise(browser, bundle, scenario) {
   const preference = gate(),
     identity = gate(),
     auth = gate();
-  let account = ["identity", "recovery", "scheduled", "session-outage", "peer"].includes(
-      scenario,
-    )
+  let account = [
+      "identity",
+      "identity-refresh",
+      "recovery",
+      "scheduled",
+      "session-outage",
+      "peer",
+    ].includes(scenario)
       ? "a"
       : null,
     choice = ["fresh", "fresh-peer"].includes(scenario) ? "unknown" : "accepted",
@@ -61,6 +66,8 @@ async function exercise(browser, bundle, scenario) {
           initialCheckoutRead.resolve();
           await preference.promise;
         }
+        if (scenario === "identity-refresh" && ++checkoutReads === 2)
+          initialCheckoutRead.resolve();
         if (scenario === "changed-cart" || scenario === "unmounted") {
           if (++checkoutReads === 2) initialCheckoutRead.resolve();
           await preference.promise;
@@ -86,14 +93,15 @@ async function exercise(browser, bundle, scenario) {
       }
       if (url.pathname === "/api/analytics/identity") {
         identityReads++;
-        if (scenario === "identity") await identity.promise;
+        if (scenario === "identity" || scenario === "identity-refresh")
+          await identity.promise;
         return route.fulfill({
           status: unavailable ? 503 : account ? 200 : 403,
           json: account && !unavailable ? { buyerKey: buyer(account) } : null,
         });
       }
       if (url.pathname === "/api/cart/validate")
-        return route.fulfill({ json: { items: [cartItem] } });
+        return route.fulfill({ json: { items: [cartItem], removed: [] } });
       if (url.pathname === "/api/checkout/quote")
         return route.fulfill({
           json: {
@@ -154,7 +162,10 @@ async function exercise(browser, bundle, scenario) {
         ),
       ]);
       if (scenario === "changed-cart") {
-        assert.equal(await tab.evaluate(() => window.removeCheckoutItem()), true);
+        assert.equal(
+          await tab.evaluate(async () => (await window.removeCheckoutItem()).status),
+          "saved",
+        );
         await tab.locator("[data-summary]").waitFor({ state: "detached" });
       } else {
         await tab.evaluate(() => window.leaveCheckout());
@@ -179,7 +190,10 @@ async function exercise(browser, bundle, scenario) {
       await tab
         .locator('[data-session-available="false"]')
         .waitFor({ state: "attached" });
-      assert.equal(await tab.locator("output").getAttribute("data-session-user"), "a");
+      assert.equal(
+        await tab.locator("output").getAttribute("data-session-user"),
+        "guest",
+      );
       assert.equal(await tab.evaluate(() => window.actions.context()), null);
       const since = wire.length;
       await tab.evaluate(() => window.observe());
@@ -195,10 +209,27 @@ async function exercise(browser, bundle, scenario) {
         buyer("a"),
       );
       assert.deepEqual(await tab.evaluate(() => window.actions.context()), before);
-    } else if (["preferences", "identity", "fresh"].includes(scenario)) {
+    } else if (
+      ["preferences", "identity", "identity-refresh", "fresh"].includes(scenario)
+    ) {
       const tab = await open("/checkout");
       await tab.locator("[data-summary]").waitFor({ state: "attached" });
       assert.equal(wire.filter((e) => e.event === "checkout_started").length, 0);
+      if (scenario === "identity-refresh") {
+        await initialCheckoutRead.promise;
+        await tab.getByRole("button", { name: "Privacy choices" }).waitFor();
+        authHold = true;
+        await tab.evaluate(() => window.dispatchEvent(new Event("focus")));
+        await tab
+          .locator('[data-session-available="false"]')
+          .waitFor({ state: "attached" });
+        assert.equal(await tab.evaluate(() => window.actions.context()), null);
+        authHold = false;
+        auth.resolve();
+        await tab
+          .locator('[data-session-available="true"]')
+          .waitFor({ state: "attached" });
+      }
       preference.resolve();
       identity.resolve();
       if (scenario === "fresh")
@@ -248,7 +279,7 @@ async function exercise(browser, bundle, scenario) {
       const receipt = await peer.evaluate(() => window.actions.context().receiptId);
       account = "b";
       authHold = true;
-      await first.evaluate(() => window.dispatchEvent(new Event("sessionUpdate")));
+      await first.evaluate(() => window.changeSession());
       await peer.waitForFunction(() => window.actions.context() === null);
       assert.equal(await peer.evaluate(() => window.actions.epoch()), null);
       const cutoff = wire.length;
@@ -271,7 +302,7 @@ async function exercise(browser, bundle, scenario) {
       assert.ok(wire.slice(cutoff).some((e) => e.properties.distinct_id === buyer("b")));
       assert.ok(!wire.slice(cutoff).some((e) => e.properties.distinct_id === buyer("a")));
       account = null;
-      await first.evaluate(() => window.dispatchEvent(new Event("sessionUpdate")));
+      await first.evaluate(() => window.changeSession());
       await peer.waitForFunction(
         () =>
           !!window.actions.context() &&
@@ -299,6 +330,7 @@ export async function checkMeasurementLifecycle(browser, bundle) {
   const names = [
     "preferences",
     "identity",
+    "identity-refresh",
     "fresh",
     "fresh-peer",
     "changed-cart",

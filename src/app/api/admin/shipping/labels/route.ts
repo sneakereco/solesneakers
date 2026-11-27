@@ -7,7 +7,8 @@ import { z } from "zod";
 import { scheduleCheckoutNotifications } from "@/lib/checkout/checkout-notification-scheduler";
 
 import { createSupabaseServerClient } from "@/lib/supabase/server";
-import { requireAdminApi } from "@/lib/auth/session";
+import { createSupabaseAdminClient } from "@/lib/supabase/service-role";
+import { AuthError, requireAdminApi } from "@/lib/auth/session";
 import { OrdersRepository } from "@/repositories/orders-repo";
 import { ShippoService } from "@/services/shipping-label-service";
 import { getRequestIdFromHeaders } from "@/lib/http/request-id";
@@ -18,7 +19,7 @@ import {
   ShippingLabelPolicyError,
   type ShippingLabelPolicyCode,
 } from "@/lib/shipping/label-purchase-policy";
-import { logError } from "@/lib/utils/log";
+import { log, logError } from "@/lib/utils/log";
 import { AddressesRepository } from "@/repositories/addresses-repo";
 import { ShippingCarriersRepository } from "@/repositories/shipping-carriers-repo";
 
@@ -127,8 +128,8 @@ export async function POST(request: NextRequest) {
         layer: "api",
         requestId,
         orderId,
-        rateId,
-        message: "Shippo rate retrieval failed",
+        route: "/api/admin/shipping/labels",
+        event: "shippo_rate_retrieval_failed",
       });
       return NextResponse.json(
         { error: "Unable to verify the selected Shippo rate.", requestId },
@@ -170,8 +171,8 @@ export async function POST(request: NextRequest) {
         layer: "api",
         requestId,
         orderId,
-        rateId,
-        message: "Shippo label purchase failed",
+        route: "/api/admin/shipping/labels",
+        event: "shippo_purchase_label_failed",
       });
 
       return NextResponse.json({ error: mappedError, requestId }, { status: 502 });
@@ -181,11 +182,12 @@ export async function POST(request: NextRequest) {
       const errorText = transaction.messages?.[0]?.text ?? "Transaction not successful";
       const mappedError = mapShippoError(errorText);
 
-      logError(new Error(`Shippo transaction failed: ${errorText}`), {
+      logError(null, {
         layer: "api",
         requestId,
         orderId,
-        transactionStatus: transaction.status,
+        route: "/api/admin/shipping/labels",
+        event: "shippo_purchase_label_failed",
       });
 
       return NextResponse.json(
@@ -223,21 +225,22 @@ export async function POST(request: NextRequest) {
       actualShippingCost: shippingCostCents,
     };
 
-    await ordersRepo.markReadyToShip(orderId, updateData);
+    await new OrdersRepository(createSupabaseAdminClient()).markReadyToShip(
+      orderId,
+      updateData,
+    );
 
     // Saving the label also queues its notification in the same DB transaction.
     scheduleCheckoutNotifications(orderId);
 
     // Log successful label creation
-    logError(new Error("Label created successfully"), {
+    log({
+      level: "info",
       layer: "api",
+      message: "shipping_label_created",
+      route: "/api/admin/shipping/labels",
       requestId,
       orderId,
-      carrier,
-      trackingNumber,
-      cost: shippingCostCents,
-      createdBy: adminUserId,
-      level: "info",
     });
 
     return NextResponse.json({
@@ -253,6 +256,11 @@ export async function POST(request: NextRequest) {
       message: "Label purchased successfully. Customer notification queued.",
     });
   } catch (error: unknown) {
+    if (error instanceof AuthError)
+      return NextResponse.json(
+        { error: error.message, requestId },
+        { status: error.status },
+      );
     logError(error, {
       layer: "api",
       requestId,

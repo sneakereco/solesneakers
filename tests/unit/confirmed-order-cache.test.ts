@@ -13,6 +13,7 @@ const paidOrder = {
   fulfillment: "pickup" as const,
   updatedAt: "2026-09-16T00:00:00.000Z",
   events: [],
+  financial: { source: "legacy" as const },
   supportEmail: "support@example.com",
 };
 

@@ -138,10 +138,10 @@ function OrdinaryProductDetail({ product }: ProductDetailProps) {
         name: product.name,
         titleDisplay: product.name,
         priceCents: selectedVariant.sale_price_cents,
-        imageUrl: primaryImage?.url || "/placeholder.png",
+        imageUrl: primaryImage?.url || "/images/logo.png",
         maxStock: selectedVariant.stock,
       });
-      setAddFeedback({ status: saved ? "success" : "error" });
+      setAddFeedback({ status: saved.status === "saved" ? "success" : "error" });
     } catch {
       setAddFeedback({ status: "error" });
     } finally {
@@ -193,7 +193,7 @@ function OrdinaryProductDetail({ product }: ProductDetailProps) {
 
           <div className="relative order-1 aspect-square min-w-0 flex-1 lg:order-2 lg:aspect-auto lg:min-h-[39rem]">
             <ProductImage
-              src={selectedImage?.url || "/placeholder.png"}
+              src={selectedImage?.url || "/images/logo.png"}
               alt={product.name}
               fill
               sizes="(min-width: 1280px) 58vw, (min-width: 1024px) 55vw, 100vw"

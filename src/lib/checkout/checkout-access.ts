@@ -1,3 +1,4 @@
+import { readCheckoutControls } from "@/Modules/Checkout/Source/Features/Operations/checkout-controls";
 import { createSupabaseAdminClient } from "@/lib/supabase/service-role";
 import { StoreAccessSettingsService } from "@/services/store-access-settings-service";
 
@@ -7,6 +8,7 @@ export type CheckoutAccessDecision = { open: true } | { open: false; message: st
 
 export async function assertCheckoutOpen(
   tenantId: string,
+  scope: "new_prepare" | "gateway_attempt" | "resume" = "resume",
 ): Promise<CheckoutAccessDecision> {
   try {
     const supabase = createSupabaseAdminClient();
@@ -20,6 +22,15 @@ export async function assertCheckoutOpen(
       };
     }
 
+    if (scope !== "resume") {
+      const controls = await readCheckoutControls();
+      if (
+        scope === "new_prepare"
+          ? controls.pauseNewCheckouts
+          : controls.pausePaymentDispatch
+      )
+        return { open: false, message: CHECKOUT_UNAVAILABLE_MESSAGE };
+    }
     return { open: true };
   } catch {
     return { open: false, message: CHECKOUT_UNAVAILABLE_MESSAGE };

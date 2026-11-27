@@ -254,6 +254,17 @@ export class SquarePaymentEventProcessor {
     if (payment.locationId !== this.expectedLocationId) {
       return { ignored: true, reason: "location_mismatch" };
     }
+    // An order-status reconciliation snapshot supplies lookup references only.
+    // The provider inquiry independently verifies identity, sequence and quote.
+    if (payment.eventType === "payment.reconciled") {
+      const { createSquareFinancialInquiry } = await import(
+        "./financial-inquiry-dependencies"
+      );
+      return createSquareFinancialInquiry(this.supabase).reconcileVerifiedPayment(
+        payment.paymentId,
+        payment.squareOrderId,
+      );
+    }
     if (payment.paymentStatus === "COMPLETED") {
       await this.verifyPaymentOrder(payment);
     }

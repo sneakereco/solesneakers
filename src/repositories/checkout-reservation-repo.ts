@@ -3,7 +3,11 @@ import { z } from "zod";
 
 import type { TypedSupabaseClient } from "@/lib/supabase/server";
 import type { SquareCheckoutOrder } from "@/lib/square/checkout-orders";
-import type { ExpiredCheckout } from "@/lib/checkout/expire-checkout-reservations";
+type ExpiredCheckout = {
+  orderId: string;
+  squareOrderId: string | null;
+  squareOrderVersion: number | null;
+};
 import type { Database, Json } from "@/types/db/database.types";
 import type {
   CheckoutBillingAddress,
@@ -39,7 +43,7 @@ export type CheckoutReservationItem = {
 };
 
 export type ReserveCheckoutInput = {
-  analyticsContext: SourceContext | null;
+  analyticsContext?: SourceContext | null;
   tenantId: string;
   userId: string | null;
   guestEmail: string | null;
@@ -78,6 +82,10 @@ export type CheckoutReservationResult = {
 };
 
 export type ExistingCheckout = {
+  userId: string | null;
+  guestContextHash: string | null;
+  deviceSessionId: string | null;
+  guarded: boolean;
   orderId: string;
   cartHash: string;
   status: string;
@@ -94,6 +102,8 @@ export type ExistingCheckout = {
 };
 
 export type PaymentCheckout = {
+  guestContextHash?: string | null;
+  financialReview?: string;
   orderId: string;
   tenantId: string;
   userId: string | null;
@@ -126,6 +136,10 @@ const reservationResultSchema = z.object({
 });
 
 const existingCheckoutSchema = z.object({
+  user_id: z.string().nullable(),
+  checkout_guest_context_hash: z.string().nullable(),
+  checkout_attempt_guarded: z.boolean(),
+  checkout_protection_evidence: z.unknown(),
   id: z.string().min(1),
   cart_hash: z.string().min(1),
   status: z.string().min(1),
@@ -164,6 +178,11 @@ const expiredCheckoutSchema = z.object({
 });
 
 const paymentCheckoutSchema = z.object({
+  checkout_guest_context_hash: z
+    .string()
+    .regex(/^[a-f0-9]{64}$/)
+    .nullish(),
+  checkout_financial_review: z.string().min(1).nullable(),
   pickup_name: z.string().nullable().optional(),
   pickup_phone: z.string().nullable().optional(),
   order_billing: z.preprocess(
@@ -254,7 +273,7 @@ export class CheckoutReservationRepository {
     const { data, error } = await this.supabase
       .from("orders")
       .select(
-        "id, cart_hash, status, expires_at, subtotal, shipping, tax_amount, total, fulfillment, guest_email, square_order_id, square_order_version, order_items(product_id, variant_id, quantity, unit_price, unit_cost, line_total, variant_sku, product_name, brand, model, category, condition, size_label)",
+        "id, user_id, checkout_guest_context_hash, checkout_attempt_guarded, checkout_protection_evidence, cart_hash, status, expires_at, subtotal, shipping, tax_amount, total, fulfillment, guest_email, square_order_id, square_order_version, order_items(product_id, variant_id, quantity, unit_price, unit_cost, line_total, variant_sku, product_name, brand, model, category, condition, size_label)",
       )
       .eq("tenant_id", tenantId)
       .eq("idempotency_key", idempotencyKey)
@@ -273,6 +292,14 @@ export class CheckoutReservationRepository {
     }
 
     return {
+      userId: parsed.data.user_id,
+      guestContextHash: parsed.data.checkout_guest_context_hash,
+      guarded: parsed.data.checkout_attempt_guarded,
+      deviceSessionId:
+        z
+          .object({ device_session_id: z.string() })
+          .safeParse(parsed.data.checkout_protection_evidence).data?.device_session_id ??
+        null,
       orderId: parsed.data.id,
       cartHash: parsed.data.cart_hash,
       status: parsed.data.status,
@@ -307,7 +334,7 @@ export class CheckoutReservationRepository {
     const { data, error } = await this.supabase
       .from("orders")
       .select(
-        "id, tenant_id, user_id, guest_email, cart_hash, status, expires_at, subtotal, shipping, tax_amount, total, fulfillment, pickup_name, pickup_phone, square_order_id, square_order_version, checkout_protection_evidence, order_shipping(name, phone, line1, line2, city, state, postal_code, country), order_billing(line1, line2, city, state, postal_code, country)",
+        "id, tenant_id, user_id, guest_email, checkout_guest_context_hash, cart_hash, status, checkout_financial_review, expires_at, subtotal, shipping, tax_amount, total, fulfillment, pickup_name, pickup_phone, square_order_id, square_order_version, checkout_protection_evidence, order_shipping(name, phone, line1, line2, city, state, postal_code, country), order_billing(line1, line2, city, state, postal_code, country)",
       )
       .eq("id", orderId)
       .maybeSingle();
@@ -326,6 +353,12 @@ export class CheckoutReservationRepository {
     const row = parsed.data;
     const address = row.order_shipping;
     return {
+      ...(row.checkout_guest_context_hash
+        ? { guestContextHash: row.checkout_guest_context_hash }
+        : {}),
+      ...(row.checkout_financial_review
+        ? { financialReview: row.checkout_financial_review }
+        : {}),
       orderId: row.id,
       tenantId: row.tenant_id,
       userId: row.user_id,
@@ -435,7 +468,7 @@ export class CheckoutReservationRepository {
     } satisfies ReserveCheckoutRpcArgs;
     const { data, error } = await this.supabase.rpc(
       "reserve_square_checkout_inventory_with_analytics",
-      { p_checkout: reservationArgs, p_analytics: input.analyticsContext },
+      { p_checkout: reservationArgs, p_analytics: input.analyticsContext ?? null },
     );
 
     if (error) {

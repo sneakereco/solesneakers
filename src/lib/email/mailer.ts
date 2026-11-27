@@ -1,4 +1,12 @@
 // src/lib/email/mailer.ts
+import type SMTPTransport from "nodemailer/lib/smtp-transport";
+import { connect } from "node:tls";
+import { once } from "node:events";
+import {
+  SmtpRefusal,
+  type MailDelivery,
+} from "@/Modules/Checkout/Source/Features/Recovery/notification-drain";
+import { z } from "zod";
 import nodemailer, { type Transporter } from "nodemailer";
 
 import { env } from "@/config/env";
@@ -54,6 +62,50 @@ const sendWithTransport = async (input: SendEmailInput, timeoutMs?: number) => {
 const delay = (ms: number) => new Promise((resolve) => setTimeout(resolve, ms));
 
 type SendEmailResult = { messageId?: string };
+
+// The outbox owns retries. Its single SMTP connection is destroyed by the
+// operation signal even if the peer stops responding partway through DATA.
+export async function sendCheckoutMail(
+  input: SendEmailInput,
+  delivery: MailDelivery,
+): Promise<SendEmailResult> {
+  const { signal } = delivery;
+  signal.throwIfAborted();
+  if (!z.email().safeParse(input.to).success)
+    throw Error("checkout_smtp_invalid_recipient");
+  const host = env.SES_SMTP_HOST;
+  const socket = connect({ host, port: 465, servername: host });
+  const abort = () => {
+    socket.destroy(new Error("checkout_smtp_deadline"));
+  };
+  signal.addEventListener("abort", abort, { once: true });
+  // A socket may close while the DB handoff marker is being committed.
+  socket.on("error", () => {});
+  try {
+    await once(socket, "secureConnect", { signal });
+    await delivery.begin();
+    signal.throwIfAborted();
+    if (socket.destroyed) throw Error("smtp_connection_closed");
+    const transport = nodemailer.createTransport({
+      host,
+      port: 465,
+      secure: true,
+      auth: { user: env.SES_SMTP_USER, pass: env.SES_SMTP_PASS },
+      getSocket(_options, callback) {
+        callback(null, { connection: socket, secured: true });
+      },
+    } satisfies SMTPTransport.Options);
+    const { messageId } = await transport
+      .sendMail({ ...input, from: buildFrom() })
+      .catch((error: unknown) => {
+        throw SmtpRefusal.fromProvider(error, input.to) ?? error;
+      });
+    return { messageId };
+  } finally {
+    signal.removeEventListener("abort", abort);
+    socket.destroy();
+  }
+}
 
 export async function sendEmail(input: SendEmailInput): Promise<SendEmailResult> {
   return sendWithTransport(input);

@@ -5,6 +5,11 @@ import { build } from "esbuild";
 import { chromium } from "@playwright/test";
 import { expect } from "@playwright/test";
 import { readFile, mkdir } from "node:fs/promises";
+import { join } from "node:path";
+const outputDir = join(
+  process.env.CHECKOUT_BROWSER_OUTPUT ?? "test-results",
+  "shipping-validation",
+);
 import postcss from "postcss";
 import tailwindcss from "tailwindcss";
 
@@ -33,10 +38,10 @@ const bundle = await build({
       card: async () => ({ attach: async () => {}, tokenize: async (details) => { window.test.tokenized++; window.test.cardDetails = details; return { status: 'OK', token: 'card-test' }; } }),
       paymentRequest: (input) => ({ input, listeners: {}, addEventListener(name, callback) { this.listeners[name] = callback; }, update(value) { Object.assign(this.input, value); return true; } }),
       applePay: async (request) => ({ tokenize: async () => { window.test.walletTokenizations = (window.test.walletTokenizations || 0) + 1; window.test.walletQuote = await request.listeners.shippingcontactchanged({countryCode:'US',state:original.state,postalCode:original.postalCode}); return ({ status: 'OK', token: 'test', details: { billing: { givenName: 'Test', familyName: 'Buyer', email: 'buyer@example.com', addressLines: ['2 Billing St'], city: 'Washington', state: 'DC', postalCode: '20001', countryCode: 'US' }, shipping: { contact: { givenName: 'Test', familyName: 'Buyer', phone: window.test.omitShippingPhone ? undefined : '2025550100', addressLines: [original.line1], city: original.city, state: original.state, postalCode: original.postalCode, countryCode: 'US' } } } }); } }),
-      afterpayClearpay: async (request) => ({ attach: async () => {}, tokenize: async () => { window.test.afterpayRequest = request.input; return { status: 'OK', token: 'afterpay-test', details: { shipping: { contact: request.input.shippingContact } } }; } }),
-      cashAppPay: async (request) => { if(window.test.holdReapproval && request.input.total.amount==="111.00")await new Promise(resolve=>window.test.releaseReapproval=resolve); let listener; return { attach: async (selector) => { const button = document.createElement('button'); button.type = 'button'; button.textContent = 'Cash test'; button.onclick = () => { window.test.cashTotal = request.input.total.amount; listener({ detail: { tokenResult: { status: 'OK', token: 'cash-' + request.input.total.amount } } }); }; document.querySelector(selector).append(button); }, addEventListener(event, callback) { listener = callback; }, destroy: async () => true }; },
+      afterpayClearpay: async (request) => ({ attach: async () => {}, tokenize: async () => { window.test.afterpayRequest = request.input; return { status: 'OK', token: 'afterpay-test', details: { shipping: { contact: window.test.mismatchedAfterpay ? {...request.input.shippingContact,postalCode:"90210"} : request.input.shippingContact } } }; } }),
+      cashAppPay: async (request) => { if(window.test.holdReapproval && request.input.total.amount==="111.00") await new Promise(resolve=>window.test.releaseReapproval=resolve);let listener; return { attach: async (selector) => { const button = document.createElement('button'); button.type = 'button'; button.textContent = 'Cash test'; button.onclick = () => { window.test.cashTotal = request.input.total.amount; listener({ detail: { tokenResult: { status: 'OK', token: 'cash-' + request.input.total.amount } } }); }; document.querySelector(selector).append(button); }, addEventListener(event, callback) { listener = callback; }, destroy: async () => true }; },
     }) };
-    createRoot(document.getElementById('root')).render(<CheckoutPaymentProvider><CheckoutClient initialData={{ isGuest: false, customer: { ownerId:'buyer', email: 'buyer@example.com', address: original }, paymentConfig: { applicationId: 'test', locationId: 'test', environment: 'sandbox' } }} /></CheckoutPaymentProvider>);
+    createRoot(document.getElementById('root')).render(<CheckoutPaymentProvider><CheckoutClient initialData={{ ownerId:'fixture-buyer',isGuest: false, customer: { email: 'buyer@example.com', address: original }, paymentConfig: { applicationId: 'test', locationId: 'test', environment: 'sandbox' } }} /></CheckoutPaymentProvider>);
   `,
   },
   bundle: true,
@@ -59,11 +64,11 @@ const bundle = await build({
           loader: "js",
           contents:
             args.path === "next/navigation"
-              ? 'const router = { replace: url => history.replaceState({}, "", url) }; export const useRouter = () => router;'
+              ? 'const router = { replace: url => history.replaceState({}, "", url) }; export const useRouter = () => router; export const useSearchParams=()=>new URLSearchParams(location.search);'
               : args.path.endsWith("CartProvider")
-                ? "const items = [{productId:'11111111-1111-4111-8111-111111111111',variantId:'22222222-2222-4222-8222-222222222222',titleDisplay:'Test shoes',quantity:1,priceCents:10000}]; export const useCart = () => ({items,itemCount:1,isReady:true,hasCartView:true,captureCheckoutSnapshot:()=>({}),bindCheckoutSnapshot:async()=>true});"
+                ? "const items = [{productId:'11111111-1111-4111-8111-111111111111',variantId:'22222222-2222-4222-8222-222222222222',titleDisplay:'Test shoes',quantity:1,priceCents:10000}]; export const useCart = () => ({items,itemCount:1,isReady:true,captureForCheckout:async request=>({status:'captured',captureId:'fixture',items:request.expectedItems}),bindPreparedOrder:async()=>true,boundBasketGuard:async order=>()=>window.test.validationOrder===order,scopeValidationToOrder(order){window.test.validationOrder=order;return ()=>{};}});"
                 : args.path.endsWith("SessionContext")
-                  ? "const session={user:{id:'buyer'},isIdentityCurrent:owner=>owner==='buyer'}; export const useSession=()=>session;"
+                  ? "const session={user:{id:'fixture-buyer'},status:'ready',isCurrent:()=>true}; export const useSession=()=>session;"
                   : args.path.endsWith("client-env")
                     ? "export const clientEnv = {};"
                     : "export const log = () => {};",
@@ -85,6 +90,7 @@ const browser = await chromium.launch();
 try {
   const page = await browser.newPage();
   page.setDefaultTimeout(8000);
+  const reviewMessages = [];
   const prepares = [];
   const quotes = [];
   let payCalls = 0;
@@ -132,13 +138,17 @@ try {
         await new Promise((resolve) => {
           releasePrepare = resolve;
         });
-        return route.fulfill({ json: { orderId: "test-order", totals } });
+        return route.fulfill({
+          json: { orderId: "10000000-0000-4000-8000-000000000001", totals },
+        });
       }
       if (
         body.shippingAddressOverride === true &&
         body.shippingConfirmation === "entered-confirmation"
       ) {
-        return route.fulfill({ json: { orderId: "test-order", totals } });
+        return route.fulfill({
+          json: { orderId: "10000000-0000-4000-8000-000000000001", totals },
+        });
       }
       if (holdAddressValidation) {
         holdAddressValidation = false;
@@ -172,8 +182,7 @@ try {
           status: 422,
           json: {
             code: "SHIPPING_ADDRESS_SUGGESTION",
-            error:
-              "Please confirm the suggested shipping address. You have not been charged.",
+            error: "Please confirm the suggested shipping address.",
             suggestedAddress: validation.address,
             shippingConfirmation: "suggested-confirmation",
             enteredShippingConfirmation: "entered-confirmation",
@@ -181,7 +190,7 @@ try {
         });
       return route.fulfill({
         json: {
-          orderId: "test-order",
+          orderId: "10000000-0000-4000-8000-000000000001",
           totals: {
             ...totals,
             taxCents: changeTotal ? 100 : 0,
@@ -199,7 +208,9 @@ try {
         releasePay = resolve;
       });
       return route.fulfill({
-        json: { statusUrl: "/checkout/processing?orderId=test-order" },
+        json: {
+          statusUrl: "/checkout/processing?orderId=10000000-0000-4000-8000-000000000001",
+        },
       });
     }
     return route.fulfill({ contentType: "text/html", body: '<div id="root"></div>' });
@@ -218,7 +229,9 @@ try {
       window.test.spinner = document.querySelector("dialog .animate-spin");
     });
     releasePay();
-    await page.waitForURL("**/checkout/processing?orderId=test-order");
+    await page.waitForURL(
+      "**/checkout/processing?orderId=10000000-0000-4000-8000-000000000001",
+    );
     assert.equal(
       await page.evaluate(
         () =>
@@ -240,18 +253,22 @@ try {
   );
   releaseAddressValidation();
   await page.getByRole("button", { name: "Accept suggested address" }).waitFor();
-  await mkdir("test-results/shipping-validation", { recursive: true });
-  await page
-    .getByRole("dialog")
-    .screenshot({ path: "test-results/shipping-validation/correction.png" });
+  reviewMessages.push(await page.getByRole("dialog").innerText());
+  await mkdir(outputDir, { recursive: true });
+  await page.getByRole("dialog").screenshot({ path: join(outputDir, "correction.png") });
   assert.equal(await page.evaluate(() => window.test.tokenized), 0);
   assert.equal(payCalls, 0);
   assert.equal(await page.getByRole("button", { name: "Edit address" }).count(), 0);
   await page.getByRole("button", { name: "Accept suggested address" }).click();
   await page.getByRole("button", { name: "Confirm $111.00 and continue" }).waitFor();
+  reviewMessages.push(await page.getByRole("dialog").innerText());
   assert.equal(await page.evaluate(() => window.test.tokenized), 0);
   await page.getByRole("button", { name: "Confirm $111.00 and continue" }).click();
   await page.waitForFunction(() => window.test.tokenized === 1);
+  assert.equal(
+    await page.evaluate(() => window.test.validationOrder?.orderId),
+    "10000000-0000-4000-8000-000000000001",
+  );
   assert.equal(prepares.at(-1).shippingAddress.postalCode, "20500-0005");
   assert.equal(prepares.at(-1).billingAddress.postalCode, "20500-0005");
   assert.ok(quotes.some((q) => q.shippingAddress?.postalCode === "20500-0005"));
@@ -308,6 +325,21 @@ try {
   await finishPayment();
 
   await load();
+  await page.evaluate(() => {
+    window.test.mismatchedAfterpay = true;
+  });
+  await page.getByRole("radio", { name: "Afterpay", exact: true }).click();
+  await page.getByRole("button", { name: "Continue with Afterpay", exact: true }).click();
+  await page.getByRole("button", { name: "Accept suggested address" }).click();
+  await page.getByRole("button", { name: "Confirm $111.00 and continue" }).click();
+  await page.getByText(/Afterpay did not confirm your shipping address/).waitFor();
+  reviewMessages.push(await page.getByRole("dialog").innerText());
+  assert.equal(payCalls, 0);
+  assert.deepEqual(
+    reviewMessages.map((message) => /not been charged/i.test(message)),
+    [false, false, false],
+  );
+  await load();
   await page.getByRole("radio", { name: "Cash App Pay", exact: true }).click();
   await page.getByRole("button", { name: "Cash test" }).click();
   await page.getByRole("button", { name: "Accept suggested address" }).click();
@@ -361,7 +393,7 @@ try {
   assert.equal(prepares.at(-1).billingAddress.postalCode, "20001");
   await page
     .getByRole("dialog")
-    .screenshot({ path: "test-results/shipping-validation/express-processing.png" });
+    .screenshot({ path: join(outputDir, "express-processing.png") });
   formattingOnly = true;
   await finishPayment();
   assert.equal(payCalls, 1);

@@ -61,7 +61,14 @@ describe("initial storefront session shell", () => {
       role: "customer",
     });
     const resolved = renderToStaticMarkup(await sessionShell);
-    expect(resolved).toContain("owner@example.test customer Cart awaiting hydration");
+    expect(resolved).not.toContain("owner@example.test");
+    expect(resolved).toContain("Cart awaiting hydration");
+    expect((await sessionShell).props).toMatchObject({
+      initialUser: { id: "owner", email: "owner@example.test" },
+      initialRole: "customer",
+      initialUnavailable: false,
+      serverReadId: expect.any(String),
+    });
     expect(readServerSession).toHaveBeenCalledTimes(1);
   });
 

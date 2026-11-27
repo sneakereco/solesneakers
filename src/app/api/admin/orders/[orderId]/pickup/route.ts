@@ -3,10 +3,13 @@ import type { NextRequest } from "next/server";
 import { NextResponse } from "next/server";
 import { z } from "zod";
 
-import { createSupabaseServerClient } from "@/lib/supabase/server";
-import { requireAdminApi } from "@/lib/auth/session";
-import { OrdersRepository } from "@/repositories/orders-repo";
-import { OrderEventsRepository } from "@/repositories/order-events-repo";
+import { createSupabaseAdminClient } from "@/lib/supabase/service-role";
+import {
+  OrderWriteError,
+  OrderWriteRepository,
+} from "@/Modules/Orders/Source/Features/TrustedMutations/order-write-repository";
+import { writeTrustedOrder } from "@/Modules/Orders/Source/Features/TrustedMutations/trusted-order-write";
+import { AuthError, requireAdminApi } from "@/lib/auth/session";
 import { getRequestIdFromHeaders } from "@/lib/http/request-id";
 import { logError } from "@/lib/utils/log";
 
@@ -22,10 +25,6 @@ export async function POST(
 
   try {
     const session = await requireAdminApi();
-    const supabase = await createSupabaseServerClient();
-    const ordersRepo = new OrdersRepository(supabase);
-    const eventsRepo = new OrderEventsRepository(supabase);
-
     const { orderId } = await params;
     const paramsParsed = paramsSchema.safeParse({ orderId });
     if (!paramsParsed.success) {
@@ -35,50 +34,22 @@ export async function POST(
       );
     }
 
-    const order = await ordersRepo.getById(paramsParsed.data.orderId);
-    if (!order) {
-      return NextResponse.json(
-        { error: "Order not found", requestId },
-        { status: 404, headers: { "Cache-Control": "no-store" } },
-      );
-    }
-
-    if (order.fulfillment !== "pickup") {
-      return NextResponse.json(
-        { error: "Order is not a pickup", requestId },
-        { status: 400, headers: { "Cache-Control": "no-store" } },
-      );
-    }
-
-    if (order.fulfillment_status !== "picked_up") {
-      await ordersRepo.setFulfillmentStatus(order.id, "picked_up");
-    }
-
-    try {
-      const hasEvent = await eventsRepo.hasEvent(order.id, "picked_up");
-      if (!hasEvent) {
-        await eventsRepo.insertEvent({
-          orderId: order.id,
-          type: "picked_up",
-          message: "Order picked up.",
-          createdBy: session.user.id,
-        });
-      }
-    } catch (eventError) {
-      logError(eventError, {
-        layer: "api",
-        requestId,
-        route: "/api/admin/orders/:orderId/pickup",
-        message: "Failed to create pickup event",
-        orderId: order.id,
-      });
-    }
-
+    await writeTrustedOrder(
+      { orderId: paramsParsed.data.orderId, action: "pickup" },
+      { userId: session.user.id, role: "admin" },
+      new OrderWriteRepository(createSupabaseAdminClient()),
+    );
     return NextResponse.json(
       { success: true },
       { headers: { "Cache-Control": "no-store" } },
     );
   } catch (error) {
+    if (error instanceof AuthError || error instanceof OrderWriteError) {
+      return NextResponse.json(
+        { error: error.message, requestId },
+        { status: error.status, headers: { "Cache-Control": "no-store" } },
+      );
+    }
     logError(error, {
       layer: "api",
       requestId,

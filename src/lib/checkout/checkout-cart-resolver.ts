@@ -4,6 +4,8 @@ import type { PrepareCheckoutRequestItem } from "@/lib/checkout/checkout-request
 
 type CheckoutProductRepository = Pick<ProductRepository, "getProductsForCheckout">;
 
+export class CheckoutCatalogUnavailable extends Error {}
+
 export type ResolvedCheckoutItem = CheckoutReservationItem;
 
 export type ResolvedCheckoutCart = {
@@ -22,6 +24,7 @@ export async function resolveCheckoutCart(
   repository: CheckoutProductRepository,
   tenantId: string,
   requestedItems: PrepareCheckoutRequestItem[],
+  stockAuthority: "catalog" | "reservation" = "catalog",
 ): Promise<ResolvedCheckoutCart> {
   const productIds = [...new Set(requestedItems.map((item) => item.productId))];
   const products = await repository.getProductsForCheckout(productIds);
@@ -32,16 +35,16 @@ export async function resolveCheckoutCart(
   for (const requested of requestedItems) {
     const product = productMap.get(requested.productId);
     if (!product || product.category === "specialty" || product.tenantId !== tenantId) {
-      throw new Error("checkout_cart_unavailable");
+      throw new CheckoutCatalogUnavailable("checkout_cart_unavailable");
     }
 
     const variant = product.variants.find(
       (candidate) => candidate.id === requested.variantId,
     );
     if (!variant) {
-      throw new Error("checkout_cart_unavailable");
+      throw new CheckoutCatalogUnavailable("checkout_cart_unavailable");
     }
-    if (variant.stock < requested.quantity) {
+    if (stockAuthority === "catalog" && variant.stock < requested.quantity) {
       throw new Error("checkout_inventory_unavailable");
     }
 

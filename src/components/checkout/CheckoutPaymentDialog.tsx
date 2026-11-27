@@ -148,7 +148,7 @@ function PaymentDialogContent({
         </h2>
         {addressReview && (
           <p className="mt-3 text-sm font-semibold">
-            You have not been charged. Check your shipping address to continue.
+            Check your shipping address to continue.
           </p>
         )}
         <p
@@ -161,7 +161,7 @@ function PaymentDialogContent({
             : addressReview
               ? "Choose the shipping address to use for this payment."
               : totalReview !== null
-                ? "The address changed your total. Confirm the amount before continuing. You have not been charged."
+                ? "The address changed your total. Confirm the amount before continuing."
                 : cashAppReapproval
                   ? "Approve the updated total with Cash App to finish your order."
                   : error) ||

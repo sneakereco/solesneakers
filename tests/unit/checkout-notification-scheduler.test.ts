@@ -7,16 +7,16 @@ jest.mock("@/lib/supabase/service-role", () => ({
   createSupabaseAdminClient: jest.fn(() => ({ kind: "admin" })),
 }));
 jest.mock("@/lib/checkout/checkout-notification-dependencies", () => ({
-  createCheckoutNotificationDependencies: jest.fn(() => ({ kind: "dependencies" })),
+  createCheckoutMailDrainDependencies: jest.fn(() => ({ kind: "dependencies" })),
 }));
-jest.mock("@/lib/checkout/checkout-notification-worker", () => ({
-  processCheckoutNotifications: jest.fn(),
+jest.mock("@/Modules/Checkout/Source/Features/Recovery/notification-drain", () => ({
+  drainNotifications: jest.fn(),
 }));
 jest.mock("@/lib/utils/log", () => ({ logError: jest.fn() }));
 
-import { createCheckoutNotificationDependencies } from "@/lib/checkout/checkout-notification-dependencies";
+import { createCheckoutMailDrainDependencies } from "@/lib/checkout/checkout-notification-dependencies";
 import { scheduleCheckoutNotifications } from "@/lib/checkout/checkout-notification-scheduler";
-import { processCheckoutNotifications } from "@/lib/checkout/checkout-notification-worker";
+import { drainNotifications } from "@/Modules/Checkout/Source/Features/Recovery/notification-drain";
 import { logError } from "@/lib/utils/log";
 
 beforeEach(() => {
@@ -27,18 +27,21 @@ beforeEach(() => {
 it("dispatches only the paid order's notifications after the response", async () => {
   scheduleCheckoutNotifications("order-1");
 
-  expect(processCheckoutNotifications).not.toHaveBeenCalled();
+  expect(drainNotifications).not.toHaveBeenCalled();
   expect(afterCallbacks).toHaveLength(1);
   await afterCallbacks[0]();
-  expect(createCheckoutNotificationDependencies).toHaveBeenCalledWith(
+  expect(createCheckoutMailDrainDependencies).toHaveBeenCalledWith(
     { kind: "admin" },
     "order-1",
   );
-  expect(processCheckoutNotifications).toHaveBeenCalledWith({ kind: "dependencies" }, 3);
+  expect(drainNotifications).toHaveBeenCalledWith(
+    expect.objectContaining({ batchSize: 3 }),
+    { kind: "dependencies" },
+  );
 });
 
 it("leaves payment success intact when prompt delivery fails", async () => {
-  jest.mocked(processCheckoutNotifications).mockRejectedValueOnce(new Error("smtp"));
+  jest.mocked(drainNotifications).mockRejectedValueOnce(new Error("smtp"));
 
   scheduleCheckoutNotifications("order-1");
 

@@ -1,3 +1,8 @@
+import type {
+  DrainDependencies,
+  MailDelivery,
+} from "@/Modules/Checkout/Source/Features/Recovery/notification-drain";
+import { CheckoutDependencyLeaseRepository } from "@/Modules/Checkout/Source/Features/Recovery/dependency-lease";
 import { z } from "zod";
 
 import { env } from "@/config/env";
@@ -61,6 +66,7 @@ async function wasNotificationSent(
 async function sendShippingUpdate(
   admin: AdminSupabaseClient,
   notification: CheckoutNotification,
+  delivery?: MailDelivery,
 ) {
   const payload = shippingPayloadSchema.parse(notification.payload);
   const order = await loadDetailedOrder(admin, notification.orderId);
@@ -75,7 +81,12 @@ async function sendShippingUpdate(
     });
     orderUrl = `${env.NEXT_PUBLIC_SITE_URL}/order-status/${order.id}?token=${encodeURIComponent(token)}`;
   }
-  const email = new OrderEmailService(admin, order.tenant_id, notification.id);
+  const email = new OrderEmailService(
+    admin,
+    order.tenant_id,
+    notification.id,
+    ...(delivery ? [delivery] : []),
+  );
   const input = { ...payload, to: recipient, orderId: order.id, orderUrl };
   if (notification.kind === "label_created") {
     await email.sendOrderLabelCreated(input);
@@ -120,6 +131,7 @@ async function loadDetailedOrder(admin: AdminSupabaseClient, orderId: string) {
 async function sendOrderConfirmation(
   admin: AdminSupabaseClient,
   notification: CheckoutNotification,
+  delivery?: MailDelivery,
 ): Promise<void> {
   const order = await loadDetailedOrder(admin, notification.orderId);
   const recipient = order.profiles?.email ?? order.guest_email ?? null;
@@ -141,6 +153,7 @@ async function sendOrderConfirmation(
     admin,
     order.tenant_id,
     notification.id,
+    ...(delivery ? [delivery] : []),
   ).sendOrderConfirmationFromDetailed({
     to: recipient,
     order: {
@@ -178,12 +191,14 @@ async function sendOrderConfirmation(
 async function sendResellerOrderPlaced(
   admin: AdminSupabaseClient,
   notification: CheckoutNotification,
+  delivery?: MailDelivery,
 ): Promise<void> {
   const order = await loadDetailedOrder(admin, notification.orderId);
   await new OrderEmailService(
     admin,
     order.tenant_id,
     notification.id,
+    ...(delivery ? [delivery] : []),
   ).sendResellerOrderPlacedFromDetailed({
     to: RESELLER_ORDER_NOTIFICATION_EMAIL,
     order: {
@@ -202,6 +217,7 @@ async function sendResellerOrderPlaced(
 async function sendPickupInstructions(
   admin: AdminSupabaseClient,
   notification: CheckoutNotification,
+  delivery?: MailDelivery,
 ): Promise<void> {
   const order = await loadDetailedOrder(admin, notification.orderId);
   const recipient = order.profiles?.email ?? order.guest_email ?? null;
@@ -221,6 +237,7 @@ async function sendPickupInstructions(
     admin,
     order.tenant_id,
     notification.id,
+    ...(delivery ? [delivery] : []),
   ).sendPickupInstructions({
     to: recipient,
     orderId: order.id,
@@ -231,17 +248,93 @@ async function sendPickupInstructions(
 async function sendRefundConfirmation(
   admin: AdminSupabaseClient,
   notification: CheckoutNotification,
+  delivery?: MailDelivery,
 ): Promise<void> {
   const payload = refundPayloadSchema.parse(notification.payload);
   const order = await loadDetailedOrder(admin, notification.orderId);
-  await new RefundNotificationService(admin).sendRefundNotification({
+  const sender = delivery
+    ? new RefundNotificationService(admin, notification.id, delivery)
+    : new RefundNotificationService(admin);
+  const result = await sender.sendRefundNotification({
     order,
     refundAmountCents: payload.refundAmountCents,
     cumulativeRefundCents: Math.max(0, Math.round(Number(order.refund_amount ?? 0))),
     skipIfAlreadySent: true,
   });
+  if (delivery && result.status !== "sent" && result.status !== "skipped_duplicate")
+    throw Error("refund_recipient_unavailable");
 }
 
+async function deliver(
+  admin: AdminSupabaseClient,
+  notification: CheckoutNotification,
+  delivery?: MailDelivery,
+) {
+  if (await wasNotificationSent(admin, notification)) return;
+  switch (notification.kind) {
+    case "order_confirmation":
+      return sendOrderConfirmation(admin, notification, delivery);
+    case "reseller_order_placed":
+      return sendResellerOrderPlaced(admin, notification, delivery);
+    case "pickup_instructions":
+      return sendPickupInstructions(admin, notification, delivery);
+    case "refund_confirmation":
+      return sendRefundConfirmation(admin, notification, delivery);
+    default:
+      return sendShippingUpdate(admin, notification, delivery);
+  }
+}
+
+export function createCheckoutMailDrainDependencies(
+  admin: AdminSupabaseClient,
+  orderId?: string,
+): DrainDependencies {
+  const leases = new CheckoutDependencyLeaseRepository(admin);
+  return {
+    acquireDependencyLease: (i) => leases.acquireDependencyLease(i),
+    releaseDependencyLease: (t) => leases.releaseDependencyLease(t),
+    async claim(n) {
+      const { data, error } = await admin.rpc("claim_checkout_mail", {
+        p_limit: n,
+        p_order_id: orderId,
+      });
+      if (error) throw error;
+      return z
+        .array(notificationsSchema.element.extend({ leaseToken: z.guid() }))
+        .parse(data)
+        .map((row) => ({ ...row, payload: row.payload as Json }));
+    },
+    async beginHandoff(n) {
+      const { data, error } = await admin.rpc("begin_checkout_mail_handoff", {
+        p_id: n.id,
+        p_token: n.leaseToken,
+      });
+      if (error) throw error;
+      return data === true;
+    },
+    async finish(n, outcome, refusal) {
+      const { data, error } = await admin.rpc("finish_checkout_mail_disposition", {
+        p_id: n.id,
+        p_token: n.leaseToken,
+        p_outcome: outcome,
+        ...(refusal ? { p_reply: refusal.reply, p_phase: refusal.phase } : {}),
+      });
+      if (error) throw error;
+      return z.enum(["sent", "failed", "review"]).nullable().parse(data);
+    },
+    send: (n, signal, begin) => deliver(admin, n, { signal, begin }),
+    async remaining() {
+      let query = admin
+        .from("checkout_notification_outbox")
+        .select("id", { head: true, count: "exact" })
+        .neq("status", "sent");
+      if (orderId) query = query.eq("order_id", orderId);
+      const { error, count } = await query;
+      if (error || count === null) throw error ?? Error("missing_mail_count");
+      return count;
+    },
+  };
+}
 export function createCheckoutNotificationDependencies(
   admin: AdminSupabaseClient,
   orderId?: string,
@@ -260,25 +353,7 @@ export function createCheckoutNotificationDependencies(
         payload: notification.payload as Json,
       }));
     },
-    send: async (notification) => {
-      if (await wasNotificationSent(admin, notification)) {
-        return;
-      }
-      switch (notification.kind) {
-        case "order_confirmation":
-          return sendOrderConfirmation(admin, notification);
-        case "reseller_order_placed":
-          return sendResellerOrderPlaced(admin, notification);
-        case "pickup_instructions":
-          return sendPickupInstructions(admin, notification);
-        case "refund_confirmation":
-          return sendRefundConfirmation(admin, notification);
-        case "label_created":
-        case "shipping_update":
-        case "delivery_confirmation":
-          return sendShippingUpdate(admin, notification);
-      }
-    },
+    send: (n) => deliver(admin, n),
     markSent: async (id) => {
       const { data, error } = await admin.rpc("finish_checkout_notification", {
         p_notification_id: id,

@@ -3,8 +3,8 @@ import { chromium, expect } from "@playwright/test";
 import { compileUxHarness, openUxHarness } from "./helpers/ux-harness.mjs";
 
 const row = {
-  productId: "p",
-  variantId: "v",
+  productId: "72111111-1111-4111-8111-111111111112",
+  variantId: "72111111-1111-4111-8111-111111111113",
   name: "Shoes",
   brand: "Brand",
   sizeLabel: "10",
@@ -12,20 +12,29 @@ const row = {
   priceCents: 200,
   imageUrl: "/x",
   quantity: 1,
+  maxStock: 10,
 };
 const order = {
-  id: "order",
+  id: "72111111-1111-4111-8111-111111111111",
   status: "paid",
   subtotal: 2,
   total: 2,
   tax: 0,
   shipping: 0,
   fulfillment: "ship",
-  updatedAt: "yesterday",
+  updatedAt: "2026-11-25T00:00:00Z",
+  financial: { source: "legacy" },
+  purchasedLines: [{ productId: row.productId, variantId: row.variantId, quantity: 1 }],
   events: [],
   supportEmail: "help@example.test",
   customerId: null,
-  purchasedItems: [{ productId: "p", variantId: "v", quantity: 1 }],
+  purchasedItems: [
+    {
+      productId: "72111111-1111-4111-8111-111111111112",
+      variantId: "72111111-1111-4111-8111-111111111113",
+      quantity: 1,
+    },
+  ],
 };
 const bundle = await compileUxHarness(
   `
@@ -34,19 +43,22 @@ import {createRoot} from "react-dom/client";
 import {CartProvider,useCart} from "./src/components/cart/CartProvider";
 import {SessionProvider,useSession} from "./src/contexts/SessionContext";
 import {CartFeedback} from "./src/components/cart/CartFeedback";
+import {CheckoutLayoutProviders} from "./src/app/checkout/CheckoutLayoutProviders";
 import Receipt from "./src/app/checkout/success/page";
 function App(){
  const [receipt,show]=useState(location.pathname==="/checkout/success"); window.showReceipt=()=>show(true);
  const cart=useCart(); window.cart=cart; window.session=useSession();
+ window.captureCart=()=>cart.captureForCheckout({mode:"new",attemptKey:crypto.randomUUID(),expectedItems:cart.items.map(({productId,variantId,quantity})=>({productId,variantId,quantity}))});
+ window.bindCart=async id=>{const captured=await window.captureCart();return captured.status==="captured" && cart.bindPreparedOrder(captured.captureId,id);};
  return <><CartFeedback/><output>{cart.isReady ? cart.items.map(x=>x.quantity).join(","):"unready"}</output>{receipt&&<Receipt/>}</>;
 }
 if(!sessionStorage.getItem("seeded")){
  sessionStorage.setItem("seeded","1");
  sessionStorage.setItem("rdk_cart_session",JSON.stringify([${JSON.stringify(row)}]));
- sessionStorage.setItem("checkout:confirmed:order",JSON.stringify(${JSON.stringify(order)}));
+ sessionStorage.setItem("checkout:confirmed:72111111-1111-4111-8111-111111111111",JSON.stringify(${JSON.stringify(order)}));
 }
 const owner=new URLSearchParams(location.search).get("fixtureOwner");
-createRoot(document.getElementById("root")).render(<SessionProvider initialUser={owner?{id:owner,email:"buyer@example.test"}:null} initialRole={owner?"customer":null}><CartProvider userId="stale-server-prop"><App/></CartProvider></SessionProvider>);
+createRoot(document.getElementById("root")).render(<SessionProvider initialUser={owner?{id:owner,email:"buyer@example.test"}:null} initialRole={owner?"customer":null}><CartProvider userId="stale-server-prop"><CheckoutLayoutProviders><App/></CheckoutLayoutProviders></CartProvider></SessionProvider>);
 `,
   {
     define: { "process.env": "{}" },
@@ -60,7 +72,7 @@ createRoot(document.getElementById("root")).render(<SessionProvider initialUser=
           }));
           build.onLoad({ filter: /.*/, namespace: "boundary" }, () => ({
             contents:
-              "const router={push:()=>{}}; export const useRouter=()=>router; export const useSearchParams=()=>new URLSearchParams(location.search)",
+              "const router={push:()=>{}}; export const useRouter=()=>router; export const usePathname=()=>location.pathname; export const useSearchParams=()=>new URLSearchParams(location.search)",
           }));
         },
       },
@@ -73,10 +85,19 @@ async function checkColdReceipt(browser, owner) {
   page.on("pageerror", (error) => errors.push(error.message));
   const ownerParam = owner ? "fixtureOwner=" + owner : "";
   let orderReads = 0;
+  await page.route("**/api/auth/session", (route) =>
+    route.fulfill({
+      json: {
+        user: owner ? { id: owner, email: "buyer@example.test" } : null,
+        role: owner ? "customer" : null,
+      },
+    }),
+  );
   try {
     await page.route("**/api/cart/validate", (route) =>
       route.fulfill({
         json: {
+          removed: [],
           items: route
             .request()
             .postDataJSON()
@@ -84,7 +105,7 @@ async function checkColdReceipt(browser, owner) {
         },
       }),
     );
-    await page.route("**/api/orders/order*", (route) => {
+    await page.route("**/api/orders/72111111-1111-4111-8111-111111111111*", (route) => {
       orderReads++;
       return route.fulfill({ json: { ...order, customerId: owner } });
     });
@@ -95,17 +116,18 @@ async function checkColdReceipt(browser, owner) {
     if (owner) await page.evaluate((item) => window.cart.addItem(item), row);
     await expect(page.locator("output")).toHaveText("1");
     assert.equal(
-      await page.evaluate(() =>
-        window.cart.bindCheckoutSnapshot("order", window.cart.captureCheckoutSnapshot()),
-      ),
+      await page.evaluate(() => window.bindCart("72111111-1111-4111-8111-111111111111")),
       true,
     );
-    assert.equal(await page.evaluate((item) => window.cart.addItem(item), row), true);
+    assert.equal(
+      await page.evaluate((item) => window.cart.addItem(item), row).then((r) => r.status),
+      "saved",
+    );
     const newerRange = await page.evaluate((owner) => {
       const storage = owner ? localStorage : sessionStorage;
       return JSON.parse(
         storage.getItem(owner ? "rdk_cart_user_" + owner : "rdk_cart_session"),
-      )[0].unitsV1.at(-1);
+      )[0]._cartUnits;
     }, owner);
 
     // The new receipt document starts with an existing binding and cannot hydrate its basket.
@@ -131,7 +153,8 @@ async function checkColdReceipt(browser, owner) {
     await openUxHarness(
       page,
       bundle,
-      "https://ux.test/checkout/success?orderId=order&token=test&" + ownerParam,
+      "https://ux.test/checkout/success?orderId=72111111-1111-4111-8111-111111111111&token=test&" +
+        ownerParam,
     );
     const confirmation = page.getByRole("heading", { name: "Order Confirmed!" });
     const retry = page.getByRole("button", { name: "Retry cart update" });
@@ -151,9 +174,9 @@ async function checkColdReceipt(browser, owner) {
         const storage = owner ? localStorage : sessionStorage;
         return JSON.parse(
           storage.getItem(owner ? "rdk_cart_user_" + owner : "rdk_cart_session"),
-        )[0].unitsV1;
+        )[0]._cartUnits;
       }, owner),
-      [newerRange],
+      { ...newerRange, ranges: [["1", "2"]] },
     );
     assert.equal(orderReads, 1);
     assert.deepEqual(requests, []);
@@ -184,34 +207,37 @@ try {
     let reads = 0,
       release;
     await page.route("**/api/cart/validate", (route) =>
-      route.fulfill({ json: { items: [row] } }),
+      route.fulfill({ json: { removed: [], items: [row] } }),
     );
     await page.route("**/api/auth/session", (route) =>
       route.fulfill({ json: { user: null, role: null } }),
     );
-    await page.route("**/api/orders/order*", async (route) => {
-      reads++;
-      if (scenario === "forged")
-        await new Promise((r) => {
-          release = r;
-        });
-      await route.fulfill(
-        scenario === "denied"
-          ? { status: 401, json: { error: "Unauthorized" } }
-          : {
-              json: {
-                ...order,
-                status: ["pending", "review", "failed"].includes(scenario)
-                  ? scenario
-                  : "paid",
+    await page.route(
+      "**/api/orders/72111111-1111-4111-8111-111111111111*",
+      async (route) => {
+        reads++;
+        if (scenario === "forged")
+          await new Promise((r) => {
+            release = r;
+          });
+        await route.fulfill(
+          ["denied", "unbound"].includes(scenario)
+            ? { status: 401, json: { error: "Unauthorized" } }
+            : {
+                json: {
+                  ...order,
+                  status: ["pending", "review", "failed"].includes(scenario)
+                    ? scenario
+                    : "paid",
+                },
               },
-            },
-      );
-    });
+        );
+      },
+    );
     const url =
       scenario === "missing"
         ? "https://ux.test/"
-        : "https://ux.test/?orderId=order" +
+        : "https://ux.test/?orderId=72111111-1111-4111-8111-111111111111" +
           (scenario === "unbound" ? "" : "&token=test");
     await openUxHarness(page, bundle, url);
     await page.waitForFunction(() => window.cart?.isReady);
@@ -227,9 +253,7 @@ try {
         "failed",
       ].includes(scenario)
     )
-      await page.evaluate(() =>
-        window.cart.bindCheckoutSnapshot("order", window.cart.captureCheckoutSnapshot()),
-      );
+      await page.evaluate(() => window.bindCart("72111111-1111-4111-8111-111111111111"));
     if (scenario === "save-failure")
       await page.evaluate(() => {
         const original = Storage.prototype.setItem;
@@ -262,8 +286,14 @@ try {
       await expect(page.getByText("Order Confirmed!")).toBeVisible();
       const retry = page.getByRole("button", { name: "Retry cart update" });
       await expect(retry).toBeVisible();
-      await expect(page.locator("output")).toHaveText("1");
+      await expect(page.locator("output")).toHaveText("unready");
       await page.evaluate(() => window.restoreWrites());
+      assert.equal(
+        await page.evaluate(
+          () => JSON.parse(sessionStorage.getItem("rdk_cart_session"))[0].quantity,
+        ),
+        1,
+      );
       const requests = [];
       page.on("request", (request) => requests.push(request.url()));
       await retry.click();
@@ -276,11 +306,13 @@ try {
       await expect(page.locator("output")).toHaveText("1");
       assert.equal(reads, 0);
     } else if (scenario === "unbound") {
-      await expect(page.getByRole("heading", { name: /verify|access/i })).toBeVisible();
-      assert.equal(reads, 0);
+      await expect(
+        page.getByRole("heading", { name: /order details unavailable/i }),
+      ).toBeVisible();
+      assert.equal(reads, 1);
     } else if (scenario === "denied") {
       await expect(
-        page.getByRole("heading", { name: /unable to verify/i }),
+        page.getByRole("heading", { name: /order details unavailable/i }),
       ).toBeVisible();
       await expect.poll(() => reads).toBe(1);
       await expect(page.locator("output")).toHaveText("1", { timeout: 2000 });
@@ -295,7 +327,7 @@ try {
       await expect.poll(() => reads).toBeGreaterThan(0);
       if (scenario === "review" || scenario === "failed")
         await expect(
-          page.getByRole("heading", { name: /unable to verify/i }),
+          page.getByRole("heading", { name: /payment under review|payment failed/i }),
         ).toBeVisible();
       await expect(page.getByText("Order Confirmed!")).toHaveCount(0);
       await expect(page.locator("output")).toHaveText("1");
@@ -334,7 +366,7 @@ try {
         releaseValidation = r;
       });
     }
-    await route.fulfill({ status: 200, json: { items } });
+    await route.fulfill({ status: 200, json: { removed: [], items } });
   });
   for (const page of [first, second]) {
     await openUxHarness(page, bundle);
@@ -363,10 +395,9 @@ try {
     const write = window.cart.addItem(row);
     let captured = false;
     try {
-      window.cart.captureCheckoutSnapshot();
-      captured = true;
+      captured = (await window.captureCart()).status === "captured";
     } catch {}
-    return { captured, saved: await write };
+    return { captured, saved: (await write).status === "saved" };
   }, row);
   assert.deepEqual(
     duringRefresh,
@@ -376,14 +407,7 @@ try {
   await expect.poll(() => Boolean(releaseSession)).toBe(true);
   await expect(first.locator("output")).toHaveText("unready");
   assert.equal(
-    await first.evaluate(() => {
-      try {
-        window.cart.captureCheckoutSnapshot();
-        return true;
-      } catch {
-        return false;
-      }
-    }),
+    await first.evaluate(async () => (await window.captureCart()).status === "captured"),
     false,
   );
   releaseSession();
@@ -402,28 +426,57 @@ try {
   });
   await second.evaluate((row) => window.cart.addItem(row), row);
   await expect(first.locator("output")).toHaveText("3");
-  assert.equal(await first.evaluate(() => window.previousEdit("p", "v", 1)), false);
+  assert.equal(
+    await first
+      .evaluate(() =>
+        window.previousEdit(
+          "72111111-1111-4111-8111-111111111112",
+          "72111111-1111-4111-8111-111111111113",
+          1,
+        ),
+      )
+      .then((r) => r.status),
+    "stale",
+  );
   await expect(first.getByRole("alert")).toContainText(/cart changed.*review/i);
   await expect(first.locator("output")).toHaveText("3");
-  assert.equal(await first.evaluate(() => window.cart.updateQuantity("p", "v", 2)), true);
+  assert.equal(
+    await first
+      .evaluate(() =>
+        window.cart.updateQuantity(
+          "72111111-1111-4111-8111-111111111112",
+          "72111111-1111-4111-8111-111111111113",
+          2,
+        ),
+      )
+      .then((r) => r.status),
+    "saved",
+  );
   await expect(first.getByRole("alert")).toHaveCount(0);
   // Both documents share one account basket and must agree on the first order binding.
   const firstBound = await first.evaluate(() =>
-    window.cart.bindCheckoutSnapshot("shared", window.cart.captureCheckoutSnapshot()),
+    window.bindCart("72111111-1111-4111-8111-111111111114"),
   );
   assert.equal(firstBound, true);
   await second.evaluate(() => window.cart.clearCart());
   await second.evaluate((row) => window.cart.addItem(row), row);
   const secondBound = await second.evaluate(() =>
-    window.cart.bindCheckoutSnapshot("shared", window.cart.captureCheckoutSnapshot()),
+    window.bindCart("72111111-1111-4111-8111-111111111114"),
   );
   assert.equal(
     secondBound,
     false,
     "account order binding must stay immutable across tabs",
   );
-  const receipt = { ...order, id: "shared", customerId: "buyer" };
-  await second.evaluate((order) => window.cart.consumeConfirmedOrder(order), receipt);
+  const receipt = {
+    ...order,
+    id: "72111111-1111-4111-8111-111111111114",
+    customerId: "buyer",
+  };
+  await second.evaluate(
+    (order) => window.cart.consumeConfirmedPurchase(order.id, order.purchasedLines),
+    receipt,
+  );
   await expect(second.locator("output")).toHaveText("1");
   await first.route("**/api/cart/validate", (route) =>
     route.fulfill({ status: 503, json: {} }),
@@ -447,7 +500,7 @@ try {
   // Account edits can wait for another page to release a Web Lock.
   await second.evaluate(async () => {
     const acquired = Promise.withResolvers();
-    void navigator.locks.request("rdk_cart_user_buyer", async () => {
+    void navigator.locks.request("rdk_cart", async () => {
       window.releaseCartLock = () => release();
       let release;
       const held = new Promise((r) => {
@@ -459,11 +512,18 @@ try {
     await acquired.promise;
   });
   await second.evaluate(() => {
-    window.writeResult = window.cart.updateQuantity("p", "v", 2);
+    window.writeResult = window.cart.updateQuantity(
+      "72111111-1111-4111-8111-111111111112",
+      "72111111-1111-4111-8111-111111111113",
+      2,
+    );
   });
   await expect(second.getByText("Saving your cart…")).toBeVisible();
   await second.evaluate(() => window.releaseCartLock());
-  assert.equal(await second.evaluate(() => window.writeResult), true);
+  assert.equal(
+    await second.evaluate(() => window.writeResult).then((r) => r.status),
+    "saved",
+  );
   await second.evaluate(() => {
     const original = Storage.prototype.setItem;
     window.restoreWrites = () => {
@@ -474,10 +534,21 @@ try {
       return original.call(this, k, v);
     };
   });
-  assert.equal(await second.evaluate(() => window.cart.clearCart()), false);
-  await expect(second.getByRole("alert")).toContainText("Could not save your cart");
-  await expect(second.locator("output")).toHaveText("2");
+  assert.equal(
+    await second.evaluate(() => window.cart.clearCart()).then((r) => r.status),
+    "unavailable",
+  );
+  await expect(
+    second.getByRole("alert").filter({ hasText: "Could not save your cart" }),
+  ).toBeVisible();
+  await expect(second.locator("output")).toHaveText("unready");
   await second.evaluate(() => window.restoreWrites());
+  assert.equal(
+    await second.evaluate(
+      () => JSON.parse(localStorage.getItem("rdk_cart_user_buyer"))[0].quantity,
+    ),
+    2,
+  );
   await context.close();
   console.log("PASS receipt authority, cache, confirmed and preserved baskets");
 } finally {

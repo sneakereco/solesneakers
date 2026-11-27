@@ -1,65 +1,57 @@
 "use client";
-
 import {
   createContext,
-  useCallback,
   useContext,
+  useState,
+  useRef,
+  useCallback,
   useEffect,
   useLayoutEffect,
-  useRef,
-  useState,
 } from "react";
-
-import { SESSION_UPDATE, SESSION_REVALIDATING } from "@/lib/auth/session-events";
+import { SESSION_REVALIDATING, SESSION_UPDATE } from "@/lib/auth/session-events";
 import { isProfileRole, type ProfileRole } from "@/config/constants/roles";
-import { readJsonResponse } from "@/lib/http/read-json-response";
 import { withRequestDeadline } from "@/lib/http/request-deadline";
+import { readSessionGeneration, sessionGenerationKey } from "./session-change";
 
 interface SessionUser {
   id: string;
   email: string;
 }
-
-interface SessionContextValue {
-  user: SessionUser | null;
-  role: ProfileRole | null;
+type SessionFacts = { user: SessionUser | null; role: ProfileRole | null };
+type Observation = SessionFacts & {
+  status: "ready" | "checking" | "denied" | "unavailable";
+  isCurrent: () => boolean;
+};
+type SessionContextValue = Observation & {
   isAuthenticated: boolean;
   isLoading: boolean;
-  sessionRevision: number;
-  sessionAvailable: boolean;
   isSessionUnavailable: boolean;
   hasRefreshed: boolean;
-  refreshSession: () => Promise<void>;
+  sessionRevision: number;
+  sessionMutationRevision: number;
+  sessionAvailable: boolean;
   isIdentityCurrent: (expectedOwner: string | null) => boolean;
-}
-
+  refreshSession: () => Promise<void>;
+};
 const SessionContext = createContext<SessionContextValue | null>(null);
-
-type SessionIdentity = { user: SessionUser | null; role: ProfileRole | null };
-
-function parseIdentity(value: unknown): SessionIdentity {
-  if (!value || typeof value !== "object" || !("user" in value) || !("role" in value)) {
-    throw new Error("Invalid session response");
-  }
-
+const masked = { user: null, role: null, isCurrent: () => false };
+function parseSession(value: unknown): SessionFacts | undefined {
+  if (!value || typeof value !== "object" || !("user" in value) || !("role" in value))
+    return;
   const { user, role } = value;
-  if (user === null && role === null) return { user, role };
+  if (user === null && role === null) return { user: null, role: null };
   if (
     user &&
     typeof user === "object" &&
     "id" in user &&
     typeof user.id === "string" &&
-    user.id &&
+    user.id.trim() &&
     "email" in user &&
     typeof user.email === "string" &&
     isProfileRole(role)
-  ) {
+  )
     return { user: { id: user.id, email: user.email }, role };
-  }
-
-  throw new Error("Invalid session identity");
 }
-
 export function SessionProvider({
   children,
   initialUser,
@@ -73,159 +65,157 @@ export function SessionProvider({
   initialUnavailable?: boolean;
   serverReadId?: string;
 }) {
-  const [serverSeed, setServerSeed] = useState({
-    readId: serverReadId,
-    user: initialUser,
-    role: initialRole,
-    unavailable: initialUnavailable,
+  const [observation, setObservation] = useState<Observation>({
+    ...masked,
+    status: initialUnavailable ? "unavailable" : "checking",
+    isCurrent: masked.isCurrent,
   });
-  const [identity, setIdentity] = useState<SessionIdentity>({
-    user: initialUser,
-    role: initialRole,
-  });
-  const { user, role } = identity;
-  const [isLoading, setIsLoading] = useState(false);
-  const [isSessionUnavailable, setSessionUnavailable] = useState(initialUnavailable);
-  const [hasRefreshed, setHasRefreshed] = useState(false);
-  const active = useRef<AbortController | null>(null);
-
+  const [retryingUnavailable, setRetryingUnavailable] = useState(initialUnavailable);
   const [sessionRevision, setSessionRevision] = useState(0);
-  const verifiedOwner = useRef<string | null | undefined>(
-    initialUnavailable ? undefined : (initialUser?.id ?? null),
-  );
-  const isIdentityCurrent = useCallback(
-    (expectedOwner: string | null) =>
-      active.current === null && verifiedOwner.current === expectedOwner,
-    [],
-  );
-  useLayoutEffect(() => {
-    verifiedOwner.current =
-      isLoading || isSessionUnavailable ? undefined : (identity.user?.id ?? null);
-    return () => {
-      verifiedOwner.current = undefined;
-    };
-  }, [identity, isLoading, isSessionUnavailable, serverSeed]);
-
-  if (
-    serverSeed.readId !== serverReadId ||
-    serverSeed.user?.id !== initialUser?.id ||
-    serverSeed.user?.email !== initialUser?.email ||
-    serverSeed.role !== initialRole ||
-    serverSeed.unavailable !== initialUnavailable
-  ) {
+  const [sessionMutationRevision, setSessionMutationRevision] = useState(0);
+  const active = useRef<AbortController | null>(null);
+  const generation = useRef<string | null>(null);
+  const beginObservation = useCallback(() => {
+    active.current?.abort();
+    window.dispatchEvent(new Event(SESSION_REVALIDATING));
     setSessionRevision((revision) => revision + 1);
-    setServerSeed({
-      readId: serverReadId,
-      user: initialUser,
-      role: initialRole,
-      unavailable: initialUnavailable,
-    });
-    setIsLoading(false);
-    setSessionUnavailable(initialUnavailable);
-    if (!initialUnavailable) {
-      setIdentity({ user: initialUser, role: initialRole });
-      setHasRefreshed(true);
+    const request = new AbortController();
+    active.current = request;
+    const atStart = readSessionGeneration();
+    generation.current = atStart;
+    const isCurrent = () => {
+      if (request.signal.aborted) return false;
+      if (readSessionGeneration() === atStart) return true;
+      // A cooperating tab can publish a change before this renderer receives its storage event.
+      window.dispatchEvent(new Event(SESSION_UPDATE));
+      return false;
+    };
+    return { request, isCurrent };
+  }, []);
+  const refreshSession = useCallback(async () => {
+    const { request, isCurrent } = beginObservation();
+    setObservation({ ...masked, status: "checking" });
+    try {
+      const { facts, status } = await withRequestDeadline(async (signal) => {
+        const response = await fetch("/api/auth/session", { cache: "no-store", signal });
+        const verified = response.ok ? parseSession(await response.json()) : undefined;
+        return { facts: verified, status: response.status };
+      }, request.signal);
+      if (!isCurrent()) return;
+      setRetryingUnavailable(!facts);
+      setObservation(
+        facts
+          ? { ...facts, status: "ready", isCurrent }
+          : { ...masked, status: status === 403 ? "denied" : "unavailable" },
+      );
+    } catch {
+      if (isCurrent()) {
+        setRetryingUnavailable(true);
+        setObservation({ ...masked, status: "unavailable" });
+      }
     }
-  }
-
-  useLayoutEffect(() => {
-    // A newly committed server read supersedes any older client refresh.
+  }, [beginObservation]);
+  useEffect(() => {
+    function verify() {
+      void refreshSession();
+    }
+    function identityChanged() {
+      setSessionMutationRevision((revision) => revision + 1);
+      verify();
+    }
+    function onStorage(event: StorageEvent) {
+      if (
+        (event.key === sessionGenerationKey || event.key === null) &&
+        readSessionGeneration() !== generation.current
+      )
+        identityChanged();
+    }
+    function onVisible() {
+      if (document.visibilityState === "visible") verify();
+    }
+    function onPageShow(event: PageTransitionEvent) {
+      if (event.persisted) verify();
+    }
+    let channel: BroadcastChannel | undefined;
+    try {
+      channel = new BroadcastChannel(sessionGenerationKey);
+      channel.onmessage = identityChanged;
+    } catch {
+      /* Storage events remain available where supported. */
+    }
+    window.addEventListener("storage", onStorage);
+    window.addEventListener(SESSION_UPDATE, identityChanged);
+    window.addEventListener("pageshow", onPageShow);
+    document.addEventListener("visibilitychange", onVisible);
     return () => {
       active.current?.abort();
-      active.current = null;
-    };
-  }, [serverSeed]);
-
-  const refreshSession = useCallback(async () => {
-    active.current?.abort();
-    const controller = new AbortController();
-    active.current = controller;
-    verifiedOwner.current = undefined;
-    window.dispatchEvent(new Event(SESSION_REVALIDATING));
-    setIsLoading(true);
-    try {
-      const data = await withRequestDeadline(async (signal) => {
-        const response = await fetch("/api/auth/session", { cache: "no-store", signal });
-        return readJsonResponse<unknown>(response, "Could not load account");
-      }, controller.signal);
-      if (active.current === controller) {
-        setIdentity(parseIdentity(data));
-        setHasRefreshed(true);
-        setSessionUnavailable(false);
-      }
-    } catch {
-      if (active.current === controller) setSessionUnavailable(true);
-    } finally {
-      if (active.current === controller) {
-        active.current = null;
-        setIsLoading(false);
-        setSessionRevision((revision) => revision + 1);
-      }
-    }
-  }, []);
-
-  // Listen for session update events (triggered by login/logout)
-  useEffect(() => {
-    const channelName = "sole-auth-session-changed";
-    let channel: BroadcastChannel | null = null;
-    try {
-      channel = new BroadcastChannel(channelName);
-    } catch {
-      /* Storage events support older browsers. */
-    }
-    const refresh = () => {
-      void refreshSession();
-    };
-    if (channel) channel.onmessage = refresh;
-    const stored = (event: StorageEvent) => {
-      if (event.key === channelName && event.newValue === "changed") refresh();
-    };
-    const changed = () => {
-      refresh();
-      if (channel) {
-        channel.postMessage("changed");
-      } else {
-        try {
-          window.localStorage.setItem(channelName, "changed");
-          window.localStorage.removeItem(channelName);
-        } catch {
-          /* Refresh again on resumption. */
-        }
-      }
-    };
-    window.addEventListener(SESSION_UPDATE, changed);
-    window.addEventListener("storage", stored);
-    return () => {
       channel?.close();
-      window.removeEventListener(SESSION_UPDATE, changed);
-      window.removeEventListener("storage", stored);
+      window.removeEventListener("storage", onStorage);
+      window.removeEventListener(SESSION_UPDATE, identityChanged);
+      window.removeEventListener("pageshow", onPageShow);
+      document.removeEventListener("visibilitychange", onVisible);
     };
   }, [refreshSession]);
-
+  useLayoutEffect(() => {
+    if (!serverReadId) {
+      let mounted = true;
+      queueMicrotask(() => {
+        if (mounted) void refreshSession();
+      });
+      return () => {
+        mounted = false;
+        active.current?.abort();
+      };
+    } else {
+      // Apply the verified server observation synchronously before painting this scope.
+      // eslint-disable-next-line react-hooks/set-state-in-effect
+      const { isCurrent } = beginObservation();
+      const facts = initialUnavailable
+        ? undefined
+        : parseSession({ user: initialUser, role: initialRole });
+      setRetryingUnavailable(!facts);
+      setObservation(
+        facts
+          ? { ...facts, status: "ready", isCurrent }
+          : { ...masked, status: "unavailable" },
+      );
+    }
+    return () => active.current?.abort();
+  }, [
+    refreshSession,
+    beginObservation,
+    serverReadId,
+    initialUser,
+    initialRole,
+    initialUnavailable,
+  ]);
   return (
     <SessionContext.Provider
       value={{
-        user,
-        role,
-        isAuthenticated: Boolean(user),
-        isLoading,
-        isSessionUnavailable,
-        hasRefreshed,
-        refreshSession,
-        sessionAvailable: !isSessionUnavailable,
+        ...observation,
+        isAuthenticated: observation.status === "ready" && Boolean(observation.user),
+        isLoading: observation.status === "checking",
+        isSessionUnavailable:
+          retryingUnavailable ||
+          observation.status === "denied" ||
+          observation.status === "unavailable",
+        sessionAvailable: observation.status === "ready",
         sessionRevision,
-        isIdentityCurrent,
+        sessionMutationRevision,
+        hasRefreshed: observation.status === "ready",
+        isIdentityCurrent: (expectedOwner) =>
+          observation.status === "ready" &&
+          observation.isCurrent() &&
+          (observation.user?.id ?? null) === expectedOwner,
+        refreshSession,
       }}
     >
       {children}
     </SessionContext.Provider>
   );
 }
-
 export function useSession() {
   const context = useContext(SessionContext);
-  if (!context) {
-    throw new Error("useSession must be used within SessionProvider");
-  }
+  if (!context) throw Error("useSession must be used within SessionProvider");
   return context;
 }

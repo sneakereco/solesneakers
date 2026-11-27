@@ -3,6 +3,14 @@ import {
   type CheckoutQuoteDependencies,
 } from "@/lib/checkout/checkout-quote";
 
+const oldSecret = process.env.CHECKOUT_IDENTITY_HMAC_SECRET;
+beforeAll(() => {
+  process.env.CHECKOUT_IDENTITY_HMAC_SECRET = "test-secret-for-shipping-confirmations";
+});
+afterAll(() => {
+  if (oldSecret === undefined) delete process.env.CHECKOUT_IDENTITY_HMAC_SECRET;
+  else process.env.CHECKOUT_IDENTITY_HMAC_SECRET = oldSecret;
+});
 const requestBody = {
   items: [
     {
@@ -74,6 +82,9 @@ describe("checkoutQuoteHandler", () => {
 
     expect(response.status).toBe(200);
     expect(response.headers.get("cache-control")).toBe("no-store");
+    expect(response.headers.get("set-cookie")).toEqual(
+      expect.stringContaining("; HttpOnly"),
+    );
     await expect(response.json()).resolves.toEqual({
       completeness: "preliminary",
       totals: {
@@ -198,6 +209,52 @@ describe("checkoutQuoteHandler", () => {
     expect((await checkoutQuoteHandler(request() as never, bot)).status).toBe(403);
   });
 
+  it("preserves the original context on a later successful or failed quote", async () => {
+    const deps = dependencies();
+    const initial = await checkoutQuoteHandler(request() as never, deps);
+    const cookie = initial.headers.get("set-cookie")!.split(";")[0];
+    const repeat = () => {
+      const r = request();
+      r.headers.set("cookie", cookie);
+      return r as never;
+    };
+    const next = await checkoutQuoteHandler(repeat(), deps);
+    expect(next.status).toBe(200);
+    expect(next.headers.has("set-cookie")).toBe(false);
+    const failed = await checkoutQuoteHandler(
+      repeat(),
+      dependencies({ quote: jest.fn().mockRejectedValue(Error("unavailable")) }),
+    );
+    expect(failed.status).toBe(503);
+    expect(failed.headers.has("set-cookie")).toBe(false);
+  });
+  it("overlapping initial HTTP replies retain both browser proofs", async () => {
+    const [a, b] = await Promise.all([
+      checkoutQuoteHandler(request() as never, dependencies()),
+      checkoutQuoteHandler(request() as never, dependencies()),
+    ]);
+    const cookieA = a.headers.get("set-cookie")!.split(";")[0],
+      cookieB = b.headers.get("set-cookie")!.split(";")[0];
+    expect(cookieA.split("=")[0]).not.toBe(cookieB.split("=")[0]);
+    const next = request();
+    next.headers.set("cookie", cookieB + "; " + cookieA);
+    const repeated = await checkoutQuoteHandler(next as never, dependencies());
+    expect(repeated.status).toBe(200);
+    expect(repeated.headers.has("set-cookie")).toBe(false);
+  });
+  it("refuses an excessive proof collection without rotating any issued cookie", async () => {
+    const r = request();
+    r.headers.set(
+      "cookie",
+      Array.from(
+        { length: 17 },
+        (_, i) => "__Host-checkout-context-" + i + "=invalid",
+      ).join("; "),
+    );
+    const result = await checkoutQuoteHandler(r as never, dependencies());
+    expect(result.status).toBe(503);
+    expect(result.headers.has("set-cookie")).toBe(false);
+  });
   it("reports provider failures without exposing details", async () => {
     const error = new Error("provider body");
     const deps = dependencies({

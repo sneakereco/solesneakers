@@ -83,6 +83,7 @@ const bundle = await build({
         }],
       };
       const initialData = {
+        ownerId: null,
         isGuest: true,
         customer: {
           email: "",
@@ -238,7 +239,7 @@ const bundle = await build({
         });
         window.testGrant = "new-receipt";
         flushSync(() => root.render(<CartProvider><CartProbe /></CartProvider>));
-        assert.deepEqual(await saved,true,"grant transition preserves the committed cart write");
+        assert.deepEqual((await saved).status,"saved","grant transition preserves the committed cart write");
         assert.deepEqual(test.events,[],"later consent cannot publish a preexisting cart action");
         await resetRoot();
         sessionStorage.clear();
@@ -372,7 +373,7 @@ const bundle = await build({
           ["@/lib/utils/log", "export const logError = () => {};"],
           [
             "@/contexts/SessionContext",
-            "const isIdentityCurrent=owner=>owner===(window.searchOwner??null); export const useSession=()=>({user:window.searchOwner?{id:window.searchOwner}:null,sessionRevision:window.searchRevision??0,isIdentityCurrent});",
+            'const isIdentityCurrent=owner=>owner===(window.searchOwner??null); const guestCurrent=()=>isIdentityCurrent(null); export const useSession=()=>({user:window.searchOwner?{id:window.searchOwner}:null,status:"ready",isCurrent:guestCurrent,refreshSession:async()=>{},sessionRevision:window.searchRevision??0,isIdentityCurrent});',
           ],
           [
             "@/components/checkout/CheckoutContactSection",
@@ -399,18 +400,36 @@ const bundle = await build({
             "export class CheckoutCartUnavailable extends Error {}; export const SquarePaymentMethods = ({ children }) => <div data-payment>{children}</div>;",
           ],
           [
-            "@/lib/checkout/client-session",
+            "@/Modules/Checkout/Source/Client",
             `
           export const getOrCreateCheckoutDeviceSessionId = () => "device";
-          export const getOrCreateCheckoutIdempotencyKey = () => "idempotency";
-          export const rememberPendingCheckoutAttempt = () => {}; export const clearCheckoutAttempt = () => {}; export const storeGuestOrderAccess = () => {};
+          export const useProcessingCredential=()=>undefined; export const useCheckoutRegistration=()=>undefined; export const capturePreparedAttempt=()=>{throw Error("unexpected prepare")};
+          export const readGuestOrderAccess=()=>null; export const needsOriginalRecovery=()=>false; export const recoverOriginalOrder=()=>{throw Error("unexpected recovery")};
         `,
           ],
           [
             "@/lib/checkout/idempotency",
-            "export const clearIdempotencyKeyFromStorage = () => {};",
+            `export const generateIdempotencyKey = () => {
+              if (typeof window !== "undefined" && window.crypto?.randomUUID) {
+                return window.crypto.randomUUID();
+              }
+              return "xxxxxxxx-xxxx-4xxx-yxxx-xxxxxxxxxxxx".replace(/[xy]/g, (c) => {
+                const r = (Math.random() * 16) | 0;
+                const v = c === "x" ? r : (r & 0x3) | 0x8;
+                return v.toString(16);
+              });
+            };
+            export const clearIdempotencyKeyFromStorage = () => {};`,
           ],
         ]);
+        builder.onResolve({ filter: /^\.\/view-grant$/ }, (args) =>
+          args.importer.endsWith("use-checkout-start.ts")
+            ? {
+                path: "@/Modules/Analytics/Source/Features/VisitorMeasurement/view-grant",
+                namespace: "measurement-test",
+              }
+            : null,
+        );
         builder.onResolve({ filter: /^\.\/client$/ }, (args) =>
           args.importer.endsWith("triggers.ts")
             ? { path: "capture-test", namespace: "measurement-test" }

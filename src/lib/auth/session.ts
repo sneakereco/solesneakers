@@ -50,7 +50,8 @@ async function readVerifiedSession(signal: AbortSignal): Promise<ServerSession |
     if (isDefinitiveAuthRejection(error)) return null;
     throw error;
   }
-  if (!user) return null;
+  if (!user || typeof user.id !== "string" || !user.id.trim())
+    throw Error("Session identity unavailable");
 
   if (signal.aborted) throw signal.reason;
   const profileRepo = new ProfileRepository(supabase);
@@ -71,6 +72,8 @@ async function readVerifiedSession(signal: AbortSignal): Promise<ServerSession |
     role: profile?.role ?? "customer",
   };
 }
+
+export const observeServerSession = readServerSession;
 
 export async function getServerSession({
   requireAvailable = false,

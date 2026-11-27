@@ -8,6 +8,7 @@ jest.mock("next/navigation", () => ({
 
 jest.mock("@/components/cart/CartProvider", () => ({
   useCart: () => ({
+    access: "ready",
     items: [],
     itemCount: 0,
     removeItem: jest.fn(),

@@ -9,8 +9,6 @@ export async function GET() {
   const start = Date.now();
 
   try {
-    env;
-
     // Supabase readiness (Service Role Key)
     const supabase = createClient(env.NEXT_PUBLIC_SUPABASE_URL, env.SUPABASE_SECRET_KEY);
 
@@ -21,7 +19,6 @@ export async function GET() {
         {
           ready: false,
           error: "Supabase query failed",
-          details: dbError.message,
         },
         { status: 500 },
       );
@@ -36,12 +33,11 @@ export async function GET() {
     let pong: string;
     try {
       pong = await redis.ping();
-    } catch (redisErr) {
+    } catch {
       return NextResponse.json(
         {
           ready: false,
           error: "Redis unreachable",
-          details: redisErr instanceof Error ? redisErr.message : "Unknown Redis error",
         },
         { status: 500 },
       );
@@ -52,7 +48,6 @@ export async function GET() {
         {
           ready: false,
           error: "Upstash returned invalid response",
-          returned: pong,
         },
         { status: 500 },
       );
@@ -81,14 +76,11 @@ export async function GET() {
       },
       { status: 200 },
     );
-  } catch (err: unknown) {
-    const message = err instanceof Error ? err.message : "Unexpected error";
-
+  } catch {
     return NextResponse.json(
       {
         ready: false,
         error: "Startup readiness check failed",
-        details: message,
       },
       { status: 500 },
     );

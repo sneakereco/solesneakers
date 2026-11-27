@@ -35,6 +35,7 @@ export type BehaviorEvent =
       quantity: 1;
     };
 
+const credentialUuid = /[a-f0-9]{8}-(?:[a-f0-9]{4}-){3}[a-f0-9]{12}/i;
 const uuid = new RegExp(scalars.id.pattern);
 export const isUuid = (v: unknown): v is string => typeof v === "string" && uuid.test(v);
 export const isBuyerKey = (v: unknown): v is string =>
@@ -66,6 +67,7 @@ export function safeSlug(v: unknown): string | null {
   if (
     typeof v !== "string" ||
     !/^[a-z0-9][a-z0-9_-]{0,63}$/i.test(v) ||
+    credentialUuid.test(v) ||
     /[a-z0-9]{24,}|token|secret|password|auth|session|key|(?:\d[ _-]?){7}/i.test(v)
   )
     return null;

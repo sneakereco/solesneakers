@@ -1,3 +1,4 @@
+import { BasketLineReview, needsBasketReview } from "@/Modules/Cart/Source/Client";
 import Image from "next/image";
 import { Skeleton } from "@/components/ui/Skeleton";
 
@@ -28,11 +29,14 @@ export function CheckoutOrderSummary({
   className?: string;
 }) {
   const cartSubtotal = items.reduce(
-    (sum, item) => sum + item.priceCents * item.quantity,
+    (sum, item) => sum + (needsBasketReview(item) ? 0 : item.priceCents * item.quantity),
     0,
   );
   const loading = quoteState.status === "loading";
-  const quote = quoteState.status === "ready" ? quoteState.quote : undefined;
+  const quote =
+    quoteState.status === "ready" && !items.some(needsBasketReview)
+      ? quoteState.quote
+      : undefined;
   const pendingAmount = loading ? (
     <Skeleton className="h-4 w-16 rounded" />
   ) : (
@@ -72,9 +76,14 @@ export function CheckoutOrderSummary({
                 <p className="mt-1 text-xs text-zinc-500">
                   Size {item.sizeLabel} · Qty {item.quantity}
                 </p>
+                {(item.availability ||
+                  item.previousPriceCents !== undefined ||
+                  item.orderScoped) && <BasketLineReview item={item} />}
               </div>
               <p className="text-sm font-medium">
-                {formatPrice(item.priceCents * item.quantity)}
+                {item.availability
+                  ? "Unavailable"
+                  : formatPrice(item.priceCents * item.quantity)}
               </p>
             </div>
           ))}

@@ -1,79 +1,57 @@
-import { scheduleAnalyticsDrain } from "@/Modules/Analytics/Source/Features/EventDelivery/delivery-runtime";
-import { NextResponse } from "next/server";
-
+import { observeCheckoutRequest } from "@/Modules/Checkout/Source/Features/Operations/request-metrics";
 import { getRequestIdFromHeaders } from "@/lib/http/request-id";
-import { scheduleCheckoutNotifications } from "@/lib/checkout/checkout-notification-scheduler";
-import { createSupabaseAdminClient } from "@/lib/supabase/service-role";
-import { getSquareConfig } from "@/lib/square/config";
-import { SquarePaymentEventProcessor } from "@/lib/square/payment-event";
-import { createSquarePaymentOrderVerifier } from "@/lib/square/payment-order-verification";
+import { NextResponse } from "next/server";
 import {
-  createSquareShippingSyncDependencies,
-  synchronizeSquareShippingAddress,
-} from "@/lib/square/shipping-address-sync";
+  normalizeSquareReceipt,
+  readSquareWebhookBody,
+  SquareReceiptError,
+  SquareWebhookInbox,
+} from "@/Modules/Checkout/Source/Features/Payments/webhook-inbox";
+import { getSquareConfig, getSquareMerchantId } from "@/lib/square/config";
+import { promptSquareReceipt } from "@/lib/square/financial-inquiry-dependencies";
 import { verifySquareWebhookSignature } from "@/lib/square/webhook";
-import { log, logError } from "@/lib/utils/log";
-
-const NO_STORE_HEADERS = { "Cache-Control": "no-store" };
-
-export async function POST(request: Request) {
-  const requestId = getRequestIdFromHeaders(request.headers);
-
+import { createSupabaseAdminClient } from "@/lib/supabase/service-role";
+const headers = { "Cache-Control": "no-store" };
+export function POST(request: Request) {
+  return observeCheckoutRequest(
+    "/api/webhooks/square",
+    "POST",
+    getRequestIdFromHeaders(request.headers),
+    () => receive(request),
+  );
+}
+async function receive(request: Request) {
   try {
-    const rawBody = await request.text();
-    const signature = request.headers.get("x-square-hmacsha256-signature") ?? "";
+    const rawBody = await readSquareWebhookBody(request);
     const config = getSquareConfig();
-    const signatureValid = await verifySquareWebhookSignature({
-      rawBody,
-      signature,
-      signatureKey: config.webhookSignatureKey,
-      notificationUrl: config.webhookNotificationUrl,
-    });
-
-    if (!signatureValid) {
-      log({
-        level: "warn",
-        layer: "api",
-        route: "/api/webhooks/square",
-        requestId,
-        event: "square_webhook_invalid_signature",
-        message: "square_webhook_invalid_signature",
-        status: 401,
-      });
+    if (
+      !(await verifySquareWebhookSignature({
+        rawBody,
+        signature: request.headers.get("x-square-hmacsha256-signature") ?? "",
+        signatureKey: config.webhookSignatureKey,
+        notificationUrl: config.webhookNotificationUrl,
+      }))
+    )
       return NextResponse.json(
         { error: "Invalid webhook signature" },
-        { status: 401, headers: NO_STORE_HEADERS },
+        { status: 401, headers },
       );
-    }
-
-    const supabase = createSupabaseAdminClient();
-    const processor = new SquarePaymentEventProcessor(
-      supabase,
+    const receipt = normalizeSquareReceipt(
+      rawBody,
+      getSquareMerchantId(),
       config.locationId,
-      createSquarePaymentOrderVerifier(supabase),
-      scheduleCheckoutNotifications,
     );
-    const result = await processor.process(rawBody);
-    await synchronizeSquareShippingAddress(
-      result,
-      createSquareShippingSyncDependencies(supabase),
-    );
-
-    if ("duplicate" in result && !result.duplicate) scheduleAnalyticsDrain();
-    return NextResponse.json({ ok: true }, { headers: NO_STORE_HEADERS });
+    if (receipt) {
+      const db = createSupabaseAdminClient();
+      const stored = await new SquareWebhookInbox(db).receiveSquareEvent(receipt);
+      if (stored === "stored") promptSquareReceipt(db, receipt.eventId);
+    }
+    return NextResponse.json({ ok: true }, { headers });
   } catch (error) {
-    logError(error, {
-      layer: "api",
-      route: "/api/webhooks/square",
-      requestId,
-      event: "square_webhook_processing_failed",
-    });
-
-    const invalidEvent =
-      error instanceof Error && error.message === "square_webhook_invalid_event";
+    const status = error instanceof SquareReceiptError ? error.status : 503;
     return NextResponse.json(
-      { error: invalidEvent ? "Invalid webhook event" : "Webhook processing failed" },
-      { status: invalidEvent ? 400 : 500, headers: NO_STORE_HEADERS },
+      { error: status === 503 ? "Webhook receipt unavailable" : "Invalid webhook event" },
+      { status, headers },
     );
   }
 }

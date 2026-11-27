@@ -336,7 +336,9 @@ test("partial stock failure rolls back every allocation and creates no order", a
   assert.deepEqual(await fingerprint(db), beforeRows);
 });
 
-test("release remains idempotent after new reservation and restores stock once", async () => {
+// This fixture applies the single-store expansion migration alone. The full
+// hardening replay separately verifies that a no-ledger hold stays protected.
+test("the historical expansion alone restores a canceled reservation once", async () => {
   await applyExpansion(db);
   const catalog = await seedCatalog(db);
   await db.query("set local role service_role");

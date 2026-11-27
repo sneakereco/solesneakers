@@ -49,7 +49,6 @@ export function canonicalizePath(
     route: rawPathname,
     status: canonicalize.redirectStatus,
     event: "path_normalization",
-    canonicalPathname,
   });
 
   const redirectUrl = new URL(url.toString());

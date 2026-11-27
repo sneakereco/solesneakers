@@ -1,3 +1,4 @@
+import { readOrIssueGuestContext } from "@/Modules/Checkout/Source/Features/Preparation/guest-context";
 import type { NextRequest } from "next/server";
 
 import type { CheckoutAccessDecision } from "@/lib/checkout/checkout-access";
@@ -29,10 +30,17 @@ export type CheckoutQuoteDependencies = {
   reportError(error: unknown): void;
 };
 
-function json(body: CheckoutQuoteResponse | { error: string }, status: number) {
+function json(
+  body: CheckoutQuoteResponse | { error: string },
+  status: number,
+  setCookie?: string,
+) {
   return Response.json(body, {
     status,
-    headers: { "Cache-Control": "no-store" },
+    headers: {
+      "Cache-Control": "no-store",
+      ...(setCookie ? { "Set-Cookie": setCookie } : {}),
+    },
   });
 }
 
@@ -86,6 +94,7 @@ export async function checkoutQuoteHandler(
           quoteFingerprint: null,
         },
         200,
+        readOrIssueGuestContext(request).setCookie,
       );
     }
 
@@ -107,7 +116,11 @@ export async function checkoutQuoteHandler(
       totals,
     });
 
-    return json({ completeness: "exact", totals, quoteFingerprint }, 200);
+    return json(
+      { completeness: "exact", totals, quoteFingerprint },
+      200,
+      readOrIssueGuestContext(request).setCookie,
+    );
   } catch (error) {
     deps.reportError(error);
     return json({ error: "Checkout totals are temporarily unavailable" }, 503);

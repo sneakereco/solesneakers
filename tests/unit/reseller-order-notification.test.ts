@@ -3,12 +3,15 @@ jest.mock("@/config/env", () => ({
   env: { NEXT_PUBLIC_SITE_URL: "https://example.com" },
 }));
 
-import { createCheckoutNotificationDependencies } from "@/lib/checkout/checkout-notification-dependencies";
+import {
+  createCheckoutMailDrainDependencies,
+  createCheckoutNotificationDependencies,
+} from "@/lib/checkout/checkout-notification-dependencies";
 import {
   processCheckoutNotifications,
   type CheckoutNotification,
 } from "@/lib/checkout/checkout-notification-worker";
-import { sendEmailWithRetry } from "@/lib/email/mailer";
+import { sendCheckoutMail, sendEmailWithRetry } from "@/lib/email/mailer";
 import type { AdminSupabaseClient } from "@/lib/supabase/service-role";
 
 const orderId = "00000000-0000-4000-8000-000000000010";
@@ -119,6 +122,7 @@ function fixture(
     },
   } as unknown as AdminSupabaseClient;
   return {
+    owned: createCheckoutMailDrainDependencies(admin, orderId),
     deps: createCheckoutNotificationDependencies(admin, orderId),
     audits,
     finished,
@@ -230,4 +234,31 @@ it("does not resend an accepted reseller email when queue completion is retried"
   await deps.send(notifications[0]);
   await deps.send(notifications[0]);
   expect(sendEmailWithRetry).toHaveBeenCalledTimes(1);
+});
+
+it("hands the reseller notification to the single-attempt transport with its owned lease and records the accepted message", async () => {
+  const { owned, notifications, audits } = fixture();
+  const begin = jest.fn(async () => {});
+  const controller = new AbortController();
+  jest.mocked(sendCheckoutMail).mockImplementationOnce(async (input, delivery) => {
+    expect(input.to).toBe(seller);
+    expect(delivery.signal).toBe(controller.signal);
+    await delivery.begin();
+    return { messageId: "owned-accepted" };
+  });
+  await owned.send(
+    { ...notifications[0], leaseToken: crypto.randomUUID() },
+    controller.signal,
+    begin,
+  );
+  expect(begin).toHaveBeenCalledTimes(1);
+  expect(sendEmailWithRetry).not.toHaveBeenCalled();
+  expect(audits).toEqual([
+    expect.objectContaining({
+      notification_id: notifications[0].id,
+      recipient_email: seller,
+      delivery_status: "sent",
+      message_id: "owned-accepted",
+    }),
+  ]);
 });

@@ -5,6 +5,7 @@ import { Redis } from "@upstash/redis";
 
 import { log } from "@/lib/utils/log";
 import { env } from "@/config/env";
+import { checkoutAdmissionBudgets } from "@/Modules/Checkout/Source/Features/Operations/admission";
 import { security } from "@/config/security";
 import { getTrustedClientIp } from "@/lib/http/client-ip";
 
@@ -75,44 +76,21 @@ function getLimiter(bucket: string, maxRequests: number, window: string): Rateli
   return instance;
 }
 
-function maskIpForLog(ip: string): string {
-  if (ip === "unknown") {
-    return ip;
-  }
-
-  if (ip.includes(".")) {
-    const parts = ip.split(".");
-    if (parts.length === 4) {
-      return `${parts[0]}.${parts[1]}.${parts[2]}.xxx`;
-    }
-    return ip;
-  }
-
-  if (ip.includes(":")) {
-    const parts = ip.split(":").filter(Boolean);
-    if (parts.length >= 2) {
-      return `${parts[0]}:${parts[1]}::/??`;
-    }
-    return ip;
-  }
-
-  return ip;
-}
-
 type Policy = { bucket: string; maxRequests: number; window: string };
 
-/**
- * Your requested policy:
- * Auth:
- *  - /api/auth/login: 10 per 5m
- *  - /api/auth/register: 5 per 10m
- *  - /api/auth/forgot-password: 3 per 15m
- * Checkout:
- *  - /api/checkout: 60 per 1m
- * API:
- *  - writes: 30 per 1m
- *  - reads: 300 per 1m
- */
+function isCheckoutTraffic(path: string, method: string) {
+  return (
+    (method.toUpperCase() === "POST" &&
+      [
+        "/api/checkout/quote",
+        "/api/checkout/prepare",
+        "/api/checkout/payment-permit",
+        "/api/checkout/pay",
+      ].includes(path)) ||
+    (method.toUpperCase() === "GET" && /^\/api\/orders\/[^/]+$/.test(path))
+  );
+}
+
 export function getRateLimitPolicyForRequest(
   pathname: string,
   method: string,
@@ -141,17 +119,14 @@ export function getRateLimitPolicyForRequest(
     return { bucket: "auth_forgot", maxRequests: 3, window: "15 m" };
   }
 
-  // Vercel owns the short-window IP and JA4 limits for checkout writes.
-  // Identity-aware quotas and one-use permits are applied inside these routes.
-  if (
-    [
-      "/api/checkout/prepare",
-      "/api/checkout/payment-permit",
-      "/api/checkout/pay",
-    ].includes(pathname) &&
-    method.toUpperCase() === "POST"
-  ) {
-    return null;
+  // Apply coarse read protection to discovery/permit/quote/status even before
+  // an owner is known. New allocation and dispatch also require route admission.
+  if (isCheckoutTraffic(pathname, method)) {
+    return {
+      bucket: "checkout_traffic",
+      maxRequests: checkoutAdmissionBudgets?.ipPerMinute ?? 300,
+      window: "1 m",
+    };
   }
 
   // General API read vs write
@@ -229,7 +204,6 @@ export async function applyRateLimit(
       route: pathname,
       method: request.method,
       event: "rate_limit_missing_ip",
-      ip: "unknown",
     });
     return null;
   }
@@ -239,7 +213,19 @@ export async function applyRateLimit(
 
     // One key, one bucket
     const key = `host:${hostname}:ip:${clientIp}:bucket:${policy.bucket}`;
-    const result = (await limiter.limit(key)) as RateLimitResult;
+    let result = (await limiter.limit(key)) as RateLimitResult;
+    if (
+      result.success &&
+      policy.bucket === "checkout_traffic" &&
+      checkoutAdmissionBudgets
+    ) {
+      const global = getLimiter(
+        "checkout_traffic_global",
+        checkoutAdmissionBudgets.globalPerMinute,
+        "1 m",
+      );
+      result = await global.limit("all");
+    }
 
     if (result.success) {
       return null;
@@ -255,7 +241,7 @@ export async function applyRateLimit(
       status: rateLimit.blockStatus,
       event: "rate_limit_exceeded",
       bucket: policy.bucket,
-      ip: maskIpForLog(clientIp),
+
       limit: result.limit,
       remaining: result.remaining,
       reset: result.reset,
@@ -281,12 +267,7 @@ export async function applyRateLimit(
     response.headers.set("Cache-Control", "no-store");
 
     return response;
-  } catch (err) {
-    const cause =
-      err instanceof Error && err.cause && typeof err.cause === "object"
-        ? (err.cause as { code?: unknown; message?: unknown })
-        : null;
-
+  } catch {
     // Fail open on Upstash errors
     log({
       level: "error",
@@ -296,10 +277,6 @@ export async function applyRateLimit(
       route: pathname,
       method: request.method,
       event: "rate_limit_outage",
-      ip: maskIpForLog(clientIp),
-      error: err instanceof Error ? err.message : String(err),
-      error_code: typeof cause?.code === "string" ? cause.code : null,
-      error_cause: typeof cause?.message === "string" ? cause.message : null,
     });
     return null;
   }

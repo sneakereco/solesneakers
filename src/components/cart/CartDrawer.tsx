@@ -1,4 +1,9 @@
 "use client";
+import {
+  BasketAccessNotice,
+  BasketRepairNotice,
+  BasketLineReview,
+} from "@/Modules/Cart/Source/Client";
 
 import { ActionButton } from "@/components/ui/ActionButton";
 import { useId } from "react";
@@ -34,6 +39,8 @@ export function CartDrawer({ isOpen, onClose, invoker }: CartDrawerProps) {
     removeItem,
     updateQuantity,
     total,
+    access,
+    hasUnreadableItems,
     isReady,
     hasCartView,
     validationStatus,
@@ -82,7 +89,9 @@ export function CartDrawer({ isOpen, onClose, invoker }: CartDrawerProps) {
           </ActionButton>
         </header>
 
+        {hasUnreadableItems && <BasketRepairNotice />}
         <CartFeedback />
+        {!isReady && access !== "checking" && <BasketAccessNotice />}
         {!isReady && !hasCartView ? (
           validationStatus === "error" ? null : (
             <CartSkeleton drawer />
@@ -145,7 +154,9 @@ export function CartDrawer({ isOpen, onClose, invoker }: CartDrawerProps) {
                           )}
                         </FeedbackLink>
                         <p className="shrink-0 text-sm font-medium">
-                          {formatPrice(item.priceCents * item.quantity)}
+                          {item.availability
+                            ? "Unavailable"
+                            : formatPrice(item.priceCents * item.quantity)}
                         </p>
                       </div>
 
@@ -153,16 +164,15 @@ export function CartDrawer({ isOpen, onClose, invoker }: CartDrawerProps) {
                         Size: {item.sizeLabel === "N/A" ? "One size" : item.sizeLabel}
                       </p>
 
+                      <BasketLineReview item={item} />
                       <div className="mt-4 flex items-center justify-between gap-4">
                         <div className="inline-grid grid-cols-3 border border-zinc-300">
                           <ActionButton
                             type="button"
                             onClick={() =>
-                              void updateQuantity(
-                                item.productId,
-                                item.variantId,
-                                item.quantity - 1,
-                              )
+                              void updateQuantity(item.productId, item.variantId, {
+                                adjustBy: -1,
+                              })
                             }
                             className="flex h-9 w-9 cursor-pointer items-center justify-center transition-colors hover:bg-zinc-100"
                             disabled={!isReady || writePending}
@@ -176,11 +186,9 @@ export function CartDrawer({ isOpen, onClose, invoker }: CartDrawerProps) {
                           <ActionButton
                             type="button"
                             onClick={() =>
-                              void updateQuantity(
-                                item.productId,
-                                item.variantId,
-                                item.quantity + 1,
-                              )
+                              void updateQuantity(item.productId, item.variantId, {
+                                adjustBy: 1,
+                              })
                             }
                             disabled={!isReady || writePending || !canIncrease}
                             className="flex h-9 w-9 cursor-pointer items-center justify-center transition-colors hover:bg-zinc-100 disabled:cursor-not-allowed disabled:text-zinc-300"

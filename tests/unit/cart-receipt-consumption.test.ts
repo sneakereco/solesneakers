@@ -1,10 +1,12 @@
-import { CartService } from "@/services/cart-service";
-import type { OrderStatusResponse } from "@/types/domain/checkout";
+import {
+  BasketStorage,
+  type BasketView,
+} from "@/Modules/Cart/Source/Features/ManageBasket/cart-storage";
 
 function storage() {
   const entries = new Map<string, string>();
   return {
-    getItem: (key: string) => entries.get(key) ?? null,
+    getItem: jest.fn((key: string) => entries.get(key) ?? null),
     setItem: jest.fn((key: string, value: string) => {
       entries.set(key, value);
     }),
@@ -12,8 +14,8 @@ function storage() {
   };
 }
 const row = {
-  productId: "p",
-  variantId: "v",
+  productId: crypto.randomUUID(),
+  variantId: crypto.randomUUID(),
   name: "Shoes",
   brand: "Brand",
   sizeLabel: "10",
@@ -21,240 +23,229 @@ const row = {
   priceCents: 20,
   imageUrl: "/x",
 };
-const purchase = { productId: "p", variantId: "v", quantity: 2 };
-const paid = {
-  id: "order",
-  status: "paid",
-  customerId: null,
-  purchasedItems: [purchase],
-} as OrderStatusResponse;
+const order = crypto.randomUUID();
+const item = { productId: row.productId, variantId: row.variantId, quantity: 2 };
 const key = "rdk_cart_session";
-let session: ReturnType<typeof storage>;
-let account: ReturnType<typeof storage>;
-let cart: CartService;
-
+let session: ReturnType<typeof storage>, account: ReturnType<typeof storage>;
+let cleanups: Array<() => void>;
+const locks = {
+  request: (_name: string, _options: unknown, fn: () => unknown) => Promise.resolve(fn()),
+};
+async function connect(owner: string | null = null) {
+  const basket = new BasketStorage(owner, () => true, {});
+  let view!: BasketView;
+  let loaded!: () => void;
+  const ready = new Promise<void>((resolve) => {
+    loaded = resolve;
+  });
+  cleanups.push(
+    basket.connect((next) => {
+      view = next;
+      loaded();
+    }),
+  );
+  await ready;
+  return {
+    basket,
+    get view() {
+      return view;
+    },
+  };
+}
+async function bindTwo(owner: string | null = null) {
+  const cart = await connect(owner);
+  expect((await cart.basket.addItem(row)).status).toBe("saved");
+  expect((await cart.basket.addItem(row)).status).toBe("saved");
+  const capture = await cart.view.purchases.captureForCheckout({
+    mode: "new",
+    attemptKey: crypto.randomUUID(),
+    expectedItems: [item],
+  });
+  if (capture.status !== "captured") throw Error("Expected captured original units");
+  expect(await cart.view.purchases.bindPreparedOrder(capture.captureId, order)).toBe(
+    true,
+  );
+  return cart;
+}
 beforeEach(() => {
   session = storage();
   account = storage();
+  cleanups = [];
   Object.defineProperty(globalThis, "window", {
     configurable: true,
     value: Object.assign(new EventTarget(), {
+      name: "",
       sessionStorage: session,
       localStorage: account,
     }),
   });
-  Object.defineProperty(globalThis, "sessionStorage", {
-    configurable: true,
-    value: session,
-  });
-  Object.defineProperty(globalThis, "localStorage", {
-    configurable: true,
-    value: account,
-  });
-  Object.defineProperty(globalThis.navigator, "locks", {
-    configurable: true,
-    value: {
-      request: (_key: string, operation: () => unknown) => Promise.resolve(operation()),
-    },
-  });
-  cart = new CartService(null);
+  Object.defineProperty(navigator, "locks", { configurable: true, value: locks });
+  jest.spyOn(globalThis, "fetch").mockResolvedValue(Response.json({}, { status: 503 }));
+});
+afterEach(() => {
+  for (const close of cleanups.reverse()) close();
+  jest.restoreAllMocks();
 });
 
-async function bindTwo() {
-  await cart.addItem(row);
-  await cart.addItem(row);
-  const snapshot = cart.captureCheckoutSnapshot(cart.read().revision);
-  expect(await cart.bindCheckoutSnapshot("order", snapshot)).toBe(true);
-}
-
-test("a failed local save cannot announce a successful addition", async () => {
+test("a refused lower-cap addition preserves requested units for the shopper to adjust", async () => {
+  const cart = await bindTwo();
+  expect((await cart.basket.addItem({ ...row, maxStock: 1 })).status).not.toBe("saved");
+  expect(cart.view.items[0].quantity).toBe(2);
+  expect((await cart.basket.updateQuantity(row.productId, row.variantId, 1)).status).toBe(
+    "saved",
+  );
+  expect(cart.view.items[0].quantity).toBe(1);
+});
+test("declined writes preserve saved bytes and report no success", async () => {
+  const cart = await bindTwo();
+  const original = session.getItem(key);
   session.setItem.mockImplementation(() => {
     throw Error("Quota");
   });
-  expect(await cart.addItem(row)).toBe(false);
-  expect(cart.getCart()).toEqual([]);
+  expect((await cart.basket.addItem(row)).status).not.toBe("saved");
+  expect(
+    (await cart.basket.updateQuantity(row.productId, row.variantId, 1)).status,
+  ).not.toBe("saved");
+  expect((await cart.basket.removeItem(row.productId, row.variantId)).status).not.toBe(
+    "saved",
+  );
+  expect((await cart.basket.setItems([])).status).not.toBe("saved");
+  expect(session.getItem(key)).toBe(original);
 });
-test("decrease then increase, bounded consumption, failed persistence and replay", async () => {
-  await bindTwo();
-  await cart.updateQuantity("p", "v", 1);
-  await cart.addItem(row);
-  const raw = session.getItem(key);
+test("a failed receipt write and a retry consume only surviving original units", async () => {
+  const cart = await bindTwo();
+  await cart.basket.updateQuantity(row.productId, row.variantId, 1);
+  await cart.basket.addItem(row);
+  const original = session.getItem(key);
   session.setItem.mockImplementationOnce(() => {
     throw Error("Denied");
   });
-  expect(await cart.consumeConfirmedOrder(paid)).toBe(false);
-  expect(session.getItem(key)).toBe(raw);
-  const reloaded = new CartService(null);
-  expect(await reloaded.consumeConfirmedOrder(paid)).toBe(true);
-  expect(reloaded.getCart()[0].quantity).toBe(1);
-  await reloaded.consumeConfirmedOrder(paid);
-  expect(reloaded.getCart()[0].quantity).toBe(1);
+  expect(
+    (await cart.view.purchases.consumeConfirmedPurchase(order, [item])).status,
+  ).not.toBe("matched");
+  expect(session.getItem(key)).toBe(original);
+  const reload = await connect();
+  expect(
+    (await reload.view.purchases.consumeConfirmedPurchase(order, [item])).status,
+  ).toBe("matched");
+  expect(reload.view.items[0].quantity).toBe(1);
+  const written = session.setItem.mock.calls.length;
+  expect(
+    (await reload.view.purchases.consumeConfirmedPurchase(order, [item])).status,
+  ).toBe("matched");
+  expect(session.setItem).toHaveBeenCalledTimes(written);
 });
-test("only the purchased prefix of the captured units can ever be consumed", async () => {
-  await bindTwo();
-  await cart.addItem(row);
-  const other = { ...row, variantId: "other" };
-  await cart.addItem(other);
-  const receipt = { ...paid, purchasedItems: [{ ...purchase, quantity: 1 }] };
-  await cart.consumeConfirmedOrder(receipt);
-  await new CartService().consumeConfirmedOrder(receipt);
-  expect(cart.getCart().map((x) => x.quantity)).toEqual([2, 1]);
+test("partial receipt cannot consume later additions or unrelated variants on replay", async () => {
+  const cart = await bindTwo();
+  await cart.basket.addItem(row);
+  await cart.basket.addItem({ ...row, variantId: crypto.randomUUID() });
+  const partial = [{ ...item, quantity: 1 }];
+  expect(
+    (await cart.view.purchases.consumeConfirmedPurchase(order, partial)).status,
+  ).toBe("matched");
+  const reload = await connect();
+  expect(
+    (await reload.view.purchases.consumeConfirmedPurchase(order, partial)).status,
+  ).toBe("matched");
+  expect(reload.view.items.map((i) => i.quantity)).toEqual([2, 1]);
 });
-test("remove and re-add, and mismatched or unbound identities preserve the basket", async () => {
-  await bindTwo();
-  const raw = session.getItem(key);
-  for (const order of [
-    { ...paid, customerId: "account" },
-    { ...paid, id: "old" },
-    { ...paid, customerId: undefined },
-    { ...paid, purchasedItems: undefined },
-    ...["pending", "failed", "review"].map((status) => ({ ...paid, status })),
-  ]) {
-    expect(await cart.consumeConfirmedOrder(order)).toBe(false);
-    expect(session.getItem(key)).toBe(raw);
-  }
-  await cart.removeItem("p", "v");
-  await cart.addItem(row);
-  await cart.consumeConfirmedOrder(paid);
-  expect(cart.getCart()[0].quantity).toBe(1);
+test("unbound, foreign, or stale observations cannot consume the basket", async () => {
+  const cart = await bindTwo();
+  const original = session.getItem(key);
+  expect(
+    (await cart.view.purchases.consumeConfirmedPurchase(crypto.randomUUID(), [item]))
+      .status,
+  ).not.toBe("matched");
+  expect(
+    (
+      await cart.view.purchases.consumeConfirmedPurchase(
+        order,
+        [item],
+        undefined,
+        () => false,
+      )
+    ).status,
+  ).not.toBe("matched");
+  const buyer = await connect("buyer");
+  expect(
+    (await buyer.view.purchases.consumeConfirmedPurchase(order, [item])).status,
+  ).not.toBe("matched");
+  expect(session.getItem(key)).toBe(original);
+  await cart.basket.removeItem(row.productId, row.variantId);
+  await cart.basket.addItem(row);
+  await cart.view.purchases.consumeConfirmedPurchase(order, [item]);
+  expect(cart.view.items[0].quantity).toBe(1);
 });
 test.each(["edit", "clear"])(
-  "undelivered legacy %s writes retire even preserved metadata before a new reader consumes",
+  "a legacy %s replacement with untracked units never proves a purchased basket",
   async (action) => {
     await bindTwo();
-    const old = JSON.parse(session.getItem(key)!);
-    if (action === "clear") session.setItem(key, "[]");
-    else session.setItem(key, JSON.stringify([{ ...old[0], quantity: 1 }]));
-    session.setItem(key, JSON.stringify(old));
-    const reload = new CartService();
-    await reload.hydrate();
-    await reload.consumeConfirmedOrder(paid);
-    expect(reload.getCart()[0].quantity).toBe(2);
+    session.setItem(
+      key,
+      JSON.stringify(action === "clear" ? [] : [{ ...row, quantity: 1 }]),
+    );
+    session.setItem(
+      key,
+      JSON.stringify([
+        { ...row, quantity: 2, unitsV1: [{ id: "older", start: 0, end: 2 }] },
+      ]),
+    );
+    const reload = await connect();
+    const original = session.getItem(key);
+    expect(
+      (await reload.view.purchases.consumeConfirmedPurchase(order, [item])).status,
+    ).not.toBe("matched");
+    expect(session.getItem(key)).toBe(original);
   },
 );
-test("migration preserves the account array and never imports it into the guest", async () => {
+test("account migration is isolated from guest storage", async () => {
   account.setItem("rdk_cart", JSON.stringify([{ ...row, quantity: 2 }]));
-  await cart.hydrate();
-  expect(cart.getCart()).toEqual([]);
-  const buyer = new CartService("buyer");
-  await buyer.hydrate();
-  expect(buyer.getCart()[0].quantity).toBe(2);
+  const guest = await connect();
+  expect(guest.view.items).toEqual([]);
+  const buyer = await connect("buyer");
+  expect(buyer.view.items[0].quantity).toBe(2);
   expect(Array.isArray(JSON.parse(account.getItem("rdk_cart_user_buyer")!))).toBe(true);
 });
-test("account writes fail conservatively when coordination is denied", async () => {
-  Object.defineProperty(navigator, "locks", {
-    value: { request: () => Promise.reject(Error("Denied")) },
+test("obsolete rendered capture cannot bind a changed basket", async () => {
+  const cart = await bindTwo();
+  const previous = cart.view;
+  await cart.basket.addItem(row);
+  const stale = await previous.purchases.captureForCheckout({
+    mode: "new",
+    attemptKey: crypto.randomUUID(),
+    expectedItems: [item],
   });
-  expect(await new CartService("buyer").addItem(row)).toBe(false);
-  expect(account.getItem("rdk_cart_user_buyer")).toBeNull();
+  expect(stale.status).not.toBe("captured");
+  expect(cart.view.items[0].quantity).toBe(3);
 });
-test("denied storage preserves remove, update, set and clear and blocks unpersisted order bindings", async () => {
-  await bindTwo();
-  const saved = session.getItem(key);
-  session.setItem.mockImplementation(() => {
-    throw Error("Denied");
-  });
-  expect(await cart.updateQuantity("p", "v", 1)).toBe(false);
-  expect(await cart.removeItem("p", "v")).toBe(false);
-  expect(await cart.setCart([])).toBe(false);
-  expect(await cart.clearCart()).toBe(false);
-  expect(
-    await cart.bindCheckoutSnapshot("other", cart.captureCheckoutSnapshot(saved)),
-  ).toBe(false);
-  expect(session.getItem(key)).toBe(saved);
-});
-test("stale rendered captures and obsolete absolute quantity updates fail conservatively", async () => {
-  await bindTwo();
-  const before = cart.read().revision;
-  await cart.addItem(row);
-  expect(() => cart.captureCheckoutSnapshot(before)).toThrow("Your cart changed");
-  expect(await cart.updateQuantity("p", "v", 1, () => true, before)).toBe(false);
-  expect(cart.getCart()[0].quantity).toBe(3);
-});
-test("a reduced stock cap trims existing units without reporting a successful addition", async () => {
-  await bindTwo();
-  expect(await cart.addItem({ ...row, maxStock: 1 })).toBe(false);
-  expect(cart.getCart()).toMatchObject([{ quantity: 1, maxStock: 1 }]);
-});
-
-test("receipt reports only a failed save of matched units and can retry without consuming later additions", async () => {
-  await bindTwo();
-  const onSaveFailure = jest.fn();
-  for (const order of [
-    { ...paid, id: "unbound" },
-    { ...paid, purchasedItems: undefined },
-  ]) {
-    expect(await cart.consumeConfirmedOrder(order, () => true, onSaveFailure)).toBe(
-      false,
-    );
-  }
-  expect(onSaveFailure).not.toHaveBeenCalled();
-  session.setItem.mockImplementationOnce(() => {
-    throw Error("Quota");
-  });
-  expect(await cart.consumeConfirmedOrder(paid, () => true, onSaveFailure)).toBe(false);
-  expect(onSaveFailure).toHaveBeenCalledTimes(1);
-  expect(cart.getCart()[0].quantity).toBe(2);
-  await cart.addItem(row);
-  expect(await cart.consumeConfirmedOrder(paid, () => true, onSaveFailure)).toBe(true);
-  expect(await cart.consumeConfirmedOrder(paid, () => true, onSaveFailure)).toBe(false);
-  expect(onSaveFailure).toHaveBeenCalledTimes(1);
-  expect(cart.getCart()[0].quantity).toBe(1);
-});
-
 test.each(["binding", "primary", "lock"])(
-  "reports a confirmed owner's unavailable %s and retries without changing the paid order",
+  "account receipt preserves stock through denied %s reads and retries",
   async (denial) => {
-    const buyer = new CartService("buyer");
-    expect(await buyer.hydrate()).toBe(true);
-    await buyer.addItem(row);
+    await bindTwo("buyer");
+    const buyerKey = "rdk_cart_user_buyer";
+    const original = account.getItem(buyerKey);
+    const getter = account.getItem.getMockImplementation()!;
+    if (denial === "lock")
+      Object.defineProperty(navigator, "locks", {
+        value: { request: () => Promise.reject(Error("Denied")) },
+      });
+    else
+      account.getItem.mockImplementation((k) => {
+        if (k === (denial === "binding" ? buyerKey + ":purchase-v1" : buyerKey))
+          throw Error("Denied");
+        return getter(k);
+      });
+    const unavailable = await connect("buyer");
     expect(
-      await buyer.bindCheckoutSnapshot(
-        "order",
-        buyer.captureCheckoutSnapshot(buyer.read().revision),
-      ),
-    ).toBe(true);
-    const receiptCart = new CartService("buyer");
-    const originalRead = account.getItem;
-    const originalLocks = navigator.locks;
-    const onUnavailable = jest.fn();
-    try {
-      if (denial === "lock")
-        Object.defineProperty(navigator, "locks", {
-          value: { request: () => Promise.reject(Error("Denied")) },
-        });
-      else
-        account.getItem = (storageKey: string) => {
-          if ((denial === "primary") === (storageKey === buyer.key))
-            throw Error("Unavailable");
-          return originalRead(storageKey);
-        };
-      if (denial !== "binding") expect(await receiptCart.hydrate()).toBe(false);
-      const order = { ...paid, customerId: "buyer" };
-      expect(
-        await receiptCart.consumeConfirmedOrder(
-          { ...order, purchasedItems: undefined },
-          () => true,
-          onUnavailable,
-        ),
-      ).toBe(false);
-      expect(onUnavailable).not.toHaveBeenCalled();
-      expect(
-        await receiptCart.consumeConfirmedOrder(order, () => true, onUnavailable),
-      ).toBe(false);
-      expect(onUnavailable).toHaveBeenCalledTimes(1);
-    } finally {
-      account.getItem = originalRead;
-      Object.defineProperty(navigator, "locks", { value: originalLocks });
-    }
-    expect(buyer.getCart()[0].quantity).toBe(1);
+      (await unavailable.view.purchases.consumeConfirmedPurchase(order, [item])).status,
+    ).not.toBe("matched");
+    account.getItem.mockImplementation(getter);
+    Object.defineProperty(navigator, "locks", { value: locks });
+    expect(account.getItem(buyerKey)).toBe(original);
+    const restored = await connect("buyer");
     expect(
-      await receiptCart.consumeConfirmedOrder(
-        { ...paid, customerId: "buyer" },
-        () => true,
-        onUnavailable,
-      ),
-    ).toBe(true);
-    expect(buyer.getCart()).toEqual([]);
+      (await restored.view.purchases.consumeConfirmedPurchase(order, [item])).status,
+    ).toBe("matched");
+    expect(restored.view.items).toEqual([]);
   },
 );

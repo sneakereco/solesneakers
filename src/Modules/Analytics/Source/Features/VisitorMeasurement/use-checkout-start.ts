@@ -5,8 +5,13 @@ import { readCheckoutReceipt } from "./consent";
 import { captureCheckoutStarted } from "./triggers";
 import { useCheckoutMeasurement, useViewGrant } from "./view-grant";
 
-export function useCheckoutStart(usable: boolean, cartKey: string): void {
-  const accountId = useSession().user?.id ?? null;
+export function useCheckoutStart(
+  usable: boolean,
+  cartKey: string | null,
+  isCurrent: () => boolean,
+): void {
+  const { user, status, sessionMutationRevision } = useSession();
+  const accountId = user?.id ?? null;
   const phase = useCheckoutMeasurement();
   const activeReceipt = useViewGrant();
   const finished = useRef(false);
@@ -14,6 +19,7 @@ export function useCheckoutStart(usable: boolean, cartKey: string): void {
     cartKey: string;
     accountId: string | null;
     startedAt: number;
+    sessionMutationRevision: number;
     controller: AbortController;
   } | null>(null);
   const [receipt, setReceipt] = useState<string | null | undefined>(undefined);
@@ -30,18 +36,18 @@ export function useCheckoutStart(usable: boolean, cartKey: string): void {
     if (finished.current) return;
     const pending = read.current;
     if (
-      !usable ||
-      (pending &&
-        (pending.cartKey !== cartKey ||
-          pending.accountId !== accountId ||
-          performance.now() - pending.startedAt > 30_000))
+      pending &&
+      (pending.sessionMutationRevision !== sessionMutationRevision ||
+        performance.now() - pending.startedAt > 30_000 ||
+        (status === "ready" &&
+          (pending.accountId !== accountId ||
+            (cartKey !== null && pending.cartKey !== cartKey))))
     ) {
-      if (pending) {
-        finished.current = true;
-        pending.controller.abort();
-      }
+      finished.current = true;
+      pending.controller.abort();
       return;
     }
+    if (status !== "ready" || !usable || cartKey === null || !isCurrent()) return;
     if (phase === "off") {
       finished.current = true;
       pending?.controller.abort();
@@ -52,7 +58,13 @@ export function useCheckoutStart(usable: boolean, cartKey: string): void {
       // This request carries the grant cookie at the first usable checkout.
       // A later preference refresh can only release this same grant and cart.
       const controller = new AbortController();
-      const entry = { cartKey, accountId, startedAt: performance.now(), controller };
+      const entry = {
+        cartKey,
+        accountId,
+        startedAt: performance.now(),
+        sessionMutationRevision,
+        controller,
+      };
       read.current = entry;
       const timeout = window.setTimeout(() => controller.abort(), 5000);
       void readCheckoutReceipt(controller.signal)
@@ -64,7 +76,17 @@ export function useCheckoutStart(usable: boolean, cartKey: string): void {
     }
     if (pending && receipt === undefined) return;
     finished.current = true;
-    if (!pending || (receipt !== null && receipt === activeReceipt))
+    if (activeReceipt && (!pending || receipt === activeReceipt))
       captureCheckoutStarted();
-  }, [usable, cartKey, accountId, phase, activeReceipt, receipt]);
+  }, [
+    usable,
+    cartKey,
+    accountId,
+    phase,
+    activeReceipt,
+    receipt,
+    isCurrent,
+    status,
+    sessionMutationRevision,
+  ]);
 }

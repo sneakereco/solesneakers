@@ -1,0 +1,683 @@
+import type { OperationalOutcome } from "@/Modules/Analytics/Source/Features/CommerceFacts/operational-outcome";
+import type { SourceContext } from "@/Modules/Analytics/Source/Features/CommerceFacts/source-context";
+import { isIP } from "node:net";
+import {
+  GuestContextLimit,
+  readGuestContexts,
+  verifyGuestPreparationReuse,
+} from "./guest-context";
+import {
+  type InventoryConflict,
+  PreparationChanged,
+  PreparationRecoveryRequired,
+  type ReservationDecision,
+} from "./reservation-contract";
+import { CheckoutCatalogUnavailable } from "@/lib/checkout/checkout-cart-resolver";
+import { randomUUID, timingSafeEqual } from "node:crypto";
+
+import type { NextRequest } from "next/server";
+
+import {
+  issueShippingConfirmation,
+  verifyShippingConfirmation,
+} from "@/lib/checkout/shipping-address-confirmation";
+import type {
+  ShippingAddress,
+  ShippingValidationResult,
+} from "@/lib/checkout/shipping-address-validation";
+import type { CheckoutAccessDecision } from "@/lib/checkout/checkout-access";
+import type {
+  CheckoutAttemptDecision,
+  CheckoutAttemptIdentity,
+} from "@/lib/checkout/checkout-attempt-limit";
+import type { ResolvedCheckoutCart } from "@/lib/checkout/checkout-cart-resolver";
+import { createCheckoutCartHash } from "@/lib/checkout/checkout-cart-hash";
+import { matchesCheckoutCartHash } from "@/Modules/Checkout/Source/Features/ContractCompatibility/cart-hash-reader";
+import { createCheckoutQuoteFingerprint } from "@/lib/checkout/checkout-quote-fingerprint";
+import type {
+  CheckoutPricingQuote,
+  CheckoutPricingQuoteInput,
+} from "@/lib/checkout/checkout-pricing-gateway";
+import { normalizeCheckoutEmail } from "@/lib/checkout/checkout-identity";
+import {
+  prepareCheckoutRequestSchema,
+  type CheckoutTotals,
+  type PrepareCheckoutRequest,
+} from "@/lib/checkout/checkout-request";
+import type { CheckoutBotVerdict } from "@/lib/security/checkout-bot";
+import type {
+  SquareCheckoutOrder,
+  SquareCheckoutOrderInput,
+} from "@/lib/square/checkout-orders";
+import type { SquareCheckoutOrderPayloadInput } from "@/lib/square/checkout-order-payload";
+import type {
+  ExistingCheckout,
+  ReserveCheckoutInput,
+} from "@/repositories/checkout-reservation-repo";
+
+type CheckoutSession = { user: { id: string; email: string } } | null;
+
+export type PrepareCheckoutDependencies = {
+  outcome?(value: OperationalOutcome): void;
+  resolveAnalyticsContext?(
+    email: string,
+    totals: CheckoutTotals,
+    tracking: unknown,
+  ): Promise<SourceContext | null>;
+  shippingConfirmationSecret(): string;
+  validateShippingAddress(address: ShippingAddress): Promise<ShippingValidationResult>;
+  findTenantId(): Promise<string | null>;
+  getAccess(
+    tenantId: string,
+    scope: "new_prepare" | "resume",
+  ): Promise<CheckoutAccessDecision>;
+  verifyBrowser(): Promise<CheckoutBotVerdict>;
+  getClientIp(request: NextRequest): string | null;
+  getSession(): Promise<CheckoutSession>;
+  hashEmail(email: string): string;
+  findExisting(
+    tenantId: string,
+    idempotencyKey: string,
+  ): Promise<ExistingCheckout | null>;
+  readRetryExpiration(
+    tenantId: string,
+    existing: ExistingCheckout,
+  ): Promise<string | null>;
+  checkAddressValidationAttempt(
+    identity: CheckoutAttemptIdentity,
+  ): Promise<CheckoutAttemptDecision>;
+  checkResume(input: {
+    shopperBinding: string;
+    ip: string;
+    attached: boolean;
+  }): Promise<CheckoutAttemptDecision>;
+  checkAttempt(identity: CheckoutAttemptIdentity): Promise<CheckoutAttemptDecision>;
+  resolveCart(
+    tenantId: string,
+    items: PrepareCheckoutRequest["items"],
+  ): Promise<ResolvedCheckoutCart>;
+  quote(input: CheckoutPricingQuoteInput): Promise<CheckoutPricingQuote>;
+  calculateSquareOrder(input: SquareCheckoutOrderPayloadInput): Promise<CheckoutTotals>;
+  reserve(
+    input: ReserveCheckoutInput & { ownerBinding: string; otherGuestContexts?: string[] },
+  ): Promise<ReservationDecision>;
+  inspectUnavailable(
+    tenantId: string,
+    key: string,
+    items: PrepareCheckoutRequest["items"],
+    ownerBinding: string,
+    otherGuestContexts: string[],
+  ): Promise<InventoryConflict[]>;
+  createGuestAccessToken(orderId: string): Promise<string>;
+  getSquareClientConfig(): {
+    applicationId: string;
+    locationId: string;
+    environment: "sandbox" | "production";
+  };
+  createSquareOrder(input: SquareCheckoutOrderInput): Promise<SquareCheckoutOrder>;
+  attachSquareOrder(orderId: string, order: SquareCheckoutOrder): Promise<void>;
+  rejectBeforeAttach(orderId: string, ownerBinding: string): Promise<boolean>;
+  cancelSquareOrder(
+    orderId: string,
+    version: number,
+    idempotencyKey: string,
+  ): Promise<void>;
+  releaseReservation(orderId: string, reason: string): Promise<boolean>;
+  reportError(error: unknown): void;
+  now(): Date;
+};
+
+function json(body: Record<string, unknown>, status: number, headers?: HeadersInit) {
+  return Response.json(body, {
+    status,
+    headers: { "Cache-Control": "no-store", ...headers },
+  });
+}
+
+function recoveryRequired() {
+  return json(
+    {
+      code: "CHECKOUT_RECOVERY_REQUIRED",
+      error:
+        "Check your order using your account or secure order link before trying again.",
+    },
+    409,
+  );
+}
+function totals(value: {
+  subtotalCents: number;
+  shippingCents: number;
+  taxCents: number;
+  totalCents: number;
+}) {
+  return {
+    subtotalCents: value.subtotalCents,
+    shippingCents: value.shippingCents,
+    taxCents: value.taxCents,
+    totalCents: value.totalCents,
+  };
+}
+
+function isFuture(iso: string, now: Date) {
+  const value = new Date(iso).getTime();
+  return Number.isFinite(value) && value > now.getTime();
+}
+
+function quoteFingerprintsMatch(left: string, right: string): boolean {
+  const leftBuffer = Buffer.from(left, "hex");
+  const rightBuffer = Buffer.from(right, "hex");
+  return (
+    leftBuffer.length === rightBuffer.length && timingSafeEqual(leftBuffer, rightBuffer)
+  );
+}
+
+function maskIp(ip: string): string {
+  if (isIP(ip) === 4) return ip.split(".").slice(0, 3).join(".") + ".0/24";
+  if (isIP(ip) !== 6) return "unparseable";
+  const [head, tail] = new URL("http://[" + ip + "]").hostname.slice(1, -1).split("::");
+  const left = head ? head.split(":") : [];
+  const right = tail ? tail.split(":") : [];
+  const words = [...left, ...Array(8 - left.length - right.length).fill("0"), ...right];
+  return words.slice(0, 4).join(":") + "::/64";
+}
+
+async function guestToken(
+  orderId: string,
+  isGuest: boolean,
+  deps: PrepareCheckoutDependencies,
+) {
+  return isGuest ? deps.createGuestAccessToken(orderId) : undefined;
+}
+
+export async function prepareCheckoutHandler(
+  request: NextRequest,
+  deps: PrepareCheckoutDependencies,
+): Promise<Response> {
+  const effectiveAt = deps.now().toISOString();
+  let stage: OperationalOutcome["stage"] = "checkout";
+  let method: OperationalOutcome["method"] = null;
+  const failure = (reason: OperationalOutcome["reason"]) => {
+    try {
+      deps.outcome?.({
+        attemptId: randomUUID(),
+        effectiveAt,
+        resolvedAt: deps.now().toISOString(),
+        orderId: null,
+        method,
+        stage,
+        outcome: "failed",
+        reason,
+      });
+    } catch {
+      /* Optional reporting cannot affect checkout. */
+    }
+  };
+  try {
+    const tenantId = await deps.findTenantId();
+    if (!tenantId) {
+      return json({ error: "Checkout is temporarily unavailable" }, 503);
+    }
+    const paymentConfig = deps.getSquareClientConfig();
+    const bot = await deps.verifyBrowser();
+    if (!bot.allowed) {
+      stage = "verification";
+      failure(bot.reason === "bot" ? "blocked" : "unavailable");
+      return json(
+        { error: "Checkout verification failed" },
+        bot.reason === "bot" ? 403 : 503,
+      );
+    }
+
+    const parsed = prepareCheckoutRequestSchema.safeParse(
+      await request.json().catch(() => null),
+    );
+    if (!parsed.success) {
+      return json({ error: "Invalid checkout request" }, 400);
+    }
+    method = parsed.data.paymentMethod;
+    const clientIp = deps.getClientIp(request);
+    if (!clientIp) {
+      return json({ error: "Checkout protection is temporarily unavailable" }, 503);
+    }
+
+    const session = await deps.getSession();
+    const accountEmail = session?.user.email
+      ? normalizeCheckoutEmail(session.user.email)
+      : null;
+    if (
+      accountEmail &&
+      parsed.data.buyerEmail &&
+      accountEmail !== parsed.data.buyerEmail
+    ) {
+      return json({ error: "Checkout email does not match the signed-in account" }, 400);
+    }
+    const buyerEmail = accountEmail ?? parsed.data.buyerEmail ?? null;
+    if (!buyerEmail) {
+      return json({ error: "A buyer email is required" }, 400);
+    }
+
+    const cartHashInput = {
+      tenantId,
+      buyerEmail,
+      fulfillment: parsed.data.fulfillment,
+      paymentMethod: parsed.data.paymentMethod,
+      shippingAddress: parsed.data.shippingAddress,
+      billingAddress: parsed.data.billingAddress,
+      pickupContact: parsed.data.pickupContact,
+      items: parsed.data.items,
+    };
+    const cartHash = createCheckoutCartHash(cartHashInput);
+    const contexts = session
+      ? []
+      : readGuestContexts(request, deps.shippingConfirmationSecret());
+    if (!session && contexts.length === 0) return recoveryRequired();
+    const existing = await deps.findExisting(tenantId, parsed.data.idempotencyKey);
+    if (parsed.data.recoveryOnly && !existing?.squareOrderId) return recoveryRequired();
+    const contextHash = existing
+      ? contexts.find((hash) => verifyGuestPreparationReuse(existing, hash))
+      : contexts[0];
+    const ownerBinding = session
+      ? "account:" + session.user.id
+      : contextHash
+        ? "guest:" + contextHash
+        : null;
+    if (!ownerBinding) return recoveryRequired();
+    const otherGuestContexts = contexts.filter((hash) => hash !== contextHash);
+    if (existing) {
+      const owned = session ? existing.userId === session.user.id : Boolean(contextHash);
+      if (
+        !owned ||
+        existing.deviceSessionId !== parsed.data.deviceSessionId ||
+        !existing.guarded
+      )
+        return recoveryRequired();
+      if (!matchesCheckoutCartHash(existing.cartHash, cartHash, cartHashInput)) {
+        return parsed.data.recoveryOnly
+          ? recoveryRequired()
+          : json({ error: "Checkout key conflicts with another cart" }, 409);
+      }
+      if (
+        !existing.squareOrderId &&
+        (existing.status !== "pending" || !isFuture(existing.expiresAt, deps.now()))
+      )
+        return recoveryRequired();
+      if (existing.squareOrderId && typeof existing.squareOrderVersion !== "number") {
+        return parsed.data.recoveryOnly
+          ? recoveryRequired()
+          : json({ error: "Checkout cannot be migrated; start again" }, 409);
+      }
+    }
+
+    if (existing && !existing.squareOrderId) {
+      const merchant = await deps.getAccess(tenantId, "resume");
+      if (!merchant.open) return json({ error: merchant.message }, 503);
+    }
+    if (existing) {
+      const admission = await deps.checkResume({
+        shopperBinding: ownerBinding,
+        ip: clientIp,
+        attached: Boolean(existing.squareOrderId),
+      });
+      if (!admission.allowed)
+        return json(
+          { error: "Too many checkout requests; please retry later" },
+          429,
+          admission.retryAfterSeconds
+            ? { "Retry-After": String(admission.retryAfterSeconds) }
+            : undefined,
+        );
+    } else {
+      const access = await deps.getAccess(tenantId, "new_prepare");
+      if (!access.open) return json({ error: access.message }, 503);
+    }
+    const admissionRequest: CheckoutAttemptIdentity = {
+      clientIp,
+      shopperBinding: ownerBinding,
+      eventId: parsed.data.idempotencyKey,
+    };
+    const normalizedEmailHash = deps.hashEmail(buyerEmail);
+    const confirmationScope = parsed.data.shippingAddress
+      ? {
+          tenantId,
+          deviceSessionId: parsed.data.deviceSessionId,
+          normalizedEmailHash,
+          paymentMethod: parsed.data.paymentMethod,
+          address: parsed.data.shippingAddress,
+        }
+      : null;
+    const confirmed = Boolean(
+      parsed.data.shippingConfirmation &&
+        confirmationScope &&
+        verifyShippingConfirmation(
+          parsed.data.shippingConfirmation,
+          confirmationScope,
+          deps.shippingConfirmationSecret(),
+          deps.now(),
+        ),
+    );
+    if (
+      !existing &&
+      parsed.data.fulfillment === "ship" &&
+      parsed.data.shippingAddress &&
+      parsed.data.paymentMethod !== "applePay" &&
+      !confirmed
+    ) {
+      const validationAttempt =
+        await deps.checkAddressValidationAttempt(admissionRequest);
+      if (!validationAttempt.allowed) {
+        stage = "verification";
+        failure("blocked");
+        return json(
+          { error: "Too many address checks; please try again later" },
+          429,
+          validationAttempt.retryAfterSeconds
+            ? { "Retry-After": String(validationAttempt.retryAfterSeconds) }
+            : undefined,
+        );
+      }
+      const validation = await deps.validateShippingAddress(parsed.data.shippingAddress);
+      if (validation.status !== "valid") {
+        const unavailable = validation.status === "unavailable";
+        stage = "verification";
+        failure(unavailable ? "unavailable" : "verification");
+        return json(
+          {
+            code: unavailable
+              ? "SHIPPING_ADDRESS_UNAVAILABLE"
+              : validation.status === "suggestion"
+                ? "SHIPPING_ADDRESS_SUGGESTION"
+                : "SHIPPING_ADDRESS_INVALID",
+            error: unavailable
+              ? "Address verification is temporarily unavailable. Please try again."
+              : validation.status === "suggestion"
+                ? "Please confirm the suggested shipping address before continuing."
+                : "We could not verify this shipping address as deliverable. Check the street, apartment, city, state, and ZIP code.",
+            ...(validation.status === "suggestion"
+              ? {
+                  suggestedAddress: validation.address,
+                  shippingConfirmation: issueShippingConfirmation(
+                    { ...confirmationScope!, address: validation.address },
+                    deps.shippingConfirmationSecret(),
+                    deps.now(),
+                  ),
+                  enteredShippingConfirmation: issueShippingConfirmation(
+                    confirmationScope!,
+                    deps.shippingConfirmationSecret(),
+                    deps.now(),
+                  ),
+                }
+              : {}),
+          },
+          unavailable ? 503 : 422,
+        );
+      }
+    }
+
+    if (!existing) {
+      const attempt = await deps.checkAttempt(admissionRequest);
+      if (!attempt.allowed) {
+        failure("blocked");
+        return json(
+          { error: "Too many checkout attempts; please try again later" },
+          429,
+          attempt.retryAfterSeconds
+            ? { "Retry-After": String(attempt.retryAfterSeconds) }
+            : undefined,
+        );
+      }
+    }
+
+    stage = "reservation";
+    let cart: ResolvedCheckoutCart;
+    let pricing: CheckoutPricingQuote;
+    if (existing) {
+      cart = { items: existing.items, subtotalCents: existing.subtotalCents };
+      pricing = {
+        shippingCents: existing.shippingCents,
+        taxCents: 0,
+        taxCalculationId: "square:pending",
+        customerState: parsed.data.shippingAddress?.state ?? "SC",
+      };
+    } else {
+      try {
+        cart = await deps.resolveCart(tenantId, parsed.data.items);
+      } catch (error) {
+        if (!(error instanceof CheckoutCatalogUnavailable)) throw error;
+        const conflicts = await deps.inspectUnavailable(
+          tenantId,
+          parsed.data.idempotencyKey,
+          parsed.data.items,
+          ownerBinding,
+          otherGuestContexts,
+        );
+        failure("inventory");
+        return json(
+          { code: "INVENTORY_CONFLICT", conflicts, paymentState: "not_submitted" },
+          409,
+        );
+      }
+      pricing = await deps.quote({
+        tenantId,
+        fulfillment: parsed.data.fulfillment,
+        shippingAddress: parsed.data.shippingAddress,
+        subtotalCents: cart.subtotalCents,
+        items: cart.items,
+      });
+    }
+
+    // Square keys identify the entire payload, including line order.
+    cart = {
+      ...cart,
+      items: [...cart.items].sort((a, b) => a.variantId.localeCompare(b.variantId)),
+    };
+    const calculatedTotals = existing?.squareOrderId
+      ? totals(existing)
+      : await deps.calculateSquareOrder({
+          pickupContact: parsed.data.pickupContact,
+          fulfillment: parsed.data.fulfillment,
+          buyerEmail,
+          subtotalCents: cart.subtotalCents,
+          shippingCents: pricing.shippingCents,
+          shippingAddress: parsed.data.shippingAddress,
+          items: cart.items,
+        });
+    const currentFingerprint = createCheckoutQuoteFingerprint({
+      items: cart.items.map(({ variantId, quantity, unitPriceCents }) => ({
+        variantId,
+        quantity,
+        unitPriceCents,
+      })),
+      fulfillment: parsed.data.fulfillment,
+      shippingAddress: parsed.data.shippingAddress,
+      totals: calculatedTotals,
+    });
+    if (!quoteFingerprintsMatch(parsed.data.quoteFingerprint, currentFingerprint)) {
+      if (parsed.data.recoveryOnly) return recoveryRequired();
+      return json(
+        {
+          error: "Checkout totals changed. Review the updated total and try again.",
+        },
+        409,
+      );
+    }
+
+    const terminalOriginal =
+      existing &&
+      (existing.status !== "pending" || !isFuture(existing.expiresAt, deps.now()));
+    if (parsed.data.recoveryOnly || terminalOriginal) {
+      if (!existing?.squareOrderId) return recoveryRequired();
+      const retryExpiresAt =
+        parsed.data.recoveryOnly && !terminalOriginal
+          ? await deps.readRetryExpiration(tenantId, existing).catch(() => {
+              deps.reportError(new Error("checkout_retry_qualification_unavailable"));
+              return null;
+            })
+          : null;
+      return json(
+        {
+          code: "CHECKOUT_RECOVERY_REQUIRED",
+          orderId: existing.orderId,
+          expiresAt: existing.expiresAt,
+          reused: true,
+          totals: totals(existing),
+          ...(retryExpiresAt && isFuture(retryExpiresAt, deps.now())
+            ? {
+                originalRetry: {
+                  expiresAt: retryExpiresAt,
+                  lines: existing.items.map(
+                    ({ productId, variantId, quantity, unitPriceCents }) => ({
+                      productId,
+                      variantId,
+                      quantity,
+                      unitPriceCents,
+                    }),
+                  ),
+                },
+              }
+            : {}),
+          guestAccessToken: await guestToken(existing.orderId, !session, deps),
+          paymentConfig,
+        },
+        parsed.data.recoveryOnly ? 200 : 409,
+      );
+    }
+    const expiresAt = new Date(deps.now().getTime() + 15 * 60 * 1000);
+    const analyticsContext = existing
+      ? null
+      : ((await Promise.resolve()
+          .then(() =>
+            deps.resolveAnalyticsContext?.(
+              buyerEmail,
+              calculatedTotals,
+              parsed.data.trackingContext,
+            ),
+          )
+          .catch(() => null)) ?? null);
+    const reservation = await deps.reserve({
+      analyticsContext,
+      ownerBinding,
+      ...(otherGuestContexts.length ? { otherGuestContexts } : {}),
+      pickupContact: parsed.data.pickupContact,
+      tenantId,
+      userId: session?.user.id ?? null,
+      guestEmail: session ? null : buyerEmail,
+      fulfillment: parsed.data.fulfillment,
+      paymentMethod: parsed.data.paymentMethod,
+      idempotencyKey: parsed.data.idempotencyKey,
+      cartHash: existing?.cartHash ?? cartHash,
+      expiresAt,
+      ...calculatedTotals,
+      taxCalculationId: "square:calculated",
+      customerState: pricing.customerState,
+      shippingAddress: parsed.data.shippingAddress,
+      billingAddress: parsed.data.billingAddress,
+      protectionEvidence: {
+        version: 2,
+        payment_method: parsed.data.paymentMethod,
+        bot_verdict: bot.reason,
+        client_ip_masked: maskIp(clientIp),
+        normalized_email_hmac: normalizedEmailHash,
+        device_session_id: parsed.data.deviceSessionId,
+        shipping_address_override_confirmed:
+          parsed.data.fulfillment === "ship" &&
+          confirmed &&
+          parsed.data.shippingAddressOverride === true,
+        created_at: deps.now().toISOString(),
+      },
+      items: cart.items,
+    });
+    if (reservation.kind === "conflict") {
+      failure("inventory");
+      return json(
+        {
+          code: "INVENTORY_CONFLICT",
+          conflicts: reservation.conflicts,
+          paymentState: "not_submitted",
+        },
+        409,
+      );
+    }
+    if (existing?.squareOrderId) {
+      if (!reservation.reused || reservation.orderId !== existing.orderId)
+        throw new Error("checkout_resume_inconsistent");
+      return json(
+        {
+          orderId: reservation.orderId,
+          expiresAt: reservation.expiresAt,
+          reused: true,
+          totals: totals(existing),
+          guestAccessToken: await guestToken(existing.orderId, !session, deps),
+          paymentConfig,
+        },
+        200,
+      );
+    }
+
+    const squareOrder = await deps.createSquareOrder({
+      pickupContact: parsed.data.pickupContact,
+      localOrderId: reservation.orderId,
+      idempotencyKey: parsed.data.idempotencyKey,
+      fulfillment: parsed.data.fulfillment,
+      buyerEmail,
+      subtotalCents: cart.subtotalCents,
+      shippingCents: pricing.shippingCents,
+      shippingAddress: parsed.data.shippingAddress,
+      items: cart.items,
+    });
+    if (
+      squareOrder.subtotalCents !== calculatedTotals.subtotalCents ||
+      squareOrder.shippingCents !== calculatedTotals.shippingCents ||
+      squareOrder.taxCents !== calculatedTotals.taxCents ||
+      squareOrder.totalCents !== calculatedTotals.totalCents
+    ) {
+      if (!(await deps.rejectBeforeAttach(reservation.orderId, ownerBinding)))
+        return recoveryRequired();
+      try {
+        await deps.cancelSquareOrder(
+          squareOrder.id,
+          squareOrder.version,
+          crypto.randomUUID(),
+        );
+        await deps.releaseReservation(reservation.orderId, "square_order_totals_changed");
+      } catch {
+        // Preserve inventory if Square cancellation cannot be proved.
+      }
+      return json(
+        {
+          error: "Checkout totals changed. Review the updated total and try again.",
+        },
+        409,
+      );
+    }
+    // An ambiguous attach may have committed. Retry the same preparation key.
+    await deps.attachSquareOrder(reservation.orderId, squareOrder);
+
+    return json(
+      {
+        orderId: reservation.orderId,
+        expiresAt: reservation.expiresAt,
+        reused: reservation.reused,
+        totals: totals(squareOrder),
+        guestAccessToken: await guestToken(reservation.orderId, !session, deps),
+        paymentConfig,
+      },
+      reservation.reused ? 200 : 201,
+    );
+  } catch (error) {
+    if (
+      error instanceof GuestContextLimit ||
+      error instanceof PreparationRecoveryRequired
+    )
+      return recoveryRequired();
+    if (error instanceof PreparationChanged)
+      return json({ error: "Checkout changed. Review checkout again." }, 409);
+    const unavailableInventory =
+      error !== null &&
+      typeof error === "object" &&
+      "message" in error &&
+      error.message === "checkout_inventory_unavailable";
+    failure(unavailableInventory ? "inventory" : "unavailable");
+    deps.reportError(error);
+    return json({ error: "Checkout is temporarily unavailable" }, 503);
+  }
+}

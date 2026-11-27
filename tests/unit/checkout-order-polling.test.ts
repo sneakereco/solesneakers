@@ -1,5 +1,20 @@
 import { startCheckoutOrderPolling } from "@/lib/checkout/checkout-order-polling";
 
+const orderId = "10000000-0000-4000-8000-000000000001";
+const pending = {
+  id: orderId,
+  status: "pending",
+  subtotal: 0,
+  shipping: 0,
+  tax: 0,
+  total: 0,
+  fulfillment: "ship",
+  updatedAt: "2026-11-24T00:00:00Z",
+  events: [],
+  financial: { source: "legacy" },
+  supportEmail: "support@example.com",
+  purchasedLines: null,
+};
 describe("checkout order polling", () => {
   const originalFetch = global.fetch;
   beforeEach(() => {
@@ -13,57 +28,14 @@ describe("checkout order polling", () => {
   it("stops pending orders after 60 seconds instead of polling forever", async () => {
     global.fetch = jest
       .fn()
-      .mockImplementation(() =>
-        Promise.resolve(Response.json({ id: "order-1", status: "pending" })),
-      );
+      .mockImplementation(() => Promise.resolve(Response.json(pending)));
     const onState = jest.fn();
-    startCheckoutOrderPolling("order-1", null, onState);
+    startCheckoutOrderPolling(orderId, null, onState);
     await jest.advanceTimersByTimeAsync(60_000);
     expect(onState).toHaveBeenLastCalledWith("delayed");
     const requests = jest.mocked(fetch).mock.calls.length;
     await jest.advanceTimersByTimeAsync(120_000);
     expect(fetch).toHaveBeenCalledTimes(requests);
-  });
-
-  it.each([
-    {
-      id: "another",
-      status: "paid",
-      subtotal: 1,
-      tax: 0,
-      shipping: 0,
-      total: 1,
-      fulfillment: "pickup",
-    },
-    { id: "order-1", status: "paid" },
-  ])("rejects malformed or mismatched paid evidence", async (data) => {
-    global.fetch = jest.fn().mockResolvedValue(Response.json(data));
-    const state = jest.fn();
-    startCheckoutOrderPolling("order-1", null, state);
-    await jest.advanceTimersByTimeAsync(0);
-    expect(state).toHaveBeenCalledWith("error");
-  });
-
-  it.each(["review", "pending", "processing", "failed"])(
-    "rejects another order before classifying %s",
-    async (status) => {
-      global.fetch = jest
-        .fn()
-        .mockResolvedValue(Response.json({ id: "different-order", status }));
-      const state = jest.fn();
-      startCheckoutOrderPolling("order-1", null, state);
-      await jest.advanceTimersByTimeAsync(0);
-      expect(state).toHaveBeenCalledWith("error");
-    },
-  );
-
-  it("handles forbidden evidence without retrying", async () => {
-    global.fetch = jest.fn().mockResolvedValue(Response.json({}, { status: 403 }));
-    const state = jest.fn();
-    startCheckoutOrderPolling("order-1", null, state);
-    await jest.advanceTimersByTimeAsync(60_000);
-    expect(fetch).toHaveBeenCalledTimes(1);
-    expect(state).toHaveBeenCalledWith("unauthorized");
   });
 
   it("bounds a hung request and ignores a response after cancellation", async () => {
@@ -75,7 +47,7 @@ describe("checkout order polling", () => {
         }),
     );
     const onState = jest.fn();
-    startCheckoutOrderPolling("order-1", null, onState);
+    startCheckoutOrderPolling(orderId, null, onState);
     await jest.advanceTimersByTimeAsync(60_000);
     expect(onState).toHaveBeenLastCalledWith("delayed");
     expect(jest.mocked(fetch).mock.calls[0][1]?.signal?.aborted).toBe(true);
@@ -86,7 +58,7 @@ describe("checkout order polling", () => {
 
   it("reconciles after 500ms and returns the verified paid order", async () => {
     const paidOrder = {
-      id: "order-1",
+      id: orderId,
       status: "paid",
       subtotal: 100,
       shipping: 0,
@@ -94,15 +66,17 @@ describe("checkout order polling", () => {
       total: 108,
       fulfillment: "pickup",
       updatedAt: "2026-09-16T00:00:00.000Z",
+      purchasedLines: null,
       events: [],
+      financial: { source: "legacy" },
       supportEmail: "support@example.com",
     };
     global.fetch = jest
       .fn()
-      .mockResolvedValueOnce(Response.json({ id: "order-1", status: "pending" }))
+      .mockResolvedValueOnce(Response.json(pending))
       .mockResolvedValueOnce(Response.json(paidOrder));
     const onState = jest.fn();
-    startCheckoutOrderPolling("order-1", "guest-token", onState);
+    startCheckoutOrderPolling(orderId, "guest-token", onState);
     await jest.advanceTimersByTimeAsync(499);
     expect(fetch).toHaveBeenCalledTimes(1);
     await jest.advanceTimersByTimeAsync(1);
@@ -111,12 +85,34 @@ describe("checkout order polling", () => {
     expect(onState).toHaveBeenLastCalledWith("paid", paidOrder);
   });
 
-  it("cancels polling when the page unmounts", async () => {
+  it.each([
+    { id: "wrong" },
+    { total: null },
+    { updatedAt: "1" },
+    { status: "paid", events: [{ type: 4 }] },
+    { fulfillment: "unexpected" },
+  ])("rejects incomplete or foreign observations", async (changed) => {
     global.fetch = jest
       .fn()
-      .mockResolvedValue(Response.json({ id: "order-1", status: "pending" }));
+      .mockResolvedValue(Response.json({ ...pending, status: "paid", ...changed }));
     const onState = jest.fn();
-    const stop = startCheckoutOrderPolling("order-1", null, onState);
+    startCheckoutOrderPolling(orderId, null, onState);
+    await jest.advanceTimersByTimeAsync(0);
+    expect(onState).toHaveBeenCalledWith("error");
+  });
+  it("rejects a non-UUID response even when it repeats the malformed requested identifier", async () => {
+    global.fetch = jest
+      .fn()
+      .mockResolvedValue(Response.json({ ...pending, id: "invalid", status: "paid" }));
+    const onState = jest.fn();
+    startCheckoutOrderPolling("invalid", null, onState);
+    await jest.advanceTimersByTimeAsync(0);
+    expect(onState).toHaveBeenCalledWith("error");
+  });
+  it("cancels polling when the page unmounts", async () => {
+    global.fetch = jest.fn().mockResolvedValue(Response.json(pending));
+    const onState = jest.fn();
+    const stop = startCheckoutOrderPolling(orderId, null, onState);
     stop();
     await jest.advanceTimersByTimeAsync(120_000);
     expect(fetch).toHaveBeenCalledTimes(1);

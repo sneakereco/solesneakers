@@ -1,4 +1,8 @@
-import { sanitizeMeasurementEvent } from "@/Modules/Analytics/Source/Features/VisitorMeasurement/contract";
+import {
+  safeSlug,
+  safeReferrerHost,
+  sanitizeMeasurementEvent,
+} from "@/Modules/Analytics/Source/Features/VisitorMeasurement/contract";
 
 const productId = "123e4567-e89b-42d3-a456-426614174000";
 const variantId = "123e4567-e89b-42d3-a456-426614174001";
@@ -103,5 +107,28 @@ describe("Behavior event contract", () => {
         pathname: "/checkout?token=sensitive",
       }),
     ).toBeNull();
+  });
+});
+
+it("rejects payment permits in attribution and referrer host labels", () => {
+  const permit = "ba6ce9ab-4aa2-40aa-8514-d5ecd17392f3";
+  expect(safeSlug(permit)).toBeNull();
+  expect(safeReferrerHost(permit + ".example.org")).toBeNull();
+  expect(
+    sanitizeMeasurementEvent("checkout_started", {
+      storefront: "sole",
+      environment: "staging",
+      schema_version: 2,
+      pathname: "/checkout",
+      session_source: permit,
+      discovery_campaign: permit,
+      referrer_host: permit + ".example.org",
+    })?.properties,
+  ).toEqual({
+    storefront: "sole",
+    environment: "staging",
+    schema_version: 2,
+    pathname: "/checkout",
+    $geoip_disable: true,
   });
 });
