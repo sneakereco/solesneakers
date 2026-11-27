@@ -5,6 +5,7 @@ import Link from "next/link";
 import { usePathname } from "next/navigation";
 import {
   ChevronDown,
+  ChartNoAxesColumnIncreasing,
   ExternalLink,
   LayoutDashboard,
   Menu,
@@ -34,6 +35,12 @@ type NavGroup = {
 
 const navItems: Array<NavLink | NavGroup> = [
   { type: "link", href: "/admin/dashboard", label: "Overview", icon: LayoutDashboard },
+  {
+    type: "link",
+    href: "/admin/analytics",
+    label: "Analytics",
+    icon: ChartNoAxesColumnIncreasing,
+  },
   { type: "link", href: "/admin/inventory", label: "Inventory", icon: Package },
   { type: "link", href: "/admin/featured-items", label: "Featured", icon: Sparkles },
   {
@@ -134,7 +141,13 @@ export function AdminSidebar({
             if (item.type === "link") {
               const active = isActive(item.href);
               return (
-                <Link key={item.href} href={item.href} className={itemClass(active)}>
+                <Link
+                  key={item.href}
+                  href={item.href}
+                  className={itemClass(active)}
+                  prefetch={item.href === "/admin/analytics" ? false : undefined}
+                  aria-current={active ? "page" : undefined}
+                >
                   {createElement(item.icon, {
                     className: `h-4 w-4 ${active ? "text-black" : "text-zinc-500 group-hover:text-white"}`,
                   })}
