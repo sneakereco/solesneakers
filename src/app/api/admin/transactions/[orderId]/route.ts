@@ -7,6 +7,8 @@ import { NextResponse } from "next/server";
 
 import { createSupabaseServerClient } from "@/lib/supabase/server";
 import { createSupabaseAdminClient } from "@/lib/supabase/service-role";
+import { createStaffCostReader } from "@/repositories/staff-cost-reader";
+import { hydrateStaffOrderCosts } from "@/repositories/staff-order-costs";
 import { requireAdminApi } from "@/lib/auth/session";
 import { buildCustomerDisplayId } from "@/lib/admin/customer-identifiers";
 import { getRequestIdFromHeaders } from "@/lib/http/request-id";
@@ -22,25 +24,22 @@ export async function GET(
   try {
     await requireAdminApi();
     const supabase = await createSupabaseServerClient();
-    const admin = createSupabaseAdminClient();
 
     // --- Order + items + shipping ---
-    const { data: order, error: orderError } = await admin
+    const { data: scopedOrder, error: orderError } = await supabase
       .from("orders")
       .select(
         `
         *,
-        profiles!user_id(email, full_name),
         items:order_items(
           id, product_name, brand, model, category, condition, variant_sku, size_label,
-          quantity, unit_price, unit_cost, line_total, refund_amount, refunded_at,
+          quantity, unit_price, line_total, refund_amount, refunded_at,
           product:products(
             id, name, category, description, created_at,
             images:product_images(url, is_primary, sort_order)
           ),
-          variant:product_variants(id, sku, sale_price_cents, unit_cost_cents)
-        ),
-        shipping_address:order_shipping(*)
+          variant:product_variants(id, sku, sale_price_cents)
+        )
         `,
       )
       .eq("id", orderId)
@@ -49,19 +48,42 @@ export async function GET(
     if (orderError) {
       throw orderError;
     }
-    if (!order) {
+    if (!scopedOrder) {
       return NextResponse.json(
         { error: "Order not found", requestId },
         { status: 404, headers: { "Cache-Control": "no-store" } },
       );
     }
 
+    const [pricedOrder] = await hydrateStaffOrderCosts(
+      [scopedOrder],
+      createStaffCostReader(supabase),
+    );
+    // Profiles and shipping details may require service access. Bind the joins to the order returned by RLS.
+    const admin = createSupabaseAdminClient();
+    const { data: details, error: detailsError } = await admin
+      .from("orders")
+      .select("profiles!user_id(email, full_name), shipping_address:order_shipping(*)")
+      .eq("id", scopedOrder.id)
+      .maybeSingle();
+    if (detailsError) throw detailsError;
+    if (!details)
+      return NextResponse.json(
+        { error: "Order not found", requestId },
+        { status: 404, headers: { "Cache-Control": "no-store" } },
+      );
+    const order = {
+      ...pricedOrder,
+      profiles: details.profiles,
+      shipping_address: details.shipping_address,
+    };
+
     // --- Payment transaction ---
     // eslint-disable-next-line @typescript-eslint/no-explicit-any
     const { data: paymentTxRows } = await (admin as any)
       .from("payment_transactions")
       .select("*")
-      .eq("order_id", orderId)
+      .eq("order_id", order.id)
       .order("created_at", { ascending: false });
     const paymentTx =
       paymentTxRows?.find(
@@ -92,7 +114,7 @@ export async function GET(
     const { data: squareRefunds, error: squareRefundsError } = await (admin as any)
       .from("square_refunds")
       .select("square_refund_id, status, amount_cents, currency, reason, updated_at")
-      .eq("order_id", orderId)
+      .eq("order_id", order.id)
       .order("updated_at", { ascending: true });
     if (squareRefundsError) {
       throw squareRefundsError;
@@ -104,7 +126,7 @@ export async function GET(
       .select(
         "square_dispute_id, state, reason, amount_cents, currency, due_at, updated_at",
       )
-      .eq("order_id", orderId)
+      .eq("order_id", order.id)
       .order("updated_at", { ascending: true });
     if (squareDisputesError) {
       throw squareDisputesError;
@@ -150,7 +172,7 @@ export async function GET(
       .select(
         "id, email_type, recipient_email, subject, sent_at, delivered_at, opened_at, delivery_status, message_id, html_snapshot, plain_text_snapshot",
       )
-      .eq("order_id", orderId)
+      .eq("order_id", order.id)
       .order("sent_at", { ascending: true });
 
     return NextResponse.json(

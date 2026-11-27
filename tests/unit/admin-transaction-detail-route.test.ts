@@ -13,7 +13,12 @@ it.each([true, false])(
   "retains order detail and distinguishes email audit availability (%s)",
   async (available) => {
     const records: Record<string, unknown> = {
-      orders: { id: "order-1", guest_email: "buyer@example.com", status: "paid" },
+      orders: {
+        id: "order-1",
+        items: [],
+        guest_email: "buyer@example.com",
+        status: "paid",
+      },
       payment_transactions: [{ id: "payment-1", square_payment_id: "square-1" }],
       square_refunds: [
         {

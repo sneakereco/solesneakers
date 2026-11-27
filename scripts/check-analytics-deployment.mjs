@@ -19,7 +19,20 @@ export function checkDeployment(environment, env, deployed) {
   if (!["staging", "production"].includes(environment)) throw Error();
   const operatorOnly = ["POSTHOG_OPERATOR_API_KEY", "POSTHOG_PROVISIONING_KEY"];
   if (operatorOnly.some((key) => env[key] || Object.hasOwn(deployed, key))) throw Error();
-  if (env.NEXT_PUBLIC_POSTHOG_ENABLED !== "true") return;
+  const publicSettings = [
+    "NEXT_PUBLIC_MEASUREMENT_ENVIRONMENT",
+    "NEXT_PUBLIC_POSTHOG_PROJECT_KEY",
+    "NEXT_PUBLIC_POSTHOG_HOST",
+  ];
+  const declaredFlag = env.NEXT_PUBLIC_POSTHOG_ENABLED;
+  if (declaredFlag && !["true", "false"].includes(declaredFlag)) throw Error();
+  // production.yml explicitly builds with capture off if any public setting is missing.
+  const incomplete = !declaredFlag || publicSettings.some((key) => !env[key]);
+  const buildFlag = environment === "production" && incomplete ? "false" : declaredFlag;
+  // An absent runtime flag disables server capture.
+  const runtimeFlag = deployed.NEXT_PUBLIC_POSTHOG_ENABLED ?? "false";
+  if (!["true", "false"].includes(buildFlag) || buildFlag !== runtimeFlag) throw Error();
+  if (buildFlag === "false") return;
   const config = {
     environment: env.NEXT_PUBLIC_MEASUREMENT_ENVIRONMENT,
     apiHost: env.POSTHOG_API_HOST,
@@ -32,8 +45,9 @@ export function checkDeployment(environment, env, deployed) {
     env.ANALYTICS_VERIFIED_PAIRING !== pairingFingerprint(config)
   )
     throw Error();
-  // Doppler's Vercel sync supplies private application values. Compare in memory.
+  // Server delivery also reads the capture settings from the Vercel runtime.
   for (const key of [
+    ...publicSettings,
     "POSTHOG_API_HOST",
     "POSTHOG_PROJECT_ID",
     "POSTHOG_QUERY_API_KEY",
