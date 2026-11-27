@@ -44,3 +44,32 @@ test("preserves the optional behavior archive source", () => {
     /\bFROM analytics_behavior_export\b/,
   );
 });
+
+test("renders UTC timestamp parsing through the HogQL function registry", () => {
+  const { manifest } = planProvisioning({
+    environment: "staging",
+    at: "2026-11-27T18:00:00.123456Z",
+  });
+  for (const { name, sql } of [
+    { name: "behavior archive", sql: manifest.optionalMinimizedArchiveSql },
+    ...manifest.endpoints,
+  ]) {
+    assert.equal(/\bparseDateTime64BestEffort(?:OrNull)?\(/.test(sql), false, name);
+  }
+  const sales = manifest.endpoints.find(({ name }) => name === "sole_analytics_sales");
+  assert.match(
+    sales.sql,
+    /parseDateTimeBestEffort\(\{variables\.start_inclusive\},'UTC'\)/,
+  );
+  const series = manifest.endpoints.find(
+    ({ name }) => name === "sole_analytics_sales_series",
+  );
+  assert.match(
+    series.sql,
+    /toStartOfWeek\(toTimeZone\(report_at,'America\/New_York'\),1\)/,
+  );
+  assert.match(
+    manifest.optionalMinimizedArchiveSql,
+    /parseDateTimeBestEffort\('2026-11-27T18:00:00\.123456Z','UTC'\)/,
+  );
+});

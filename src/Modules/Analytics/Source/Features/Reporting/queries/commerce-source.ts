@@ -2,6 +2,7 @@ import "server-only";
 import { z } from "zod";
 import { datasetScopeSchema, type DatasetScope } from "../../CommerceFacts/contract";
 import { DATASET_IDS } from "../../Configuration/dataset";
+import { parseHogqlInstant } from "../../EventDelivery/instant";
 import {
   financialHistorySource,
   postHogWarehouseTables,
@@ -20,8 +21,7 @@ export const textField = (key: string, column = "payload") =>
 // HogQL's toDecimal targets Decimal64. Keep Decimal128 for exact cents and sums.
 export const centsField = (key: string, column = "payload") =>
   `accurateCastOrNull(toInt64OrNull(JSONExtractRaw(${column},'${key}')),'Decimal128(0)')`;
-export const instant = (value: string) =>
-  `parseDateTime64BestEffortOrNull(${value},6,'UTC')`;
+export const instant = parseHogqlInstant;
 const variable = (key: string) => `{variables.${key}}`;
 export const observedDimension = (column: string) =>
   `coalesce(nullIf(${column},''),'unknown')`;

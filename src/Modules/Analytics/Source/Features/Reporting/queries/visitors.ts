@@ -93,7 +93,10 @@ export function visitorEndpoints(scope: DatasetScope) {
   return [
     endpoint(
       "sole_analytics_sessions",
-      `${session} SELECT 'total' AS segment,${aggregates},${invalidTimingCount(devicePredicate + " AND " + segmentPredicate("session"))} AS invalid_events FROM steps UNION ALL SELECT ${observedDimension("device")} AS segment,${aggregates},0 AS invalid_events FROM steps GROUP BY segment`,
+      `${session} SELECT * FROM (
+ SELECT 'total' AS segment,${aggregates},${invalidTimingCount(devicePredicate + " AND " + segmentPredicate("session"))} AS invalid_events FROM steps
+ UNION ALL SELECT ${observedDimension("device")} AS segment,${aggregates},0 AS invalid_events FROM steps GROUP BY segment
+ )`,
     ),
     activeEndpoint(scope),
     endpoint(

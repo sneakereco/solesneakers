@@ -70,7 +70,10 @@ export function fixture() {
     return v;
   });
   db.function("toString", (v) => (v === null ? null : String(v)));
-  db.function("parseDateTime64BestEffortOrNull", (v, _precision, _zone) => v || null);
+  db.function("parseDateTimeBestEffort", (v, zone) => {
+    if (zone !== "UTC") throw new Error(`Unexpected fixture timezone: ${zone}`);
+    return typeof v === "string" && Number.isFinite(Date.parse(v)) ? v : null;
+  });
   db.function("dateDiff", (_unit, a, b) =>
     a && b ? Math.floor((Date.parse(String(b)) - Date.parse(String(a))) / 1000) : null,
   );
@@ -82,8 +85,9 @@ export function fixture() {
       day: "2-digit",
     }).format(new Date(String(v))),
   );
-  db.function("toStartOfWeek", (v, _mode, zone) => {
-    const d = new TZDate(String(v), String(zone));
+  db.function("toStartOfWeek", (v, mode) => {
+    if (mode !== 1) throw new Error(`Unexpected fixture week mode: ${mode}`);
+    const d = new TZDate(String(v), "America/New_York");
     d.setHours(0, 0, 0, 0);
     d.setDate(d.getDate() - ((d.getDay() + 6) % 7));
     return new Date(d.getTime()).toISOString();

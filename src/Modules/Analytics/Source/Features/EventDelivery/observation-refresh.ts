@@ -4,7 +4,7 @@ import { z } from "zod";
 import type { DatasetScope } from "../CommerceFacts/contract";
 import { endpoint } from "../Reporting/queries/commerce-source";
 import { compileBehaviorHistorySql } from "./behavior-archive";
-import { analyticsInstantMicros } from "./instant";
+import { analyticsInstantMicros, parseHogqlInstant } from "./instant";
 import { postHogWarehouseTables } from "./history-source";
 
 const amount = (s: string) =>
@@ -67,8 +67,8 @@ export function nativeObservation(scope: DatasetScope) {
     (SELECT count() FROM (${native})) AS visible_events,
     (SELECT countDistinct(tuple(uuid,timestamp,distinct_id)) FROM events WHERE
       event='sole_analytics_probe_v1' AND properties.dataset_id={variables.dataset_id}
-      AND distinct_id='sole:availability' AND ((toString(uuid)={variables.first_id} AND timestamp=parseDateTime64BestEffort({variables.start_inclusive},6,'UTC')) OR
-      (toString(uuid)={variables.last_id} AND timestamp=parseDateTime64BestEffort({variables.end_exclusive},6,'UTC')))) AS markers`,
+      AND distinct_id='sole:availability' AND ((toString(uuid)={variables.first_id} AND timestamp=${parseHogqlInstant("{variables.start_inclusive}")}) OR
+      (toString(uuid)={variables.last_id} AND timestamp=${parseHogqlInstant("{variables.end_exclusive}")}))) AS markers`,
   );
 }
 
