@@ -190,6 +190,7 @@ export async function withLoopbackPublishing(
       : "unix://" + socketPath;
   const options = { projectId, directory, token, port, names, resources };
   const rejectedMutations = new Set();
+  let rejectedCause;
   const upgrades = new Set();
   const server = createServer(async (incoming, outgoing) => {
     try {
@@ -256,7 +257,8 @@ export async function withLoopbackPublishing(
       });
       if (body !== undefined) upstream.end(body);
       else incoming.pipe(upstream);
-    } catch {
+    } catch (error) {
+      rejectedCause ??= error;
       const endpoint = new URL(incoming.url, "http://local-docker.invalid").pathname;
       rejectedMutations.add(incoming.method + " " + endpoint);
       outgoing.writeHead(400).end("Refusing unexpected checkout Docker mutation");
@@ -316,7 +318,7 @@ export async function withLoopbackPublishing(
       error.message +
         "\nRefused Docker startup requests: " +
         [...rejectedMutations].join(", "),
-      { cause: error },
+      { cause: rejectedCause ?? error },
     );
   } finally {
     for (const socket of upgrades) socket.destroy();
