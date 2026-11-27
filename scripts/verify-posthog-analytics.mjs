@@ -1,8 +1,8 @@
+import { pairingFingerprint } from "./check-analytics-deployment.mjs";
 import { readFileSync } from "node:fs";
 import { isDeepStrictEqual } from "node:util";
-import { createRequire, registerHooks } from "node:module";
+import { requireAnalytics as require } from "./analytics-operator-runtime.mjs";
 import { parseArgs } from "node:util";
-import { register } from "tsx/cjs/api";
 import { createClient } from "@supabase/supabase-js";
 
 const { values } = parseArgs({
@@ -17,18 +17,8 @@ const { values } = parseArgs({
   },
 });
 const { mode, environment } = values;
-const require = createRequire(import.meta.url);
-registerHooks({
-  resolve(specifier, context, nextResolve) {
-    return nextResolve(
-      specifier === "server-only" ? "next/dist/compiled/server-only/empty.js" : specifier,
-      context,
-    );
-  },
-});
-register();
 const feature = "../src/Modules/Analytics/Source/Features/";
-const { readServerAnalyticsConfig } = require(feature + "Configuration/server-config.ts");
+const { pairOwnerProject } = require(feature + "Configuration/operator-pairing.ts");
 const { resolveActiveDataset } = require(feature + "Configuration/dataset.ts");
 const { createFactRepository } = require(feature + "CommerceFacts/repository.ts");
 const { executePostHogQuery, PostHogQueryError } = require(
@@ -47,8 +37,8 @@ const { getDefaultCalendarRange, resolveCalendarRange } = require(
 let category = "invalid-arguments";
 try {
   if (
-    !["reconcile", "transport", "queries"].includes(mode) ||
-    (mode === "queries" && environment !== "staging") ||
+    !["config", "reconcile", "transport", "queries", "journey"].includes(mode) ||
+    (["queries", "journey"].includes(mode) && environment !== "staging") ||
     !["staging", "production"].includes(environment)
   )
     throw Error();
@@ -58,8 +48,20 @@ try {
     const { validateQueryFixtures } = require("./analytics-query-fixtures.ts");
     fixtures = validateQueryFixtures(JSON.parse(readFileSync(values.fixture, "utf8")));
   }
-  category = "configuration-unavailable";
-  const config = readServerAnalyticsConfig(process.env);
+  category = "owner-pairing-unavailable";
+  const config = await pairOwnerProject(process.env, environment);
+  if (mode === "config") {
+    console.log(
+      JSON.stringify({
+        mode,
+        environment,
+        status: "paired-ip-discard-verified",
+        pairingFingerprint: pairingFingerprint(config),
+        captureEnabled: process.env.NEXT_PUBLIC_POSTHOG_ENABLED === "true",
+      }),
+    );
+    process.exit(0);
+  }
   if (
     !config ||
     config.environment !== environment ||
@@ -132,6 +134,48 @@ try {
         project,
         status: "endpoint-readable",
         queryAsOf: now().toISOString(),
+      }),
+    );
+  } else if (mode === "journey") {
+    category = "journey-evidence-unavailable";
+    const { journeyEvidence, journeyEndpoint, verifyJourney } = require(
+      feature + "EventDelivery/journey-evidence.ts",
+    );
+    const input = journeyEvidence.parse(JSON.parse(readFileSync(values.fixture, "utf8")));
+    const observedRange = reconciliationWindow(input.start, input.end);
+    if (
+      Date.parse(input.browserClosedAt) < Date.parse(input.start) ||
+      Date.parse(input.browserClosedAt) >= Date.parse(input.end)
+    )
+      throw Error();
+    const def = journeyEndpoint(scope);
+    const events = await query({
+      endpoint: def.name,
+      version: def.version,
+      variables: {
+        start_inclusive: input.start,
+        end_exclusive: input.end,
+        session_id: input.sessionId,
+      },
+      limit: 101,
+      offset: 0,
+    });
+    verifyJourney(
+      input,
+      events,
+      await sourceSnapshot(scope.datasetId, input.start, input.end),
+    );
+    const result = await reconcileAnalyticsFacts(observedRange, {
+      datasetId: scope.datasetId,
+      query,
+      source: sourceSnapshot,
+    });
+    if (result.status !== "matched") throw Error();
+    console.log(
+      JSON.stringify({
+        environment,
+        mode,
+        status: "consented-journey-and-published-order-refund-matched",
       }),
     );
   } else if (mode === "queries") {
@@ -208,7 +252,9 @@ try {
 } catch (e) {
   console.error(
     JSON.stringify({
-      mode: ["reconcile", "transport", "queries"].includes(mode) ? mode : null,
+      mode: ["config", "reconcile", "transport", "queries", "journey"].includes(mode)
+        ? mode
+        : null,
       environment: ["staging", "production"].includes(environment) ? environment : null,
       status: "unavailable",
       category: e instanceof PostHogQueryError ? e.reason : category,

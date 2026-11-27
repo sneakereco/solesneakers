@@ -134,9 +134,11 @@ async function runPayments({ page, requests, capture, setMode }) {
   await page.setViewportSize({ width: 1440, height: 980 });
 
   const money = page.getByRole("region", { name: "Payment amounts", exact: true });
+  await money.getByRole("rowheader", { name: "Apple Pay" }).waitFor();
   const pager = page.getByRole("navigation", { name: "Payment method pages" });
   await pager.getByRole("button", { name: "Next page" }).click();
   await money.getByRole("rowheader", { name: "Google Pay" }).waitFor();
+  await money.getByRole("rowheader", { name: "Afterpay" }).waitFor();
   await money.getByText("$0.00", { exact: true }).waitFor();
   assert.equal(requests.at(-1).searchParams.get("page"), "2");
   await pager.getByRole("button", { name: "Next page" }).click();

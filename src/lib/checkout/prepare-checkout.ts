@@ -531,7 +531,10 @@ export async function prepareCheckoutHandler(
     );
   } catch (error) {
     failure(
-      error instanceof Error && error.message === "checkout_inventory_unavailable"
+      error !== null &&
+        typeof error === "object" &&
+        "message" in error &&
+        error.message === "checkout_inventory_unavailable"
         ? "inventory"
         : "unavailable",
     );

@@ -1,3 +1,5 @@
+import { checkNativeLaunchReport } from "./fixtures/admin-analytics/native-launch-report.mjs";
+import { ownedFixture } from "./analytics-test-fixture.mjs";
 import { testReportingHistory } from "./test-admin-analytics-history.mjs";
 import { testCommerceSources } from "./test-admin-analytics-sources.mjs";
 import assert from "node:assert/strict";
@@ -10,13 +12,11 @@ import payloads from "../src/Modules/Analytics/Tests/Features/CommerceFacts/payl
 
 // This runner commits fixture jobs to test independent sessions. Never accept a remote
 // endpoint, URL parameters/overrides, or a shared local application database.
-const fixturePath = new URL(
-  "../.superpowers/sdd/2026-11-25-admin-analytics/database.json",
-  import.meta.url,
+const connectionString = process.env.ANALYTICS_TEST_DATABASE_URL;
+assert(
+  connectionString,
+  "Set ANALYTICS_TEST_DATABASE_URL for the isolated analytics fixture. See docs/operations/admin-analytics.md.",
 );
-const connectionString =
-  process.env.ANALYTICS_TEST_DATABASE_URL ??
-  JSON.parse(readFileSync(fixturePath, "utf8").replace(/^\uFEFF/, "")).url;
 const url = new URL(connectionString);
 assert(
   ["postgresql:", "postgres:"].includes(url.protocol) &&
@@ -27,6 +27,11 @@ assert(
     !url.search &&
     !url.hash,
   "Expected the isolated loopback admin analytics fixture",
+);
+const fixture = ownedFixture();
+const fixtureSystem = fixture.sql(
+  "admin_analytics_sdd",
+  "select system_identifier from pg_control_system()",
 );
 const db = new Client({ connectionString, statement_timeout: 5000 });
 const worker = new Client({ connectionString, statement_timeout: 5000 });
@@ -89,6 +94,11 @@ let created = false;
 try {
   await db.connect();
   await worker.connect();
+  assert.equal(
+    (await db.query("select system_identifier::text as id from pg_control_system()"))
+      .rows[0].id,
+    fixtureSystem,
+  );
   assert.deepEqual(
     (await db.query("select current_database() as db,current_user as owner")).rows[0],
     { db: "admin_analytics_sdd", owner: "supabase_admin" },
@@ -106,6 +116,50 @@ try {
     (await db.query("select pg_try_advisory_lock(25111800) as locked")).rows[0].locked,
     "another fixture runner is active",
   );
+  await db.query(
+    readFileSync(
+      new URL("./fixtures/admin-analytics/check-cost-acls.sql", import.meta.url),
+      "utf8",
+    ),
+  );
+  console.log("PASS public catalog columns and private current/historical cost ACLs");
+  await db.query(
+    readFileSync(
+      new URL("./fixtures/admin-analytics/check-observations.sql", import.meta.url),
+      "utf8",
+    ),
+  );
+  console.log(
+    "PASS activation replay, fenced exhaustive partitions, idle proof and first-marker boundary",
+  );
+  await checkNativeLaunchReport(db);
+  await db.query(
+    readFileSync(
+      new URL("./fixtures/admin-analytics/check-source-sweep.sql", import.meta.url),
+      "utf8",
+    ),
+  );
+  console.log(
+    "PASS 2,025 distinct facts at one instant exhaustively partitioned twice including a backdated revision",
+  );
+  const audit = readFileSync(
+    new URL("./verify-analytics-warehouse-reader.sql", import.meta.url),
+    "utf8",
+  );
+  for (const role of [
+    "sole_analytics_staging_reader",
+    "sole_analytics_production_reader",
+  ]) {
+    const result = fixture.sql("admin_analytics_sdd", "set role " + role + ";\n" + audit);
+    assert.match(result, /PASS warehouse reader access/);
+  }
+  await db.query(
+    readFileSync(
+      new URL("./fixtures/admin-analytics/check-reader-trigger.sql", import.meta.url),
+      "utf8",
+    ),
+  );
+  console.log("PASS both reader audits and denied disposable trigger binding");
   await testReportingHistory(db);
   await testCommerceSources(db, worker);
   await db.query(

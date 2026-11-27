@@ -110,7 +110,10 @@ export async function testReportingHistory(db) {
         "analytics_publication_outbox",
         "orders",
       ])
-        assert.equal(await accessible("public." + table), false);
+        assert.equal(
+          await accessible("public." + table),
+          table === "orders" && role !== "sole_analytics_staging_reader",
+        );
       assert.equal(
         await accessible("analytics_reporting.analytics_financial_export"),
         role === "sole_analytics_staging_reader",
@@ -183,7 +186,11 @@ export async function testReportingHistory(db) {
       [ds],
     );
     assert.equal((await history()).archive.length, 1);
-    assert.equal((await history()).native.length, 1);
+    assert.equal(
+      (await history()).native.length,
+      0,
+      "Expired unqualified native coverage must be unavailable",
+    );
     await db.query(
       "insert into analytics_reporting.warehouse_observations(dataset_id,source_fresh_through,observed_at) values($1,'2018-01-01','2018-01-02')",
       [ds],

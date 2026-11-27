@@ -181,9 +181,11 @@ export function readAcquisitionSeries(
     2000,
   );
   const buckets = new Map(entries.map((r) => [r.period, r]));
-  return calendarBuckets(request, false, (date, startInclusive, endExclusive) => {
+  if (buckets.size !== entries.length) throw new RangeError("Duplicate traffic period.");
+  const result = calendarBuckets(request, false, (date, startInclusive, endExclusive) => {
     const r = buckets.get(date),
       active = Date.parse(endExclusive) > Date.parse(activatedAt);
+    buckets.delete(date);
     const observed =
       active && through !== null && Date.parse(startInclusive) < Date.parse(through);
     return {
@@ -199,4 +201,6 @@ export function readAcquisitionSeries(
       sessions: observed ? count(r?.traffic ?? 0) : null,
     };
   });
+  if (buckets.size) throw new RangeError("Unexpected traffic period.");
+  return result;
 }

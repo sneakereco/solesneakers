@@ -138,14 +138,15 @@ describe("production security headers", () => {
     );
   });
 
-  it("allows Cloudflare Web Analytics without obsolete browser origins", () => {
+  it("excludes the retired beacon while retaining Turnstile", () => {
     const response = NextResponse.next();
 
     applySecurityHeaders(response, "production", "/");
 
     const csp = response.headers.get("content-security-policy");
-    expect(csp).toContain("https://static.cloudflareinsights.com/beacon.min.js");
-    expect(csp).toContain("https://cloudflareinsights.com");
+    expect(csp).toContain("https://challenges.cloudflare.com");
+    expect(csp).not.toContain("static.cloudflareinsights.com");
+    expect(csp).not.toContain("https://cloudflareinsights.com");
     expect(csp).not.toContain("https://api.goshippo.com");
     expect(csp).not.toContain("https://*.vercel-scripts.com");
     expect(csp).not.toContain("openstreetmap.org");

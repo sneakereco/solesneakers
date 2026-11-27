@@ -2,11 +2,30 @@
 import type { TypedSupabaseClient } from "@/lib/supabase/server";
 import { ProductRepository, type ProductFilters } from "@/repositories/product-repo";
 
-import type { ProductWithDetails, StorefrontProduct } from "@/types/domain/product";
+import type { StorefrontProduct } from "@/types/domain/product";
 
-function publicProduct(product: ProductWithDetails): StorefrontProduct {
+function publicProduct(product: StorefrontProduct): StorefrontProduct {
+  type Variant = StorefrontProduct["variants"][number];
+  const publicKeys = [
+    "id",
+    "product_id",
+    "tenant_id",
+    "size_id",
+    "sku",
+    "stock",
+    "sale_price_cents",
+    "sort_order",
+    "created_at",
+    "updated_at",
+    "size",
+  ] as const satisfies readonly (keyof Variant)[];
   const variants = product.variants.map(
-    ({ unit_cost_cents: _cost, unit_cost_recorded: _recorded, ...variant }) => variant,
+    (variant) =>
+      Object.fromEntries(
+        publicKeys
+          .filter((key) => Object.hasOwn(variant, key))
+          .map((key) => [key, variant[key]]),
+      ) as Variant,
   );
   return { ...product, variants };
 }

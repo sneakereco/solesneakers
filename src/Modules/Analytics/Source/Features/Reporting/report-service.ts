@@ -123,9 +123,10 @@ function attachTraffic(
   const byDate = new Map(records.map((r) => [r.period, r]));
   if (byDate.size !== records.length) throw new RangeError("Duplicate visitor bucket.");
   let i = 0;
-  return calendarBuckets(request, comparison, (date) => {
+  const values = calendarBuckets(request, comparison, (date) => {
     const bucket = series[i++],
       r = byDate.get(date);
+    byDate.delete(date);
     return {
       ...bucket,
       visitors:
@@ -142,6 +143,8 @@ function attachTraffic(
           : count(r?.sessions ?? 0),
     };
   });
+  if (byDate.size) throw new RangeError("Unexpected visitor bucket.");
+  return values;
 }
 export async function getReport<T extends ReportId>(
   request: ReportRequest & { report: T },

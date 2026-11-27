@@ -1,4 +1,7 @@
 import { prepareCheckoutHandler } from "@/lib/checkout/prepare-checkout";
+import { CheckoutReservationRepository } from "@/repositories/checkout-reservation-repo";
+import { createClient } from "@supabase/supabase-js";
+import type { Database } from "@/types/db/database.types";
 import { createCheckoutQuoteFingerprint } from "@/lib/checkout/checkout-quote-fingerprint";
 import {
   futureCartHashFixture,
@@ -587,4 +590,33 @@ describe("shipping deliverability gate", () => {
       expect.objectContaining({ pickupContact }),
     );
   });
+});
+
+it("preserves inventory reason from a structured reservation RPC error", async () => {
+  const db = createClient<Database>("http://localhost:54321", "fixture", {
+    auth: { persistSession: false },
+    global: {
+      fetch: () =>
+        Promise.resolve(
+          Response.json(
+            {
+              code: "P0001",
+              message: "checkout_inventory_unavailable",
+              details: null,
+              hint: null,
+            },
+            { status: 400 },
+          ),
+        ),
+    },
+  });
+  const repo = new CheckoutReservationRepository(db);
+  const outcome = jest.fn();
+  const result = await prepareCheckoutHandler(request(), {
+    ...dependencies(),
+    reserve: (input) => repo.reserve(input),
+    outcome,
+  });
+  expect(result.status).toBe(503);
+  expect(outcome).toHaveBeenCalledWith(expect.objectContaining({ reason: "inventory" }));
 });

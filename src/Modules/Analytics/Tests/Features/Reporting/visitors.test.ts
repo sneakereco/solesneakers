@@ -370,3 +370,46 @@ it("review: retains coverage from Overview leaders when the session section fail
     ),
   );
 });
+
+it("exposes an initial observation gap while a later fully observed day remains usable", async () => {
+  const f = makeAudienceFixture();
+  f.event(1, "public_page_viewed");
+  const dataset = { ...f.deps.dataset!, activatedAt: "2026-06-09T04:00:00.000Z" };
+  const now = new Date("2026-06-11T12:00:00Z");
+  const deps = {
+    ...f.deps,
+    dataset,
+    now,
+    history: {
+      native: [{ start: "2026-06-09T04:05:00Z", end: "2026-06-11T04:00:00Z" }],
+      archive: [],
+      observation: null,
+    },
+  };
+  const report = async (from: string) =>
+    service.getReport(
+      {
+        ...parseReportRequest(
+          new URLSearchParams({
+            report: "overview",
+            from,
+            to: "2026-06-10",
+            compare: "false",
+          }),
+          now,
+        ),
+        report: "overview",
+      },
+      deps,
+    );
+  const spans = await report("2026-06-09");
+  expect(spans.behaviorThrough).toBeNull();
+  expect(spans.coverage).toEqual(
+    expect.arrayContaining([
+      expect.objectContaining({ code: "incomplete-coverage", metric: "behavior" }),
+    ]),
+  );
+  const later = await report("2026-06-10");
+  expect(later.behaviorThrough).not.toBeNull();
+  expect(later.data?.summary.sessions).toBe(1);
+});

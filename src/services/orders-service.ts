@@ -1,3 +1,4 @@
+import type { StaffCostReader } from "@/repositories/staff-cost-reader";
 // src/services/orders-service.ts
 // DEBUGGING VERSION - Heavily instrumented with logs
 
@@ -30,6 +31,7 @@ export class OrdersService {
   constructor(
     private readonly supabase: TypedSupabaseClient,
     private readonly adminSupabase?: AdminSupabaseClient,
+    private readonly costs?: StaffCostReader,
   ) {
     this.ordersRepo = new OrdersRepository(supabase);
     this.orderEventsRepo = new OrderEventsRepository(supabase);
@@ -340,13 +342,46 @@ export class OrdersService {
     return this.ordersRepo.getById(orderId);
   }
 
+  private async hydrateOrderCosts<
+    T extends { items: { id: string; variant: { id: string } | null }[] },
+  >(orders: T[]) {
+    if (!this.costs) throw new Error("Staff cost access required");
+    const items = orders.flatMap((order) => order.items);
+    const [line, variant] = await Promise.all([
+      this.costs.lines(items.map((item) => item.id)),
+      this.costs.variants(
+        items.flatMap((item) => (item.variant ? [item.variant.id] : [])),
+      ),
+    ]);
+    return orders.map((order) => ({
+      ...order,
+      items: order.items.map((item) => {
+        const current = item.variant && variant(item.variant.id);
+        return {
+          ...item,
+          unit_cost: line(item.id).unit_cost,
+          variant:
+            item.variant && current
+              ? {
+                  ...item.variant,
+                  unit_cost_cents:
+                    current.unit_cost_recorded || current.unit_cost_cents > 0
+                      ? current.unit_cost_cents
+                      : null,
+                }
+              : null,
+        };
+      }),
+    }));
+  }
+
   async listOrders(params?: {
     status?: string[];
     fulfillment?: string;
     fulfillmentStatus?: string;
     limit?: number;
   }) {
-    return this.ordersRepo.listOrders(params);
+    return this.hydrateOrderCosts(await this.ordersRepo.listOrders(params));
   }
 
   async listOrdersPaged(params?: {
@@ -358,7 +393,8 @@ export class OrdersService {
     incomplete?: boolean;
     includeAll?: boolean;
   }) {
-    return this.ordersRepo.listOrdersPaged(params);
+    const result = await this.ordersRepo.listOrdersPaged(params);
+    return { ...result, orders: await this.hydrateOrderCosts(result.orders) };
   }
 
   async markRefunded(orderId: string, amount: number) {

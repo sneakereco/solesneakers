@@ -132,6 +132,37 @@ export async function captureBatch(
   return sendBatch(batch, deps, config);
 }
 
+export async function captureAvailabilityProbe(
+  id: string,
+  at: string,
+  deps: CaptureDependencies,
+): Promise<CaptureResult> {
+  const { config } = deps;
+  if (
+    !isServerAnalyticsConfig(config) ||
+    !uuid.safeParse(id).success ||
+    !timestamp.safeParse(at).success
+  )
+    return { status: "permanent-failure", reason: "invalid-events" };
+  return sendBatch(
+    [
+      {
+        uuid: id,
+        event: "sole_analytics_probe_v1",
+        timestamp: at,
+        distinct_id: "sole:availability",
+        properties: {
+          dataset_id: "sole-" + config.environment,
+          $geoip_disable: true,
+          $process_person_profile: false,
+        },
+      },
+    ],
+    deps,
+    config,
+  );
+}
+
 async function sendBatch(
   batch: Record<string, unknown>[],
   deps: CaptureDependencies,

@@ -258,7 +258,13 @@ export function exportAnalyticsCsv(
   }
   function visit(path: string, value: unknown, schema: true | Fields) {
     if (value === null || value === undefined) {
-      add(path, "", "unavailable");
+      const status =
+        !request.compare && /\.comparison(?:Series)?$/.test(path)
+          ? "not-requested"
+          : /\.orderValueBins\[\d+\]\.maximumCentsExclusive$/.test(path)
+            ? "open-ended"
+            : "unavailable";
+      add(path, "", status);
       return;
     }
     if (schema === true) {

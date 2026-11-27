@@ -134,7 +134,11 @@ function stale(report: Envelope): Envelope {
 
 /** Two local lanes avoid polling Redis against our own fan-out. The atomic store
  * independently admits each call across all workers and both representations. */
-function execution(deps: ReportLoaderDependencies, project: string, deadline: number) {
+function execution(
+  deps: Pick<ReportLoaderDependencies, "store" | "execute" | "mode">,
+  project: string,
+  deadline: number,
+) {
   const store = deps.store!;
   const localProject = reserveReportProject(project, store, deadline);
   const lanes = [Promise.resolve(), Promise.resolve()];
@@ -209,6 +213,16 @@ function execution(deps: ReportLoaderDependencies, project: string, deadline: nu
   };
 }
 
+export function createObservationQueryBudget(
+  deps: Pick<ReportLoaderDependencies, "project" | "store" | "execute">,
+  deadline: number,
+) {
+  if (!deps.store) throw new Error("Shared report budget unavailable");
+  return execution(deps, providerBudgetKey(deps.project), deadline);
+}
+function providerBudgetKey(project: string) {
+  return "sole:analytics:v1:{" + digest(project) + "}";
+}
 export async function loadAnalyticsReport(
   request: ReportRequest,
   deps: ReportLoaderDependencies,
@@ -231,7 +245,7 @@ export async function loadAnalyticsReport(
   });
   const store = deps.store;
   if (!store || performance.now() >= deadline) return failed();
-  const project = "sole:analytics:v1:{" + digest(deps.project) + "}";
+  const project = providerBudgetKey(deps.project);
   const key =
     "sole:report:v1:{" +
     digest([

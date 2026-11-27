@@ -3,7 +3,7 @@ import "server-only";
 import {
   isPostHogCaptureHost,
   isPostHogProjectKey,
-  readPublicAnalyticsConfig,
+  parsePublicAnalyticsSettings,
   type PostHogCaptureHost,
   type PublicAnalyticsConfig,
 } from "./public-config";
@@ -42,10 +42,10 @@ export function isServerAnalyticsConfig(
   );
 }
 
-export function readServerAnalyticsConfig(
+export function parseServerAnalyticsSettings(
   env: Record<string, string | undefined>,
 ): ServerAnalyticsConfig | null {
-  const publicConfig = readPublicAnalyticsConfig(env);
+  const publicConfig = parsePublicAnalyticsSettings(env);
   if (!publicConfig) {
     return null;
   }
@@ -63,4 +63,10 @@ export function readServerAnalyticsConfig(
     identitySecret: env.ANALYTICS_IDENTITY_SECRET ?? "",
   };
   return isServerAnalyticsConfig(config) ? config : null;
+}
+
+export function readServerAnalyticsConfig(env: Record<string, string | undefined>) {
+  return env.NEXT_PUBLIC_POSTHOG_ENABLED === "true"
+    ? parseServerAnalyticsSettings(env)
+    : null;
 }

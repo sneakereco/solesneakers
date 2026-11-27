@@ -1,5 +1,6 @@
 // app/api/admin/products/[id]/duplicate/route.ts
 
+import { createStaffCostReader } from "@/repositories/staff-cost-reader";
 import type { NextRequest } from "next/server";
 import { NextResponse } from "next/server";
 import { revalidateTag } from "next/cache";
@@ -25,7 +26,7 @@ export async function POST(
   try {
     const session = await requireAdminApi();
     const supabase = await createSupabaseServerClient();
-    const service = new ProductService(supabase);
+    const service = new ProductService(supabase, createStaffCostReader(supabase));
 
     const { id } = await params;
     const paramsParsed = paramsSchema.safeParse({ id });

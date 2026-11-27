@@ -160,7 +160,7 @@ it.each([
   ["over-limit page", { results: [[4], [5]] }],
   ["missing pagination flag", { hasMore: undefined }],
   ["different version", { endpoint_version: 2 }],
-  ["different endpoint", { name: "sole_analytics_overview" }],
+  ["different endpoint", { name: "sole_analytics_health" }],
   ["truncated results", { truncated: true }],
 ])("rejects malformed result with %s", async (_label, patch) => {
   const fetch = mockFetch().mockResolvedValue(Response.json({ ...payload, ...patch }));

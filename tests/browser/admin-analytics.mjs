@@ -18,23 +18,20 @@ import {
 } from "./admin-analytics-payment-health.mjs";
 
 const args = process.argv.slice(2);
+const reports = [
+  "overview",
+  "sales",
+  "customers",
+  "acquisition",
+  "products",
+  "payments",
+  "health",
+];
 assert.ok(
   !args.length ||
-    (args.length === 2 &&
-      args[0] === "--report" &&
-      [
-        "overview",
-        "sales",
-        "customers",
-        "acquisition",
-        "products",
-        "payments",
-        "health",
-      ].includes(args[1])),
+    (args.length === 2 && args[0] === "--report" && reports.includes(args[1])),
   "Usage: node tests/browser/admin-analytics.mjs [--report overview|sales|customers|acquisition|products|payments|health]",
 );
-const selectedReport = args[1] ?? "overview";
-
 console.log("Bundling admin analytics browser fixture");
 const bundle = await build({
   stdin: {
@@ -181,17 +178,23 @@ function fixtureMidnight(day) {
 console.log("Launching Chromium for the admin analytics fixture");
 const browser = await chromium.launch();
 try {
-  await run();
+  for (const report of args.length ? [args[1]] : reports) {
+    const context = await browser.newContext({
+      viewport: { width: 1440, height: 980 },
+      timezoneId: "Asia/Tokyo",
+      acceptDownloads: true,
+    });
+    try {
+      await run(report, await context.newPage());
+    } finally {
+      await context.close();
+    }
+  }
 } finally {
   await browser.close();
 }
 
-async function run() {
-  const page = await browser.newPage({
-    viewport: { width: 1440, height: 980 },
-    timezoneId: "Asia/Tokyo",
-    acceptDownloads: true,
-  });
+async function run(selectedReport, page) {
   await page.addInitScript(() => {
     const fetchRequest = window.fetch.bind(window);
     window.fetch = (input, options) => {

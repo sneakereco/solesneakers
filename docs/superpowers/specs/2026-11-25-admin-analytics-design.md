@@ -192,3 +192,9 @@ Fresh builder check completed November 25, 2026. Its findings were resolved by t
 - [Shopify analytics fields](https://help.shopify.com/en/manual/reports-and-analytics/shopify-reports/report-types/analytics-fields): useful ecommerce terminology, adapted explicitly above rather than copying another platform's order-status rules.
 
 External documentation checked November 25, 2026. Account-specific access, settings, retention, cost, provider field availability, and deployed behavior remain to be verified during implementation.
+
+## Implementation decisions after provider and source review
+
+The implemented reporting transport uses pinned inline saved SQL Endpoints and a private runtime key restricted to `endpoint:read`. Setup and project metadata are separate operator responsibilities. Curated ledger-backed warehouse exports are required for authoritative money, buyers, orders and operations since launch. Public capture can be replayed and cannot establish these financial facts. The baseline contains current inventory only. Consent and archive cutoff determine optional behavioral history.
+
+A confirmed sale uses Square capture time or the first authorized server confirmation. Inconsistent verified final amounts preserve a nullable decomposition. Refund allocations, recorded costs, fees and label credits depend on actual source coverage. Database column grants protect both present variant cost and historical order-line cost, with authorized row-scoped staff enrichment. The deployed source, owner privacy and retention settings, account limits, five-minute end-to-end freshness and release authorization remain qualification gates. See [Admin analytics operations](../../operations/admin-analytics.md) for the implementation and owner verification procedure.

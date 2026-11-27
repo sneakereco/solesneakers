@@ -1,3 +1,4 @@
+import type { StaffCostReader } from "@/repositories/staff-cost-reader";
 // src/services/product-service.ts
 import type { InventoryIdentity } from "@/lib/validation/product";
 import type { TypedSupabaseClient } from "@/lib/supabase/server";
@@ -12,6 +13,7 @@ import type {
   Condition,
   ProductRow,
   ProductWithDetails,
+  StorefrontProduct,
 } from "@/types/domain/product";
 import { TagTaxonomyRepository } from "@/repositories/tag-taxonomy-repo";
 import { ProductSkuService } from "@/services/product-sku-service";
@@ -54,13 +56,33 @@ export interface ProductCreateInput {
 export class ProductService {
   private repo: ProductRepository;
 
-  constructor(private readonly supabase: TypedSupabaseClient) {
+  constructor(
+    private readonly supabase: TypedSupabaseClient,
+    private readonly costs?: StaffCostReader,
+  ) {
     this.repo = new ProductRepository(supabase);
+  }
+
+  private staffCosts() {
+    if (!this.costs) throw new Error("Staff cost access required");
+    return this.costs;
+  }
+
+  private async hydrateProducts(
+    products: StorefrontProduct[],
+  ): Promise<ProductWithDetails[]> {
+    const cost = await this.staffCosts().variants(
+      products.flatMap((p) => p.variants.map((v) => v.id)),
+    );
+    return products.map((product) => ({
+      ...product,
+      variants: product.variants.map((variant) => ({ ...variant, ...cost(variant.id) })),
+    }));
   }
 
   async exportInventory(filters: ProductFilters): Promise<InventoryExportRow[]> {
     const normalized = this.normalizeArchiveFilters(filters);
-    return this.repo.exportInventoryRows(normalized);
+    return this.repo.exportInventoryRows(normalized, this.staffCosts());
   }
 
   lookupInventoryProduct(tenantId: string, identity: InventoryIdentity) {
@@ -68,7 +90,8 @@ export class ProductService {
   }
 
   async listProducts(filters: ProductFilters) {
-    return this.repo.list(this.normalizeArchiveFilters(filters));
+    const result = await this.repo.list(this.normalizeArchiveFilters(filters));
+    return { ...result, products: await this.hydrateProducts(result.products) };
   }
 
   async getProductById(
@@ -90,7 +113,7 @@ export class ProductService {
       return null;
     }
 
-    return product;
+    return (await this.hydrateProducts([product]))[0];
   }
 
   async createProduct(
@@ -309,16 +332,18 @@ export class ProductService {
       tenantId: string;
     },
   ) {
-    const original = await this.repo.getById(productId, {
+    const source = await this.repo.getById(productId, {
       includeOutOfStock: true,
       includeUnpublished: true,
     });
-    if (!original) {
+    if (!source) {
       throw new Error("Product not found");
     }
-    if (original.category === "specialty")
+    if (source.category === "specialty")
       throw new Error("Specialty products cannot be duplicated. Create a new prize.");
 
+    if (source.tenant_id !== ctx.tenantId) throw new Error("Product not found");
+    const [original] = await this.hydrateProducts([source]);
     const input: ProductCreateInput = {
       name: `${original.name} (Copy)`,
       category: original.category,

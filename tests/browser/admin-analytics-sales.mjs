@@ -138,7 +138,13 @@ export function salesFixture(meta, compare) {
       ],
       comparison: compare ? prior : null,
       comparisonSeries: compare
-        ? [bucket(prior, meta.range.comparisonStartInclusive, 0)]
+        ? [
+            prior,
+            { netMerchandise: money(0), confirmedOrders: 0 },
+            { netMerchandise: money(0), confirmedOrders: 0 },
+          ].map((period, index) =>
+            bucket(period, meta.range.comparisonStartInclusive, index),
+          )
         : null,
     },
   };

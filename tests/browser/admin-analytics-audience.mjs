@@ -66,22 +66,26 @@ function customers(meta, compare) {
   };
   const prior = {
     ...historical,
-    attribution: { eligibleOrders: 9, attributedOrders: 3 },
-    buyers: 5,
+    attribution: returning
+      ? { eligibleOrders: 2, attributedOrders: 1 }
+      : { eligibleOrders: 9, attributedOrders: 3 },
+    buyers: returning ? 1 : 5,
     returningBuyers: 1,
-    newBuyers: 4,
-    cohorts: [
-      {
-        month: "2026-11",
-        buyers: 4,
-        repeatPurchases: Array.from({ length: 12 }, (_, index) => ({
-          monthsSinceFirstPurchase: index,
-          repeatPurchaseRate: index ? rate(null, null) : rate(1, 4),
-        })),
-      },
-    ],
-    selectedPeriodSpend: money(25100),
-    observedLifetimeSpend: money(91050),
+    newBuyers: returning ? 0 : 4,
+    cohorts: returning
+      ? []
+      : [
+          {
+            month: "2026-11",
+            buyers: 4,
+            repeatPurchases: Array.from({ length: 12 }, (_, index) => ({
+              monthsSinceFirstPurchase: index,
+              repeatPurchaseRate: index ? rate(null, null) : rate(1, 4),
+            })),
+          },
+        ],
+    selectedPeriodSpend: money(returning ? 6400 : 25100),
+    observedLifetimeSpend: money(returning ? 38200 : 91050),
     visitors: 8,
     sessions: 12,
     devices: page([{ device: "mobile", sessions: 12, visitors: 8 }]),
@@ -198,7 +202,13 @@ function acquisition(meta, compare, params) {
         : scopedRows;
     const start = prior ? meta.range.comparisonStartInclusive : meta.range.startInclusive;
     const end = prior ? meta.range.comparisonEndExclusive : meta.range.endExclusive;
-    const segment = (rows, filter) => rows.filter(({ key }) => !filter || key === filter);
+    const axis = (label) =>
+      page(
+        sourceRows.map((item) => {
+          const key = item.key === selected ? label : item.key;
+          return { ...item, key, label: key };
+        }),
+      );
     // The selected November dates and their preceding dates all have 24-hour Eastern days.
     const day = 86_400_000;
     const dailyTotals = [
@@ -217,13 +227,9 @@ function acquisition(meta, compare, params) {
         ? { eligibleOrders: prior ? 3 : 8, attributedOrders: prior ? 1 : 4 }
         : { eligibleOrders: prior ? 3 : 8, attributedOrders: prior ? 2 : 6 },
       sources: page(sourceRows),
-      channels: page(
-        segment([row(discovery ? "social" : "search", 14, 2, 9501)], channel),
-      ),
-      campaigns: page(
-        segment([row(discovery ? "launch" : "sale", 10, 2, 9501)], campaign),
-      ),
-      placements: page([row("homepage", 8, 1, 7100)]),
+      channels: axis(discovery ? "social" : "search"),
+      campaigns: axis(discovery ? "launch" : "sale"),
+      placements: axis("homepage"),
       series: dailyTotals.map(({ sessions, orders, cents }, index) => ({
         startInclusive: new Date(Date.parse(start) + index * day).toISOString(),
         endExclusive:
@@ -274,11 +280,18 @@ function products(meta, compare, params) {
     ? { eligibleOrders: 1, attributedOrders: 1 }
     : { eligibleOrders: 3, attributedOrders: 2 };
   const filtered = Object.keys(filters).length > 0 || !!variant;
-  const merchandise = money(device || source ? 1901 : filtered ? 8401 : 9801);
+  const productCents = device || source ? 1901 : filtered ? 8401 : 9801;
+  const merchandise = money(
+    variant === variantId
+      ? productCents - 1234
+      : variant === secondVariantId
+        ? 1234
+        : productCents,
+  );
   const metrics = {
     confirmedOrders: 2,
-    units: 3,
-    netUnits: 2,
+    units: variant === variantId ? 2 : variant ? 1 : 3,
+    netUnits: variant ? 1 : 2,
     views: 12,
     viewToPurchase: rate(2, 12),
     netMerchandise: merchandise,
@@ -325,7 +338,16 @@ function products(meta, compare, params) {
     unmetDemand: null,
   };
   const variantRows = [
-    { ...product, variantId, size, availableUnits: 4, stockoutViews: null },
+    {
+      ...product,
+      variantId,
+      size,
+      availableUnits: 4,
+      stockoutViews: null,
+      units: 2,
+      netUnits: 1,
+      netMerchandise: money(productCents - 1234),
+    },
     {
       ...product,
       variantId: secondVariantId,
@@ -461,6 +483,9 @@ export const audienceScenarios = {
     await buyer.selectOption("returning");
     await returningSpend.waitFor();
     await metric(page, "Recorded buyers").getByText("3", { exact: true }).waitFor();
+    await metric(page, "Recorded buyers")
+      .getByText("Previous period · 1", { exact: true })
+      .waitFor();
     await metric(page, "Observed lifetime spend")
       .getByText("$1,872.42", { exact: true })
       .waitFor();
@@ -553,6 +578,10 @@ export const audienceScenarios = {
     await sources.getByRole("cell", { name: "$95.01", exact: true }).waitFor();
     await page.getByLabel("Device", { exact: true }).selectOption("mobile");
     await sources.getByRole("cell", { name: "$35.01", exact: true }).waitFor();
+    await page
+      .getByRole("region", { name: "Reported channels", exact: true })
+      .getByRole("cell", { name: "$35.01", exact: true })
+      .waitFor();
     assert.equal(requests.at(-1).searchParams.get("source"), "instagram");
     assert.equal(requests.at(-1).searchParams.get("device"), "mobile");
     assert.equal(requests.at(-1).searchParams.get("channel"), "social");
@@ -596,7 +625,7 @@ export const audienceScenarios = {
     });
     await variantTrigger.click();
     const drawer = page.getByRole("dialog", { name: "Retired High Top · US 11" });
-    await drawer.getByText("$19.01", { exact: true }).waitFor();
+    await drawer.getByText("$6.67", { exact: true }).waitFor();
     await drawer.getByText(/Nov 10\s*[–-]\s*25, 2026/).waitFor();
     await drawer.getByText("Today is included as a partial day.").waitFor();
     await drawer.getByText(/1 of 1 attributed · 0 unattributed/).waitFor();
@@ -732,7 +761,7 @@ export const audienceScenarios = {
     await page.setViewportSize({ width: 1440, height: 980 });
     await variantTrigger.click();
     const variantDrawer = page.getByRole("dialog", { name: "Retired High Top · US 11" });
-    await variantDrawer.getByText("$84.01", { exact: true }).first().waitFor();
+    await variantDrawer.getByText("$71.67", { exact: true }).first().waitFor();
     assert.equal(requests.at(-1).searchParams.get("variantId"), variantId);
     await capture("products-variant-desktop-drawer");
     await variantDrawer.getByRole("button", { name: "Close product details" }).click();

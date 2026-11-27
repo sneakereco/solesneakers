@@ -16,7 +16,7 @@ export function isPostHogProjectKey(key: string): boolean {
   return /^phc_[a-z0-9]{20,}$/i.test(key);
 }
 
-export function readPublicAnalyticsConfig(
+export function parsePublicAnalyticsSettings(
   env: Record<string, string | undefined>,
 ): PublicAnalyticsConfig | null {
   const environment = env.NEXT_PUBLIC_MEASUREMENT_ENVIRONMENT;
@@ -24,7 +24,6 @@ export function readPublicAnalyticsConfig(
   const host = env.NEXT_PUBLIC_POSTHOG_HOST?.trim();
 
   if (
-    env.NEXT_PUBLIC_POSTHOG_ENABLED !== "true" ||
     (environment !== "staging" && environment !== "production") ||
     !isPostHogCaptureHost(host) ||
     !isPostHogProjectKey(projectKey)
@@ -33,4 +32,10 @@ export function readPublicAnalyticsConfig(
   }
 
   return { projectKey, host, environment };
+}
+
+export function readPublicAnalyticsConfig(env: Record<string, string | undefined>) {
+  return env.NEXT_PUBLIC_POSTHOG_ENABLED === "true"
+    ? parsePublicAnalyticsSettings(env)
+    : null;
 }

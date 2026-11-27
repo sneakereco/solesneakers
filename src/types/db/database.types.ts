@@ -2286,6 +2286,13 @@ export type Database = {
         Args: { p_dataset_id: string; p_outcome: Json }
         Returns: undefined
       }
+      activate_analytics_dataset: { Args: { p_environment: string; p_at: string; p_history_mode: string }; Returns: Json }
+      analytics_refresh_claim: { Args: { p_dataset_id: string }; Returns: Json }
+      analytics_refresh_snapshot: { Args: { p_dataset_id: string; p_token: string }; Returns: Json }
+      analytics_refresh_finish: { Args: { p_dataset_id: string; p_token: string; p_result: string; p_observed_at: string | null }; Returns: boolean }
+      analytics_native_probe: { Args: { p_dataset_id: string }; Returns: Json }
+      analytics_record_native_retention: { Args: { p_dataset_id: string; p_months: number | null; p_retained_from: string | null; p_verified_at: string }; Returns: boolean }
+      analytics_native_advance: { Args: { p_dataset_id: string; p_last_id: string }; Returns: boolean }
       analytics_read_history_evidence: {
         Args: { p_dataset_id: string }
         Returns: Json

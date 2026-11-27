@@ -1,4 +1,5 @@
 // app/api/admin/products/route.ts
+import { createStaffCostReader } from "@/repositories/staff-cost-reader";
 import type { NextRequest } from "next/server";
 import { NextResponse } from "next/server";
 import { revalidateTag } from "next/cache";
@@ -60,7 +61,7 @@ export async function GET(request: NextRequest) {
   try {
     const session = await requireAdminApi();
     const supabase = await createSupabaseServerClient();
-    const service = new ProductService(supabase);
+    const service = new ProductService(supabase, createStaffCostReader(supabase));
     const tenantId = await ensureTenantId(session, supabase);
 
     const { searchParams } = new URL(request.url);

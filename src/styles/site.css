@@ -1263,6 +1263,7 @@ body:has(.analytics-calendar[open]) {
   text-align: center;
 }
 .analytics-calendar .rdp-root {
+  --rdp-weekday-opacity: 1;
   --rdp-accent-color: var(--admin-ink);
   --rdp-accent-background-color: #efefec;
   --rdp-day_button-border-radius: 0.4rem;
