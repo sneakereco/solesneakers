@@ -249,9 +249,9 @@ export class SquareFinancialInquiry {
         "id,square_order_id,checkout_attempt_guarded,payment_transaction_id,fulfillment_status,user_id",
       )
       .eq("square_order_id", squareOrderId)
-      .single();
+      .maybeSingle();
     if (error) throw error;
-    if (!local) throw new Error("Missing local binding");
+    if (!local) throw new SquareEvidenceConflict();
     if (!order || !location || (input.localOrderId && input.localOrderId !== local.id))
       return this.rejectEvidence(input.localOrderId);
     // A raw receipt cannot choose whose financial review is changed.

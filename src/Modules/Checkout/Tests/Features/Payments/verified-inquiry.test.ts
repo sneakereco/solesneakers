@@ -94,6 +94,8 @@ it.each([
   "legacy source mismatch",
   "payment unavailable",
   "storage unavailable",
+  "unmatched sale",
+  "order lookup unavailable",
 ])(
   "replays the stored %s effects against authenticated provider reads",
   async (scenario) => {
@@ -106,8 +108,9 @@ it.each([
     const foreign = scenario === "foreign receipt";
     const malformed = scenario === "malformed receipt";
     const unavailable = scenario.endsWith("unavailable");
+    const unmatched = scenario === "unmatched sale";
     const kind =
-      terminalCapture || badSource || foreign || malformed || unavailable
+      terminalCapture || badSource || foreign || malformed || unavailable || unmatched
         ? "payment.updated"
         : conflict
           ? "refund.updated"
@@ -156,6 +159,9 @@ it.each([
                   : terminalCapture
                     ? { ...proof.attempt, state: "canceled" }
                     : proof.attempt;
+        const orderLookupFailed =
+          table === "orders" && scenario === "order lookup unavailable";
+        const noOrder = table === "orders" && unmatched;
         let writing = false;
         const q = {
           select: () => q,
@@ -172,11 +178,18 @@ it.each([
             return { error: null };
           },
           single: () => ({
-            data: row,
+            data: noOrder || orderLookupFailed ? null : row,
             error:
-              scenario === "storage unavailable" ? Error("connection unavailable") : null,
+              orderLookupFailed || scenario === "storage unavailable"
+                ? Error("connection unavailable")
+                : noOrder
+                  ? { code: "PGRST116" }
+                  : null,
           }),
-          maybeSingle: () => ({ data: row, error: null }),
+          maybeSingle: () => ({
+            data: noOrder || orderLookupFailed ? null : row,
+            error: orderLookupFailed ? Error("connection unavailable") : null,
+          }),
         };
         return q;
       },
@@ -288,13 +301,14 @@ it.each([
       { syncShipping, scheduleNotifications: jest.fn() },
       false,
     );
-    if (foreign || malformed || badSource || unavailable) {
+    if (foreign || malformed || badSource || unavailable || unmatched) {
       await expect(consumer.processStoredSquareEvent("evt")).rejects.toThrow(
         unavailable ? "square_receipt_processing_pending" : "square_evidence_conflict",
       );
       expect(receipt.processed_at).toBeNull();
       expect(reviews).toEqual(badSource ? ["square_evidence_conflict"] : []);
       expect(commands).toEqual([]);
+      expect(syncShipping).not.toHaveBeenCalled();
       return;
     }
     if (terminalCapture) {

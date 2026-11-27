@@ -46,6 +46,7 @@ test("expiry fences dispatch and conserves stock across independently committed 
         version = "first",
         time = new Date().toISOString(),
         paymentOverrides = {},
+        orderLookupUnavailable = false,
       ) {
         const commands = [];
         const db = {
@@ -60,16 +61,19 @@ test("expiry fences dispatch and conserves stock across independently committed 
             );
             const conditions = [],
               values = [];
-            const read = async () => ({
-              data:
-                (
-                  await a.query(
-                    "select * from " + table + " where " + conditions.join(" and "),
-                    values,
-                  )
-                ).rows[0] ?? null,
-              error: null,
-            });
+            const read = async () =>
+              table === "orders" && orderLookupUnavailable
+                ? { data: null, error: { code: "08006" } }
+                : {
+                    data:
+                      (
+                        await a.query(
+                          "select * from " + table + " where " + conditions.join(" and "),
+                          values,
+                        )
+                      ).rows[0] ?? null,
+                    error: null,
+                  };
             const q = {
               select() {
                 return q;
@@ -241,7 +245,13 @@ test("expiry fences dispatch and conserves stock across independently committed 
       await t.test(
         "immutable receipt contradictions retain review and protect only independently bound orders",
         async () => {
-          for (const mode of ["foreign", "malformed", "binding"]) {
+          for (const mode of [
+            "foreign",
+            "malformed",
+            "binding",
+            "unmatched",
+            "unavailable",
+          ]) {
             const o = await held(),
               eventId = randomUUID(),
               pay = "pay-" + o.id,
@@ -251,12 +261,14 @@ test("expiry fences dispatch and conserves stock across independently committed 
               "get_or_create_checkout_payment_attempt($1,'card',$2)",
               [o.id, o.binding],
             );
+            const providerOrder =
+              mode === "unmatched" ? { ...o, sq: "external-" + o.id } : o;
             const payload = {
               merchantId: mode === "foreign" ? "other" : "merchant",
               locationId: "location",
               createdAt: time,
               paymentId: pay,
-              squareOrderId: o.sq,
+              squareOrderId: providerOrder.sq,
             };
             await rpc(a, "receive_checkout_square_event($1,'payment.updated',$2,$3)", [
               eventId,
@@ -268,9 +280,19 @@ test("expiry fences dispatch and conserves stock across independently committed 
                 "update square_webhook_events set event_data=event_data-'createdAt' where square_event_id=$1",
                 [eventId],
               );
-            const run = await runFixtureWorker(o, at, pay, eventId, "opaque", time, {
-              amountMoney: { amount: 1100n, currency: "USD" },
-            });
+            const run = await runFixtureWorker(
+              providerOrder,
+              at,
+              pay,
+              eventId,
+              "opaque",
+              time,
+              mode === "binding"
+                ? { amountMoney: { amount: 1100n, currency: "USD" } }
+                : {},
+              mode === "unavailable",
+            );
+            assert.deepEqual(run.commands, []);
             assert.equal(run.creates, 0);
             const state = await admin.query(
               "select e.processed_at,j.status,j.reason,j.unresolved_observations,o.checkout_financial_review,(select count(*) from checkout_financial_facts where order_id=o.id)::int facts from square_webhook_events e join checkout_recovery_jobs j on j.event_id=e.square_event_id cross join orders o where e.square_event_id=$1 and o.id=$2",
@@ -278,8 +300,11 @@ test("expiry fences dispatch and conserves stock across independently committed 
             );
             assert.deepEqual(state.rows[0], {
               processed_at: null,
-              status: "review",
-              reason: "square_evidence_conflict",
+              status: mode === "unavailable" ? "pending" : "review",
+              reason:
+                mode === "unavailable"
+                  ? "recovery_unavailable"
+                  : "square_evidence_conflict",
               unresolved_observations: 0,
               checkout_financial_review:
                 mode === "binding" ? "square_evidence_conflict" : null,

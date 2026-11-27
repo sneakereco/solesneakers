@@ -19,6 +19,7 @@ import {
 } from "../../../Source/Features/Recovery/notification-drain";
 import type { RecoveryJob } from "../../../Source/Features/Recovery/recovery-contract";
 
+import { SquareEvidenceConflict } from "../../../Source/Features/Payments/payment-facts";
 const config = { deadlineMs: 45000, batchSize: 50, concurrency: 4 };
 const jobs = (n: number): RecoveryJob[] =>
   Array.from({ length: n }, (_, i) => ({
@@ -64,6 +65,37 @@ it("continues beyond fifty retrying jobs to settle a closed browser's accepted p
   });
   expect(done).toEqual(["50"]);
   expect(peak).toBeLessThanOrEqual(4);
+});
+it("finishes an unmatched receipt as review and a database outage as retry", async () => {
+  const queue = jobs(2).map((j) => ({
+    ...j,
+    kind: "square_event" as const,
+    orderId: null,
+    eventId: j.id,
+  }));
+  const finish = jest.fn().mockResolvedValue(true);
+  await runCheckoutRecovery(config, {
+    sweep: async () => {},
+    oldestDueMs: () => Promise.resolve(0),
+    claimRecovery: () => Promise.resolve(queue.splice(0)),
+    acquireDependencyLease: () => Promise.resolve("slot"),
+    releaseDependencyLease: async () => {},
+    process: (j) =>
+      Promise.reject(
+        j.eventId === "0" ? new SquareEvidenceConflict() : Error("database unavailable"),
+      ),
+    finishRecovery: finish,
+  });
+  expect(finish).toHaveBeenCalledWith(
+    expect.objectContaining({
+      id: "0",
+      result: "review",
+      reason: "square_evidence_conflict",
+    }),
+  );
+  expect(finish).toHaveBeenCalledWith(
+    expect.objectContaining({ id: "1", result: "retry", reason: "recovery_unavailable" }),
+  );
 });
 it("escalates only the twelfth actual unresolved observation", async () => {
   const queue = jobs(2).map((j, i) => ({
