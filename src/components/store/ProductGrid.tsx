@@ -1,4 +1,5 @@
 import type { ProductWithDetails } from "@/types/domain/product";
+import { DiscoveryInsertion } from "@/Modules/SpecialtyProducts/Source/Features/Discovery/DiscoveryInsertion";
 
 import { ProductCard } from "./ProductCard";
 import { productGridClassName } from "./StoreSkeletons";
@@ -7,11 +8,17 @@ interface ProductGridProps {
   products: ProductWithDetails[];
   storeHref?: string;
   view?: "grid" | "list";
+  allowSpecialty?: boolean;
 }
 
 const PRIORITY_CARDS_COUNT = 4;
 
-export function ProductGrid({ products, storeHref, view = "grid" }: ProductGridProps) {
+export function ProductGrid({
+  products,
+  storeHref,
+  view = "grid",
+  allowSpecialty = false,
+}: ProductGridProps) {
   if (products.length === 0) {
     return (
       <div className="py-24 text-center">
@@ -29,15 +36,22 @@ export function ProductGrid({ products, storeHref, view = "grid" }: ProductGridP
       data-testid="product-grid"
       data-view={view}
     >
-      {products.map((product, index) => (
-        <ProductCard
-          key={product.id}
-          product={product}
-          storeHref={storeHref}
-          priority={index < PRIORITY_CARDS_COUNT}
-          view={view}
-        />
-      ))}
+      <DiscoveryInsertion
+        allowed={allowSpecialty}
+        view={view}
+        items={products.map((product, index) => ({
+          id: product.id,
+          node: (
+            <ProductCard
+              key={product.id}
+              product={product}
+              storeHref={storeHref}
+              priority={index < PRIORITY_CARDS_COUNT}
+              view={view}
+            />
+          ),
+        }))}
+      />
     </div>
   );
 }

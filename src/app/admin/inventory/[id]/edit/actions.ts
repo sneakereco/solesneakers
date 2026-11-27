@@ -5,6 +5,8 @@ import { readInventoryData } from "../../initial-read";
 
 import { TagTaxonomyRepository } from "@/repositories/tag-taxonomy-repo";
 import { ProductService } from "@/services/product-service";
+import { createSupabaseAdminClient } from "@/lib/supabase/service-role";
+import { loadSpecialtyProductDraft } from "@/Modules/SpecialtyProducts/Source/Features/ManageProducts/load-specialty-product-draft";
 
 export async function getEditFormInitialData(productId: string) {
   return readInventoryData(async (supabase, tenantId, signal) => {
@@ -49,7 +51,11 @@ export async function getEditFormInitialData(productId: string) {
       }
     }
 
+    signal.throwIfAborted();
     return {
+      specialtyInitial: product
+        ? await loadSpecialtyProductDraft(product, createSupabaseAdminClient())
+        : undefined,
       product,
       brands: brandsData.map((brand: { id: string; canonical_label: string }) => ({
         id: brand.id,

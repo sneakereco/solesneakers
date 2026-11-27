@@ -33,7 +33,14 @@ type InventoryClientProps = {
 };
 
 const PAGE_SIZE = 100;
-const categories = ["all", "sneakers", "clothing", "accessories", "electronics"] as const;
+const categories = [
+  "all",
+  "sneakers",
+  "clothing",
+  "accessories",
+  "electronics",
+  "specialty",
+] as const;
 const conditions = ["all", "new", "used"] as const;
 
 function titleCase(value: string) {

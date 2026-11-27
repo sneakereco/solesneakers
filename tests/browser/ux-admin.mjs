@@ -1098,6 +1098,49 @@ try {
       if (writes !== 1) throw Error("Duplicate settings write");
     },
   );
+
+  await check(
+    "category selector preserves a held and unconfirmed product save",
+    async (page) => {
+      const gate = deferred();
+      let writes = 0;
+      await page.route("**/api/admin/**", async (r) => {
+        const url = new URL(r.request().url());
+        if (url.pathname.endsWith("/parse-title"))
+          return r.fulfill({ json: { brand: { id: "brand", label: "Fixture" } } });
+        if (!url.pathname.endsWith("/products"))
+          return r.fulfill({ json: { models: [] } });
+        if (r.request().method() === "POST") {
+          writes++;
+          await gate.promise;
+          return r.abort();
+        }
+        return r.fulfill({ json: { product: null } });
+      });
+      await openUxHarness(page, bundle, "https://ux.test/product");
+      await page.getByLabel(/Full Title/).fill("Retain submitted draft");
+      await expect(page.getByText("Fixture", { exact: true }).first()).toBeVisible();
+      await page.getByLabel(/Sale Price/).fill("15");
+      const category = page.getByRole("combobox", { name: /^Product category/ });
+      await expect(category).toBeEnabled();
+      await page.getByRole("button", { name: "Create Product" }).click();
+      try {
+        await expect.poll(() => writes).toBe(1);
+        await expect(category).toBeDisabled();
+      } finally {
+        gate.release();
+      }
+      await expect(
+        page.getByRole("button", { name: "Check inventory", exact: true }),
+      ).toBeVisible();
+      await expect(category).toBeDisabled();
+      await expect(page.getByLabel(/Full Title/)).toHaveValue("Retain submitted draft");
+      await page.getByRole("button", { name: "Check inventory", exact: true }).click();
+      await expect(page.getByText(/still unconfirmed/)).toBeVisible();
+      await expect(category).toBeDisabled();
+      expect(writes).toBe(1);
+    },
+  );
   await check("product create unknown checks inventory", async (page) => {
     let writes = 0,
       reads = 0,

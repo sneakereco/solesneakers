@@ -113,7 +113,12 @@ try {
       assert.equal(url.searchParams.get("limit"), "12");
       await clothingGate;
       if (mode === "error") return route.fulfill({ status: 503, json: {} });
-      return route.fulfill({ json: { products: mode === "empty" ? [] : clothing } });
+      return route.fulfill({
+        json: {
+          products:
+            mode === "empty" ? [] : mode === "single" ? clothing.slice(0, 1) : clothing,
+        },
+      });
     }
     if (url.pathname.startsWith("/images/"))
       return route.fulfill({
@@ -200,6 +205,79 @@ try {
     );
   }
   assert.equal(Math.round((await slideshow.boundingBox()).height), 200);
+
+  for (const width of [320, 375, 390, 430]) {
+    await page.setViewportSize({ width, height: 950 });
+    for (const index of [0, 3, 6]) {
+      await cards.nth(index).evaluate((card) => {
+        card.scrollIntoView({ behavior: "instant", block: "nearest", inline: "center" });
+      });
+      const bounds = await cards.nth(index).boundingBox();
+      assert.ok(
+        Math.abs(bounds.x + bounds.width / 2 - width / 2) < 1,
+        `clothing card ${index + 1} is centered in the ${width}px phone viewport`,
+      );
+    }
+    const featuredCard = await page
+      .getByRole("region", { name: "Featured products", exact: true })
+      .getByRole("link")
+      .first()
+      .boundingBox();
+    assert.ok(
+      featuredCard.width < width * 0.85,
+      "featured sneakers retain narrower cards",
+    );
+    assert.equal(
+      await page.evaluate(() => document.documentElement.scrollWidth <= innerWidth),
+      true,
+    );
+  }
+
+  await page.setViewportSize({ width: 390, height: 950 });
+  await cards.first().evaluate((card) => {
+    card.scrollIntoView({ behavior: "instant", block: "nearest", inline: "center" });
+  });
+  await section.getByRole("button", { name: "Next clothing products" }).click();
+  await page.waitForFunction(() => {
+    const card = document.querySelector(
+      '[aria-label="Clothing products"] > a:nth-child(2)',
+    );
+    const bounds = card.getBoundingClientRect();
+    return Math.abs(bounds.x + bounds.width / 2 - innerWidth / 2) < 1;
+  });
+  await section.screenshot({ path: path.join(outputDir, "mobile-centered.png") });
+
+  for (const width of [640, 768, 1024, 1440]) {
+    await page.setViewportSize({ width, height: 1000 });
+    const card = await cards.first().boundingBox();
+    const carousel = await section
+      .getByRole("region", { name: "Clothing products" })
+      .boundingBox();
+    const columns = width >= 1024 ? 4 : width >= 768 ? 3 : 2;
+    assert.ok(
+      card.width <= carousel.width / columns,
+      `${columns} clothing cards fit at ${width}px`,
+    );
+    assert.ok(
+      card.width > carousel.width / (columns + 1),
+      "desktop card sizing is retained",
+    );
+  }
+
+  mode = "single";
+  await page.setViewportSize({ width: 390, height: 950 });
+  await mount();
+  await cards.first().waitFor();
+  const single = await cards.first().boundingBox();
+  assert.ok(
+    Math.abs(single.x + single.width / 2 - 195) < 1,
+    "a single clothing card is centered",
+  );
+  assert.equal(
+    await section.getByRole("button", { name: /clothing products/ }).count(),
+    0,
+  );
+  mode = "success";
 
   await page.setViewportSize({ width: 1440, height: 1000 });
   await mount();

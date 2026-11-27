@@ -11,8 +11,11 @@ import { useRouter } from "next/navigation";
 import { ProductForm } from "@/components/inventory/ProductForm";
 import type { ProductCreateInput } from "@/services/product-service";
 import type { ProductWithDetails } from "@/types/domain/product";
+import type { SpecialtyProductDraft } from "@/Modules/SpecialtyProducts/Source/Features/ManageProducts/specialty-product-contract";
+import { saveSpecialtyProduct } from "@/Modules/SpecialtyProducts/Source/Features/ManageProducts/specialty-product-client";
 
 interface EditProductClientProps {
+  specialtyInitial?: SpecialtyProductDraft;
   productId: string;
   product: ProductWithDetails;
   isArchived?: boolean;
@@ -26,6 +29,7 @@ interface EditProductClientProps {
 
 export function EditProductClient({
   productId,
+  specialtyInitial,
   product,
   isArchived = false,
   initialBrands,
@@ -129,6 +133,12 @@ export function EditProductClient({
 
   return (
     <ProductForm
+      specialtyInitial={specialtyInitial}
+      onSpecialtySubmit={async (input) => {
+        await saveSpecialtyProduct(input);
+        router.push("/admin/inventory");
+        router.refresh();
+      }}
       initialData={initialData}
       onSubmit={handleSubmit}
       onCancel={handleCancel}

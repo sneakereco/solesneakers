@@ -13,6 +13,10 @@ import { ChevronDown, Menu, Search, ShoppingCart } from "lucide-react";
 import { isAdminRole, type ProfileRole } from "@/config/constants/roles";
 import { useSession } from "@/contexts/SessionContext";
 import { withRequestDeadline } from "@/lib/http/request-deadline";
+import {
+  ClaimRecoveryPanel,
+  useSavedClaimAttempts,
+} from "@/Modules/SpecialtyProducts/Source/Features/Claim/ClaimRecoveryPanel";
 
 import { StoreMenuDrawer } from "./StoreMenuDrawer";
 
@@ -53,6 +57,8 @@ export function Navbar({
   } = useSession();
   const [menuInvoker, setMenuInvoker] = useState<HTMLButtonElement | null>(null);
 
+  const claimAttempts = useSavedClaimAttempts();
+  const hasClaimAttempts = claimAttempts.length > 0;
   const logout = useAsyncAction();
   const [logoutError, setLogoutError] = useState(false);
 
@@ -123,151 +129,166 @@ export function Navbar({
         </div>
       </div>
 
-      <div
-        data-navbar-shell
-        className="relative h-20 border-b border-zinc-200 px-5 sm:h-24 sm:px-8 lg:px-14"
-      >
-        <div className="absolute left-5 top-1/2 -translate-y-1/2 sm:left-8 lg:left-14">
-          <ActionButton
-            type="button"
-            onClick={(event) => setMenuInvoker(event.currentTarget)}
-            className="inline-flex h-11 w-11 items-center justify-start text-zinc-800 transition-colors hover:text-black"
-            aria-label="Open menu"
-          >
-            <Menu className="h-7 w-7 sm:h-8 sm:w-8" strokeWidth={1.7} />
-          </ActionButton>
-        </div>
-
-        <FeedbackLink
-          href="/"
-          className="absolute left-1/2 top-1/2 -translate-x-1/2 -translate-y-1/2"
-          aria-label="Home"
-        >
-          <div className="flex items-center justify-center">
-            <Image
-              src="/images/logo.png"
-              alt="Solesneakers"
-              width={124}
-              height={124}
-              sizes="124px"
-              className="h-[76px] w-[76px] object-contain sm:h-[110px] sm:w-[110px]"
-              priority
-              unoptimized
-            />
+      <div data-navbar-shell className="border-b border-zinc-200 px-5 sm:px-8 lg:px-14">
+        <div className="relative h-20 sm:h-24">
+          <div className="absolute left-0 top-1/2 -translate-y-1/2">
+            <ActionButton
+              type="button"
+              onClick={(event) => setMenuInvoker(event.currentTarget)}
+              className="inline-flex h-11 w-11 items-center justify-start text-zinc-800 transition-colors hover:text-black"
+              aria-label="Open menu"
+            >
+              <Menu className="h-7 w-7 sm:h-8 sm:w-8" strokeWidth={1.7} />
+            </ActionButton>
           </div>
-        </FeedbackLink>
 
-        <div className="absolute right-6 top-1/2 hidden -translate-y-1/2 sm:right-8 md:flex lg:right-14">
-          <div className="flex items-center" style={{ gap: "1.75rem" }}>
-            {effectiveIsAuthenticated ? (
-              <div className="group relative inline-flex">
-                <ActionButton
-                  type="button"
-                  className="inline-flex max-w-[15rem] items-center gap-1 text-xs font-semibold uppercase text-zinc-700 transition-colors duration-150 hover:text-black"
-                  style={{ letterSpacing: "0.02em" }}
-                  aria-label="Account"
-                  data-testid="navbar-user-menu"
-                >
-                  <span className="truncate">{effectiveUserEmail ?? "Account"}</span>
-                  <ChevronDown className="h-3.5 w-3.5 -rotate-180 transition-transform duration-200 group-hover:rotate-0" />
-                </ActionButton>
+          <FeedbackLink
+            href="/"
+            className="absolute left-1/2 top-1/2 -translate-x-1/2 -translate-y-1/2"
+            aria-label="Home"
+          >
+            <div className="flex items-center justify-center">
+              <Image
+                src="/images/logo.png"
+                alt="Solesneakers"
+                width={124}
+                height={124}
+                sizes="124px"
+                className="h-[76px] w-[76px] object-contain sm:h-[110px] sm:w-[110px]"
+                priority
+                unoptimized
+              />
+            </div>
+          </FeedbackLink>
 
-                <div className="invisible absolute right-0 top-full z-50 pt-4 opacity-0 group-focus-within:visible group-focus-within:opacity-100 group-hover:visible group-hover:opacity-100 motion-safe:transition motion-safe:duration-150">
-                  <div className="min-w-full border border-zinc-200 bg-[var(--storefront-surface)] text-black shadow-[0_20px_50px_rgba(0,0,0,0.14)]">
-                    {showAdminDashboardLink && (
+          <div className="absolute right-0 top-1/2 hidden -translate-y-1/2 md:flex">
+            <div className={`flex items-center ${hasClaimAttempts ? "gap-4" : "gap-7"}`}>
+              {effectiveIsAuthenticated ? (
+                <div className="group relative inline-flex">
+                  <ActionButton
+                    type="button"
+                    className={`inline-flex ${hasClaimAttempts ? "max-w-[10rem] xl:max-w-[12rem]" : "max-w-[15rem]"} items-center gap-1 text-xs font-semibold uppercase text-zinc-700 transition-colors duration-150 hover:text-black`}
+                    style={{ letterSpacing: "0.02em" }}
+                    aria-label="Account"
+                    data-testid="navbar-user-menu"
+                  >
+                    <span className="truncate">{effectiveUserEmail ?? "Account"}</span>
+                    <ChevronDown className="h-3.5 w-3.5 -rotate-180 transition-transform duration-200 group-hover:rotate-0" />
+                  </ActionButton>
+
+                  <div className="invisible absolute right-0 top-full z-50 pt-4 opacity-0 group-focus-within:visible group-focus-within:opacity-100 group-hover:visible group-hover:opacity-100 motion-safe:transition motion-safe:duration-150">
+                    <div className="min-w-full border border-zinc-200 bg-[var(--storefront-surface)] text-black shadow-[0_20px_50px_rgba(0,0,0,0.14)]">
+                      {showAdminDashboardLink && (
+                        <FeedbackLink
+                          href="/admin"
+                          className="block border-t border-zinc-200 px-4 py-3 text-left text-xs font-semibold uppercase text-zinc-700 transition-colors duration-150 hover:text-black"
+                          style={{ letterSpacing: "0.02em" }}
+                        >
+                          To Admin Dashboard
+                        </FeedbackLink>
+                      )}
                       <FeedbackLink
-                        href="/admin"
-                        className="block border-t border-zinc-200 px-4 py-3 text-left text-xs font-semibold uppercase text-zinc-700 transition-colors duration-150 hover:text-black"
+                        href="/account"
+                        className="block px-4 py-3 text-left text-xs font-semibold uppercase text-zinc-700 transition-colors duration-150 hover:text-black"
                         style={{ letterSpacing: "0.02em" }}
                       >
-                        To Admin Dashboard
+                        Account Settings
                       </FeedbackLink>
-                    )}
-                    <FeedbackLink
-                      href="/account"
-                      className="block px-4 py-3 text-left text-xs font-semibold uppercase text-zinc-700 transition-colors duration-150 hover:text-black"
-                      style={{ letterSpacing: "0.02em" }}
-                    >
-                      Account Settings
-                    </FeedbackLink>
-                    <ActionButton
-                      type="button"
-                      onClick={handleLogout}
-                      pending={logout.pending}
-                      pendingLabel="Signing out…"
-                      className="block w-full px-4 py-3 text-left text-xs font-semibold uppercase text-zinc-700 transition-colors duration-150 hover:text-black"
-                      style={{ letterSpacing: "0.02em" }}
-                    >
-                      Logout
-                    </ActionButton>
-                    {logoutError && (
-                      <div className="px-4 pb-3">
-                        <RequestError message="Sign out failed. Please try again." />
-                      </div>
-                    )}
+                      <ActionButton
+                        type="button"
+                        onClick={handleLogout}
+                        pending={logout.pending}
+                        pendingLabel="Signing out…"
+                        className="block w-full px-4 py-3 text-left text-xs font-semibold uppercase text-zinc-700 transition-colors duration-150 hover:text-black"
+                        style={{ letterSpacing: "0.02em" }}
+                      >
+                        Logout
+                      </ActionButton>
+                      {logoutError && (
+                        <div className="px-4 pb-3">
+                          <RequestError message="Sign out failed. Please try again." />
+                        </div>
+                      )}
+                    </div>
                   </div>
                 </div>
-              </div>
-            ) : showAuthButtons ? (
-              <FeedbackLink
-                href={loginUrl}
+              ) : showAuthButtons ? (
+                <FeedbackLink
+                  href={loginUrl}
+                  className={actionClassName}
+                  style={{ letterSpacing: "0.02em" }}
+                >
+                  Login
+                </FeedbackLink>
+              ) : isLoading && !isSessionUnavailable ? (
+                <LoadingState label="Loading account">
+                  <div data-testid="navbar-auth-loading">
+                    <Skeleton className="h-4 w-16" />
+                  </div>
+                </LoadingState>
+              ) : null}
+
+              <ActionButton
+                type="button"
+                onClick={handleSearchClick}
                 className={actionClassName}
                 style={{ letterSpacing: "0.02em" }}
               >
-                Login
-              </FeedbackLink>
-            ) : isLoading && !isSessionUnavailable ? (
-              <LoadingState label="Loading account">
-                <div data-testid="navbar-auth-loading">
-                  <Skeleton className="h-4 w-16" />
-                </div>
-              </LoadingState>
-            ) : null}
+                Search
+              </ActionButton>
 
+              <ActionButton
+                type="button"
+                onClick={handleCartClick}
+                className={`${actionClassName} ${hasClaimAttempts ? "hidden xl:inline-flex" : ""}`}
+                style={{ letterSpacing: "0.02em" }}
+              >
+                {cartReady ? `Cart (${cartCount})` : "Cart"}
+              </ActionButton>
+              <div className="hidden xl:block">
+                <ClaimRecoveryPanel attempts={claimAttempts} />
+              </div>
+            </div>
+          </div>
+
+          <div className="absolute -right-2 top-1/2 flex -translate-y-1/2 items-center md:hidden">
             <ActionButton
               type="button"
               onClick={handleSearchClick}
-              className={actionClassName}
-              style={{ letterSpacing: "0.02em" }}
+              className="inline-flex h-11 w-11 items-center justify-center text-zinc-800 transition-colors hover:text-black"
+              aria-label="Search"
             >
-              Search
+              <Search className="h-[1.15rem] w-[1.15rem]" />
             </ActionButton>
 
             <ActionButton
               type="button"
               onClick={handleCartClick}
-              className={actionClassName}
+              className={`relative ${hasClaimAttempts ? "hidden" : "inline-flex"} h-11 w-11 items-center justify-center text-zinc-800 transition-colors hover:text-black`}
+              aria-label="Cart"
+            >
+              <ShoppingCart className="h-[1.15rem] w-[1.15rem]" />
+              {cartCount > 0 && (
+                <span className="absolute right-0.5 top-0.5 flex min-h-4 min-w-4 items-center justify-center bg-black px-1 text-[9px] font-semibold leading-none text-white">
+                  {cartCount}
+                </span>
+              )}
+            </ActionButton>
+          </div>
+        </div>
+        {hasClaimAttempts && (
+          <div className="flex items-center justify-end gap-4 py-2 xl:hidden">
+            <ActionButton
+              type="button"
+              onClick={handleCartClick}
+              className={`${actionClassName} min-h-11 items-center`}
               style={{ letterSpacing: "0.02em" }}
             >
               {cartReady ? `Cart (${cartCount})` : "Cart"}
             </ActionButton>
+            <ClaimRecoveryPanel attempts={claimAttempts} />
           </div>
-        </div>
-
-        <div className="absolute right-3 top-1/2 flex -translate-y-1/2 items-center sm:right-6 md:hidden">
-          <ActionButton
-            type="button"
-            onClick={handleSearchClick}
-            className="inline-flex h-11 w-11 items-center justify-center text-zinc-800 transition-colors hover:text-black"
-            aria-label="Search"
-          >
-            <Search className="h-[1.15rem] w-[1.15rem]" />
-          </ActionButton>
-
-          <ActionButton
-            type="button"
-            onClick={handleCartClick}
-            className="relative inline-flex h-11 w-11 items-center justify-center text-zinc-800 transition-colors hover:text-black"
-            aria-label="Cart"
-          >
-            <ShoppingCart className="h-[1.15rem] w-[1.15rem]" />
-            {cartCount > 0 && (
-              <span className="absolute right-0.5 top-0.5 flex min-h-4 min-w-4 items-center justify-center bg-black px-1 text-[9px] font-semibold leading-none text-white">
-                {cartCount}
-              </span>
-            )}
-          </ActionButton>
-        </div>
+        )}
       </div>
 
       {isSessionUnavailable && (

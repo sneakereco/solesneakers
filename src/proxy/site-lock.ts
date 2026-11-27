@@ -68,6 +68,13 @@ export async function checkSiteLock(
   requestId: string,
 ): Promise<NextResponse | null> {
   const { pathname } = request.nextUrl;
+  // These handlers enforce fresh store access themselves, fail closed, and also
+  // distinguish credential recovery from new awards. Avoid duplicate DB reads.
+  if (
+    request.method === "POST" &&
+    ["/api/specialty/eligibility", "/api/specialty/claims"].includes(pathname)
+  )
+    return null;
   if ((security.proxy.siteLockBypassExactPaths as readonly string[]).includes(pathname)) {
     return null;
   }

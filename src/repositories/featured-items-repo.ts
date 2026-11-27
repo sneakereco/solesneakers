@@ -76,6 +76,7 @@ export class FeaturedItemsRepository {
       `,
       )
       .eq("product.is_active", true)
+      .neq("product.category", "specialty")
       .eq("product.is_out_of_stock", false)
       .lte("product.go_live_at", nowIso)
       .order("sort_order", { ascending: true });

@@ -30,10 +30,18 @@ export async function proxy(request: NextRequest): Promise<NextResponse> {
     return finalizeProxyResponse(canonicalizeResponse, requestId, pathname);
   }
 
-  // Refresh Supabase session and get response with cookies
-  // Logout removes local credentials even while the identity provider is unavailable.
+  // Public claim identity is the signed browser cookie plus submitted eligibility,
+  // never a Supabase account. Auth outages must not block claims or recovery.
+  const specialtyPost =
+    request.method === "POST" &&
+    [
+      "/api/specialty/eligibility",
+      "/api/specialty/claims",
+      "/api/specialty/claims/result",
+    ].includes(pathname);
+  const logoutPost = pathname === "/api/auth/logout" && request.method === "POST";
   const sessionResponse =
-    pathname === "/api/auth/logout" && request.method === "POST"
+    specialtyPost || logoutPost
       ? NextResponse.next({ request })
       : await refreshSession(request);
   if (!sessionResponse.ok)

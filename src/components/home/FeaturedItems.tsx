@@ -9,10 +9,13 @@ import { ChevronLeft, ChevronRight } from "lucide-react";
 import {
   FeaturedCardsSkeleton,
   featuredCardClassName,
+  clothingFeaturedCardClassName,
 } from "@/components/store/StoreSkeletons";
 import { fetchJsonWithDeadline } from "@/lib/http/request-deadline";
 import { logError } from "@/lib/utils/log";
 import type { ProductWithDetails } from "@/types/domain/product";
+
+import { DiscoveryInsertion } from "@/Modules/SpecialtyProducts/Source/Features/Discovery/DiscoveryInsertion";
 
 type FeaturedProduct = {
   id: string;
@@ -21,7 +24,10 @@ type FeaturedProduct = {
   minPrice: number;
 };
 
-export function FeaturedItems({ category }: { category?: "clothing" } = {}) {
+export function FeaturedItems({
+  category,
+  allowSpecialty = false,
+}: { category?: "clothing"; allowSpecialty?: boolean } = {}) {
   const isClothing = category === "clothing";
   const heading = isClothing ? "Shop Clothing" : "Featured Items";
   const headingId = isClothing ? "clothing-items-heading" : "featured-items-heading";
@@ -152,6 +158,7 @@ export function FeaturedItems({ category }: { category?: "clothing" } = {}) {
 
         {isLoading ? (
           <FeaturedCardsSkeleton
+            clothing={isClothing}
             label={isClothing ? "Loading clothing" : "Loading featured items"}
           />
         ) : hasError ? (
@@ -197,36 +204,48 @@ export function FeaturedItems({ category }: { category?: "clothing" } = {}) {
               className="flex snap-x snap-mandatory gap-4 overflow-x-auto px-1 pb-2 motion-safe:scroll-smooth sm:gap-6 lg:gap-8 [&::-webkit-scrollbar]:hidden"
               style={{ scrollbarWidth: "none", msOverflowStyle: "none" }}
             >
-              {featured.map((product) => (
-                <FeedbackLink
-                  key={product.id}
-                  href={`/store/${product.id}`}
-                  className={`group snap-start text-center ${featuredCardClassName}`}
-                >
-                  <div className="relative h-48 w-full sm:h-52 md:h-56">
-                    {product.primaryImage ? (
-                      <ProductImage
-                        src={product.primaryImage}
-                        alt=""
-                        fill
-                        sizes="(min-width: 1024px) 25vw, (min-width: 768px) 33vw, (min-width: 640px) 50vw, 78vw"
-                        className="object-contain motion-safe:transition-transform motion-safe:duration-300 motion-safe:group-hover:scale-[1.03]"
-                        quality={75}
-                      />
-                    ) : (
-                      <div className="flex h-full items-center justify-center text-sm text-zinc-500">
-                        No Image
+              <DiscoveryInsertion
+                allowed={allowSpecialty && !isClothing}
+                onDiscoveryChange={checkScrollButtons}
+                specialtyClassName="w-[78%] shrink-0 snap-start sm:w-[calc((100%-1.5rem)/2)] md:w-[calc((100%-3rem)/3)] lg:w-[calc((100%-6rem)/4)]"
+                items={featured.map((product) => ({
+                  id: product.id,
+                  node: (
+                    <FeedbackLink
+                      key={product.id}
+                      href={`/store/${product.id}`}
+                      className={`group text-center ${isClothing ? `snap-center sm:snap-start ${clothingFeaturedCardClassName}` : `snap-start ${featuredCardClassName}`}`}
+                    >
+                      <div className="relative h-48 w-full sm:h-52 md:h-56">
+                        {product.primaryImage ? (
+                          <ProductImage
+                            src={product.primaryImage}
+                            alt=""
+                            fill
+                            sizes={
+                              isClothing
+                                ? "(min-width: 1024px) 25vw, (min-width: 768px) 33vw, (min-width: 640px) 50vw, 100vw"
+                                : "(min-width: 1024px) 25vw, (min-width: 768px) 33vw, (min-width: 640px) 50vw, 78vw"
+                            }
+                            className="object-contain motion-safe:transition-transform motion-safe:duration-300 motion-safe:group-hover:scale-[1.03]"
+                            quality={75}
+                          />
+                        ) : (
+                          <div className="flex h-full items-center justify-center text-sm text-zinc-500">
+                            No Image
+                          </div>
+                        )}
                       </div>
-                    )}
-                  </div>
-                  <h3 className="mt-5 min-h-10 text-xs font-medium uppercase leading-5 tracking-[0.02em] sm:text-sm">
-                    {product.titleDisplay}
-                  </h3>
-                  <p className="mt-1 text-sm tabular-nums text-zinc-500">
-                    ${(product.minPrice / 100).toFixed(2)}
-                  </p>
-                </FeedbackLink>
-              ))}
+                      <h3 className="mt-5 min-h-10 text-xs font-medium uppercase leading-5 tracking-[0.02em] sm:text-sm">
+                        {product.titleDisplay}
+                      </h3>
+                      <p className="mt-1 text-sm tabular-nums text-zinc-500">
+                        ${(product.minPrice / 100).toFixed(2)}
+                      </p>
+                    </FeedbackLink>
+                  ),
+                }))}
+              />
             </div>
 
             {canScrollRight && (

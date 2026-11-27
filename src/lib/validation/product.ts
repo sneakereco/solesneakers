@@ -86,7 +86,7 @@ export const productCreateSchema = z
 export const adminProductsQuerySchema = z
   .object({
     q: z.string().trim().min(1).optional(),
-    category: z.array(z.enum(CATEGORY_VALUES)).optional(),
+    category: z.array(z.enum([...CATEGORY_VALUES, "specialty"])).optional(),
     condition: z.array(z.enum(CONDITION_VALUES)).optional(),
     limit: z.coerce.number().int().min(1).max(500).default(100),
     page: z.coerce.number().int().min(1).default(1),

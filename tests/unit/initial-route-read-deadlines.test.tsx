@@ -11,11 +11,15 @@ import { requireAdmin } from "@/lib/auth/session";
 
 const mockBrands = jest.fn();
 const mockProduct = jest.fn();
+const mockSpecialty = jest.fn();
 const mockSettings = jest.fn();
 const mockTenant = jest.fn();
 const mockProducts = jest.fn();
 const mockSizes = jest.fn();
 const mockSize = jest.fn();
+jest.mock("@/Modules/SpecialtyProducts/Source/Features/Discovery/discovery", () => ({
+  getSpecialtyProductPage: (...args: unknown[]) => mockSpecialty(...args),
+}));
 jest.mock("next/cache", () => ({ unstable_cache: (fn: unknown) => fn }));
 jest.mock("next/server", () => ({
   ...jest.requireActual<typeof NextServer>("next/server"),
@@ -81,6 +85,7 @@ beforeEach(() => {
   jest.clearAllMocks();
   mockBrands.mockResolvedValue([{ id: "b", canonical_label: "Fixture brand" }]);
   mockProduct.mockResolvedValue(item);
+  mockSpecialty.mockResolvedValue(null);
   mockSizes.mockResolvedValue([]);
   mockSize.mockResolvedValue({ id: "s", canonical_label: "Small", size_type: "shoe" });
   mockProducts.mockResolvedValue({ products: [item], total: 1 });
@@ -199,4 +204,32 @@ it("shares one post-authorization deadline across the staff product and follow-o
 it("keeps confirmed missing staff product distinct from a failed read", async () => {
   mockProduct.mockResolvedValueOnce(null);
   await expect(getEditFormInitialData(id)).resolves.toMatchObject({ product: null });
+});
+
+it.each(["metadata", "detail"])(
+  "bounds a held live giveaway %s lookup and recovers",
+  async (kind) => {
+    mockProduct.mockResolvedValue(null);
+    mockSpecialty.mockReturnValueOnce(held());
+    const read = () =>
+      kind === "metadata" ? generateMetadata({ params }) : ProductPage({ params });
+    expect(await atDeadline<unknown>(read)).toMatchObject({
+      error: { name: "TimeoutError" },
+    });
+    expect(mockSpecialty).toHaveBeenCalledTimes(1);
+    mockProduct.mockResolvedValue(item);
+    await expect(read()).resolves.toBeDefined();
+  },
+);
+it("shares one budget across cached product and live giveaway reads", async () => {
+  mockProduct.mockImplementationOnce(
+    () => new Promise((resolve) => setTimeout(() => resolve(null), 9000)),
+  );
+  mockSpecialty.mockImplementationOnce(
+    () => new Promise((resolve) => setTimeout(() => resolve(null), 9000)),
+  );
+  expect(await atDeadline(() => ProductPage({ params }))).toMatchObject({
+    error: { name: "TimeoutError" },
+  });
+  expect(mockSpecialty).toHaveBeenCalledTimes(1);
 });

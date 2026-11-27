@@ -5,12 +5,24 @@ export const productGridClassName =
 export const featuredCardClassName =
   "w-[78%] shrink-0 sm:w-[calc((100%-1.5rem)/2)] md:w-[calc((100%-3rem)/3)] lg:w-[calc((100%-6rem)/4)]";
 
-export function FeaturedCardsSkeleton({ label }: { label: string }) {
+export const clothingFeaturedCardClassName =
+  "w-full shrink-0 sm:w-[calc((100%-1.5rem)/2)] md:w-[calc((100%-3rem)/3)] lg:w-[calc((100%-6rem)/4)]";
+
+export function FeaturedCardsSkeleton({
+  label,
+  clothing = false,
+}: {
+  label: string;
+  clothing?: boolean;
+}) {
   return (
     <LoadingState label={label} className="mt-10 overflow-hidden md:mt-14">
       <div className="flex gap-4 px-1 pb-2 sm:gap-6 lg:gap-8" aria-hidden="true">
         {Array.from({ length: 4 }, (_, index) => (
-          <div key={index} className={featuredCardClassName}>
+          <div
+            key={index}
+            className={clothing ? clothingFeaturedCardClassName : featuredCardClassName}
+          >
             <Skeleton className="h-48 w-full sm:h-52 md:h-56" />
             <div className="mt-5 h-10">
               <Skeleton className="mx-auto h-3 w-3/5" />

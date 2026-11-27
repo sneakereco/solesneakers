@@ -7,7 +7,15 @@ import { fetchJsonWithDeadline } from "@/lib/http/request-deadline";
 import { useId } from "react";
 import { useHydrated } from "@/components/ui/useHydrated";
 
-import { useState, useEffect, useMemo, useRef, useCallback } from "react";
+import {
+  useState,
+  useEffect,
+  useMemo,
+  useRef,
+  useCallback,
+  type Dispatch,
+  type SetStateAction,
+} from "react";
 import { GripVertical, ImagePlus, Plus, Trash2, X } from "lucide-react";
 import {
   closestCenter,
@@ -33,11 +41,18 @@ import type { ProductCreateInput } from "@/services/product-service";
 import { logError } from "@/lib/utils/log";
 import { Toast } from "@/components/ui/Toast";
 import { RdkSelect } from "@/components/ui/Select";
+import { SpecialtyProductForm } from "@/Modules/SpecialtyProducts/Source/Features/ManageProducts/SpecialtyProductForm";
+import type {
+  SpecialtyProductDraft,
+  SpecialtyProductWrite,
+} from "@/Modules/SpecialtyProducts/Source/Features/ManageProducts/specialty-product-contract";
 
 // OPTIMIZATION: Lazy load image compression library
 const loadImageCompression = () => import("browser-image-compression");
 
 interface ProductFormProps {
+  specialtyInitial?: SpecialtyProductDraft;
+  onSpecialtySubmit?: (data: SpecialtyProductWrite) => Promise<void>;
   initialData?: Omit<Partial<ProductCreateInput>, "variants"> & {
     id?: string;
     variants?: Array<
@@ -231,20 +246,78 @@ function SortableVariantRow({ id, className, children }: SortableVariantRowProps
   );
 }
 
-export function ProductForm({
+type OrdinaryFormState = {
+  work: ReturnType<typeof useAsyncAction>;
+  workKind: "save" | "upload";
+  setWorkKind: Dispatch<SetStateAction<"save" | "upload">>;
+  saved: boolean;
+  setSaved: Dispatch<SetStateAction<boolean>>;
+};
+
+export function ProductForm(props: ProductFormProps) {
+  // The category selector and ordinary form share one operation owner.
+  const work = useAsyncAction();
+  const [workKind, setWorkKind] = useState<"save" | "upload">("save");
+  const [saved, setSaved] = useState(false);
+  const [specialtyBusy, setSpecialtyBusy] = useState(false);
+  const categoryLocked = work.pending || saved || specialtyBusy || !!props.onCheckSave;
+  const [specialty, setSpecialty] = useState(props.initialData?.category === "specialty");
+  const editing = Boolean(props.initialData?.id || props.specialtyInitial);
+  return (
+    <div className="space-y-4">
+      {!editing && props.onSpecialtySubmit && (
+        <label className="block text-sm text-zinc-300">
+          Product category
+          <select
+            className="ml-3 rounded border border-zinc-700 bg-zinc-900 p-2"
+            value={specialty ? "specialty" : "ordinary"}
+            disabled={categoryLocked}
+            onChange={(event) => {
+              if (!categoryLocked) setSpecialty(event.target.value === "specialty");
+            }}
+          >
+            <option value="ordinary">Standard product</option>
+            <option value="specialty">Specialty giveaway</option>
+          </select>
+        </label>
+      )}
+      {specialty && props.onSpecialtySubmit ? (
+        <SpecialtyProductForm
+          onActivityChange={setSpecialtyBusy}
+          initial={props.specialtyInitial}
+          onSubmit={props.onSpecialtySubmit}
+          onCancel={props.onCancel}
+        />
+      ) : (
+        <OrdinaryProductForm
+          {...props}
+          work={work}
+          workKind={workKind}
+          setWorkKind={setWorkKind}
+          saved={saved}
+          setSaved={setSaved}
+        />
+      )}
+    </div>
+  );
+}
+
+function OrdinaryProductForm({
   initialData,
   onSubmit,
   onCancel,
   onCheckSave,
+  work,
+  workKind,
+  setWorkKind,
+  saved,
+  setSaved,
   initialBrands, // NEW
   initialModels,
   initialSizes = [],
-}: ProductFormProps) {
+}: ProductFormProps & OrdinaryFormState) {
   const id = useId();
   const hydrated = useHydrated();
-  const work = useAsyncAction();
-  const [workKind, setWorkKind] = useState<"save" | "upload">("save");
-  const [saved, setSaved] = useState(false);
   const [fieldError, setFieldError] = useState<{ key: string; message: string } | null>(
     null,
   );
