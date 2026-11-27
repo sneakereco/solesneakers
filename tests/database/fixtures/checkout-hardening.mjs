@@ -882,7 +882,8 @@ async function applyCheckoutSuffix(client, migrations, lease) {
   }
   const bootstrap = suffix.find(({ version }) => version === bootstrapVersion);
   assert.ok(bootstrap, "Missing reporting schema bootstrap migration");
-  const checkout = suffix.filter(({ version }) => version !== bootstrapVersion);
+  const checkout = suffix.filter(({ version }) => version < bootstrapVersion);
+  const later = suffix.filter(({ version }) => version > bootstrapVersion);
   assert.deepEqual(
     checkout.map(({ version }) => version),
     [
@@ -895,16 +896,17 @@ async function applyCheckoutSuffix(client, migrations, lease) {
       "20261127046000",
       "20261127047000",
     ],
-    "Bootstrap-first rehearsal must apply exactly the eight missing checkout migrations",
+    "Only the eight historical checkout migrations may precede the recorded bootstrap in the suffix",
   );
+  const preCheckout = [...prefix, bootstrap];
   await applyMigrations(client, [bootstrap]);
-  await verifyRegistry(client, [...prefix, bootstrap]);
+  await verifyRegistry(client, preCheckout);
   lease.preCheckoutVersions = (
     await client.query(
       "select version from supabase_migrations.schema_migrations order by version",
     )
   ).rows.map(({ version }) => version);
-  assert.equal(lease.preCheckoutVersions.length, 123);
+  assert.equal(lease.preCheckoutVersions.length, preCheckout.length);
   const bootstrapRows = () =>
     client.query(
       "select environment, initialized_at from analytics_source.reporting_schema_bootstrap order by environment",
@@ -915,11 +917,11 @@ async function applyCheckoutSuffix(client, migrations, lease) {
     2,
     "Both environment bootstrap cursors must exist before checkout",
   );
-  await applyMigrations(client, checkout);
+  await applyMigrations(client, [...checkout, ...later]);
   assert.deepEqual(
     (await bootstrapRows()).rows,
     before,
-    "Checkout migrations must preserve already-recorded reporting bootstrap cursors",
+    "The remaining migrations must preserve already-recorded reporting bootstrap cursors",
   );
 }
 
