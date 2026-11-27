@@ -9,6 +9,7 @@ const schema = z.object({
   SHIPPO_API_TOKEN: z.string(),
   SHIPPO_WEBHOOK_TOKEN: z.string(),
 
+  CHECKOUT_ADMISSION_BUDGETS: z.string().optional(),
   UPSTASH_REDIS_REST_URL: z.string().url(),
   UPSTASH_REDIS_REST_TOKEN: z.string(),
 

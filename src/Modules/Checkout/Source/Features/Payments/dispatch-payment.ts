@@ -6,7 +6,12 @@ import type { PaymentCheckout } from "@/repositories/checkout-reservation-repo";
 
 type DispatchResult =
   | { kind: "observe"; orderId: string; attemptId: string; statusUrl: string }
-  | { kind: "not_submitted"; code: "PAYMENT_NOT_SUBMITTED"; message: string }
+  | {
+      kind: "not_submitted";
+      code: "PAYMENT_NOT_SUBMITTED";
+      message: string;
+      httpStatus?: number;
+    }
   | { kind: "declined"; orderId: string; attemptId: string };
 
 export type DispatchOperations = Pick<
@@ -65,12 +70,18 @@ export async function dispatchPayment(
 async function beforeSubmission(
   deps: Dependencies,
   message: string,
+  httpStatus?: number,
 ): Promise<DispatchResult> {
   const latest = await deps.readCurrentAttempt(deps.order.orderId);
   if (!latest) throw new Error("Checkout attempt unavailable");
   if (latest.id !== deps.attempt.id || latest.state !== "ready")
     return resolveObserved(latest, deps);
-  return { kind: "not_submitted", code: "PAYMENT_NOT_SUBMITTED", message };
+  return {
+    kind: "not_submitted",
+    code: "PAYMENT_NOT_SUBMITTED",
+    message,
+    ...(httpStatus ? { httpStatus } : {}),
+  };
 }
 
 async function dispatch(
@@ -125,6 +136,26 @@ async function dispatch(
       ...digests,
     });
   } catch (error) {
+    if (
+      error &&
+      typeof error === "object" &&
+      "code" in error &&
+      error.code === "P0001" &&
+      "message" in error
+    ) {
+      if (error.message === "checkout_dispatch_paused")
+        return beforeSubmission(
+          deps,
+          "Payment is temporarily paused. Please retry.",
+          503,
+        );
+      if (error.message === "checkout_gateway_limited")
+        return beforeSubmission(
+          deps,
+          "Too many payment attempts. Please retry later.",
+          429,
+        );
+    }
     // Only this explicit, rolled-back SQL eligibility decision proves the call did not win.
     if (
       error &&

@@ -239,6 +239,7 @@ it("two newly issued guest bearers share the committed call and the persisted ke
   let tokens = 0;
   const store = new PaymentPermitStore(redis, () => `test-permit-${++tokens}`);
   const fixedOrder = {
+    guestContextHash: "a".repeat(64),
     ...order,
     deviceSessionId: "eeeeeeee-2222-4222-8222-222222222222",
     pickupContact: { name: "Fixture Buyer", phone: "2025550100" },
@@ -305,6 +306,9 @@ it("two newly issued guest bearers share the committed call and the persisted ke
     return result;
   });
   const payDeps = {
+    getClientIp: () => "203.0.113.3",
+    acquireGateway: () =>
+      Promise.resolve({ allowed: true as const, release: () => Promise.resolve() }),
     ...f.deps,
     ...shared,
     consumePermit: store.consume.bind(store),

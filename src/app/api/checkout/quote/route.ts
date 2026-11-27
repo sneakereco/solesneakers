@@ -9,6 +9,6 @@ export const runtime = "nodejs";
 export function POST(request: NextRequest): Promise<Response> {
   return checkoutQuoteHandler(
     request,
-    createCheckoutQuoteDependencies(getRequestIdFromHeaders(request.headers)),
+    createCheckoutQuoteDependencies(getRequestIdFromHeaders(request.headers), request),
   );
 }

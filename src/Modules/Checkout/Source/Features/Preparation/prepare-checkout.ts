@@ -59,7 +59,7 @@ export type PrepareCheckoutDependencies = {
   shippingConfirmationSecret(): string;
   validateShippingAddress(address: ShippingAddress): Promise<ShippingValidationResult>;
   findTenantId(): Promise<string | null>;
-  getAccess(tenantId: string): Promise<CheckoutAccessDecision>;
+  getAccess(tenantId: string, scope: "new_prepare"): Promise<CheckoutAccessDecision>;
   verifyBrowser(): Promise<CheckoutBotVerdict>;
   getClientIp(request: NextRequest): string | null;
   getSession(): Promise<CheckoutSession>;
@@ -71,6 +71,11 @@ export type PrepareCheckoutDependencies = {
   checkAddressValidationAttempt(
     identity: CheckoutAttemptIdentity,
   ): Promise<CheckoutAttemptDecision>;
+  checkResume(input: {
+    shopperBinding: string;
+    ip: string;
+    attached: boolean;
+  }): Promise<CheckoutAttemptDecision>;
   checkAttempt(identity: CheckoutAttemptIdentity): Promise<CheckoutAttemptDecision>;
   resolveCart(
     tenantId: string,
@@ -178,10 +183,6 @@ export async function prepareCheckoutHandler(
     if (!tenantId) {
       return json({ error: "Checkout is temporarily unavailable" }, 503);
     }
-    const access = await deps.getAccess(tenantId);
-    if (!access.open) {
-      return json({ error: access.message }, 503);
-    }
     const paymentConfig = deps.getSquareClientConfig();
     const bot = await deps.verifyBrowser();
     if (!bot.allowed) {
@@ -270,6 +271,24 @@ export async function prepareCheckoutHandler(
       }
     }
 
+    if (existing) {
+      const admission = await deps.checkResume({
+        shopperBinding: ownerBinding,
+        ip: clientIp,
+        attached: Boolean(existing.squareOrderId),
+      });
+      if (!admission.allowed)
+        return json(
+          { error: "Too many checkout requests; please retry later" },
+          429,
+          admission.retryAfterSeconds
+            ? { "Retry-After": String(admission.retryAfterSeconds) }
+            : undefined,
+        );
+    } else {
+      const access = await deps.getAccess(tenantId, "new_prepare");
+      if (!access.open) return json({ error: access.message }, 503);
+    }
     const normalizedEmailHash = deps.hashEmail(buyerEmail);
     const confirmationScope = parsed.data.shippingAddress
       ? {
@@ -298,11 +317,9 @@ export async function prepareCheckoutHandler(
       !confirmed
     ) {
       const validationAttempt = await deps.checkAddressValidationAttempt({
-        tenantId,
         clientIp,
-        userId: session?.user.id ?? null,
-        normalizedEmailHash,
-        deviceSessionId: parsed.data.deviceSessionId,
+        shopperBinding: ownerBinding,
+        eventId: parsed.data.idempotencyKey,
       });
       if (!validationAttempt.allowed) {
         return json(
@@ -351,11 +368,9 @@ export async function prepareCheckoutHandler(
 
     if (!existing) {
       const attempt = await deps.checkAttempt({
-        tenantId,
         clientIp,
-        userId: session?.user.id ?? null,
-        normalizedEmailHash,
-        deviceSessionId: parsed.data.deviceSessionId,
+        shopperBinding: ownerBinding,
+        eventId: parsed.data.idempotencyKey,
       });
       if (!attempt.allowed) {
         return json(

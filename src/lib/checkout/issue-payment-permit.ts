@@ -27,8 +27,7 @@ export type IssuePaymentPermitDependencies = {
     tenantId: string;
     orderId: string;
     clientIp: string;
-    deviceSessionId: string;
-    normalizedEmailHash: string;
+    shopperBinding: string;
   }): Promise<CheckoutAttemptDecision>;
   hashEmail(email: string): string;
   issuePermit(
@@ -130,23 +129,6 @@ export async function issuePaymentPermitHandler(
       throw new Error("checkout_payment_email_missing");
     }
     const normalizedEmailHash = deps.hashEmail(normalizeCheckoutEmail(email));
-    const attempt = await deps.checkPaymentAttempt({
-      tenantId,
-      orderId: order.orderId,
-      clientIp,
-      deviceSessionId: parsed.data.deviceSessionId,
-      normalizedEmailHash,
-    });
-    if (!attempt.allowed) {
-      return json(
-        { error: "Too many payment attempts; please try again later" },
-        429,
-        attempt.retryAfterSeconds
-          ? { "Retry-After": String(attempt.retryAfterSeconds) }
-          : undefined,
-      );
-    }
-
     if (isGuest) {
       const token = parsed.data.turnstileToken;
       if (!token) {
@@ -164,6 +146,26 @@ export async function issuePaymentPermitHandler(
     const ownerBinding = isGuest
       ? `order:${order.orderId}`
       : `account:${session!.user.id}`;
+    const attempt = await deps.checkPaymentAttempt({
+      tenantId,
+      orderId: order.orderId,
+      clientIp,
+      shopperBinding: order.userId
+        ? "account:" + order.userId
+        : order.guestContextHash
+          ? "guest:" + order.guestContextHash
+          : "order:" + order.orderId,
+    });
+    if (!attempt.allowed) {
+      return json(
+        { error: "Too many payment attempts; please try again later" },
+        429,
+        attempt.retryAfterSeconds
+          ? { "Retry-After": String(attempt.retryAfterSeconds) }
+          : undefined,
+      );
+    }
+
     const financialAttempt = await deps.getOrCreateAttempt({
       orderId: order.orderId,
       method: parsed.data.method,

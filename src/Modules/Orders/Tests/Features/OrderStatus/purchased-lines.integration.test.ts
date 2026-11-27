@@ -5,6 +5,13 @@ import { createSupabaseAdminClient } from "@/lib/supabase/service-role";
 jest.mock("@/lib/supabase/server");
 jest.mock("@/lib/supabase/service-role");
 jest.mock("@/lib/utils/log");
+jest.mock("@/Modules/Checkout/Source/Features/Operations/checkout-controls", () => ({
+  readCheckoutControls: () =>
+    Promise.resolve({
+      pauseNewCheckouts: true,
+      pausePaymentDispatch: true,
+    }),
+}));
 const orderId = "10000000-0000-4000-8000-000000000001";
 const product = "20000000-0000-4000-8000-000000000001";
 const variant = "30000000-0000-4000-8000-000000000001";
@@ -612,4 +619,17 @@ test("guarded matching failed refund revisions preserve the verified capture", a
     reviewReason: null,
   });
   expect(result.data.purchasedLines).toHaveLength(1);
+});
+
+test("the authorized original order remains observable and schedules its existing inquiry under both operational pauses", async () => {
+  const result = await observe({
+    status: "pending",
+    reconcile: true,
+    attemptState: "unknown",
+  });
+  expect(result.status).toBe(200);
+  expect(result.jobs).toHaveLength(1);
+  expect(
+    result.reads.some((table) => table.endsWith(".checkout_operational_controls")),
+  ).toBe(false);
 });

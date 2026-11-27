@@ -1,211 +1,136 @@
+import { CheckoutDependencyLeaseRepository } from "@/Modules/Checkout/Source/Features/Recovery/dependency-lease";
 import { randomUUID } from "node:crypto";
-
 import { Redis } from "@upstash/redis";
-
 import { env } from "@/config/env";
+import {
+  checkoutAdmissionBudgets,
+  type CheckoutAdmissionBudgets,
+} from "@/Modules/Checkout/Source/Features/Operations/admission";
+import type { AdminSupabaseClient } from "@/lib/supabase/service-role";
+import {
+  coarseWindows,
+  admitCheckout,
+  financialAdmission,
+  slidingWindowsScript,
+  type AdmissionDecision,
+  type AdmissionInput,
+  type Window,
+} from "@/Modules/Checkout/Source/Features/Operations/admission";
 
 export type CheckoutAttemptIdentity = {
-  tenantId: string;
   clientIp: string;
-  userId: string | null;
-  normalizedEmailHash: string;
-  deviceSessionId: string;
+  shopperBinding: string;
+  eventId: string;
 };
-
-export type CheckoutAttemptDecision = {
-  allowed: boolean;
-  retryAfterSeconds: number | null;
-};
-
+export type CheckoutAttemptDecision = AdmissionDecision;
 type RedisEvalClient = {
   eval(script: string, keys: string[], args: string[]): Promise<unknown>;
 };
 
-const DAILY_WINDOW_MS = 24 * 60 * 60 * 1000;
-const THIRTY_MINUTES_MS = 30 * 60 * 1000;
-const HOURLY_WINDOW_MS = 60 * 60 * 1000;
-
-const ATOMIC_SLIDING_WINDOW_SCRIPT = `
-local now = tonumber(ARGV[1])
-local member = ARGV[2]
-local retry_after = 0
-
-for index, key in ipairs(KEYS) do
-  local window = tonumber(ARGV[index * 2 + 1])
-  local limit = tonumber(ARGV[index * 2 + 2])
-  redis.call("ZREMRANGEBYSCORE", key, 0, now - window)
-  local count = redis.call("ZCARD", key)
-  if count >= limit then
-    local oldest = redis.call("ZRANGE", key, 0, 0, "WITHSCORES")
-    if oldest[2] then
-      retry_after = math.max(retry_after, window - (now - tonumber(oldest[2])))
-    else
-      retry_after = math.max(retry_after, window)
-    end
-  end
-end
-
-if retry_after > 0 then
-  return {0, retry_after}
-end
-
-for index, key in ipairs(KEYS) do
-  local window = tonumber(ARGV[index * 2 + 1])
-  redis.call("ZADD", key, now, member .. ":" .. index)
-  redis.call("PEXPIRE", key, window)
-end
-
-return {1, 0}
-`;
-
 export class CheckoutAttemptLimiter {
   constructor(
     private readonly redis: RedisEvalClient,
-    private readonly now: () => number = Date.now,
+    private readonly budgets: CheckoutAdmissionBudgets | null = checkoutAdmissionBudgets,
+    private readonly client?: Pick<AdminSupabaseClient, "rpc">,
   ) {}
-
-  async check(identity: CheckoutAttemptIdentity): Promise<CheckoutAttemptDecision> {
-    const prefix = `rdk:checkout:tenant:${identity.tenantId}`;
-    const windows = [
-      {
-        key: `${prefix}:email:${identity.normalizedEmailHash}`,
-        windowMs: DAILY_WINDOW_MS,
-        limit: 5,
-      },
-    ];
-
-    if (identity.userId) {
-      windows.push({
-        key: `${prefix}:user:${identity.userId}`,
-        windowMs: DAILY_WINDOW_MS,
-        limit: 5,
-      });
-    }
-
-    windows.push(
-      {
-        key: `${prefix}:device:${identity.deviceSessionId}`,
-        windowMs: DAILY_WINDOW_MS,
-        limit: 10,
-      },
-      {
-        key: `${prefix}:ip:${identity.clientIp}`,
-        windowMs: THIRTY_MINUTES_MS,
-        limit: 3,
-      },
-    );
-
-    try {
-      return await this.checkWindows(windows);
-    } catch {
-      throw new Error("checkout_protection_unavailable");
-    }
+  admit(input: AdmissionInput) {
+    return admitCheckout(input, {
+      budgets: this.budgets,
+      consume: (w) => this.consume(w),
+      financial: this.client ? (i) => financialAdmission(this.client!, i) : undefined,
+    });
   }
-
-  async checkAddressValidation(
-    identity: CheckoutAttemptIdentity,
-  ): Promise<CheckoutAttemptDecision> {
-    const prefix = `rdk:checkout:tenant:${identity.tenantId}:address`;
-    return this.checkWindows([
+  coarse(ip: string) {
+    if (!ip || !this.budgets) throw Error("checkout_protection_unavailable");
+    return this.consume(coarseWindows(ip, this.budgets));
+  }
+  check(identity: CheckoutAttemptIdentity) {
+    return this.admit({
+      kind: "new_prepare",
+      shopperBinding: identity.shopperBinding,
+      ip: identity.clientIp,
+      eventId: identity.eventId,
+    });
+  }
+  checkAddressValidation(identity: CheckoutAttemptIdentity) {
+    if (!this.budgets) throw Error("checkout_protection_unavailable");
+    return this.consume([
       {
-        key: `${prefix}:ip:${identity.clientIp}`,
-        windowMs: THIRTY_MINUTES_MS,
-        limit: 30,
-      },
-      {
-        key: `${prefix}:email:${identity.normalizedEmailHash}`,
-        windowMs: THIRTY_MINUTES_MS,
+        key: "address:" + identity.shopperBinding,
         limit: 20,
+        windowMs: 1800000,
+        member: randomUUID(),
       },
-      {
-        key: `${prefix}:device:${identity.deviceSessionId}`,
-        windowMs: THIRTY_MINUTES_MS,
-        limit: 20,
-      },
+      ...coarseWindows(identity.clientIp, this.budgets),
     ]);
   }
-
-  async checkPaymentAttempt(input: {
-    tenantId: string;
-    orderId: string;
-    clientIp: string;
-    deviceSessionId: string;
-    normalizedEmailHash: string;
-  }): Promise<CheckoutAttemptDecision> {
-    const prefix = `rdk:checkout:tenant:${input.tenantId}:payment`;
-    return this.checkWindows([
-      {
-        key: `${prefix}:order:${input.orderId}`,
-        windowMs: THIRTY_MINUTES_MS,
-        limit: 3,
-      },
-      { key: `${prefix}:ip:${input.clientIp}`, windowMs: HOURLY_WINDOW_MS, limit: 10 },
-      {
-        key: `${prefix}:device:${input.deviceSessionId}`,
-        windowMs: HOURLY_WINDOW_MS,
-        limit: 5,
-      },
-      {
-        key: `${prefix}:email:${input.normalizedEmailHash}`,
-        windowMs: HOURLY_WINDOW_MS,
-        limit: 5,
-      },
-    ]);
-  }
-
-  async recordDecline(input: {
-    tenantId: string;
-    deviceSessionId: string;
-  }): Promise<CheckoutAttemptDecision> {
-    return this.checkWindows([
-      {
-        key: `rdk:checkout:tenant:${input.tenantId}:payment:decline:device:${input.deviceSessionId}`,
-        windowMs: HOURLY_WINDOW_MS,
-        limit: 5,
-      },
-    ]);
-  }
-
-  private async checkWindows(
-    windows: Array<{ key: string; windowMs: number; limit: number }>,
-  ): Promise<CheckoutAttemptDecision> {
+  private async consume(windows: Window[]): Promise<AdmissionDecision> {
     try {
       const result = await this.redis.eval(
-        ATOMIC_SLIDING_WINDOW_SCRIPT,
-        windows.map(({ key }) => key),
-        [
-          String(this.now()),
-          randomUUID(),
-          ...windows.flatMap(({ windowMs, limit }) => [String(windowMs), String(limit)]),
-        ],
+        slidingWindowsScript,
+        windows.map((w) => "rdk:checkout:{admission}:" + w.key),
+        windows.flatMap((w) => [String(w.windowMs), String(w.limit), w.member]),
       );
-
       if (
         !Array.isArray(result) ||
-        result.length < 2 ||
-        typeof result[0] !== "number" ||
-        typeof result[1] !== "number"
-      ) {
-        throw new Error("invalid_upstash_response");
-      }
-
+        result.length !== 2 ||
+        ![0, 1].includes(result[0]) ||
+        !Number.isSafeInteger(result[1]) ||
+        (result[0] === 0 ? result[1] <= 0 : result[1] !== 0)
+      )
+        throw Error();
       return result[0] === 1
         ? { allowed: true, retryAfterSeconds: null }
-        : {
-            allowed: false,
-            retryAfterSeconds: Math.max(1, Math.ceil(result[1] / 1000)),
-          };
+        : { allowed: false, retryAfterSeconds: Math.ceil(result[1] / 1000) };
     } catch {
-      throw new Error("checkout_protection_unavailable");
+      throw Error("checkout_protection_unavailable");
     }
   }
 }
+export function createCheckoutAttemptLimiter(client?: Pick<AdminSupabaseClient, "rpc">) {
+  return new CheckoutAttemptLimiter(
+    new Redis({ url: env.UPSTASH_REDIS_REST_URL, token: env.UPSTASH_REDIS_REST_TOKEN }),
+    checkoutAdmissionBudgets,
+    client,
+  );
+}
 
-export function createCheckoutAttemptLimiter(): CheckoutAttemptLimiter {
-  const redis = new Redis({
-    url: env.UPSTASH_REDIS_REST_URL,
-    token: env.UPSTASH_REDIS_REST_TOKEN,
-  });
-
-  return new CheckoutAttemptLimiter(redis);
+export class CheckoutProviderCapacity {
+  private readonly leases: CheckoutDependencyLeaseRepository;
+  constructor(
+    client: Pick<AdminSupabaseClient, "rpc">,
+    private readonly budgets: CheckoutAdmissionBudgets | null,
+  ) {
+    this.leases = new CheckoutDependencyLeaseRepository(client, budgets);
+  }
+  async acquire(dependency: "square" | "shippo") {
+    if (!this.budgets) throw Error("checkout_protection_unavailable");
+    const started = performance.now();
+    const token = await this.leases.acquireDependencyLease({
+      dependency,
+      limit: this.budgets.providers[dependency],
+      leaseSeconds: 120,
+    });
+    if (!token) throw Error("checkout_provider_busy");
+    // A lost release leaves an expiring slot. It cannot overwrite a completed provider result.
+    const release = () =>
+      this.leases.releaseDependencyLease(token).catch(() => undefined);
+    const remaining = Math.floor(120000 - (performance.now() - started)) - 1000;
+    if (remaining <= 0) {
+      await release();
+      throw Error("checkout_provider_lease_elapsed");
+    }
+    return { signal: AbortSignal.timeout(Math.min(10000, remaining)), release };
+  }
+  async run<T>(
+    dependency: "square" | "shippo",
+    work: (signal: AbortSignal) => Promise<T>,
+  ): Promise<T> {
+    const { signal, release } = await this.acquire(dependency);
+    try {
+      return await work(signal);
+    } finally {
+      await release();
+    }
+  }
 }

@@ -1,3 +1,6 @@
+import { deadlineFetch } from "@/Modules/Checkout/Source/Features/Recovery/recovery-worker";
+import { CheckoutProviderCapacity } from "@/lib/checkout/checkout-attempt-limit";
+import { checkoutAdmissionBudgets } from "@/Modules/Checkout/Source/Features/Operations/admission";
 import {
   CheckoutPaymentAttemptRepository,
   readCurrentPaymentAttempt,
@@ -43,14 +46,14 @@ export function createIssuePaymentPermitDependencies(
   const tenants = new TenantRepository(supabase);
   const reservations = new CheckoutReservationRepository(supabase);
   const accessTokens = new OrderAccessTokenService(supabase);
-  const limiter = createCheckoutAttemptLimiter();
+  const limiter = createCheckoutAttemptLimiter(supabase);
   const permits = createPaymentPermitStore();
   const attempts = new CheckoutPaymentAttemptRepository(supabase);
 
   return {
     getOrCreateAttempt: (input) => attempts.getOrCreateAttempt(input),
     findTenantId: () => tenants.getFirstTenantId(),
-    getAccess: assertCheckoutOpen,
+    getAccess: (tenantId) => assertCheckoutOpen(tenantId, "gateway_attempt"),
     verifyBrowser: verifyCheckoutBrowser,
     getClientIp: getTrustedClientIp,
     getSession: getServerSession,
@@ -71,7 +74,7 @@ export function createIssuePaymentPermitDependencies(
         },
       );
     },
-    checkPaymentAttempt: (input) => limiter.checkPaymentAttempt(input),
+    checkPaymentAttempt: (input) => limiter.coarse(input.clientIp),
     hashEmail: (email) => hashNormalizedCheckoutEmail(email, getCheckoutIdentitySecret()),
     issuePermit: (payload) => permits.issue(payload),
     reportError: (error) =>
@@ -86,15 +89,20 @@ export function createDirectPaymentDependencies(
   const supabase = createSupabaseAdminClient();
   const reservations = new CheckoutReservationRepository(supabase);
   const orders = new OrdersRepository(supabase);
-  const limiter = createCheckoutAttemptLimiter();
+  const limiter = createCheckoutAttemptLimiter(supabase);
   const permits = createPaymentPermitStore();
   const attempts = new CheckoutPaymentAttemptRepository(supabase);
+  const capacity = new CheckoutProviderCapacity(supabase, checkoutAdmissionBudgets);
+  let gatewaySignal: AbortSignal | null = null;
   let payments: ReturnType<typeof createSquarePaymentsGateway> | null = null;
-  const getPayments = () => (payments ??= createSquarePaymentsGateway());
+  const getPayments = () => {
+    if (!gatewaySignal) throw Error("checkout_provider_capacity_required");
+    return (payments ??= createSquarePaymentsGateway(gatewaySignal));
+  };
 
   return {
     getSession: getServerSession,
-    getAccess: assertCheckoutOpen,
+    getAccess: (tenantId) => assertCheckoutOpen(tenantId, "gateway_attempt"),
     readCurrentAttempt: (orderId) => readCurrentPaymentAttempt(supabase, orderId),
     beginDispatch: (input) => attempts.beginDispatch(input),
     recordAttemptOutcome: (input) => attempts.recordAttemptOutcome(input),
@@ -109,10 +117,17 @@ export function createDirectPaymentDependencies(
         reason: "legacy_dispatch_unproven",
       }),
     validateShippingAddress: (address) =>
-      validateShippingAddress(address, env.SHIPPO_API_TOKEN),
+      capacity.run("shippo", (signal) =>
+        validateShippingAddress(address, env.SHIPPO_API_TOKEN, deadlineFetch(signal)),
+      ),
     consumePermit: (token) => permits.consume(token),
     loadOrder: (orderId) => reservations.findPaymentCheckout(orderId),
-    createPayment: (input) => getPayments().create(input),
+    createPayment: (input) => {
+      // A delayed claim response can outlive its capacity lease. Keep the
+      // committed obligation observable without starting a late provider call.
+      gatewaySignal?.throwIfAborted();
+      return getPayments().create(input);
+    },
     savePaymentId: async (orderId, paymentId, payment, method) => {
       await orders.updatePaymentTransactionId(orderId, paymentId);
       await recordSquarePaymentDetails(supabase, {
@@ -127,7 +142,16 @@ export function createDirectPaymentDependencies(
         },
       });
     },
-    recordDecline: (input) => limiter.recordDecline(input),
+    getClientIp: getTrustedClientIp,
+    acquireGateway: async (input) => {
+      const result = await limiter.admit({ kind: "gateway_attempt", ...input });
+      if (!result.allowed)
+        return { allowed: false, retryAfterSeconds: result.retryAfterSeconds };
+      const slot = await capacity.acquire("square");
+      gatewaySignal = slot.signal;
+      return { allowed: true, release: slot.release };
+    },
+    recordDecline: (input) => limiter.admit({ kind: "decline", ...input }),
     declineCode: squareDeclineCode,
     reportError: (error) =>
       logError(error, { layer: "api", route: "/api/checkout/pay", requestId }),

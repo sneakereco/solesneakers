@@ -1,3 +1,7 @@
+import {
+  checkoutAdmissionBudgets,
+  type CheckoutAdmissionBudgets,
+} from "../Operations/admission";
 import { z } from "zod";
 import type { AdminSupabaseClient } from "@/lib/supabase/service-role";
 
@@ -12,14 +16,20 @@ export type AcquireDependencyLeaseInput = {
 const leaseTokenSchema = z.guid().nullable();
 
 export class CheckoutDependencyLeaseRepository {
-  constructor(private readonly client: Pick<AdminSupabaseClient, "rpc">) {}
+  constructor(
+    private readonly client: Pick<AdminSupabaseClient, "rpc">,
+    private readonly budgets: CheckoutAdmissionBudgets | null = checkoutAdmissionBudgets,
+  ) {}
 
   async acquireDependencyLease(
     input: AcquireDependencyLeaseInput,
   ): Promise<string | null> {
     const { data, error } = await this.client.rpc("acquire_checkout_dependency_lease", {
       p_dependency: input.dependency,
-      p_limit: input.limit,
+      p_limit:
+        input.dependency !== "smtp" && this.budgets
+          ? Math.min(input.limit, this.budgets.providers[input.dependency])
+          : input.limit,
       p_lease_seconds: input.leaseSeconds,
     });
     if (error) throw error;

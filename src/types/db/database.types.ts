@@ -197,6 +197,24 @@ export type Database = {
           },
         ]
       }
+      checkout_operational_controls: {
+        Row: {
+          pause_new_checkouts: boolean
+          pause_payment_dispatch: boolean
+          singleton: boolean
+        }
+        Insert: {
+          pause_new_checkouts?: boolean
+          pause_payment_dispatch?: boolean
+          singleton?: boolean
+        }
+        Update: {
+          pause_new_checkouts?: boolean
+          pause_payment_dispatch?: boolean
+          singleton?: boolean
+        }
+        Relationships: []
+      }
       checkout_payment_attempt_history: {
         Row: {
           attempt_id: string
@@ -2095,6 +2113,10 @@ export type Database = {
           p_source_digest: string
         }
         Returns: Json
+      }
+      checkout_financial_admission: {
+        Args: { p_kind: string; p_order_id: string; p_shopper_binding: string }
+        Returns: number
       }
       claim_checkout_mail: {
         Args: { p_limit: number; p_order_id?: string }

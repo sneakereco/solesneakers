@@ -1,3 +1,4 @@
+import { deadlineFetch } from "@/Modules/Checkout/Source/Features/Recovery/recovery-worker";
 import { SquareClient, SquareEnvironment } from "square";
 
 import { getSquareConfig } from "@/lib/square/config";
@@ -22,14 +23,17 @@ export function createSquareClient(options?: {
   });
 }
 
-export function createSquareCheckoutOrdersGateway(): SquareCheckoutOrdersGateway {
+// Interactive provider calls must settle inside their PostgreSQL capacity lease.
+export function createSquareCheckoutOrdersGateway(
+  signal: AbortSignal,
+): SquareCheckoutOrdersGateway {
   const config = getSquareConfig();
-  const client = createSquareClient();
+  const client = createSquareClient({ maxRetries: 0, fetch: deadlineFetch(signal) });
   return new SquareCheckoutOrdersGateway(client.orders, config.locationId);
 }
 
-export function createSquarePaymentsGateway(): SquarePaymentsGateway {
+export function createSquarePaymentsGateway(signal: AbortSignal): SquarePaymentsGateway {
   const config = getSquareConfig();
-  const client = createSquareClient();
+  const client = createSquareClient({ maxRetries: 0, fetch: deadlineFetch(signal) });
   return new SquarePaymentsGateway(client.payments, config.locationId);
 }

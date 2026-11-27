@@ -1,3 +1,6 @@
+import { deadlineFetch } from "@/Modules/Checkout/Source/Features/Recovery/recovery-worker";
+import { CheckoutProviderCapacity } from "@/lib/checkout/checkout-attempt-limit";
+import { checkoutAdmissionBudgets } from "@/Modules/Checkout/Source/Features/Operations/admission";
 import { CheckoutPreparationRepository } from "@/Modules/Checkout/Source/Features/Preparation/reservation-repository";
 import { validateShippingAddress } from "@/lib/shipping/validate-shipping-address";
 import { assertCheckoutOpen } from "@/lib/checkout/checkout-access";
@@ -27,6 +30,7 @@ export function createPrepareCheckoutDependencies(
   requestId: string,
 ): PrepareCheckoutDependencies {
   const supabase = createSupabaseAdminClient();
+  const capacity = new CheckoutProviderCapacity(supabase, checkoutAdmissionBudgets);
   const tenants = new TenantRepository(supabase);
   const products = new ProductRepository(supabase);
   const reservations = new CheckoutReservationRepository(supabase);
@@ -35,13 +39,13 @@ export function createPrepareCheckoutDependencies(
   const accessTokens = new OrderAccessTokenService(supabase);
   const limiter = createCheckoutAttemptLimiter();
   const pricing = createCheckoutPricingGateway(shipping);
-  let squareOrders: ReturnType<typeof createSquareCheckoutOrdersGateway> | null = null;
-  const getSquareOrders = () => (squareOrders ??= createSquareCheckoutOrdersGateway());
 
   return {
     shippingConfirmationSecret: getCheckoutIdentitySecret,
     validateShippingAddress: (address) =>
-      validateShippingAddress(address, env.SHIPPO_API_TOKEN),
+      capacity.run("shippo", (signal) =>
+        validateShippingAddress(address, env.SHIPPO_API_TOKEN, deadlineFetch(signal)),
+      ),
     findTenantId: () => tenants.getFirstTenantId(),
     getAccess: assertCheckoutOpen,
     verifyBrowser: verifyCheckoutBrowser,
@@ -51,11 +55,18 @@ export function createPrepareCheckoutDependencies(
     findExisting: (tenantId, idempotencyKey) =>
       reservations.findByIdempotencyKey(tenantId, idempotencyKey),
     checkAddressValidationAttempt: (identity) => limiter.checkAddressValidation(identity),
+    checkResume: ({ shopperBinding, ip, attached }) =>
+      attached
+        ? limiter.admit({ kind: "resume", shopperBinding, ip })
+        : limiter.coarse(ip),
     checkAttempt: (identity) => limiter.check(identity),
     resolveCart: (tenantId, items) =>
       resolveCheckoutCart(products, tenantId, items, "reservation"),
     quote: (input) => pricing.quote(input),
-    calculateSquareOrder: (input) => getSquareOrders().calculate(input),
+    calculateSquareOrder: (input) =>
+      capacity.run("square", (signal) =>
+        createSquareCheckoutOrdersGateway(signal).calculate(input),
+      ),
     reserve: (input) => preparation.reserveCheckout(input),
     inspectUnavailable: (tenant, key, items, ownerBinding, otherGuestContexts) =>
       preparation.inspectUnavailable(
@@ -78,12 +89,21 @@ export function createPrepareCheckoutDependencies(
         environment: config.environment,
       };
     },
-    createSquareOrder: (input) => getSquareOrders().create(input),
+    createSquareOrder: (input) =>
+      capacity.run("square", (signal) =>
+        createSquareCheckoutOrdersGateway(signal).create(input),
+      ),
     attachSquareOrder: (orderId, order) => reservations.attachSquareOrder(orderId, order),
     rejectBeforeAttach: (orderId, ownerBinding) =>
       preparation.rejectBeforeAttach(orderId, ownerBinding),
     cancelSquareOrder: (orderId, version, idempotencyKey) =>
-      getSquareOrders().cancel(orderId, version, idempotencyKey),
+      capacity.run("square", (signal) =>
+        createSquareCheckoutOrdersGateway(signal).cancel(
+          orderId,
+          version,
+          idempotencyKey,
+        ),
+      ),
     releaseReservation: (orderId, reason) => reservations.release(orderId, reason),
     reportError: (error) =>
       logError(error, { layer: "api", route: "/api/checkout/prepare", requestId }),

@@ -37,9 +37,19 @@ export type CreateDirectPaymentDependencies = DispatchOperations & {
     payment: DirectPaymentResult,
     method: ConsumedPaymentPermit["method"],
   ): Promise<void>;
+  getClientIp(request: NextRequest): string | null;
+  acquireGateway(input: {
+    shopperBinding: string;
+    orderId: string;
+    ip: string;
+  }): Promise<
+    | { allowed: true; release: () => Promise<void> }
+    | { allowed: false; retryAfterSeconds: number | null }
+  >;
   recordDecline(input: {
-    tenantId: string;
-    deviceSessionId: string;
+    shopperBinding: string;
+    orderId: string;
+    ip: string;
   }): Promise<CheckoutAttemptDecision>;
   reportError(error: unknown): void;
   now(): Date;
@@ -94,6 +104,8 @@ async function validate(
       status: 409,
       message: "Pickup contact is incomplete. Return to checkout and review it.",
     };
+  const access = await deps.getAccess(order.tenantId);
+  if (!access.open) return { status: 503, message: access.message };
   if (order.fulfillment === "ship") {
     const address = checkoutShippingAddressSchema.safeParse(order.shippingAddress);
     const invalid = {
@@ -113,8 +125,7 @@ async function validate(
       if (result.status !== "valid") return invalid;
     }
   }
-  const access = await deps.getAccess(order.tenantId);
-  return access.open ? null : { status: 503, message: access.message };
+  return null;
 }
 
 // A valid bearer can still resolve an already submitted attempt after its source has expired.
@@ -182,6 +193,14 @@ export async function createDirectPaymentHandler(
     const source = directPaymentRequestSchema.shape.sourceId.safeParse(
       body.data.sourceId,
     );
+    let release: (() => Promise<void>) | undefined;
+    let retryAfterSeconds: number | null = null;
+    const shopperBinding = order.userId
+      ? "account:" + order.userId
+      : order.guestContextHash
+        ? "guest:" + order.guestContextHash
+        : null;
+    const ip = deps.getClientIp(request);
     const result = await dispatchPayment(
       { permit, sourceId: source.success ? source.data : "" },
       {
@@ -194,12 +213,13 @@ export async function createDirectPaymentHandler(
         },
         recordAttemptOutcome: async (input) => {
           const saved = await deps.recordAttemptOutcome(input);
-          if (input.state === "declined" || input.state === "canceled") {
-            // Only the claimant records a newly received decline. Observers never increment the limiter.
+          if (input.state === "declined" && shopperBinding) {
+            // PostgreSQL already committed the financial fact. Admission reads that history.
             await deps
               .recordDecline({
-                tenantId: order.tenantId,
-                deviceSessionId: permit.deviceSessionId,
+                shopperBinding,
+                orderId: order.orderId,
+                ip: ip ?? "",
               })
               .catch(() =>
                 deps.reportError(new Error("checkout_decline_counter_unavailable")),
@@ -209,17 +229,43 @@ export async function createDirectPaymentHandler(
         },
         validate: async () => {
           const invalid = await validate(order, permit, deps);
-          if (invalid) failureStatus = invalid.status;
-          return invalid?.message ?? null;
+          if (invalid) {
+            failureStatus = invalid.status;
+            return invalid.message;
+          }
+          failureStatus = 503;
+          if (!shopperBinding || !ip)
+            return "Checkout protection is temporarily unavailable.";
+          const capacity = await deps.acquireGateway({
+            shopperBinding,
+            orderId: order.orderId,
+            ip,
+          });
+          if (!capacity.allowed) {
+            failureStatus = 429;
+            retryAfterSeconds = capacity.retryAfterSeconds;
+            return "Too many payment attempts. Please try again later.";
+          }
+          release = capacity.release;
+          return null;
         },
         save: async (payment) => {
           await deps.savePaymentId(order.orderId, payment.id, payment, permit.method);
           projection.payment = payment;
         },
       },
-    );
-    if (result.kind === "not_submitted")
-      return json({ error: result.message, code: result.code }, failureStatus);
+    ).finally(async () => {
+      if (release) await release();
+    });
+    if (result.kind === "not_submitted") {
+      const response = json(
+        { error: result.message, code: result.code },
+        result.httpStatus ?? failureStatus,
+      );
+      if (retryAfterSeconds)
+        response.headers.set("Retry-After", String(retryAfterSeconds));
+      return response;
+    }
     if (result.kind === "declined") {
       return json(
         {

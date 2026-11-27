@@ -79,6 +79,7 @@ test(
       getSquareClientConfig: () => ({}),
       findExisting: async () => prepared,
       now: () => new Date(),
+      checkResume: async () => ({ allowed: true }),
       checkAttempt: async () => ({ allowed: true }),
       resolveCart: async () => ({ items: [item], subtotalCents: 1000 }),
       quote: async () => ({ shippingCents: 0, customerState: "SC" }),

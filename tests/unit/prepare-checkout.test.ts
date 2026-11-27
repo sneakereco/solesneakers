@@ -89,6 +89,7 @@ function dependencies() {
     getSession: jest.fn().mockResolvedValue(null),
     hashEmail: jest.fn().mockReturnValue("email-hash"),
     findExisting: jest.fn().mockResolvedValue(null),
+    checkResume: jest.fn().mockResolvedValue({ allowed: true, retryAfterSeconds: null }),
     checkAttempt: jest.fn().mockResolvedValue({ allowed: true, retryAfterSeconds: null }),
     resolveCart: jest.fn().mockResolvedValue({ items: [item], subtotalCents: 10000 }),
     quote: jest.fn().mockResolvedValue({
@@ -170,6 +171,27 @@ describe("prepareCheckoutHandler", () => {
     });
     return { deps, body, existing };
   }
+
+  it("discovers the authorized original while new allocation is paused", async () => {
+    const { deps, body } = await existingCheckout(3);
+    deps.getAccess.mockResolvedValue({ open: false, message: "Allocation paused" });
+    const req = new Request("https://shop.example.com/api/checkout/prepare", {
+      method: "POST",
+      headers: { cookie },
+      body: JSON.stringify({ ...body, recoveryOnly: true }),
+    });
+    const response = await prepareCheckoutHandler(req as never, deps);
+    expect(response.status).toBe(200);
+    expect((await response.json()).orderId).toBe("order-1");
+    expect(deps.checkResume).toHaveBeenCalledWith(
+      expect.objectContaining({
+        shopperBinding: "guest:" + guestContext.contextHash,
+        attached: true,
+      }),
+    );
+    expect(deps.reserve).not.toHaveBeenCalled();
+    expect(deps.createSquareOrder).not.toHaveBeenCalled();
+  });
 
   it.each(["missing", "unfinished", "wrong-context", "wrong-account", "authorized"])(
     "recovery-only prepare %s can only read the original owned attached order",
