@@ -229,8 +229,8 @@ test("a slow provider response can finish before the shared report deadline", as
   const budget = createObservationQueryBudget(
     {
       ...deps,
-      execute: (query, timeoutMs) =>
-        executePostHogQuery(query, { config, fetch, timeoutMs }),
+      execute: (compiled, timeoutMs) =>
+        executePostHogQuery(compiled, { config, fetch, timeoutMs, now: deps.clock }),
     },
     performance.now() + 20_000,
   );
