@@ -1,9 +1,17 @@
 import assert from "node:assert/strict";
 import { readFile, access } from "node:fs/promises";
 import { fileURLToPath } from "node:url";
+import { createRequire } from "node:module";
+import { dirname, join } from "node:path";
 import { chromium } from "@playwright/test";
 import { build } from "esbuild";
 import { registry } from "playwright-core/lib/server/registry/index";
+
+// Match the pinned Playwright client error type, never customer/error text.
+const require = createRequire(import.meta.url);
+const { isTargetClosedError } = require(
+  join(dirname(require.resolve("playwright-core/package.json")), "lib/client/errors.js"),
+);
 
 const root = fileURLToPath(new URL("../../../", import.meta.url));
 const origin = "https://checkout-fixture.invalid";
@@ -248,9 +256,14 @@ export async function mountCheckoutBrowser({
   });
   const errors = [];
   let closed;
+  let closing = false;
   const close = () => {
+    closing = true;
     closed ??= browser.close().then(() => {
-      if (errors.length) throw new Error(errors.map((error) => error.message).join("\n"));
+      if (errors.length)
+        throw new Error(errors.map((error) => error.message).join("\n"), {
+          cause: errors[0],
+        });
     });
     return closed;
   };
@@ -324,7 +337,7 @@ export async function mountCheckoutBrowser({
           throw new Error("Unexpected checkout fixture request to " + url.pathname);
         }
       } catch (error) {
-        errors.push(error);
+        if (!closing || !isTargetClosedError(error)) errors.push(error);
         await intercepted.abort().catch(() => {});
       }
     });
