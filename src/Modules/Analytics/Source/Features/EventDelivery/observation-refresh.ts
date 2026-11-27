@@ -61,14 +61,15 @@ export const linkObservation = endpoint(
 );
 export function nativeObservation(scope: DatasetScope) {
   const native = compileBehaviorHistorySql({ ...scope, behaviorArchiveCutoff: null });
+  // PostHog marker ingestion truncates receipt timestamps to milliseconds.
   return endpoint(
     "sole_analytics_observe_native",
     `SELECT
     (SELECT count() FROM (${native})) AS visible_events,
     (SELECT countDistinct(tuple(uuid,timestamp,distinct_id)) FROM events WHERE
       event='sole_analytics_probe_v1' AND properties.dataset_id={variables.dataset_id}
-      AND distinct_id='sole:availability' AND ((toString(uuid)={variables.first_id} AND timestamp=${parseHogqlInstant("{variables.start_inclusive}")}) OR
-      (toString(uuid)={variables.last_id} AND timestamp=${parseHogqlInstant("{variables.end_exclusive}")}))) AS markers`,
+      AND distinct_id='sole:availability' AND ((toString(uuid)={variables.first_id} AND dateDiff('millisecond',timestamp,${parseHogqlInstant("{variables.start_inclusive}")})=0) OR
+      (toString(uuid)={variables.last_id} AND dateDiff('millisecond',timestamp,${parseHogqlInstant("{variables.end_exclusive}")})=0))) AS markers`,
   );
 }
 
