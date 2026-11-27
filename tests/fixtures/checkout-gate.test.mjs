@@ -6,6 +6,45 @@ import test from "node:test";
 import { createCheckoutGate } from "./checkout-gate.mjs";
 
 const marker = "stock stayed at 1 after the database rejected a negative balance";
+test("browser failure diagnostics expose only bounded owned source locations and codes", async () => {
+  const { browserFailureDiagnostics } = await import("./checkout-gate.mjs");
+  const output = browserFailureDiagnostics(
+    [
+      "AssertionError [ERR_ASSERTION]: private-provider-payload",
+      "    at TestContext.<anonymous> (file:///home/runner/work/solesneakers/solesneakers/src/Modules/Cart/Tests/Features/ManageBasket/purchase-capture.browser.mjs:123:9)",
+      "    at file:///home/runner/work/solesneakers/solesneakers/tests/browser/measurement-sdk-boundary.mjs:456:2",
+      "    at C:\\private\\customer-record.mjs:30:1",
+      "    at /repo/tests/browser/private-secret.mjs:9:1",
+      "    at /repo/tests/browser/measurement-sdk-boundary.mjs:0:2",
+      "    at /repo/tests/browser/measurement-sdk-boundary.mjs:456:2",
+      "TimeoutError: private-token",
+    ].join("\n"),
+  );
+  assert.deepEqual(output, {
+    errorTypes: ["AssertionError", "TimeoutError"],
+    codes: ["ERR_ASSERTION"],
+    locations: [
+      "src/Modules/Cart/Tests/Features/ManageBasket/purchase-capture.browser.mjs:123:9",
+      "tests/browser/measurement-sdk-boundary.mjs:456:2",
+    ],
+  });
+  assert.doesNotMatch(JSON.stringify(output), /private|provider|payload|token|customer/);
+});
+test("failed browser gates retain failure status and publish safe assertion locations", async (t) => {
+  const gate = await createCheckoutGate("browser");
+  const logs = t.mock.method(console, "log", () => {});
+  await assert.rejects(
+    gate("diagnostic-probe", [
+      "--input-type=module",
+      "-e",
+      'const e=Error("private-provider-payload");e.stack="Error: private-provider-payload\\n    at /repo/tests/browser/measurement-sdk-boundary.mjs:777:8";throw e;',
+    ]),
+    /browser gate failed/,
+  );
+  const output = logs.mock.calls.map(({ arguments: args }) => args.join(" ")).join("\n");
+  assert.match(output, /measurement-sdk-boundary\.mjs:777:8/);
+  assert.doesNotMatch(output, /private-provider-payload/);
+});
 const runner = await createCheckoutGate("diagnostic-regression");
 const child = `
   import test from "node:test";

@@ -29,6 +29,7 @@ import { verifyTurnstile } from "@/lib/security/turnstile";
 import { createSquarePaymentsGateway } from "@/lib/square/client";
 import { squareDeclineCode } from "@/lib/square/payments";
 import { recordSquarePaymentDetails } from "@/lib/square/payment-details";
+import { promptSquareAttempt } from "@/lib/square/financial-inquiry-dependencies";
 import { createSupabaseAdminClient } from "@/lib/supabase/service-role";
 import { logError } from "@/lib/utils/log";
 import {
@@ -125,7 +126,12 @@ export function createDirectPaymentDependencies(
       canReportNegativeCheckout(orderOwner(order), attempt, supabase),
     readCurrentAttempt: (orderId) => readCurrentPaymentAttempt(supabase, orderId),
     beginDispatch: (input) => attempts.beginDispatch(input),
-    recordAttemptOutcome: (input) => attempts.recordAttemptOutcome(input),
+    recordAttemptOutcome: async (input) => {
+      const attempt = await attempts.recordAttemptOutcome(input);
+      if (["succeeded", "pending", "unknown"].includes(attempt.state))
+        promptSquareAttempt(supabase, attempt.orderId, attempt.id);
+      return attempt;
+    },
     fingerprints: (input) =>
       getPayments().fingerprints(input, getCheckoutIdentitySecret()),
     enqueueLegacyInquiry: (orderId) =>
