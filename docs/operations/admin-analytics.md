@@ -1,5 +1,7 @@
 # Admin analytics operations
 
+The [November 27 local handoff](admin-analytics-local-handoff-2026-11-27.md) records the completed implementation, independent review, final local checks and remaining staging setup. It supersedes the earlier bounded local qualification status below.
+
 Capture is disabled in Doppler **sneakereco / solesneakers / dev, stg and prd**. Browser setup on November 27 verified separate owner PostHog projects, query credentials, privacy controls and healthy Vercel syncs, and created isolated operator configs. See the [setup record and code assessment](admin-analytics-setup-2026-11-27.md). Reporting sources, saved Endpoints, an active dataset, actual delivery lag and a deployed reporting journey still require deployment and acceptance. The established staging PR and production release/tag workflows control deployments.
 
 Analytics coverage starts at launch. Native behavior uses the project's verified retention and actual observed intervals. No historical import or backfill is required.

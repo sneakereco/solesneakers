@@ -303,8 +303,10 @@ Task 14 operator commands, active source contracts, observation bounds and stagi
 
 This resumes Task 14 and follows the spec's November 27 amendment and the user's five-hour, local-only boundary. Existing tasks and prior tests are not to be rebuilt. The user will deploy staging after the local handoff.
 
-- [ ] Correct actual-retention eligibility, trusted journey purchase-link binding and the deferred inventory launch boundary; reproduce each defect and run the corresponding focused regression checks.
-- [ ] Prepare a separate operator scheduler and an offline-verifiable setup path for the restricted sources and 22 saved Endpoints. Keep operator/provisioning credentials out of the application. No provider writes occur during local work.
-- [ ] Run one independent combined Task 14/whole-branch review using the selected current-main baseline, repair concrete findings and verify the fixes. This combined gate follows the user's explicit usage-conservation instruction.
-- [ ] Run the final meaningful local unit, integration, owned-database, SDK/browser, type/lint/format and capture-disabled build checks on the resulting branch, without duplicate broad runs unless a new change or failure justifies one.
-- [ ] Commit and hand off the reviewed local branch, exact staging steps and remaining hosted checks before the hard cutoff. Do not push, publish a PR, deploy or activate anything.
+- [x] Correct actual-retention eligibility, trusted journey purchase-link binding and the deferred inventory launch boundary; reproduce each defect and run the corresponding focused regression checks.
+- [x] Prepare a separate operator scheduler and an offline-verifiable setup path for the restricted sources and 22 saved Endpoints. Keep operator/provisioning credentials out of the application. No provider writes occur during local work.
+- [x] Run one independent combined Task 14/whole-branch review using the selected current-main baseline, repair concrete findings and verify the fixes. This combined gate follows the user's explicit usage-conservation instruction.
+- [x] Run the final meaningful local unit, integration, owned-database, SDK/browser, type/lint/format and capture-disabled build checks on the resulting branch, without duplicate broad runs unless a new change or failure justifies one.
+- [x] Commit and hand off the reviewed local branch, exact staging steps and remaining hosted checks before the hard cutoff. Do not push, publish a PR, deploy or activate anything.
+
+See the [local handoff and exact qualification limits](../../operations/admin-analytics-local-handoff-2026-11-27.md), including the sandbox-only cleanup-test rerun, existing lint and line-ending warnings, and pending hosted acceptance. The original Task 14 hosted and release gates remain open.
