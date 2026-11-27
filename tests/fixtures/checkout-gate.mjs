@@ -13,6 +13,103 @@ export const rejectedStockDiagnostic =
 const finalTapSummary =
   /\n1\.\.(?<plan>\d+)\n# tests (?<tests>\d+)\n# suites 0\n# pass (?<pass>\d+)\n# fail (?<fail>\d+)\n# cancelled (?<cancelled>\d+)\n# skipped (?<skipped>\d+)\n# todo (?<todo>\d+)\n# duration_ms \d+(?:\.\d+)?$/;
 
+const fixturePhase =
+  /^CHECKOUT_FIXTURE_PHASE (start|done) (docker-access|inventory|preflight|ports-config|docker-start|identity|clone|connect|replay|test|bootstrap-cleanup|resources-cleanup|directory-cleanup)$/;
+const fixtureSource = String.raw`((?:scripts/test-checkout-hardening-db|tests/database/fixtures/checkout-hardening(?:-docker-relay)?)\.mjs:[1-9]\d{0,4})`;
+const errorFrame = new RegExp(String.raw`^\s+at .*[/\\]${fixtureSource}:\d+\)?$`);
+const fixtureError = new RegExp(
+  String.raw`^CHECKOUT_FIXTURE_ERROR ([A-Za-z]+) ([A-Z0-9_]+|-) (?:${fixtureSource}|-)$`,
+);
+const errorNames = new Set([
+  "Error",
+  "AssertionError",
+  "TypeError",
+  "RangeError",
+  "SyntaxError",
+  "AggregateError",
+]);
+const errorCodes = new Set([
+  "ERR_ASSERTION",
+  "EACCES",
+  "EADDRINUSE",
+  "ECONNREFUSED",
+  "ECONNRESET",
+  "EIO",
+  "ENOENT",
+  "ENOSPC",
+  "EPERM",
+  "ETIMEDOUT",
+  "08003",
+  "08006",
+  "22023",
+  "23503",
+  "23505",
+  "23514",
+  "25P02",
+  "28P01",
+  "42501",
+  "42704",
+  "42710",
+  "42P01",
+  "42P07",
+  "53300",
+  "55006",
+  "57014",
+  "57P01",
+  "57P02",
+  "57P03",
+]);
+
+export function reportCheckoutFixtureError(error) {
+  if (process.env.CHECKOUT_GATE_DIAGNOSTICS !== "true") return;
+  let cause = error;
+  for (let depth = 0; cause && depth < 3; depth++, cause = cause.cause) {
+    const frame =
+      typeof cause.stack === "string"
+        ? cause.stack
+            .split("\n")
+            .slice(1)
+            .map((line) => errorFrame.exec(line.replaceAll("\\", "/")))
+            .find(Boolean)
+        : null;
+    const name = errorNames.has(cause.name) ? cause.name : "Error";
+    const code = errorCodes.has(cause.code) ? cause.code : "-";
+    if (frame || code !== "-") {
+      console.error(`CHECKOUT_FIXTURE_ERROR ${name} ${code} ${frame?.[1] ?? "-"}`);
+    }
+  }
+}
+
+function fixtureFailureDiagnostics(stderr, status, summary) {
+  let fixture = "unavailable";
+  let cleanup = "unavailable";
+  const errors = [];
+  for (const line of stderr.split(/\r?\n/)) {
+    const phase = fixturePhase.exec(line);
+    if (phase) {
+      const [, state, name] = phase;
+      if (name.endsWith("-cleanup")) cleanup = name + ":" + state;
+      else fixture = name + ":" + state;
+      continue;
+    }
+    const error = fixtureError.exec(line);
+    if (!error || errors.length === 3) continue;
+    const [, name, code, frame] = error;
+    if (
+      errorNames.has(name) &&
+      (code === "-" || errorCodes.has(code)) &&
+      (frame || code !== "-")
+    ) {
+      errors.push(`${name}:${code}@${frame ?? "-"}`);
+    }
+  }
+  return [
+    `fixture=${fixture} cleanup=${cleanup}`,
+    `exit=${status ?? "signal"} tap=${summary ? "present" : "absent"}`,
+    ...errors,
+  ].join(" ");
+}
+
 function hasExpectedTapFailure(stdout, summary, message) {
   const header = stdout.lastIndexOf("\nTAP version 13\n");
   if (!summary || header < 0 || header >= summary.index) return false;
@@ -51,8 +148,8 @@ function hasExpectedTapFailure(stdout, summary, message) {
   );
 }
 
-// Only closed gate names, counts and hashes are suitable for the CI log. Raw
-// child output and browser screenshots stay in the private ephemeral run folder.
+// Only closed diagnostic fields, counts and hashes are suitable for the CI log.
+// Raw child output and screenshots stay in the private ephemeral run folder.
 export async function createCheckoutGate(family) {
   const directory = await mkdtemp(
     join(process.env.CHECKOUT_GATE_PRIVATE_DIR ?? tmpdir(), "checkout-" + family + "-"),
@@ -71,16 +168,21 @@ export async function createCheckoutGate(family) {
         CHECKOUT_GATE_FAULT: "",
         CHECKOUT_BROWSER_OUTPUT: directory,
         ...env,
+        CHECKOUT_GATE_DIAGNOSTICS: "true",
       },
       stdio: ["ignore", "pipe", "pipe"],
     });
     const chunks = [],
-      stdoutChunks = [];
+      stdoutChunks = [],
+      stderrChunks = [];
     child.stdout.on("data", (chunk) => {
       chunks.push(chunk);
-      if (expectedFailure) stdoutChunks.push(chunk);
+      stdoutChunks.push(chunk);
     });
-    child.stderr.on("data", (chunk) => chunks.push(chunk));
+    child.stderr.on("data", (chunk) => {
+      chunks.push(chunk);
+      stderrChunks.push(chunk);
+    });
     const status = await new Promise((resolve, reject) => {
       child.once("error", reject);
       child.once("close", resolve);
@@ -89,8 +191,10 @@ export async function createCheckoutGate(family) {
     await writeFile(join(directory, name + ".log"), raw, { mode: 0o600, flag: "wx" });
     const output = raw.toString();
     const stdout =
-      "\n" + Buffer.concat(stdoutChunks).toString().replaceAll("\r\n", "\n").trimEnd();
-    const summary = expectedFailure ? finalTapSummary.exec(stdout) : null;
+      expectedFailure || status !== 0
+        ? "\n" + Buffer.concat(stdoutChunks).toString().replaceAll("\r\n", "\n").trimEnd()
+        : "";
+    const summary = finalTapSummary.exec(stdout);
     const detected =
       expectedFailure &&
       status === 1 &&
@@ -110,6 +214,14 @@ export async function createCheckoutGate(family) {
         .filter(Boolean)
         .join(" "),
     );
+    if (!passed) {
+      const diagnostics = fixtureFailureDiagnostics(
+        Buffer.concat(stderrChunks).toString(),
+        status,
+        summary,
+      );
+      console.log(`Checkout gate diagnostics ${family} ${name} ${diagnostics}`);
+    }
     if (expectedFailure && !detected)
       throw Error(family + " fault injection inconclusive: " + name);
     if (!passed)

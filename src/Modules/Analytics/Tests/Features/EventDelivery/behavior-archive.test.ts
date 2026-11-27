@@ -52,8 +52,12 @@ it("queries disjoint native/archive periods and deduplicates event UUIDs, with m
     behaviorArchiveCutoff: "2026-01-01T00:00:00Z",
   } as const;
   const sql = compileBehaviorHistorySql(scope);
-  expect(sql).toContain("timestamp >= parseDateTime64BestEffort('2026-01-01T00:00:00Z'");
-  expect(sql).toContain("occurred_at < parseDateTime64BestEffort('2026-01-01T00:00:00Z'");
+  expect(sql).toContain(
+    "timestamp >= parseDateTimeBestEffort('2026-01-01T00:00:00Z','UTC')",
+  );
+  expect(sql).toContain(
+    "occurred_at < parseDateTimeBestEffort('2026-01-01T00:00:00Z','UTC')",
+  );
   expect(sql).toContain("PARTITION BY dataset_id,event_uuid");
   expect(
     behaviorReportAvailability(

@@ -39,14 +39,14 @@ UNION ALL
 SELECT 'state',delivery_method,delivery_state,'',count(*),0,0,0 FROM health_state GROUP BY delivery_method,delivery_state
 UNION ALL
 SELECT 'duration',delivery_method,'','',count(*),
- sum(CASE WHEN 2*position BETWEEN population AND population+2 THEN toDecimal128(seconds_elapsed,0) ELSE 0 END),
+ sum(CASE WHEN 2*position BETWEEN population AND population+2 THEN accurateCastOrNull(seconds_elapsed,'Decimal128(0)') ELSE 0 END),
  sum(CASE WHEN 2*position BETWEEN population AND population+2 THEN 1 ELSE 0 END),
  max(CASE WHEN 10*(position-1)<9*population AND 10*position>=9*population THEN seconds_elapsed ELSE 0 END)
  FROM durations GROUP BY delivery_method
 UNION ALL
 SELECT 'missing_duration','','','',count(*),0,0,0 FROM health_state WHERE delivery_state IN ('shipped','fulfilled','picked_up','delivered') AND (seconds_elapsed IS NULL OR seconds_elapsed<0)
 UNION ALL
-SELECT 'missing_state','','','',count(*),0,0,0 FROM selected o LEFT JOIN health_state f ON o.order_id=f.order_id WHERE o.kind='order' AND nullIf(f.fact_id,'') IS NULL
+SELECT 'missing_state','','','',count(),0,0,0 FROM selected o LEFT JOIN health_state f ON o.order_id=f.order_id WHERE o.kind='order' AND nullIf(f.fact_id,'') IS NULL
  ) SELECT *,${attributionSql} FROM health_groups`;
 export const commerceHealthEndpoints = [endpoint("sole_analytics_health", sql)];
 export function compileCommerceHealthQueries(
