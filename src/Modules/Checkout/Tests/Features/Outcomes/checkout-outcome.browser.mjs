@@ -277,10 +277,11 @@ async function fixture(
       });
     }
     if (url.pathname === "/api/checkout/prepare") {
-      flow.prepares.push(route.request().postDataJSON());
+      const prepare = route.request().postDataJSON();
+      flow.prepares.push(prepare);
       if (flow.holdPrepare) await new Promise((r) => (flow.releasePrepare = r));
-      const key = flow.prepares.at(-1).idempotencyKey;
-      if (!flow.prepareFailure && !flow.reservations.has(key))
+      const { idempotencyKey: key, recoveryOnly } = prepare;
+      if (!flow.prepareFailure && !recoveryOnly && !flow.reservations.has(key))
         flow.reservations.set(
           key,
           flow.reservations.size === 0 ? order : "10000000-0000-4000-8000-000000000002",
@@ -289,24 +290,30 @@ async function fixture(
         flow.dropPrepare = false;
         return route.abort();
       }
-      if (flow.terminalOriginal)
-        return route.fulfill({
-          status: flow.prepares.at(-1).recoveryOnly ? 200 : 409,
-          json: {
-            code: "CHECKOUT_RECOVERY_REQUIRED",
-            orderId: flow.reservations.get(key),
-            totals,
-            guestAccessToken: "from-prepare",
-          },
-        });
       if (flow.prepareFailure)
         return route.fulfill({
           status: flow.prepareFailure,
           json: { error: "Retry preparation" },
         });
+      const orderId = flow.reservations.get(key);
+      if (recoveryOnly && !orderId)
+        return route.fulfill({
+          status: 409,
+          json: { code: "CHECKOUT_RECOVERY_REQUIRED" },
+        });
+      if (recoveryOnly || flow.terminalOriginal)
+        return route.fulfill({
+          status: recoveryOnly ? 200 : 409,
+          json: {
+            code: "CHECKOUT_RECOVERY_REQUIRED",
+            orderId,
+            totals,
+            guestAccessToken: "from-prepare",
+          },
+        });
       return route.fulfill({
         json: {
-          orderId: flow.reservations.get(key),
+          orderId,
           guestAccessToken: "from-prepare",
           totals,
         },
@@ -1077,6 +1084,8 @@ test("actual failed switch after a lost prepare reloads original A with its issu
   await submit(page);
   await expect.poll(() => flow.prepares.length).toBe(2);
   assert.equal(flow.prepares[1].idempotencyKey, first.idempotencyKey);
+  assert.equal(flow.prepares[1].deviceSessionId, first.deviceSessionId);
+  assert.equal(flow.prepares[1].recoveryOnly, true);
   assert.equal(flow.reservations.size, 1);
   await page.getByText("Order Confirmed!").waitFor();
   assert.deepEqual((await state(page)).items, [2]);

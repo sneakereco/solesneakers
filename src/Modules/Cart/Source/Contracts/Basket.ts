@@ -86,9 +86,10 @@ export interface BasketReviewActions {
     isCurrentAttempt?: () => boolean,
   ) => Promise<BasketMutationResult>;
   scopeValidationToOrder: (order: ValidationOrder) => () => void;
-  verifyReservedBasket: (
+  boundBasketGuard: (
     order: ValidationOrder,
     original: readonly CartItem[],
+    requireScopedAvailability: boolean,
   ) => Promise<() => boolean>;
   resetSavedBasket: () => Promise<BasketMutationResult>;
 }

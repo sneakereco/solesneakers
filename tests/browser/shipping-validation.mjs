@@ -66,7 +66,7 @@ const bundle = await build({
             args.path === "next/navigation"
               ? 'const router = { replace: url => history.replaceState({}, "", url) }; export const useRouter = () => router; export const useSearchParams=()=>new URLSearchParams(location.search);'
               : args.path.endsWith("CartProvider")
-                ? "const items = [{productId:'11111111-1111-4111-8111-111111111111',variantId:'22222222-2222-4222-8222-222222222222',titleDisplay:'Test shoes',quantity:1,priceCents:10000}]; export const useCart = () => ({items,itemCount:1,isReady:true,captureForCheckout:async request=>({status:'captured',captureId:'fixture',items:request.expectedItems}),bindPreparedOrder:async()=>true,scopeValidationToOrder(order){window.test.validationOrder=order;return ()=>{};}});"
+                ? "const items = [{productId:'11111111-1111-4111-8111-111111111111',variantId:'22222222-2222-4222-8222-222222222222',titleDisplay:'Test shoes',quantity:1,priceCents:10000}]; export const useCart = () => ({items,itemCount:1,isReady:true,captureForCheckout:async request=>({status:'captured',captureId:'fixture',items:request.expectedItems}),bindPreparedOrder:async()=>true,boundBasketGuard:async order=>()=>window.test.validationOrder===order,scopeValidationToOrder(order){window.test.validationOrder=order;return ()=>{};}});"
                 : args.path.endsWith("SessionContext")
                   ? "const session={user:{id:'fixture-buyer'},status:'ready',isCurrent:()=>true}; export const useSession=()=>session;"
                   : args.path.endsWith("client-env")

@@ -79,7 +79,7 @@ export const unavailableReview: BasketReviewActions = {
   applyStockConflicts: unavailableEdit,
   acceptPrice: unavailableEdit,
   scopeValidationToOrder: () => () => {},
-  verifyReservedBasket: () => Promise.resolve(() => false),
+  boundBasketGuard: () => Promise.resolve(() => false),
 };
 class OversizedBasket extends SavedBasketLimitError {
   constructor(
@@ -348,8 +348,8 @@ export class BasketStorage {
               validation.current = undefined;
           };
         },
-        verifyReservedBasket: (order, original) =>
-          this.verifyReservedBasket(order, original, eligible()),
+        boundBasketGuard: (order, original, requireScopedAvailability) =>
+          this.boundBasketGuard(order, original, requireScopedAvailability, eligible()),
         applyStockConflicts: (conflicts, recoveryRequired, isCurrentAttempt) =>
           this.reviewEdit(
             snapshot,
@@ -539,67 +539,65 @@ export class BasketStorage {
     }
   }
 
-  private async verifyReservedBasket(
+  private async boundBasketGuard(
     order: ValidationOrder,
     original: readonly CartItem[],
+    requireScopedAvailability: boolean,
     eligible: () => boolean,
   ): Promise<() => boolean> {
     const denied = () => false;
-    const scope = this.validation.current;
+    const scope = requireScopedAvailability ? this.validation.current : undefined;
     if (
       !eligible() ||
-      !scope ||
-      scope.order.orderId !== order.orderId ||
-      scope.order.guestAccessToken !== order.guestAccessToken ||
-      !(await scope.checked)
+      (requireScopedAvailability &&
+        (!scope ||
+          scope.order.orderId !== order.orderId ||
+          scope.order.guestAccessToken !== order.guestAccessToken ||
+          !(await scope.checked) ||
+          !scope.verified))
     )
       return denied;
 
-    const verified = this.published;
+    const verified = scope?.verified;
     const origin = contextOrigin();
-    if (
-      !origin ||
-      !verified ||
-      !scope.verified ||
-      !sameSnapshot(verified, scope.verified) ||
-      verified.items.length !== original.length
-    )
-      return denied;
+    if (!origin) return denied;
     const proofForOrder = () =>
       this.proofs(origin, eligible)?.records.find(
         (record) => record.orderId === order.orderId && record.origin === origin,
       );
     const proof = proofForOrder();
-    // Only the bound original units can establish availability for this payment.
-    if (
-      proof?.stage !== "pending" ||
-      subtractRows(verified.rows, proof, original)?.length !== 0
-    )
-      return denied;
-    if (
-      !verified.items.every((line, index) => {
-        const before = original[index];
-        return (
-          pairKey(line) === pairKey(before) &&
-          line.quantity === before.quantity &&
-          line.priceCents === before.priceCents &&
-          !line.availability &&
-          line.previousPriceCents === undefined
-        );
-      })
-    )
-      return denied;
+    if (proof?.stage !== "pending") return denied;
     return () => {
-      if (
-        !eligible() ||
-        this.validation.current !== scope ||
-        !sameSnapshot(verified, this.storedVersion())
-      )
+      if (!eligible() || (scope && this.validation.current !== scope)) return false;
+      try {
+        const current = this.published;
+        if (
+          !current?.complete ||
+          !sameSnapshot(current, this.storedVersion()) ||
+          (verified && !sameSnapshot(current, verified)) ||
+          current.items.length !== original.length
+        )
+          return false;
+        const currentProof = proofForOrder();
+        // Payment can continue only against the bound original units.
+        return (
+          currentProof?.stage === "pending" &&
+          currentProof.captureId === proof.captureId &&
+          subtractRows(current.rows, currentProof, original)?.length === 0 &&
+          current.items.every((line, index) => {
+            const before = original[index];
+            return (
+              pairKey(line) === pairKey(before) &&
+              line.quantity === before.quantity &&
+              line.priceCents === before.priceCents &&
+              !line.availability &&
+              line.previousPriceCents === undefined
+            );
+          })
+        );
+      } catch {
         return false;
-      const currentProof = proofForOrder();
-      return (
-        currentProof?.stage === "pending" && currentProof.captureId === proof.captureId
-      );
+      }
     };
   }
   private save(

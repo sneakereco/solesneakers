@@ -108,13 +108,17 @@ async function prepared(p, quantity = 3) {
 test("removed and newly allocated units survive partial consumption and exact receipt replay", async (t) => {
   const { page, ready } = await fixture(t);
   const { attemptKey, orderId } = await prepared(page);
-  await page.evaluate(
-    async ({ sku, variant }) => {
-      await window.testCart.updateQuantity(sku, variant, 1);
-      await window.testCart.updateQuantity(sku, variant, 3);
-    },
-    { sku, variant },
-  );
+  for (const quantity of [1, 3]) {
+    assert.deepEqual(
+      await page.evaluate(
+        ({ sku, variant, quantity }) =>
+          window.testCart.updateQuantity(sku, variant, quantity),
+        { sku, variant, quantity },
+      ),
+      { status: "saved" },
+    );
+    await observed(page, [item(quantity)]);
+  }
   assert.deepEqual(await consume(page, orderId, lines(2)), {
     status: "matched",
     attemptKey,

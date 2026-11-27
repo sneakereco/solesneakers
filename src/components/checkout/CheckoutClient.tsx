@@ -428,14 +428,11 @@ function OwnerCheckout({
     context?: CheckoutPreparationContext,
   ): Promise<PreparedCheckout> {
     await requireOwner();
-    let verifiedReservation: (() => boolean) | undefined;
-    const assertCurrentBasket = () => {
-      if (
-        verifiedReservation ? !verifiedReservation() : basketKey !== currentBasket.current
-      )
-        throw new Error("Your cart changed. Review your items before paying.");
+    const basketChanged = "Your cart changed. Review your items before paying.";
+    const assertRenderedBasket = () => {
+      if (basketKey !== currentBasket.current) throw new Error(basketChanged);
     };
-    assertCurrentBasket();
+    assertRenderedBasket();
     if (needsOriginalRecovery(initialData.ownerId)) {
       setNeedsRecovery(true);
       throw Error("Check your original order status before trying another payment.");
@@ -499,7 +496,7 @@ function OwnerCheckout({
     );
     const attemptKey = attempt.key;
     await requireOwner();
-    assertCurrentBasket();
+    assertRenderedBasket();
     if (!attempt.current() || lifetime.signal.aborted)
       throw Error("Your checkout changed. Review your current order.");
     if (attempt.recoveryOnly) {
@@ -552,7 +549,7 @@ function OwnerCheckout({
     const reverified = !isCurrent();
     // A successful prepare may have already reserved our last unit. Its scoped
     // validation below must establish the original lines before a permit can issue.
-    if (!response.ok || !reverified) assertCurrentBasket();
+    if (!response.ok || !reverified) assertRenderedBasket();
     const observeOnly =
       data?.code === "CHECKOUT_RECOVERY_REQUIRED" &&
       z.uuid().safeParse(data?.orderId).success;
@@ -695,18 +692,19 @@ function OwnerCheckout({
       const release = registerScope(orderScope);
       scopes?.register(data.orderId, guestAccessToken ?? null, release);
     } else pendingScope.current = orderScope;
+    const boundBasketCurrent = await latestCart.current.boundBasketGuard(
+      orderScope,
+      items,
+      reverified,
+    );
+    await requireOwner();
+    if (!boundBasketCurrent()) {
+      attempt.requireRecovery(data.orderId);
+      setNeedsRecovery(true);
+      throw new Error(basketChanged);
+    }
     if (reverified) {
-      verifiedReservation = await latestCart.current.verifyReservedBasket(
-        orderScope,
-        items,
-      );
-      await requireOwner();
       const refreshedQuote = lastQuote.current;
-      if (!verifiedReservation()) {
-        attempt.requireRecovery(data.orderId);
-        setNeedsRecovery(true);
-        throw new Error("Your cart changed. Review your items before paying.");
-      }
       if (
         (refreshedQuote?.current() &&
           refreshedQuote.fingerprint !== selectedQuote.quoteFingerprint) ||
@@ -731,7 +729,7 @@ function OwnerCheckout({
     };
     return {
       assertCurrentBasket: () => {
-        assertCurrentBasket();
+        if (!boundBasketCurrent()) throw new Error(basketChanged);
         assertFinancialAttempt();
       },
       assertFinancialAttempt,

@@ -1,6 +1,13 @@
 "use client";
 
-import { useEffect, useMemo, useRef, useState, type ReactNode } from "react";
+import {
+  useEffect,
+  useLayoutEffect,
+  useMemo,
+  useRef,
+  useState,
+  type ReactNode,
+} from "react";
 import { flushSync } from "react-dom";
 import { useRouter } from "next/navigation";
 
@@ -507,8 +514,27 @@ export function SquarePaymentMethods({
   children?: ReactNode;
 }) {
   const canShowReview = reviewOwner?.verified ?? true;
+  const reviewAccess = useRef<{
+    owner: typeof reviewOwner;
+    suspended: boolean;
+  } | null>(null);
+  useLayoutEffect(() => {
+    reviewAccess.current = { owner: reviewOwner, suspended: accessSuspended };
+    return () => {
+      reviewAccess.current = null;
+    };
+  }, [reviewOwner, accessSuspended]);
+  function isReviewOwnerCurrent() {
+    const access = reviewAccess.current;
+    return Boolean(
+      access && (!access.owner || (access.owner.verified && access.owner.isCurrent())),
+    );
+  }
+  function canActOnReview() {
+    return reviewAccess.current?.suspended === false && isReviewOwnerCurrent();
+  }
   function requireReviewOwner() {
-    if (reviewOwner && !reviewOwner.isCurrent())
+    if (!isReviewOwnerCurrent())
       throw new CheckoutCartUnavailable(
         "Your checkout account changed. Review your cart before continuing.",
       );
@@ -584,12 +610,6 @@ export function SquarePaymentMethods({
     },
     [],
   );
-  useEffect(() => {
-    if (canShowReview) return;
-    addressContinuation.current?.(null);
-    walletContinuation.current?.(null);
-    totalContinuation.current?.(false);
-  }, [canShowReview]);
   const [appleRetry, setAppleRetry] = useState(0);
   const [appleLoadError, setAppleLoadError] = useState(false);
   const [expressLoading, setExpressLoading] = useState(true);
@@ -644,6 +664,7 @@ export function SquarePaymentMethods({
   const notifyPaymentPending = useRef(onPaymentPending);
   notifyPaymentPending.current = onPaymentPending;
   const latest = useRef({
+    selectedMethod,
     resolvedBillingAddress,
     quote,
     quoteReady,
@@ -654,6 +675,7 @@ export function SquarePaymentMethods({
     isGuest,
   });
   latest.current = {
+    selectedMethod,
     resolvedBillingAddress,
     quote,
     quoteReady,
@@ -674,7 +696,9 @@ export function SquarePaymentMethods({
   // Keep the provider instance that owns an open approval until it delivers its result.
   const cashAppQuoteKey =
     approvalQuoteKey ?? (quote?.completeness === "exact" ? quote.quoteFingerprint : null);
-  const afterpayContext = useRef<AfterpayCheckoutContext | null>(null);
+  const afterpayContext = useRef<
+    (AfterpayCheckoutContext & Pick<PreparedCheckout, "assertCurrentBasket">) | null
+  >(null);
 
   function updateTurnstileToken(token: string | null) {
     turnstileTokenRef.current = token;
@@ -855,11 +879,16 @@ export function SquarePaymentMethods({
           request.addEventListener("afterpay_shippingaddresschanged", (value) => {
             const context =
               active && requests.afterpay === request ? afterpayContext.current : null;
-            if (context)
-              context.fullAddressConfirmed = Boolean(
-                context.shippingAddress &&
-                  matchesAfterpayAddress(value, context.shippingAddress),
-              );
+            if (!context) return afterpayShippingUpdate(null, value);
+            try {
+              context.assertCurrentBasket?.();
+            } catch {
+              return afterpayShippingUpdate(null, value);
+            }
+            context.fullAddressConfirmed = Boolean(
+              context.shippingAddress &&
+                matchesAfterpayAddress(value, context.shippingAddress),
+            );
             return afterpayShippingUpdate(context, value);
           });
           requests.afterpay = request;
@@ -925,6 +954,7 @@ export function SquarePaymentMethods({
               const ready =
                 attached &&
                 active &&
+                latest.current.selectedMethod === "cashAppPay" &&
                 !paymentInFlight.current &&
                 !cashAppApproving.current &&
                 latest.current.exactQuote?.quoteFingerprint === cashAppQuoteKey &&
@@ -1257,6 +1287,21 @@ export function SquarePaymentMethods({
     if (!paymentInFlight.current) {
       setPaymentDialogOpen(false);
     }
+  }
+
+  function selectMethod(method: typeof selectedMethod) {
+    if (method !== "cashAppPay" && cashAppApproving.current) {
+      // Retire this approval and its SDK listener before another method starts.
+      paymentInteraction.current++;
+      cashAppApproving.current = false;
+      setApprovalQuoteKey(null);
+      setMethodRetries((value) => ({ ...value, cashAppPay: value.cashAppPay + 1 }));
+      notifyPaymentPending.current?.(false);
+      setProviderActive(false);
+      setLoadingProvider(null);
+      setPaymentDialogOpen(false);
+    }
+    setSelectedMethod(method);
   }
 
   async function prepareOrder(
@@ -1630,6 +1675,7 @@ export function SquarePaymentMethods({
           fulfillment,
           quote: prepared.quote,
           shippingAddress: prepared.address,
+          assertCurrentBasket: checkout.assertCurrentBasket,
         };
         updateSquarePaymentRequest(request, {
           total: walletPaymentTotal(prepared.quote),
@@ -1763,18 +1809,18 @@ export function SquarePaymentMethods({
             <CheckoutWalletDetails
               initial={walletReview}
               onContinue={(details) => {
-                if (accessSuspended) return;
+                if (!canActOnReview()) return;
                 const continuation = walletContinuation.current;
                 walletContinuation.current = null;
                 setWalletReview(null);
-                continuation?.(!reviewOwner || reviewOwner.isCurrent() ? details : null);
+                continuation?.(details);
               }}
             />
           ) : null
         }
         addressReview={canShowReview ? addressReview : null}
         onAcceptAddress={(address, confirmation, override) => {
-          if (accessSuspended) return;
+          if (!canActOnReview()) return;
           const continuation = addressContinuation.current;
           if (!continuation) {
             return;
@@ -1782,23 +1828,21 @@ export function SquarePaymentMethods({
           addressContinuation.current = null;
           setAddressReview(null);
           setError(null);
-          continuation(
-            !reviewOwner || reviewOwner.isCurrent()
-              ? { address, confirmation, override }
-              : null,
-          );
+          continuation({ address, confirmation, override });
         }}
         totalReview={canShowReview ? totalReview : null}
         onConfirmTotal={() => {
-          if (accessSuspended) return;
+          if (!canActOnReview()) return;
           const continuation = totalContinuation.current;
           totalContinuation.current = null;
           setTotalReview(null);
-          continuation?.(!reviewOwner || reviewOwner.isCurrent());
+          continuation?.(true);
         }}
         cashAppReapproval={cashAppReapproval}
         error={error}
-        onDismiss={accessSuspended ? undefined : dismissPaymentDialog}
+        onDismiss={() => {
+          if (canActOnReview()) dismissPaymentDialog();
+        }}
       />
       <ExpressCheckoutMethods
         payDescriptionId={unavailableVerificationId}
@@ -1927,7 +1971,7 @@ export function SquarePaymentMethods({
               </>
             ) : null
           }
-          onSelectMethod={setSelectedMethod}
+          onSelectMethod={selectMethod}
           onSameAsShippingChange={setSameAsShipping}
           onCardholderNameChange={setCardholderName}
           onBillingAddressChange={(field, value) =>

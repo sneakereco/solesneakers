@@ -157,6 +157,16 @@ async function switchUser(page, id) {
 }
 const refresh = (page) =>
   page.evaluate(() => window.dispatchEvent(new Event("openCart")));
+async function updateRenderedQuantity(page, quantity) {
+  assert.deepEqual(
+    await page.evaluate(
+      (qty) => window.testCart.updateQuantity("a", "a-v", qty),
+      quantity,
+    ),
+    { status: "saved" },
+  );
+  await visible(page, [line("a", quantity)]);
+}
 
 for (const action of ["remove", "add", "quantity", "restore"])
   test("late validation after " + action, async (t) => {
@@ -166,12 +176,12 @@ for (const action of ["remove", "add", "quantity", "restore"])
       async ({ action, added }) => {
         if (action === "remove") await window.testCart.removeItem("a", "a-v");
         if (action === "add") await window.testCart.addItem(added);
-        if (action === "quantity" || action === "restore")
-          await window.testCart.updateQuantity("a", "a-v", 3);
-        if (action === "restore") await window.testCart.updateQuantity("a", "a-v", 1);
       },
       { action, added: line("added") },
     );
+    if (action === "quantity" || action === "restore")
+      await updateRenderedQuantity(page, 3);
+    if (action === "restore") await updateRenderedQuantity(page, 1);
     const expected =
       action === "remove"
         ? []
@@ -494,7 +504,11 @@ for (const lockMode of ["missing", "failed"])
     await expect(product.getByRole("button", { name: "Add to Cart" })).toBeEnabled();
   });
 test("a cooperating ABA edit invalidates validation before any native storage event reaches the reader", async (t) => {
-  const { page, ctx } = await open(t);
+  const { priceCents, quantity, imageUrl, maxStock, ...fields } = line("a");
+  const originalRaw = JSON.stringify([
+    { ...fields, priceCents, quantity, imageUrl, maxStock },
+  ]);
+  const { page, ctx } = await open(t, "a", { savedRaw: originalRaw });
   const { page: other } = await open(t, "a", { shared: ctx, seed: false });
   await count(page, 1);
   await page.evaluate(() =>
@@ -502,10 +516,12 @@ test("a cooperating ABA edit invalidates validation before any native storage ev
       capture: true,
     }),
   );
-  await other.evaluate(async () => {
-    await window.testCart.updateQuantity("a", "a-v", 3);
-    await window.testCart.updateQuantity("a", "a-v", 1);
-  });
+  await updateRenderedQuantity(other, 3);
+  await updateRenderedQuantity(other, 1);
+  assert.equal(
+    await page.evaluate((key) => localStorage.getItem(key), account("a")),
+    originalRaw,
+  );
   await reply(page, 0, [repriced("a")]);
   await page.evaluate(() => navigator.locks.request("rdk_cart", () => {}));
   assert.deepEqual(await stored(page, account("a")), [line("a")]);
@@ -1625,9 +1641,11 @@ for (const scenario of [
   "failed prepare",
   "late owner change",
   "late replacement",
+  "late replacement without re-verification",
   "changed quote",
 ]) {
   test("last-unit Afterpay during pending preparation: " + scenario, async (t) => {
+    const uninterrupted = scenario === "late replacement without re-verification";
     const f = await checkoutOwnershipFixture(t, {
       stockZeroAfterPrepare: scenario !== "changed quote",
       scopedAvailability:
@@ -1645,7 +1663,9 @@ for (const scenario of [
         window.approveAfterpay = true;
         window.holdAfterpayToken = late;
       },
-      scenario === "late owner change" || scenario === "late replacement",
+      uninterrupted ||
+        scenario === "late owner change" ||
+        scenario === "late replacement",
     );
     const releasePrepare = f.deferPrepare(),
       releasePay = f.deferPay(),
@@ -1666,10 +1686,12 @@ for (const scenario of [
           "saved",
         );
       }
-      await page.evaluate(() => document.dispatchEvent(new Event("visibilitychange")));
-      await expect
-        .poll(() => page.evaluate(() => window.testCart.access))
-        .toBe("checking");
+      if (!uninterrupted) {
+        await page.evaluate(() => document.dispatchEvent(new Event("visibilitychange")));
+        await expect
+          .poll(() => page.evaluate(() => window.testCart.access))
+          .toBe("checking");
+      }
       const releaseQuote = scenario === "changed quote" ? f.deferQuote(true) : undefined;
       releaseQuote?.();
       releasePrepare();
@@ -1693,7 +1715,7 @@ for (const scenario of [
             f.requests.validations.some((v) => v.order?.orderId === preparedOrderId),
           )
           .toBe(true);
-        assert.equal(f.requests.permits, 0);
+        if (!uninterrupted) assert.equal(f.requests.permits, 0);
         releaseScoped();
         if (["no own hold", "price change"].includes(scenario)) {
           await expect(
@@ -1703,8 +1725,30 @@ for (const scenario of [
           await expect(
             page.getByText(/Checkout totals changed.*original order/),
           ).toBeVisible();
-        } else if (scenario === "late replacement") {
+        } else if (uninterrupted || scenario === "late replacement") {
           await page.waitForFunction(() => window.releaseAfterpayToken);
+          await expect
+            .poll(() => page.evaluate(() => window.testCart.items[0]?.orderScoped))
+            .toBe(true);
+          const shipping = {
+            addressLines: ["10 a St"],
+            city: "Wilmington",
+            state: "DE",
+            postalCode: "19801",
+            countryCode: "US",
+          };
+          await page.evaluate(() => {
+            window.preparedAfterpayShipping = window.afterpayShipping;
+          });
+          if (!uninterrupted)
+            assert.equal(
+              await page.evaluate(
+                (address) =>
+                  window.preparedAfterpayShipping(address).shippingOptions?.length,
+                shipping,
+              ),
+              1,
+            );
           assert.equal(
             await page.evaluate(() =>
               window.testCart
@@ -1713,10 +1757,29 @@ for (const scenario of [
             ),
             "saved",
           );
+          const staleShipping = uninterrupted
+            ? undefined
+            : await page.evaluate(
+                (address) => window.preparedAfterpayShipping(address),
+                shipping,
+              );
           await page.evaluate(() => window.releaseAfterpayToken());
-          await expect(
-            page.getByText(/Your cart changed. Review your items before paying/),
-          ).toBeVisible();
+          const changed = page.getByText(
+            /Your cart changed. Review your items before paying/,
+          );
+          if (uninterrupted) {
+            await expect
+              .poll(async () => f.requests.pays || (await changed.isVisible()))
+              .not.toBe(false);
+            assert.equal(f.requests.pays, 0, "replacement units must never reach pay");
+          } else {
+            await expect(changed).toBeVisible();
+            assert.ok(
+              staleShipping?.error,
+              "the held callback must reject the replaced basket",
+            );
+            assert.equal(staleShipping.shippingOptions, undefined);
+          }
         } else if (scenario === "late owner change") {
           await page.waitForFunction(() => window.releaseAfterpayToken);
           f.changeOwner("b");
@@ -1746,7 +1809,11 @@ for (const scenario of [
         assert.equal(f.requests.pays, 0);
         assert.equal(
           f.requests.permits,
-          scenario === "late owner change" || scenario === "late replacement" ? 1 : 0,
+          uninterrupted ||
+            scenario === "late owner change" ||
+            scenario === "late replacement"
+            ? 1
+            : 0,
         );
         assert.ok(
           await page.evaluate(
@@ -2211,6 +2278,9 @@ for (const method of ["card", "afterpay"]) {
     await page.waitForFunction(() => typeof window.beginCash === "function");
     await page.getByRole("radio", { name: "Cash App Pay", exact: true }).click();
     assert.equal(await page.evaluate(() => window.beginCash()), true);
+    await page.evaluate(() => {
+      window.deliverOldCash = window.deliverCash;
+    });
     const approval = page.getByRole("dialog", { name: "Loading Cash App Pay…" });
     await expect(approval).toBeVisible();
     assert.equal(await approval.evaluate((el) => el.matches(":modal")), false);
@@ -2245,10 +2315,8 @@ for (const method of ["card", "afterpay"]) {
       await dialog.evaluate((el) => el.contains(document.activeElement)),
       true,
     );
-    assert.equal(
-      await page.evaluate(() => window.completeCash({ status: "Cancel" })),
-      true,
-    );
+    await page.evaluate(() => window.deliverOldCash({ status: "Cancel" }));
+    await expect(dialog).toBeVisible();
 
     const dismiss = dialog.getByRole("button", {
       name: reviewAddress ? "Cancel checkout" : "Return to checkout",
@@ -2289,4 +2357,36 @@ test("Apple Pay request update error survives late Cash App Cancel", async (t) =
   await expect(error.first()).toBeVisible();
   await page.evaluate(() => window.oldCash({ status: "Cancel" }));
   await expect(page.getByRole("dialog")).toContainText("Apple Pay total update failed");
+});
+
+test("a new Cash App approval ignores an authorized token from the retired approval", async (t) => {
+  const f = await checkoutOwnershipFixture(t);
+  const { page } = f;
+  const cash = page.getByRole("radio", { name: "Cash App Pay", exact: true });
+  await cash.click();
+  await page.waitForFunction(() => typeof window.beginCash === "function");
+  assert.equal(await page.evaluate(() => window.beginCash()), true);
+  await page.evaluate(() => {
+    window.deliverOldCash = window.deliverCash;
+  });
+  await page.getByRole("radio", { name: "Credit card", exact: true }).click();
+  await cash.click();
+  assert.equal(await page.evaluate(() => window.beginCash()), true);
+  const releasePay = f.deferPay();
+  try {
+    await page.evaluate(() => {
+      window.deliverOldCash({ status: "OK", token: "retired-cash" });
+      window.completeCash();
+    });
+    await expect.poll(() => f.requests.pays).toBe(1);
+    assert.equal(
+      f.requests.usedCashSource,
+      true,
+      "only the new approval can supply a token",
+    );
+    assert.equal(f.requests.prepares.length, 1);
+    assert.equal(f.requests.permits, 1);
+  } finally {
+    releasePay();
+  }
 });
