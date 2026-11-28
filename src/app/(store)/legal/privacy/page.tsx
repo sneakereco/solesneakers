@@ -15,7 +15,7 @@ export default function PrivacyPage() {
     <PolicyPage title="Privacy Policy">
       <div className="prose prose-invert max-w-none">
         <div className="space-y-6 text-zinc-400">
-          <p className="text-sm">Last updated: September 18, 2026</p>
+          <p className="text-sm">Last updated: November 27, 2026</p>
 
           <p>
             This Privacy Policy describes how {LEGAL_BUSINESS_NAME}, doing business as{" "}
@@ -96,6 +96,40 @@ export default function PrivacyPage() {
               Cloudflare security services may process technical signals to distinguish
               people from automated abuse.
             </p>
+            <h3
+              id="shopping-analytics"
+              className="mb-2 mt-4 scroll-mt-24 text-lg font-semibold text-white"
+            >
+              Optional Shopping Analytics
+            </h3>
+            <p>
+              If you choose Allow analytics, we use PostHog to understand how shoppers
+              find our store, browse products, and move through the cart and checkout.
+              These optional analytics stay off until you allow them. Declining does not
+              prevent you from browsing, signing in, or placing an order.
+            </p>
+            <p className="mt-2">
+              Activity can include public pages and products viewed, selected variants,
+              cart additions, checkout starts, search result counts and matched catalog
+              items, device category, referring website, and campaign tags. We use browser
+              storage for analytics identifiers and a cookie to remember your choice. If
+              you allow analytics, we can link a shopping session to a completed purchase.
+              When you’re signed in, a coded identifier can also link your visits to your
+              account. This activity is not fully anonymous.
+            </p>
+            <p className="mt-2">
+              Our optional activity events do not include your name, email, address,
+              payment card details, or text typed into forms or search boxes. We do not
+              enable session recordings or automatic capture of every click, and we
+              configure PostHog to discard client IP addresses and disable location
+              enrichment.
+            </p>
+            <p className="mt-2">
+              Use Privacy choices at the bottom of the page and select Decline to stop
+              future optional analytics on that device and clear its analytics
+              identifiers. This does not automatically delete activity already received.
+              Necessary order processing and sales reporting continue when you decline.
+            </p>
           </section>
 
           <section>
@@ -110,6 +144,7 @@ export default function PrivacyPage() {
               </li>
               <li>Supabase, Google, and other account-service providers</li>
               <li>Vercel, Cloudflare, email, security, and IT service providers</li>
+              <li>PostHog to provide shopping analytics and sales reporting</li>
               <li>
                 legal or regulatory authorities when required by law or necessary to
                 protect rights, safety, and the integrity of the Services
@@ -129,6 +164,13 @@ export default function PrivacyPage() {
               fulfillment, taxes, accounting, disputes, fraud prevention, and other legal
               obligations. Security and support records are kept only as long as
               reasonably necessary for those purposes.
+            </p>
+            <p className="mt-2">
+              Optional shopping events currently have no fixed automatic deletion period
+              in PostHog. You can request deletion of personal analytics information by
+              contacting {SUPPORT_EMAIL}. Withdrawing analytics consent stops future
+              optional collection on that device; it does not remove order records we need
+              for fulfillment, accounting, or legal obligations.
             </p>
           </section>
 
@@ -155,6 +197,11 @@ export default function PrivacyPage() {
             <h2 className="mb-4 mt-8 text-2xl font-bold text-white">
               8) Your Choices and Rights
             </h2>
+            <p className="mb-2">
+              You can allow or decline optional shopping analytics through Privacy choices
+              at the bottom of the page. Your choice applies to that browser; make the
+              same choice on other browsers and devices you use.
+            </p>
             <p>
               Depending on your location, you may have rights to access, correct, delete,
               or obtain a copy of your personal information. To make a privacy request,

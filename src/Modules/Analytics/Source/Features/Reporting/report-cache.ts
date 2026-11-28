@@ -61,6 +61,10 @@ export function reportCacheKey(request: ReportRequest, dataset: DatasetScope) {
 }
 const flights = new Map<string, Promise<Envelope>>();
 const sleep = (ms: number) => new Promise<void>((resolve) => setTimeout(resolve, ms));
+// The report store caps each Redis operation at one second.
+const REPORT_STORE_TIMEOUT_MS = 1000;
+// Releasing the last permit and finishing the cache owner run in sequence.
+const REPORT_SETTLEMENT_RESERVE_MS = 2 * REPORT_STORE_TIMEOUT_MS + 250;
 const temporary = () =>
   new PostHogQueryError({ status: "retryable", reason: "provider-unavailable" });
 const deadlineError = () =>
@@ -145,6 +149,10 @@ function execution(
   queryDeadline = deadline,
 ) {
   const store = deps.store!;
+  // Fit admission before the report's query deadline so it cannot consume
+  // the time reserved for mapping the result and settling Redis.
+  const admissionDeadline =
+    queryDeadline < deadline ? queryDeadline - REPORT_STORE_TIMEOUT_MS : queryDeadline;
   const localProject = reserveReportProject(project, store, deadline);
   const lanes = [Promise.resolve(), Promise.resolve()];
   let calls = 0,
@@ -160,18 +168,19 @@ function execution(
       const id = randomUUID();
       let acquired = false;
       try {
-        for (let attempt = 0; attempt < 8; attempt++) {
-          if (stopped || performance.now() >= queryDeadline) throw deadlineError();
+        for (let delay = 150; ; delay = Math.min(delay * 2, 500)) {
+          if (stopped || performance.now() >= admissionDeadline) throw deadlineError();
           if (await localProject.blocked()) throw temporary();
+          if (stopped || performance.now() >= admissionDeadline) throw deadlineError();
           const admission = await store.admit(project, id);
           if (admission === "ok") {
             acquired = true;
             break;
           }
           if (admission !== "busy") throw temporary();
-          await sleep(150);
+          const remaining = admissionDeadline - performance.now();
+          if (remaining > 0) await sleep(Math.min(delay, remaining));
         }
-        if (!acquired) throw temporary();
         if (localProject.isBlocked()) throw temporary();
         const remaining = Math.floor(queryDeadline - performance.now());
         if (stopped || remaining < 1) throw deadlineError();
@@ -270,8 +279,14 @@ export async function loadAnalyticsReport(
     if (prior && isFresh(prior)) return prior;
     const owner = randomUUID();
     if (!(await store.lock(key, owner))) {
-      for (let i = 0; i < 5 && performance.now() + 250 < deadline; i++) {
-        await sleep(250);
+      // Keep the short grace period when a stale result can already be served.
+      const waitUntil = prior ? Math.min(deadline, performance.now() + 1250) : deadline;
+      const maxDelay = prior ? 250 : 1000;
+      for (let delay = 250; ; delay = Math.min(delay * 2, maxDelay)) {
+        const remaining = waitUntil - performance.now();
+        if (remaining <= 0) break;
+        await sleep(Math.min(delay, remaining));
+        if (performance.now() >= deadline) break;
         prior = await cached();
         if (prior && isFresh(prior)) return prior;
       }
@@ -281,9 +296,12 @@ export async function loadAnalyticsReport(
     try {
       prior = await cached();
       if (prior && isFresh(prior)) return prior;
-      // Let timed-out sections settle, release permits, and map coverage before
-      // the outer deadline resolves the whole report as unavailable.
-      const worker = execution(deps, project, deadline, deadline - 1000);
+      const worker = execution(
+        deps,
+        project,
+        deadline,
+        deadline - REPORT_SETTLEMENT_RESERVE_MS,
+      );
       let transientUnavailable = false;
       let report: Envelope;
       try {

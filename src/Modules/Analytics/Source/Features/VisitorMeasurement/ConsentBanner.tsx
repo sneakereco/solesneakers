@@ -1,4 +1,5 @@
 "use client";
+import Link from "next/link";
 import { useState } from "react";
 import type { ConsentState } from "./contract";
 export function ConsentBanner({
@@ -40,7 +41,16 @@ export function ConsentBanner({
           ? "Analytics are off on this device. We’ll retry saving your choice when you’re online."
           : !canAccept && state.choice !== "accepted"
             ? "Optional shopping analytics are off in this browser."
-            : "Can we remember your visits to understand how shoppers find products and use the store? If you sign in, we can connect those visits to your account. You can change your choice here anytime."}
+            : "Can we use PostHog to remember your visits, shopping activity, and how you found the store? When you’re signed in, we can connect those visits to your account. Declining won’t affect shopping. You can change your choice here anytime."}
+      </p>
+      <p className="mt-2 text-sm">
+        <Link
+          href="/privacy#shopping-analytics"
+          prefetch={false}
+          className="rounded-sm underline underline-offset-2 focus-visible:outline focus-visible:outline-2 focus-visible:outline-offset-2"
+        >
+          How shopping analytics use your information
+        </Link>
       </p>
       {error && (
         <p role="status" className="mt-2 text-sm">
