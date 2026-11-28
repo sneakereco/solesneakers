@@ -126,6 +126,8 @@ test("retains every nonduplicate validation command and the existing scope rules
     "tests/operations/admin-analytics-warehouse-bindings.test.mjs",
     "tests/operations/admin-analytics-runtime-sync.test.mjs",
     "tests/operations/admin-analytics-observers.test.mjs",
+    "tests/operations/admin-analytics-observer-deployment.test.mjs",
+    "tests/operations/admin-analytics-provision.test.mjs",
     "tests/operations/admin-analytics-observer-clock.test.mjs",
     "tests/operations/checkout-validation-scope.test.mjs",
     "tests/fixtures/checkout-gate.test.mjs",

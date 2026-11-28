@@ -13,7 +13,7 @@ const nativeTimes = [0, 180_000];
 const warehouseIntervalMs = 10_000;
 const workerLimitMs = 35_000;
 const exitGraceMs = 1_000;
-const minWorkerMs = 5_000;
+const workerSlotMs = workerLimitMs + exitGraceMs;
 const outputLimitBytes = 8 * 1024;
 const defaultClock = {
   now: () => performance.now(),
@@ -87,7 +87,7 @@ function validatedAttestation(env, environment) {
   }
 }
 
-function runWorker({ environment, source, attestationPath, env, timeout, clock, spawn }) {
+function runWorker({ environment, source, attestationPath, env, clock, spawn }) {
   return new Promise((resolveWorker) => {
     const args = [worker, "--environment", environment, "--source", source];
     if (source === "native") args.push("--attestation", attestationPath);
@@ -141,7 +141,7 @@ function runWorker({ environment, source, attestationPath, env, timeout, clock, 
       else if (code === OBSERVATION_PENDING_EXIT_CODE) finish("pending");
       else finish("worker-failed");
     });
-    workerTimer = clock.setTimer(() => stop("timeout"), timeout);
+    workerTimer = clock.setTimer(() => stop("timeout"), workerLimitMs);
   });
 }
 
@@ -181,18 +181,22 @@ export async function runObservers({
         .map((key) => [key, env[key]]),
     );
     const start = clock.now();
-    const deadline = start + windowMs;
+    const lastWorkerStart = start + windowMs - workerSlotMs;
     const native = { attempted: 0, failed: 0, pending: 0 };
     const warehouse = { attempted: 0, failed: 0, pending: 0 };
     const failures = {};
     let nextWarehouse = start;
-    while (clock.now() <= deadline - minWorkerMs) {
+    while (true) {
+      const beforeSleep = clock.now();
       const nextNative = start + (nativeTimes[native.attempted] ?? Infinity);
-      const next = Math.min(nextNative, nextWarehouse);
-      if (next > deadline - minWorkerMs) break;
-      if (next > clock.now()) await clock.sleep(next - clock.now());
+      const lastWarehouseStart = nextNative - workerSlotMs;
+      const warehouseStart = Math.max(beforeSleep, nextWarehouse);
+      const next = warehouseStart <= lastWarehouseStart ? warehouseStart : nextNative;
+      if (next > lastWorkerStart) break;
+      if (next > beforeSleep) await clock.sleep(next - beforeSleep);
       const now = clock.now();
-      if (now > deadline - minWorkerMs) break;
+      if (now > lastWorkerStart) break;
+      if (now < next || (now > lastWarehouseStart && now < nextNative)) continue;
       const source = now >= nextNative ? "native" : "warehouse";
       const counts = source === "native" ? native : warehouse;
       if (source === "warehouse") nextWarehouse = now + warehouseIntervalMs;
@@ -204,7 +208,6 @@ export async function runObservers({
         env: childEnv,
         clock,
         spawn,
-        timeout: Math.min(workerLimitMs, deadline - now - exitGraceMs),
       });
       if (outcome === "pending") counts.pending++;
       else if (outcome) {

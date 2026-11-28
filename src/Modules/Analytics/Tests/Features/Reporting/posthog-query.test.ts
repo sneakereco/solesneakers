@@ -28,46 +28,60 @@ const payload = {
   hasMore: true,
 };
 
-it("forces a fresh versioned SQL endpoint read with explicit pagination", async () => {
-  const fetch = mockFetch().mockResolvedValue(
-    Response.json({ ...payload, debug: privateQueryKey }),
-  );
-  const config = readServerAnalyticsConfig({
-    ...validEnv,
-    NEXT_PUBLIC_POSTHOG_HOST: "https://eu.i.posthog.com",
-    POSTHOG_API_HOST: "https://eu.posthog.com",
-  });
+it.each([
+  ["sole_analytics_sales", 1],
+  ["sole_analytics_products", 2],
+] as const)(
+  "forces a fresh %s v%i SQL endpoint read with explicit pagination",
+  async (endpoint, version) => {
+    const fetch = mockFetch().mockResolvedValue(
+      Response.json({
+        ...payload,
+        name: endpoint,
+        endpoint_version: version,
+        debug: privateQueryKey,
+      }),
+    );
+    const config = readServerAnalyticsConfig({
+      ...validEnv,
+      NEXT_PUBLIC_POSTHOG_HOST: "https://eu.i.posthog.com",
+      POSTHOG_API_HOST: "https://eu.posthog.com",
+    });
 
-  await expect(executePostHogQuery(query, { config, fetch, now })).resolves.toEqual({
-    columns: ["confirmed_orders"],
-    results: [[4]],
-    hasMore: true,
-  });
-  const [[url, request]] = fetch.mock.calls;
-  expect(url).toBe(
-    "https://eu.posthog.com/api/projects/741/endpoints/sole_analytics_sales/run/",
-  );
-  expect(request).toMatchObject({
-    method: "POST",
-    redirect: "manual",
-    cache: "no-store",
-  });
-  expect(new Headers(request?.headers).get("authorization")).toBe(
-    `Bearer ${privateQueryKey}`,
-  );
-  expect(JSON.parse(String(request?.body))).toEqual({
-    version: 1,
-    variables: { dataset_id: "sole-staging-v2", status: "paid" },
-    limit: 1,
-    offset: 2,
-    refresh: "force",
-  });
-});
+    await expect(
+      executePostHogQuery({ ...query, endpoint, version }, { config, fetch, now }),
+    ).resolves.toEqual({
+      columns: ["confirmed_orders"],
+      results: [[4]],
+      hasMore: true,
+    });
+    const [[url, request]] = fetch.mock.calls;
+    expect(url).toBe(
+      `https://eu.posthog.com/api/projects/741/endpoints/${endpoint}/run/`,
+    );
+    expect(request).toMatchObject({
+      method: "POST",
+      redirect: "manual",
+      cache: "no-store",
+    });
+    expect(new Headers(request?.headers).get("authorization")).toBe(
+      `Bearer ${privateQueryKey}`,
+    );
+    expect(JSON.parse(String(request?.body))).toEqual({
+      version,
+      variables: { dataset_id: "sole-staging-v2", status: "paid" },
+      limit: 1,
+      offset: 2,
+      refresh: "force",
+    });
+  },
+);
 
 it.each([
   ["unregistered endpoint", { endpoint: "../query" }],
   ["inherited name", { endpoint: "constructor" }],
   ["unregistered version", { version: 2 }],
+  ["superseded products version", { endpoint: "sole_analytics_products", version: 1 }],
   ["missing version", { version: undefined }],
   ["zero limit", { limit: 0 }],
   ["out of range limit", { limit: 2001 }],

@@ -83,7 +83,7 @@ test("closed server configuration binds the active dataset and external transpor
       return Response.json({
         ...result,
         name: endpoint,
-        endpoint_version: 1,
+        endpoint_version: endpoint === "sole_analytics_products" ? 2 : 1,
         execution_id: "bdbba353-57b6-4ca3-91b5-79c4dada3767",
         debug: identitySecret,
         hasMore: truncated && endpoint === "sole_analytics_products",
@@ -103,6 +103,7 @@ test("closed server configuration binds the active dataset and external transpor
     expect(observed).toContainEqual(
       expect.objectContaining({
         endpoint: "sole_analytics_products",
+        version: 2,
         limit: 25000,
         offset: 0,
       }),

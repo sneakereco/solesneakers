@@ -33,7 +33,12 @@ it("uses view-specific filters and ignores unverified traffic when ranking finan
     sessions: 2,
     confirmedOrders: 1,
   });
-  expect(r.data?.purchaseSession.sources.totalCount).toBe(0);
+  expect(r.data?.purchaseSession).toMatchObject({
+    sources: { rows: [], totalCount: 0 },
+    channels: { rows: [], totalCount: 0 },
+    campaigns: { rows: [], totalCount: 0 },
+    placements: { rows: [], totalCount: 0 },
+  });
   expect(r.data?.discovery.attribution).toEqual({
     eligibleOrders: 2,
     attributedOrders: 1,
@@ -78,10 +83,14 @@ it("keeps discovery and the purchase session distinct, including unattributed gu
     { ...request("acquisition", "page=100&pageSize=1"), report: "acquisition" },
     f.deps,
   );
-  expect(paged.data?.purchaseSession.sources).toMatchObject({
-    rows: [],
-    totalCount: r.data?.purchaseSession.sources.totalCount,
-  });
+  for (const view of ["discovery", "purchaseSession"] as const) {
+    expect(paged.data?.[view]).toMatchObject({
+      sources: { rows: [], totalCount: 2 },
+      channels: { rows: [], totalCount: 2 },
+      campaigns: { rows: [], totalCount: 2 },
+      placements: { rows: [], totalCount: 2 },
+    });
+  }
 });
 it("review: counts a legitimate purchasing session despite a later out-of-session purchase", async () => {
   const f = makeAudienceFixture();
