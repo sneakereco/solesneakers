@@ -4,11 +4,15 @@ name: Pull Request CI
   pull_request:
     branches:
       - main
+  merge_group:
+    types: [checks_requested]
+    branches:
+      - main
   workflow_dispatch:
 permissions:
   contents: read
 concurrency:
-  group: ci-${{ github.event.pull_request.number || github.ref }}
+  group: ci-${{ github.event_name }}-${{ github.event.pull_request.number || github.ref }}
   cancel-in-progress: true
 
 env:
@@ -107,12 +111,17 @@ jobs:
           tests/operations/admin-analytics-observer-clock.test.mjs tests/operations/checkout-validation-scope.test.mjs
           tests/fixtures/checkout-gate.test.mjs tests/operations/ci-parallel-validation.test.mjs
           tests/operations/checkout-browser-runner.test.mjs
+          tests/operations/checkout-database-runner.test.mjs
           tests/operations/analytics-runtime-verification.test.mjs
       - name: Build without deployment credentials
         run: '"$RUNNER_TEMP/checkout-check" fixture-build ./node_modules/.bin/next build'
 
   database:
     needs: scope
+    strategy:
+      fail-fast: false
+      matrix:
+        shard: [1, 2, 3, 4]
     runs-on: ubuntu-24.04
     timeout-minutes: 90
     steps:
@@ -134,12 +143,17 @@ jobs:
         if: needs.scope.outputs.database == 'true'
       - name: Isolated checkout database gates
         if: needs.scope.outputs.database == 'true'
-        run: npm run test:checkout:db
+        run: npm run test:checkout:db -- --shard=${{ matrix.shard }}/4
       - name: Rehearse hosted bootstrap and checkout migration ordering
+        if: matrix.shard == 1
         run: node --test --test-concurrency=1 tests/database/checkout-migration-order.test.mjs
 
   browser:
     needs: scope
+    strategy:
+      fail-fast: false
+      matrix:
+        shard: [1, 2, 3, 4]
     runs-on: ubuntu-24.04
     timeout-minutes: 90
     steps:
@@ -174,10 +188,12 @@ jobs:
           chmod 700 "$RUNNER_TEMP/checkout-check"
       - name: Checkout Chromium gates
         if: needs.scope.outputs.chromium == 'true'
-        run: npm run test:checkout:browser
+        run: npm run test:checkout:browser -- --shard=${{ matrix.shard }}/4
       - name: Measurement browser suites
+        if: matrix.shard == 2
         run: '"$RUNNER_TEMP/checkout-check" measurement npm run test:measurement:browser'
       - name: Analytics browser suites
+        if: matrix.shard == 2
         run: npm run test:analytics:browser
 
   validate:

@@ -7,10 +7,6 @@ const runnerUrl = new URL(
   import.meta.url,
 );
 async function runner() {
-  assert.match(
-    await readFile(runnerUrl, "utf8"),
-    /export async function runCheckoutDatabaseChecks/,
-  );
   return (await import(runnerUrl.href)).runCheckoutDatabaseChecks;
 }
 async function collect(flags = []) {

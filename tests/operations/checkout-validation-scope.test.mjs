@@ -119,4 +119,5 @@ test("uses the whole PR diff and includes the old path of renamed files", (t) =>
   assert.equal(run("1".repeat(40), report), full);
   assert.equal(run("HEAD", report), full);
   assert.equal(run(base, report, "workflow_dispatch"), full);
+  assert.equal(run(base, report, "merge_group"), full);
 });
