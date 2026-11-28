@@ -69,6 +69,7 @@ function unavailablePurchase(signal?: AbortSignal): { status: "stale" | "unavail
 export const unavailablePurchases: CartPurchaseActions = {
   captureForCheckout: (_request, signal) => Promise.resolve(unavailablePurchase(signal)),
   bindPreparedOrder: () => Promise.resolve(false),
+  bindRecoveredOrder: () => Promise.resolve(false),
   consumeConfirmedPurchase: (_order, _items, signal) =>
     Promise.resolve(unavailablePurchase(signal)),
 };
@@ -335,7 +336,14 @@ export class BasketStorage {
     this.listener?.({
       review: {
         ...unavailableReview,
-        recheckAvailability: () => this.validate(true),
+        recheckAvailability: () => {
+          const scope = this.validation.current;
+          const checked = this.validate(true);
+          // A forced check can supersede the registration's first request.
+          // Retry qualification must await the latest scoped evidence.
+          if (scope && this.validation.current === scope) scope.checked = checked;
+          return checked;
+        },
         scopeValidationToOrder: (order) => {
           if (!eligible()()) return () => {};
           const registration = Symbol();
@@ -384,6 +392,24 @@ export class BasketStorage {
         bindPreparedOrder: async (captureId, orderId, signal, requireOriginalUnits) =>
           (await this.atomic(
             () => this.bind(captureId, orderId, eligible(signal), requireOriginalUnits),
+            generation,
+            signal,
+          )) ?? false,
+        bindRecoveredOrder: async (attemptKey, orderId, signal, isCurrentAttempt) =>
+          (await this.atomic(
+            () => {
+              const allowed = eligible(signal, isCurrentAttempt);
+              if (!allowed() || !validId(attemptKey)) return false;
+              const origin = contextOrigin();
+              if (!origin) return false;
+              const proof = this.proofs(origin, allowed)?.records.find(
+                (record) =>
+                  record.attemptKey === attemptKey &&
+                  record.origin === origin &&
+                  record.stage === "pending",
+              );
+              return !!proof && this.bind(proof.captureId, orderId, allowed);
+            },
             generation,
             signal,
           )) ?? false,

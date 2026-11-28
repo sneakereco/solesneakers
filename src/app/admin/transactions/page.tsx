@@ -12,6 +12,7 @@ import { AdminSearchField } from "@/components/admin/AdminSearchField";
 import { getOrderNetProfitDollars, shouldShowOrderProfit } from "@/lib/orders/metrics";
 
 import { paymentMethodLabel } from "@/lib/orders/payment-method";
+import { checkoutStatusLabel } from "@/lib/orders/checkout-status-label";
 
 type TabKey = "all" | "succeeded" | "failed" | "refunded" | "incomplete" | "blocked";
 
@@ -30,7 +31,7 @@ const TRANSACTION_TABS: Array<{
     label: "Refunded",
     statuses: ["refunded", "partially_refunded", "refund_pending", "refund_failed"],
   },
-  { key: "incomplete", label: "Incomplete", incomplete: true },
+  { key: "incomplete", label: "Expired · awaiting verification", incomplete: true },
   { key: "blocked", label: "Blocked", statuses: ["blocked", "review"] },
 ];
 
@@ -83,6 +84,7 @@ type TransactionOrder = {
   payment_transaction_id?: string | null;
   id: string;
   status?: string | null;
+  expires_at?: string | null;
   total?: number | null;
   subtotal?: number | null;
   refund_amount?: number | null;
@@ -304,7 +306,7 @@ export default function TransactionsPage() {
       <AdminPageHeader
         eyebrow="Commerce"
         title="Transactions"
-        description="Review payment activity, refunds, fulfillment, and order profitability."
+        description="An expired payment window can still be awaiting payment verification. Checkout expired means automatic closure has completed."
       />
 
       {/* Tabs */}
@@ -388,6 +390,11 @@ export default function TransactionsPage() {
             <tbody>
               {filteredOrders.map((order) => {
                 const statusMeta = getStatusMeta(order.status);
+                const checkoutLabel = checkoutStatusLabel(
+                  order.status,
+                  order.failure_reason,
+                  order.expires_at,
+                );
                 const createdAt = order.created_at ? new Date(order.created_at) : null;
                 const customerName = getCustomerName(order);
                 const paymentDisplay = getPaymentDisplay(order);
@@ -432,7 +439,9 @@ export default function TransactionsPage() {
                       #{order.id.slice(0, 8)}
                     </td>
                     <td className="hidden p-3 sm:p-4 md:table-cell">
-                      <span className={statusMeta.className}>{statusMeta.label}</span>
+                      <span className={statusMeta.className}>
+                        {checkoutLabel ?? statusMeta.label}
+                      </span>
                     </td>
                     <td className="hidden p-3 text-gray-400 sm:p-4 md:table-cell">
                       {customerName}

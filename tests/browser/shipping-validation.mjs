@@ -39,7 +39,7 @@ const bundle = await build({
       paymentRequest: (input) => ({ input, listeners: {}, addEventListener(name, callback) { this.listeners[name] = callback; }, update(value) { Object.assign(this.input, value); return true; } }),
       applePay: async (request) => ({ tokenize: async () => { window.test.walletTokenizations = (window.test.walletTokenizations || 0) + 1; window.test.walletQuote = await request.listeners.shippingcontactchanged({countryCode:'US',state:original.state,postalCode:original.postalCode}); return ({ status: 'OK', token: 'test', details: { billing: { givenName: 'Test', familyName: 'Buyer', email: 'buyer@example.com', addressLines: ['2 Billing St'], city: 'Washington', state: 'DC', postalCode: '20001', countryCode: 'US' }, shipping: { contact: { givenName: 'Test', familyName: 'Buyer', phone: window.test.omitShippingPhone ? undefined : '2025550100', addressLines: [original.line1], city: original.city, state: original.state, postalCode: original.postalCode, countryCode: 'US' } } } }); } }),
       afterpayClearpay: async (request) => ({ attach: async () => {}, tokenize: async () => { window.test.afterpayRequest = request.input; return { status: 'OK', token: 'afterpay-test', details: { shipping: { contact: window.test.mismatchedAfterpay ? {...request.input.shippingContact,postalCode:"90210"} : request.input.shippingContact } } }; } }),
-      cashAppPay: async (request) => { if(window.test.holdReapproval && request.input.total.amount==="111.00") await new Promise(resolve=>window.test.releaseReapproval=resolve);let listener; return { attach: async (selector) => { const button = document.createElement('button'); button.type = 'button'; button.textContent = 'Cash test'; button.onclick = () => { window.test.cashTotal = request.input.total.amount; listener({ detail: { tokenResult: { status: 'OK', token: 'cash-' + request.input.total.amount } } }); }; document.querySelector(selector).append(button); }, addEventListener(event, callback) { listener = callback; }, destroy: async () => true }; },
+      cashAppPay: async (request) => { if(window.test.holdReapproval && request.input.total.amount==="111.00") await new Promise(resolve=>window.test.releaseReapproval=resolve);let listener; return { attach: async (selector) => { const button = document.createElement('button'); button.type = 'button'; button.textContent = 'Cash test'; button.onclick = () => { window.test.cashTotal = request.input.total.amount; listener({ detail: { tokenResult: { status: 'OK', token: 'cash-' + request.input.total.amount } } }); }; document.querySelector(selector).append(button); }, addEventListener(event, callback) { listener = callback; if(request.input.total.amount==="111.00")window.test.updatedCashCallback=callback; }, destroy: async () => true }; },
     }) };
     createRoot(document.getElementById('root')).render(<CheckoutPaymentProvider><CheckoutClient initialData={{ ownerId:'fixture-buyer',isGuest: false, customer: { email: 'buyer@example.com', address: original }, paymentConfig: { applicationId: 'test', locationId: 'test', environment: 'sandbox' } }} /></CheckoutPaymentProvider>);
   `,
@@ -131,15 +131,15 @@ try {
         },
       });
     }
-    if (path === "/api/checkout/prepare") {
+    if (path === "/api/checkout/review") {
       const body = route.request().postDataJSON();
-      prepares.push(body);
+
       if (body.paymentMethod === "applePay") {
         await new Promise((resolve) => {
           releasePrepare = resolve;
         });
         return route.fulfill({
-          json: { orderId: "10000000-0000-4000-8000-000000000001", totals },
+          json: { reviewed: true, totals },
         });
       }
       if (
@@ -147,7 +147,7 @@ try {
         body.shippingConfirmation === "entered-confirmation"
       ) {
         return route.fulfill({
-          json: { orderId: "10000000-0000-4000-8000-000000000001", totals },
+          json: { reviewed: true, totals },
         });
       }
       if (holdAddressValidation) {
@@ -190,12 +190,37 @@ try {
         });
       return route.fulfill({
         json: {
-          orderId: "10000000-0000-4000-8000-000000000001",
+          reviewed: true,
           totals: {
             ...totals,
             taxCents: changeTotal ? 100 : 0,
             totalCents: changeTotal ? 11100 : 11000,
           },
+        },
+      });
+    }
+    if (path === "/api/checkout/submit") {
+      const submitted = route.request().postDataJSON();
+      const body = submitted.preparation;
+      prepares.push(body);
+      if (body.paymentMethod === "applePay")
+        await new Promise((resolve) => (releasePrepare = resolve));
+      payCalls++;
+      paymentBody = { sourceId: submitted.sourceId };
+      await new Promise((resolve) => (releasePay = resolve));
+      return route.fulfill({
+        json: {
+          orderId: "10000000-0000-4000-8000-000000000001",
+          totals: {
+            ...totals,
+            taxCents:
+              changeTotal && body.shippingAddress?.postalCode === "20500-0005" ? 100 : 0,
+            totalCents:
+              changeTotal && body.shippingAddress?.postalCode === "20500-0005"
+                ? 11100
+                : 11000,
+          },
+          paymentResult: { status: 202, body: { status: "UNKNOWN" } },
         },
       });
     }
@@ -220,6 +245,7 @@ try {
     releasePay = undefined;
     releasePrepare = undefined;
     await page.goto("https://checkout.test/checkout");
+    await page.evaluate(() => sessionStorage.clear());
     await page.addStyleTag({ content: styles.css });
     await page.addScriptTag({ content: bundle.outputFiles[0].text });
     await page.getByRole("button", { name: "Pay $110.00 now" }).waitFor();
@@ -265,9 +291,10 @@ try {
   assert.equal(await page.evaluate(() => window.test.tokenized), 0);
   await page.getByRole("button", { name: "Confirm $111.00 and continue" }).click();
   await page.waitForFunction(() => window.test.tokenized === 1);
+  await expect.poll(() => Boolean(releasePay)).toBe(true);
   assert.equal(
     await page.evaluate(() => window.test.validationOrder?.orderId),
-    "10000000-0000-4000-8000-000000000001",
+    undefined,
   );
   assert.equal(prepares.at(-1).shippingAddress.postalCode, "20500-0005");
   assert.equal(prepares.at(-1).billingAddress.postalCode, "20500-0005");
@@ -363,6 +390,23 @@ try {
   await expect(page.getByRole("dialog").getByRole("alert")).toContainText("Cash App");
   await page.evaluate(() => window.test.releaseReapproval());
   assert.equal(payCalls, 0);
+  // A fully attached updated-total approval is also bounded; its late token is retired.
+  await load();
+  await page.getByRole("radio", { name: "Cash App Pay", exact: true }).click();
+  await page.getByRole("button", { name: "Cash test" }).click();
+  await page.getByRole("button", { name: "Accept suggested address" }).click();
+  await page.getByRole("button", { name: "Confirm $111.00 and continue" }).click();
+  await page.getByRole("dialog").getByRole("button", { name: "Cash test" }).waitFor();
+  await page.clock.fastForward(301000);
+  await expect(page.getByRole("dialog").getByRole("alert")).toContainText(
+    "Cash App Pay approval timed out",
+  );
+  await page.evaluate(() =>
+    window.test.updatedCashCallback({
+      detail: { tokenResult: { status: "OK", token: "late-cash" } },
+    }),
+  );
+  assert.equal(payCalls, 0);
   // Wallet details remain private to this attempt while the processing overlay stays open.
   await load();
   await page.evaluate(() => {
@@ -388,7 +432,7 @@ try {
   );
   releasePrepare();
   await expect.poll(() => Boolean(releasePay)).toBe(true);
-  await page.getByRole("heading", { name: "Processing your payment" }).waitFor();
+  await page.getByRole("heading", { name: "Preparing your order" }).waitFor();
   assert.equal(prepares.at(-1).shippingAddress.line1, "9 Wallet Road");
   assert.equal(prepares.at(-1).billingAddress.postalCode, "20001");
   await page

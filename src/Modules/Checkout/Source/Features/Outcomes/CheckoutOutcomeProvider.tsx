@@ -13,6 +13,8 @@ import {
   closePreparedScope,
   readFinancialPair,
   observeStoredGuestAccess,
+  observePreparedCheckout,
+  finishCheckoutAttempt,
 } from "./client-session";
 import type { OrderStatusResponse } from "@/types/domain/checkout";
 
@@ -84,6 +86,7 @@ const Access = createContext<{
   current: () => boolean;
   scopes: ReturnType<typeof registrations>;
   closeScope: (id: string, token: string | null) => void;
+  retireUnpaidScope: (id: string, token: string | null, onCleared: () => void) => void;
   account: boolean;
 } | null>(null);
 export function useCheckoutRegistration() {
@@ -132,6 +135,18 @@ export function CheckoutOutcomeProvider({
       account,
       current: observation,
       scopes,
+      retireUnpaidScope: (id: string, token: string | null, onCleared: () => void) => {
+        const prepared = observePreparedCheckout(ownerId);
+        if (
+          !observation() ||
+          prepared?.scope.orderId !== id ||
+          (prepared.scope.guestAccessToken ?? null) !== token ||
+          !prepared.current()
+        )
+          return;
+        finishCheckoutAttempt(id, prepared.key, undefined, onCleared);
+        scopes.release(id, token);
+      },
       closeScope: (id: string, token: string | null) => {
         scopes.release(id, token);
         closePreparedScope(id, token, ownerId);

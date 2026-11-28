@@ -1120,6 +1120,7 @@ async function checkoutOwnershipFixture(
     stockZeroAfterPrepare = false,
     scopedAvailability = "available",
     rejectPrepare = false,
+    stockConflict = false,
   } = {},
 ) {
   const heldLine = {
@@ -1133,6 +1134,7 @@ async function checkoutOwnershipFixture(
   let holdQuote,
     fingerprint = "a".repeat(64);
   let holdSession,
+    holdReview,
     holdPrepare,
     holdScoped,
     holdPay,
@@ -1140,6 +1142,7 @@ async function checkoutOwnershipFixture(
   const requests = {
     validations: [],
     quotes: [],
+    reviews: [],
     prepares: [],
     permits: 0,
     pays: 0,
@@ -1161,13 +1164,21 @@ async function checkoutOwnershipFixture(
       const nativeFetch = window.fetch.bind(window);
       window.fetch = async (input, init) => {
         const response = await nativeFetch(input, init);
-        if (input === "/api/checkout/pay") window.payRead = true;
-        if (input === "/api/checkout/prepare") {
+        if (
+          [
+            "/api/checkout/review",
+            "/api/checkout/submit",
+            "/api/checkout/prepare",
+          ].includes(input)
+        ) {
           const json = response.json.bind(response);
           response.json = async () => {
             const body = await json();
-            if (input.endsWith("/prepare")) window.prepareRead = true;
-            else window.payRead = true;
+            if (input.endsWith("/review")) window.reviewRead = true;
+            else {
+              window.prepareRead = true;
+              window.payRead = true;
+            }
             return body;
           };
         }
@@ -1341,17 +1352,12 @@ async function checkoutOwnershipFixture(
           },
         });
       }
-      if (url.pathname === "/api/checkout/prepare") {
-        requests.prepares.push(route.request().postDataJSON());
-        if (holdPrepare) await holdPrepare;
-        if (rejectPrepare)
+      if (url.pathname === "/api/checkout/review") {
+        requests.reviews.push(route.request().postDataJSON());
+        if (holdReview) await holdReview;
+        if (reviewAddress && requests.reviews.length === 1)
           return route.fulfill({
-            status: 503,
-            json: { error: "Fixture preparation was unavailable" },
-          });
-        if (reviewAddress && requests.prepares.length === 1)
-          return route.fulfill({
-            status: 409,
+            status: 422,
             json: {
               code: "SHIPPING_ADDRESS_SUGGESTION",
               error: "Review address",
@@ -1363,7 +1369,62 @@ async function checkoutOwnershipFixture(
               shippingConfirmation: "fixture-confirmation",
             },
           });
-        return route.fulfill({ json: { orderId: preparedOrderId, totals } });
+        return route.fulfill({ json: { reviewed: true, totals } });
+      }
+      if (url.pathname === "/api/checkout/submit") {
+        const input = route.request().postDataJSON();
+        requests.prepares.push(input.preparation);
+        if (holdPrepare) await holdPrepare;
+        if (input.preparation.quoteFingerprint !== fingerprint)
+          return route.fulfill({
+            status: 409,
+            json: {
+              code: "CHECKOUT_TOTALS_CHANGED",
+              error: "Fixture totals changed",
+              totals: { ...totals, totalCents: 1200 },
+              quoteFingerprint: fingerprint,
+              paymentState: "not_submitted",
+            },
+          });
+        if (rejectPrepare)
+          return route.fulfill({
+            status: 503,
+            json: {
+              code: "PAYMENT_NOT_SUBMITTED",
+              paymentState: "not_submitted",
+              error: "Fixture preparation was unavailable",
+            },
+          });
+        if (stockConflict)
+          return route.fulfill({
+            status: 409,
+            json: {
+              code: "INSUFFICIENT_STOCK",
+              paymentState: "not_submitted",
+              error: "Fixture last unit was sold",
+            },
+          });
+        requests.permits++;
+        let paymentResult = {
+          status: 503,
+          body: { code: "PAYMENT_NOT_SUBMITTED", error: "Fixture payment paused" },
+        };
+        if (permitOk) {
+          requests.pays++;
+          requests.usedCashSource = input.sourceId === "synthetic-cash";
+          if (holdPay) await holdPay;
+          paymentResult = { status: 202, body: { status: "UNKNOWN" } };
+        }
+        return route.fulfill({
+          json: { orderId: preparedOrderId, totals, paymentResult },
+        });
+      }
+      if (url.pathname === "/api/checkout/prepare") {
+        assert.equal(route.request().postDataJSON().recoveryOnly, true);
+        assert.equal(requests.prepares.length, 1);
+        return route.fulfill({
+          json: { orderId: preparedOrderId, totals, code: "CHECKOUT_RECOVERY_REQUIRED" },
+        });
       }
       if (url.pathname === "/api/checkout/payment-permit") {
         requests.permits++;
@@ -1451,6 +1512,14 @@ async function checkoutOwnershipFixture(
       holdPrepare = new Promise((resolve) => (release = resolve));
       return () => {
         holdPrepare = undefined;
+        release();
+      };
+    },
+    deferReview() {
+      let release;
+      holdReview = new Promise((resolve) => (release = resolve));
+      return () => {
+        holdReview = undefined;
         release();
       };
     },
@@ -1542,12 +1611,11 @@ for (const id of ["b", null])
   );
 for (const stockZeroAfterPrepare of [false, true])
   test(
-    "same-owner visibility preserves active checkout method, billing and a single pending preparation; last unit allocated=" +
+    "same-owner visibility preserves billing and pending nonreserving review; last unit=" +
       stockZeroAfterPrepare,
     async (t) => {
-      const f = await checkoutOwnershipFixture(t, { stockZeroAfterPrepare }),
-        { page } = f;
-      await expect.poll(() => f.requests.quotes.length).toBe(1);
+      const f = await checkoutOwnershipFixture(t, { stockZeroAfterPrepare });
+      const { page } = f;
       await page.getByText("Use a different billing address", { exact: true }).click();
       for (const [name, value] of [
         ["Billing first name", "Bill"],
@@ -1559,13 +1627,13 @@ for (const stockZeroAfterPrepare of [false, true])
         await page.getByLabel(name, { exact: true }).fill(value);
       await page.getByLabel("Billing state", { exact: true }).selectOption("DE");
       await page.getByRole("radio", { name: "Afterpay", exact: true }).click();
-      const releasePrepare = f.deferPrepare(),
+      const releaseReview = f.deferReview(),
         releaseSession = f.deferSession();
       try {
         await page
           .getByRole("button", { name: "Continue with Afterpay", exact: true })
           .click();
-        await expect.poll(() => f.requests.prepares.length).toBe(1);
+        await expect.poll(() => f.requests.reviews.length).toBe(1);
         await page.evaluate(() => {
           window.originalBilling = document.querySelector(
             '[aria-label="Billing first name"]',
@@ -1575,59 +1643,37 @@ for (const stockZeroAfterPrepare of [false, true])
         await expect
           .poll(() => page.evaluate(() => window.testCart.access))
           .toBe("checking");
-        const stillMounted = await page.evaluate(
-          () => window.originalBilling.isConnected,
-        );
-        assert.equal(stillMounted, true);
-        await expect(
-          page.getByRole("radio", { name: "Afterpay", exact: true }),
-        ).toHaveCount(0);
-        releasePrepare();
+        assert.equal(await page.evaluate(() => window.originalBilling.isConnected), true);
+        releaseReview();
         await page.waitForFunction(
-          () => window.prepareRead && window.testSession.isLoading,
+          () => window.reviewRead && window.testSession.isLoading,
         );
-        assert.equal(f.requests.permits, 0);
+        assert.equal(f.requests.prepares.length, 0);
         releaseSession();
         await expect
-          .poll(() => f.requests.permits)
-          .toBe(1)
-          .catch(async (error) => {
-            console.error(
-              "Synthetic same-owner state",
-              (await page.locator("body").innerText()).slice(-1900),
-              {
-                quotes: f.requests.quotes.length,
-                prepares: f.requests.prepares.length,
-                validations: f.requests.validations.length,
-              },
-            );
-            throw error;
-          });
-        await expect(
-          page.getByText("Fixture payment paused", { exact: true }),
-        ).toBeVisible();
+          .poll(() => page.evaluate(() => window.afterpayCounts.tokenized))
+          .toBe(1);
+        await expect(page.getByRole("dialog")).toHaveCount(0);
+        assert.equal(f.requests.permits, 0);
+        assert.equal(f.requests.pays, 0);
         await page.evaluate(() => window.testCart.recheckAvailability());
-        assert.deepEqual(f.requests.validations.at(-1).order, {
-          orderId: preparedOrderId,
-        });
-        assert.ok(
+        assert.equal(f.requests.validations.at(-1).order, undefined);
+        assert.equal(
           await page.evaluate(
             () =>
               window.originalBilling.isConnected &&
               window.originalBilling.value === "Bill",
           ),
+          true,
         );
-        assert.equal(f.requests.prepares.length, 1);
         assert.equal(
           await page
-            .locator('[role="radio"]')
-            .filter({ hasText: "Afterpay" })
-            .first()
+            .getByRole("radio", { name: "Afterpay", exact: true })
             .getAttribute("aria-checked"),
           "true",
         );
       } finally {
-        releasePrepare();
+        releaseReview();
         releaseSession();
       }
     },
@@ -1635,205 +1681,105 @@ for (const stockZeroAfterPrepare of [false, true])
 
 for (const scenario of [
   "continue",
-  "replacement",
-  "no own hold",
-  "price change",
+  "stock lost",
+  "price changed",
   "failed prepare",
-  "late owner change",
-  "late replacement",
-  "late replacement without re-verification",
+  "owner changed",
+  "quantity changed",
+  "quantity changed without re-verification",
   "changed quote",
 ]) {
-  test("last-unit Afterpay during pending preparation: " + scenario, async (t) => {
-    const uninterrupted = scenario === "late replacement without re-verification";
+  test("last-unit Afterpay approval before final claim: " + scenario, async (t) => {
     const f = await checkoutOwnershipFixture(t, {
-      stockZeroAfterPrepare: scenario !== "changed quote",
-      scopedAvailability:
-        scenario === "no own hold"
-          ? "unavailable"
-          : scenario === "price change"
-            ? "price change"
-            : "available",
+      stockZeroAfterPrepare: true,
       rejectPrepare: scenario === "failed prepare",
+      stockConflict: scenario === "stock lost",
     });
     const { page } = f;
     await page.getByRole("radio", { name: "Afterpay", exact: true }).click();
-    await page.evaluate(
-      (late) => {
-        window.approveAfterpay = true;
-        window.holdAfterpayToken = late;
-      },
-      uninterrupted ||
-        scenario === "late owner change" ||
-        scenario === "late replacement",
-    );
-    const releasePrepare = f.deferPrepare(),
-      releasePay = f.deferPay(),
-      releaseScoped = f.deferScoped(),
-      releaseSession = f.deferSession();
+    await page.evaluate(() => {
+      window.approveAfterpay = true;
+      window.holdAfterpayToken = true;
+    });
+    const releasePay = f.deferPay();
     try {
       await page
         .getByRole("button", { name: "Continue with Afterpay", exact: true })
         .click();
-      await expect.poll(() => f.requests.prepares.length).toBe(1);
-      if (scenario === "replacement") {
-        assert.equal(
-          await page.evaluate(() =>
-            window.testCart
-              .setCartItems([...window.testCart.items])
-              .then((r) => r.status),
-          ),
-          "saved",
+      await page.waitForFunction(() => window.releaseAfterpayToken);
+      assert.equal(f.requests.reviews.length, 1);
+      assert.equal(f.requests.prepares.length, 0, "provider approval cannot claim stock");
+      assert.equal(f.requests.permits, 0);
+      if (scenario.includes("quantity changed") || scenario === "price changed")
+        await page.evaluate(
+          (price) =>
+            window.testCart.setCartItems(
+              window.testCart.items.map((row) => ({
+                ...row,
+                ...(price
+                  ? { priceCents: row.priceCents + 1 }
+                  : { quantity: row.quantity + 1 }),
+              })),
+            ),
+          scenario === "price changed",
         );
-      }
-      if (!uninterrupted) {
+      if (scenario === "owner changed") f.changeOwner("b");
+      if (scenario !== "quantity changed without re-verification") {
+        const releaseQuote = f.deferQuote(scenario === "changed quote"),
+          releaseSession = f.deferSession();
         await page.evaluate(() => document.dispatchEvent(new Event("visibilitychange")));
         await expect
           .poll(() => page.evaluate(() => window.testCart.access))
           .toBe("checking");
+        releaseSession();
+        releaseQuote();
+        await page.waitForFunction(() => window.testCart.isReady);
+        if (scenario === "owner changed") await visible(page, [checkoutLine("b")]);
       }
-      const releaseQuote = scenario === "changed quote" ? f.deferQuote(true) : undefined;
-      releaseQuote?.();
-      releasePrepare();
-      await page.waitForFunction(() => window.prepareRead);
-      releaseSession();
-      if (scenario === "failed prepare") {
-        await expect(page.getByText("Fixture preparation was unavailable")).toBeVisible();
-      } else if (scenario === "replacement") {
-        await expect
-          .poll(() => new URL(page.url()).pathname)
-          .toBe("/checkout/processing");
-        assert.equal(new URL(page.url()).searchParams.get("orderId"), preparedOrderId);
-        assert.equal(await page.evaluate(() => window.testCart.items[0]?.quantity), 1);
-        assert.equal(
-          f.requests.validations.some((v) => v.order?.orderId === preparedOrderId),
-          false,
-        );
-      } else {
-        await expect
-          .poll(() =>
-            f.requests.validations.some((v) => v.order?.orderId === preparedOrderId),
-          )
-          .toBe(true);
-        if (!uninterrupted) assert.equal(f.requests.permits, 0);
-        releaseScoped();
-        if (["no own hold", "price change"].includes(scenario)) {
-          await expect(
-            page.getByText(/Your cart changed. Review your items before paying/),
-          ).toBeVisible();
-        } else if (scenario === "changed quote") {
-          await expect(
-            page.getByText(/Checkout totals changed.*original order/),
-          ).toBeVisible();
-        } else if (uninterrupted || scenario === "late replacement") {
-          await page.waitForFunction(() => window.releaseAfterpayToken);
-          await expect
-            .poll(() => page.evaluate(() => window.testCart.items[0]?.orderScoped))
-            .toBe(true);
-          const shipping = {
-            addressLines: ["10 a St"],
-            city: "Wilmington",
-            state: "DE",
-            postalCode: "19801",
-            countryCode: "US",
-          };
-          await page.evaluate(() => {
-            window.preparedAfterpayShipping = window.afterpayShipping;
-          });
-          if (!uninterrupted)
-            assert.equal(
-              await page.evaluate(
-                (address) =>
-                  window.preparedAfterpayShipping(address).shippingOptions?.length,
-                shipping,
-              ),
-              1,
-            );
-          assert.equal(
-            await page.evaluate(() =>
-              window.testCart
-                .setCartItems([...window.testCart.items])
-                .then((r) => r.status),
-            ),
-            "saved",
-          );
-          const staleShipping = uninterrupted
-            ? undefined
-            : await page.evaluate(
-                (address) => window.preparedAfterpayShipping(address),
-                shipping,
-              );
-          await page.evaluate(() => window.releaseAfterpayToken());
-          const changed = page.getByText(
-            /Your cart changed. Review your items before paying/,
-          );
-          if (uninterrupted) {
-            await expect
-              .poll(async () => f.requests.pays || (await changed.isVisible()))
-              .not.toBe(false);
-            assert.equal(f.requests.pays, 0, "replacement units must never reach pay");
-          } else {
-            await expect(changed).toBeVisible();
-            assert.ok(
-              staleShipping?.error,
-              "the held callback must reject the replaced basket",
-            );
-            assert.equal(staleShipping.shippingOptions, undefined);
-          }
-        } else if (scenario === "late owner change") {
-          await page.waitForFunction(() => window.releaseAfterpayToken);
-          f.changeOwner("b");
-          await page.evaluate(() =>
-            document.dispatchEvent(new Event("visibilitychange")),
-          );
-          await visible(page, [checkoutLine("b")]);
-          await page.evaluate(() => window.releaseAfterpayToken());
-          await expect(
-            page.getByRole("button", { name: "Refresh checkout" }),
-          ).toBeVisible();
-        } else {
+      await page.evaluate(() => window.releaseAfterpayToken());
+      if (
+        ["continue", "stock lost", "failed prepare", "changed quote"].includes(scenario)
+      ) {
+        await expect.poll(() => f.requests.prepares.length).toBe(1);
+        if (scenario === "continue") {
           await expect.poll(() => f.requests.pays).toBe(1);
           assert.equal(f.requests.permits, 1);
-          assert.deepEqual(await page.evaluate(() => window.afterpayCounts), {
-            created: 1,
-            destroyed: 0,
-            tokenized: 1,
-          });
           releasePay();
           await expect
             .poll(() => new URL(page.url()).pathname)
             .toBe("/checkout/processing");
+          assert.equal(new URL(page.url()).searchParams.get("orderId"), preparedOrderId);
+        } else {
+          await expect(
+            page
+              .getByText(
+                scenario === "stock lost"
+                  ? "Fixture last unit was sold"
+                  : scenario === "changed quote"
+                    ? "Fixture totals changed"
+                    : "Fixture preparation was unavailable",
+                { exact: true },
+              )
+              .first(),
+          ).toBeVisible();
+          assert.equal(f.requests.pays, 0);
+          assert.equal(f.requests.permits, 0);
         }
-      }
-      if (scenario !== "continue") {
+      } else {
+        if (scenario === "owner changed")
+          await expect(
+            page.getByRole("button", { name: "Refresh checkout" }),
+          ).toBeVisible();
+        else
+          await expect(
+            page.getByRole("button", { name: "Return to checkout" }),
+          ).toBeVisible();
+        assert.equal(f.requests.prepares.length, 0);
+        assert.equal(f.requests.permits, 0);
         assert.equal(f.requests.pays, 0);
-        assert.equal(
-          f.requests.permits,
-          uninterrupted ||
-            scenario === "late owner change" ||
-            scenario === "late replacement"
-            ? 1
-            : 0,
-        );
-        assert.ok(
-          await page.evaluate(
-            () =>
-              window.afterpayShipping?.({
-                addressLines: ["10 a St"],
-                city: "Wilmington",
-                state: "DE",
-                postalCode: "19801",
-                countryCode: "US",
-              })?.error,
-          ),
-        );
       }
-      assert.equal(f.requests.prepares.length, 1);
     } finally {
-      releasePrepare();
       releasePay();
-      releaseScoped();
-      releaseSession();
     }
   });
 }
@@ -1878,19 +1824,17 @@ for (const kind of ["count", "length"])
       .toBe(existing.length - 1);
   });
 
-for (const stage of ["preparation", "dispatched payment"])
+for (const stage of ["review", "dispatched payment"])
   test("confirmed owner change retires old " + stage + " continuation", async (t) => {
     const f = await checkoutOwnershipFixture(t),
       { page } = f;
     await expect.poll(() => f.requests.quotes.length).toBe(1);
-    const release = stage === "preparation" ? f.deferPrepare() : f.deferPay();
+    const release = stage === "review" ? f.deferReview() : f.deferPay();
     try {
       await page.getByLabel("Name on card", { exact: true }).fill("Shopper A");
       await page.getByRole("button", { name: /Pay .* now/i }).click();
       await expect
-        .poll(() =>
-          stage === "preparation" ? f.requests.prepares.length : f.requests.pays,
-        )
+        .poll(() => (stage === "review" ? f.requests.reviews.length : f.requests.pays))
         .toBe(1);
       f.changeOwner("b");
       await page.evaluate(() => window.dispatchEvent(new Event("sessionUpdate")));
@@ -1907,7 +1851,7 @@ for (const stage of ["preparation", "dispatched payment"])
       );
       release();
       await page.waitForFunction(
-        (stage) => (stage === "preparation" ? window.prepareRead : window.payRead),
+        (stage) => (stage === "review" ? window.reviewRead : window.payRead),
         stage,
       );
       await page.evaluate(
@@ -1916,9 +1860,10 @@ for (const stage of ["preparation", "dispatched payment"])
             requestAnimationFrame(() => requestAnimationFrame(resolve)),
           ),
       );
-      assert.equal(f.requests.prepares.length, 1);
-      assert.equal(f.requests.permits, stage === "preparation" ? 0 : 1);
-      assert.equal(f.requests.pays, stage === "preparation" ? 0 : 1);
+      assert.equal(f.requests.reviews.length, 1);
+      assert.equal(f.requests.prepares.length, stage === "review" ? 0 : 1);
+      assert.equal(f.requests.permits, stage === "review" ? 0 : 1);
+      assert.equal(f.requests.pays, stage === "review" ? 0 : 1);
       assert.equal(new URL(page.url()).pathname, "/checkout");
       assert.deepEqual(await stored(page, account("b")), [checkoutLine("b")]);
     } finally {
@@ -1957,23 +1902,23 @@ for (const nextOwner of ["a", "b"])
       }
       if (nextOwner === "a") {
         await expect(dialog).toBeVisible();
-        assert.equal(f.requests.prepares.length, 1);
+        assert.equal(f.requests.reviews.length, 1);
         await accept.click();
-        await expect.poll(() => f.requests.prepares.length).toBe(2);
-        assert.equal(f.requests.prepares[1].shippingAddress.line1, "20 Suggested St");
+        await expect.poll(() => f.requests.reviews.length).toBe(2);
+        assert.equal(f.requests.reviews[1].shippingAddress.line1, "20 Suggested St");
       } else {
         await visible(page, [checkoutLine("b")]);
         await expect(
           page.getByRole("button", { name: "Refresh checkout" }),
         ).toBeVisible();
         await expect(page.getByText("20 Suggested St", { exact: true })).toHaveCount(0);
-        assert.equal(f.requests.prepares.length, 1);
+        assert.equal(f.requests.reviews.length, 1);
         assert.equal(f.requests.permits, 0);
       }
     },
   );
 
-test("accepted payment resumes once after unavailable session is verified", async (t) => {
+test("accepted payment offers only original-order recovery after unavailable session is verified", async (t) => {
   const f = await checkoutOwnershipFixture(t),
     { page } = f;
   const release = f.deferPay();
@@ -1991,6 +1936,11 @@ test("accepted payment resumes once after unavailable session is verified", asyn
     assert.equal(new URL(page.url()).pathname, "/checkout");
     f.setSessionAvailable(true);
     await retry.click();
+    await page
+      .getByRole("dialog", { name: "Payment could not be completed" })
+      .getByRole("button", { name: "Return to checkout" })
+      .click();
+    await page.getByRole("button", { name: "Check original order" }).click();
     await expect
       .poll(() => new URL(page.url()).pathname, { timeout: 3000 })
       .toBe("/checkout/processing");
@@ -2003,7 +1953,7 @@ test("accepted payment resumes once after unavailable session is verified", asyn
   }
 });
 
-test("prepared Cash App payment keeps its stock-zero own hold and SDK through same-owner re-verification", async (t) => {
+test("dispatched Cash App keeps its captured cart through same-owner re-verification", async (t) => {
   const f = await checkoutOwnershipFixture(t, { stockZeroAfterPrepare: true }),
     { page } = f;
   await page.waitForFunction(() => typeof window.beginCash === "function");
@@ -2014,9 +1964,10 @@ test("prepared Cash App payment keeps its stock-zero own hold and SDK through sa
     assert.equal(await page.evaluate(() => window.beginCash()), true);
     assert.equal(await page.evaluate(() => window.completeCash()), true);
     await expect.poll(() => f.requests.pays).toBe(1);
-    await expect
-      .poll(() => page.evaluate(() => window.testCart.items[0]?.orderScoped))
-      .toBe(true);
+    assert.equal(
+      f.requests.validations.some((v) => v.order),
+      false,
+    );
     releaseSession = f.deferSession();
     await page.evaluate(() => document.dispatchEvent(new Event("visibilitychange")));
     await expect.poll(() => page.evaluate(() => window.testCart.access)).toBe("checking");
@@ -2025,17 +1976,19 @@ test("prepared Cash App payment keeps its stock-zero own hold and SDK through sa
     await expect.poll(() => f.requests.validations.length).toBeGreaterThan(after);
     await expect.poll(() => page.evaluate(() => window.testCart.isReady)).toBe(true);
     await page.evaluate(() => window.testCart.recheckAvailability());
-    assert.deepEqual(f.requests.validations.at(-1).order, { orderId: preparedOrderId });
+    assert.equal(f.requests.validations.at(-1).order, undefined);
     const line = await page.evaluate(() => window.testCart.items[0]);
-    assert.equal(line.maxStock, 1);
-    assert.equal(line.orderScoped, true);
-    assert.equal(line.availability, undefined);
-    assert.deepEqual(await page.evaluate(() => window.cashCounters), {
-      created: 1,
-      destroyed: 0,
-      authorized: 1,
-      callbacks: 1,
-    });
+    assert.equal(line.quantity, 1);
+    assert.equal((await stored(page, account("a")))[0].quantity, 1);
+    assert.equal(line.orderScoped, undefined);
+
+    assert.deepEqual(
+      await page.evaluate(() => ({
+        authorized: window.cashCounters.authorized,
+        callbacks: window.cashCounters.callbacks,
+      })),
+      { authorized: 1, callbacks: 1 },
+    );
     releasePay();
     await expect.poll(() => new URL(page.url()).pathname).toBe("/checkout/processing");
     assert.equal(f.requests.prepares.length, 1);
@@ -2104,7 +2057,7 @@ for (const outcome of ["same quote", "changed quote", "new owner"]) {
           await expect.poll(() => f.requests.pays).toBe(1);
           assert.deepEqual(await page.evaluate(() => window.cashCounters), {
             created: 1,
-            destroyed: 0,
+            destroyed: 1,
             authorized: 1,
             callbacks: 2,
           });
@@ -2179,16 +2132,19 @@ for (const tokenResult of [
         releaseSession();
         await expect.poll(() => f.requests.quotes.length).toBe(2);
         await page.waitForFunction(() => window.testCart.isReady);
+        const error = page
+          .getByRole("dialog")
+          .getByRole("alert")
+          .filter({ hasText: "Cash App Pay could not authorize this payment." });
+        if (tokenResult.status !== "Cancel") {
+          await expect(error).toBeVisible();
+          await page.getByRole("button", { name: "Return to checkout" }).click();
+        } else await expect(error).toHaveCount(0);
         await expect(page.getByRole("dialog")).toHaveCount(0);
         await page.getByRole("radio", { name: "Cash App Pay", exact: true }).focus();
         await expect(
           page.getByRole("radio", { name: "Cash App Pay", exact: true }),
         ).toBeFocused();
-        const error = page
-          .getByRole("alert")
-          .filter({ hasText: "Cash App Pay could not authorize this payment." });
-        if (tokenResult.status !== "Cancel") await expect(error).toBeVisible();
-        else await expect(error).toHaveCount(0);
         releaseQuote();
         await expect
           .poll(() => page.evaluate(() => window.cashCounters.destroyed))
@@ -2247,7 +2203,7 @@ for (const replaceOwner of [false, true]) {
         await page.getByRole("button", { name: /Pay .* now/i }).click();
         await expect.poll(() => f.requests.pays).toBe(1);
         const progress = page.getByRole("dialog", {
-          name: "Processing your payment",
+          name: "Preparing your order",
           exact: true,
         });
         await expect(progress).toBeVisible();
@@ -2275,6 +2231,10 @@ for (const method of ["card", "afterpay"]) {
   test(`Cash App handoff gives ${method} ${stage} native modal control`, async (t) => {
     const f = await checkoutOwnershipFixture(t, { reviewAddress });
     const { page } = f;
+    if (!reviewAddress)
+      await page.evaluate(() => {
+        window.approveAfterpay = true;
+      });
     await page.waitForFunction(() => typeof window.beginCash === "function");
     await page.getByRole("radio", { name: "Cash App Pay", exact: true }).click();
     assert.equal(await page.evaluate(() => window.beginCash()), true);
@@ -2335,7 +2295,7 @@ for (const method of ["card", "afterpay"]) {
     await nextMethod.focus();
     await expect(nextMethod).toBeFocused();
     assert.deepEqual(
-      f.requests.prepares.map((request) => request.paymentMethod),
+      f.requests.reviews.map((request) => request.paymentMethod),
       [method],
     );
     assert.equal(f.requests.permits, reviewAddress ? 0 : 1);

@@ -64,7 +64,7 @@ const bundle = await build({
           <SquarePaymentMethods paymentConfig={window.squareTestConfig ?? { applicationId: 'sandbox-test', locationId: 'test', environment: 'sandbox' }}
             quote={{ completeness: 'exact', quoteFingerprint: 'a'.repeat(64), totals: { subtotalCents: 10000, shippingCents: 1000, taxCents: 0, totalCents: 11000 } }}
             quoteReady={true} fulfillment={fulfillment} buyerEmail={email} shippingAddress={address.line1 && address.postalCode ? address : null}
-            isGuest={false} prepare={async () => { test.prepared++; if (test.allowPrepare) return { orderId: 'test-order', deviceSessionId: 'test-device', totals: { subtotalCents: 10000, shippingCents: 1000, taxCents: 0, totalCents: 11000 } }; throw new Error('prepare test boundary'); }}
+            isGuest={false} prepare={async () => ({orderId:'test-order',deviceSessionId:'test-device',totals:{subtotalCents:10000,shippingCents:1000,taxCents:0,totalCents:11000}})} review={async () => { test.prepared++; if (test.allowPrepare) return { orderId: 'test-order', deviceSessionId: 'test-device', totals: { subtotalCents: 10000, shippingCents: 1000, taxCents: 0, totalCents: 11000 } }; throw new Error('prepare test boundary'); }}
             onProcessing={() => {}} quoteWalletShippingDestination={async () => { throw new Error('unused'); }} resolveWalletShippingContact={async () => { throw new Error('unused'); }}>
             <CheckoutContactSection email={email} isGuest={true} onEmailChange={setEmail} />
             <CheckoutDeliverySection fulfillment={fulfillment} address={address} onFulfillmentChange={setFulfillment} onAddressChange={(field, value) => setAddress(old => ({ ...old, [field]: value }))} />

@@ -10,6 +10,8 @@ export const runtime = "nodejs";
 export function POST(request: NextRequest): Promise<Response> {
   const requestId = getRequestIdFromHeaders(request.headers);
   return observeCheckoutRequest("/api/checkout/prepare", "POST", requestId, () =>
-    prepareCheckoutHandler(request, createPrepareCheckoutDependencies(requestId)),
+    prepareCheckoutHandler(request, createPrepareCheckoutDependencies(requestId), {
+      resumeOnly: true,
+    }),
   );
 }
