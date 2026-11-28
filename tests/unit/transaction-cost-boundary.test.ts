@@ -100,6 +100,7 @@ function setup(visible: boolean, verified: boolean) {
   jest.mocked(createSupabaseServerClient).mockResolvedValue({
     from: sessionFrom,
     auth: {
+      getUser: () => Promise.resolve({ data: { user: { id: "staff" } }, error: null }),
       mfa: {
         getAuthenticatorAssuranceLevel: () =>
           Promise.resolve({ data: { currentLevel: "aal2", nextLevel: "aal2" } }),
