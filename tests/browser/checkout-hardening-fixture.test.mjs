@@ -2,6 +2,63 @@ import test from "node:test";
 import { expect } from "@playwright/test";
 import { mountCheckoutBrowser } from "./fixtures/checkout-hardening.mjs";
 
+test("closing the fixture cancels pending route work without a false teardown failure", async () => {
+  const entered = Promise.withResolvers();
+  const release = Promise.withResolvers();
+  const { page, close } = await mountCheckoutBrowser({
+    sessionRoute: async (route, url) => {
+      if (!url.searchParams.has("fixture-close-probe"))
+        return route.fulfill({ json: { user: null, role: null } });
+      entered.resolve();
+      await release.promise;
+      await route
+        .request()
+        .frame()
+        .page()
+        .evaluate(() => window.testSession?.user);
+      await route.fulfill({ json: { user: null, role: null } });
+    },
+  });
+  try {
+    await page.evaluate(() => {
+      void fetch("/api/auth/session?fixture-close-probe=1").catch(() => {});
+    });
+    await entered.promise;
+    page.once("close", () => release.resolve());
+    await close();
+  } finally {
+    release.resolve();
+    await close().catch(() => {});
+  }
+});
+
+test("cleanup does not suppress ordinary route errors that resemble a closed target", async () => {
+  const entered = Promise.withResolvers();
+  const release = Promise.withResolvers();
+  const { page, close } = await mountCheckoutBrowser({
+    sessionRoute: async (route, url) => {
+      if (!url.searchParams.has("fixture-close-probe"))
+        return route.fulfill({ json: { user: null, role: null } });
+      entered.resolve();
+      await release.promise;
+      throw Error("Target page, context or browser has been closed");
+    },
+  });
+  try {
+    await page.evaluate(() => {
+      void fetch("/api/auth/session?fixture-close-probe=1").catch(() => {});
+    });
+    await entered.promise;
+    page.once("close", () => release.resolve());
+    await expect(close()).rejects.toThrow(
+      "Target page, context or browser has been closed",
+    );
+  } finally {
+    release.resolve();
+    await close().catch(() => {});
+  }
+});
+
 const item = {
   productId: "fixture-product",
   variantId: "fixture-variant",

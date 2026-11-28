@@ -323,6 +323,132 @@ test("expiry fences dispatch and conserves stock across independently committed 
           }
         },
       );
+      await t.test(
+        "a verified decline can bind corroborating FAILED payment evidence without changing terminal history",
+        async () => {
+          const o = await held();
+          const attempt = await rpc(
+            a,
+            "get_or_create_checkout_payment_attempt($1,'card',$2)",
+            [o.id, o.binding],
+          );
+          await rpc(a, "begin_checkout_payment_dispatch($1,$2,$3,$4)", [
+            attempt.id,
+            o.binding,
+            "a".repeat(64),
+            "b".repeat(64),
+          ]);
+          const decline = {
+            kind: "square_decline",
+            code: "CARD_DECLINED",
+            requestDigest: "a".repeat(64),
+          };
+          await rpc(a, "record_checkout_payment_outcome($1,null,'declined',$2)", [
+            attempt.id,
+            decline,
+          ]);
+          const history = () =>
+            admin.query(
+              "select id,state,reason,verified_facts from checkout_payment_attempt_history where attempt_id=$1 order by id",
+              [attempt.id],
+            );
+          const before = (await history()).rows;
+          const pay = "failed-" + o.id;
+          const result = await runFixtureWorker(
+            o,
+            attempt,
+            pay,
+            null,
+            "failed-version",
+            new Date().toISOString(),
+            { status: "FAILED" },
+          );
+          assert.equal(result.metrics.done, 1);
+          assert.equal(result.creates, 0);
+          const ledger = (
+            await admin.query(
+              "select state,reason,provider_payment_id,terminal_capture from checkout_payment_attempts where id=$1",
+              [attempt.id],
+            )
+          ).rows[0];
+          assert.deepEqual(ledger, {
+            state: "declined",
+            reason: "verified_square_decline",
+            provider_payment_id: pay,
+            terminal_capture: null,
+          });
+          const corroboration = {
+            kind: "square_payment",
+            orderId: o.id,
+            squareOrderId: o.sq,
+            paymentId: pay,
+            status: "FAILED",
+            amountCents: 1000,
+            currency: "USD",
+          };
+          const after = (await history()).rows;
+          assert.deepEqual(after.slice(0, before.length), before);
+          assert.equal(after.length, before.length + 1);
+          for (let replay = 0; replay < 2; replay++) {
+            await rpc(a, "record_checkout_payment_outcome($1,$2,'declined',$3)", [
+              attempt.id,
+              pay,
+              corroboration,
+            ]);
+          }
+          assert.deepEqual((await history()).rows, after);
+          await assert.rejects(
+            rpc(a, "record_checkout_payment_outcome($1,$2,'succeeded',$3)", [
+              attempt.id,
+              pay,
+              { ...corroboration, status: "COMPLETED" },
+            ]),
+            /terminal_attempt_outcome/,
+          );
+          await assert.rejects(
+            rpc(a, "record_checkout_payment_outcome($1,$2,'declined',$3)", [
+              attempt.id,
+              "foreign-payment",
+              { ...corroboration, paymentId: "foreign-payment" },
+            ]),
+            /invalid_verified_payment/,
+          );
+          await admin.query(
+            "update orders set expires_at=clock_timestamp()-interval '20 minutes' where id=$1",
+            [o.id],
+          );
+          await admin.query(
+            "update inventory_reservations set expires_at=clock_timestamp()-interval '20 minutes' where order_id=$1",
+            [o.id],
+          );
+          assert.equal(
+            (await rpc(a, "mark_checkout_expiry($1)", [o.id])).kind,
+            "inquire",
+          );
+          assert.equal(
+            await rpc(a, "finish_checkout_expiry($1,$2)", [o.id, o.sq]),
+            "released",
+          );
+          assert.equal(
+            (
+              await admin.query(
+                "select status from inventory_reservations where order_id=$1",
+                [o.id],
+              )
+            ).rows[0].status,
+            "released",
+          );
+          assert.equal(
+            (
+              await admin.query("select stock from product_variants where id=$1", [
+                o.variantId,
+              ])
+            ).rows[0].stock,
+            1,
+          );
+        },
+      );
+
       for (const terminal of ["declined", "canceled"]) {
         await t.test(
           "retains terminal " +
@@ -677,6 +803,68 @@ test("expiry fences dispatch and conserves stock across independently committed 
           assert.fail("expected independent connection at order lock");
         };
       };
+      await t.test(
+        "worker records late FAILED evidence after a no-ID decline and expiry can release once cancellation is proved",
+        async () => {
+          const o = await held();
+          const attempt = await rpc(
+            a,
+            "get_or_create_checkout_payment_attempt($1,'card',$2)",
+            [o.id, o.binding],
+          );
+          await rpc(a, "begin_checkout_payment_dispatch($1,$2,$3,$4)", [
+            attempt.id,
+            o.binding,
+            "a".repeat(64),
+            "b".repeat(64),
+          ]);
+          await rpc(a, "record_checkout_payment_outcome($1,null,'declined',$2)", [
+            attempt.id,
+            {
+              kind: "square_decline",
+              code: "CARD_DECLINED",
+              requestDigest: "a".repeat(64),
+            },
+          ]);
+          const pay = "failed-" + o.id;
+          const result = await runFixtureWorker(
+            o,
+            attempt,
+            pay,
+            null,
+            "failed",
+            new Date().toISOString(),
+            { status: "FAILED" },
+          );
+          assert.equal(result.creates, 0);
+          assert.equal(result.metrics.done, 1);
+          assert.ok(result.commands.includes("apply_checkout_payment_with_analytics"));
+          assert.deepEqual(
+            (
+              await admin.query(
+                "select state,provider_payment_id from checkout_payment_attempts where id=$1",
+                [attempt.id],
+              )
+            ).rows[0],
+            { state: "declined", provider_payment_id: pay },
+          );
+          assert.equal(
+            (
+              await admin.query(
+                "select count(*)::int n from checkout_financial_facts where order_id=$1 and payment_id=$2 and status='FAILED'",
+                [o.id, pay],
+              )
+            ).rows[0].n,
+            1,
+          );
+          await due(o);
+          await mark(b, o);
+          assert.equal(await rpc(b, "finish_checkout_expiry($1)", [o.id]), "reconcile");
+          assert.equal(await stock(o), 0);
+          assert.equal(await finish(b, o), "released");
+          assert.equal(await stock(o), 1);
+        },
+      );
       await t.test(
         "worker settles the exact accepted payment after browser closure with webhook absent",
         async () => {

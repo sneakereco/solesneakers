@@ -519,7 +519,13 @@ try {
   );
   await page.goto("http://measurement.test/");
   await page.addScriptTag({ content: bundle.outputFiles[0].text });
-  await page.waitForFunction(() => window.measurementTriggerTest?.keyboardReady === true);
+  await page.waitForFunction(
+    () =>
+      window.measurementTriggerTest?.keyboardReady === true ||
+      window.measurementTriggerTest?.complete === true,
+  );
+  const setupFailure = await page.evaluate(() => window.measurementTriggerTest.failure);
+  assert.equal(setupFailure, undefined, setupFailure);
   await page.keyboard.press("Enter");
   await page.evaluate(() => {
     window.measurementTriggerTest.keyboardDone = true;

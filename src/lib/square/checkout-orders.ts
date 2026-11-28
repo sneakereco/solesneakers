@@ -94,7 +94,12 @@ export class SquareCheckoutOrdersGateway {
     };
   }
 
-  async cancel(orderId: string, version: number, idempotencyKey: string): Promise<void> {
+  async cancel(
+    orderId: string,
+    version: number,
+    idempotencyKey: string,
+    verifiedNegativePaymentIds: readonly string[] = [],
+  ): Promise<void> {
     const currentResponse = await this.orders.get({ orderId });
     const currentOrder = currentResponse.order;
     if (
@@ -102,7 +107,10 @@ export class SquareCheckoutOrdersGateway {
       currentOrder.state !== "OPEN" ||
       !Number.isSafeInteger(currentOrder.version) ||
       (currentOrder.version ?? -1) < version ||
-      (currentOrder.tenders ?? []).some((tender) => Boolean(tender.paymentId))
+      (currentOrder.tenders ?? []).some(
+        (tender) =>
+          !tender.paymentId || !verifiedNegativePaymentIds.includes(tender.paymentId),
+      )
     ) {
       throw new Error("square_checkout_order_not_cancelable");
     }

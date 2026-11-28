@@ -14,6 +14,8 @@ import {
 
 const shippingThrough = "20261127034000";
 const bootstrapVersion = "20261127134000";
+const recoveryBindingVersion = "20261127195500";
+const terminalEvidenceVersion = "20261127202000";
 
 async function readCanonicalMigrations() {
   const directory = join(root, "supabase", "migrations");
@@ -216,6 +218,12 @@ for (const mode of ["fresh", "populated"]) {
       { timeout: 240_000 },
       async () => {
         const expected = await readCanonicalMigrations();
+        assert.ok(
+          [recoveryBindingVersion, terminalEvidenceVersion].every((version) =>
+            expected.some((migration) => migration.version === version),
+          ),
+          "Canonical inventory must include both forward checkout recovery migrations",
+        );
         const resources = [];
         await withCheckoutProject(
           mode,

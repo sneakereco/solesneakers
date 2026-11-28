@@ -9,6 +9,10 @@ import * as gate from "../../scripts/single-store/check-migration-baseline.mjs";
 
 const root = fileURLToPath(new URL("../../", import.meta.url));
 const bootstrap = "20261127134000";
+const recoveryBindingPath =
+  "supabase/migrations/20261127195500_checkout_decline_inquiry_binding.sql";
+const terminalEvidencePath =
+  "supabase/migrations/20261127202000_checkout_terminal_negative_evidence.sql";
 const checkout = [
   "20261127040000",
   "20261127041000",
@@ -68,6 +72,12 @@ test("production-shaped registry produces the exact reviewed backfill plan", () 
     result.migrationPlan.pendingFiles.length,
     checkout.length + ordinarySuffix.length,
   );
+  assert.ok(
+    [recoveryBindingPath, terminalEvidencePath].every((path) =>
+      result.migrationPlan.pendingFiles.includes(path),
+    ),
+    "Both checkout recovery migrations must be included as ordinary pending migrations",
+  );
   for (const field of ["inventoryDigest", "recordedDigest", "databaseFingerprint"])
     assert.match(result.migrationPlan[field], /^[a-f0-9]{64}$/);
   assert.match(result.migrationPlan.head, /^[a-f0-9]{40}$/);
@@ -80,16 +90,24 @@ test("production-shaped registry produces the exact reviewed backfill plan", () 
 test("every sequential partial retry permits only the remaining reviewed suffix", () => {
   const { inventory, baseline, boot, plan } = setup();
   const ordinarySuffix = inventory.entries.filter(({ version }) => version > bootstrap);
-  for (let count = 0; count <= 8; count++) {
+  for (let count = 0; count <= checkout.length; count++) {
     const applied = inventory.entries
       .filter(({ version }) => checkout.slice(0, count).includes(version))
       .map(row);
     const result = plan([...baseline, ...applied, boot]);
     assert.deepEqual(result.blockers, []);
-    assert.equal(result.migrationPlan.includeAll, count < 8);
+    assert.equal(result.migrationPlan.includeAll, count < checkout.length);
     assert.equal(
       result.migrationPlan.pendingFiles.length,
       checkout.length - count + ordinarySuffix.length,
+    );
+    assert.deepEqual(
+      result.migrationPlan.pendingFiles,
+      inventory.entries
+        .filter(
+          ({ version }) => checkout.slice(count).includes(version) || version > bootstrap,
+        )
+        .map(({ path }) => path),
     );
   }
 });

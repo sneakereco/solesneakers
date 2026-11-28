@@ -765,6 +765,47 @@ test("one durable payment attempt per order", async (t) => {
         },
       );
       await t.test(
+        "a verified FAILED inquiry binds a no-ID decline without reversing its terminal state",
+        async () => {
+          const o = await order();
+          const a = await get(svc, o);
+          await begin(svc, o, a);
+          await record(svc, a, null, "declined", {
+            kind: "square_decline",
+            code: "CARD_DECLINED",
+            requestDigest: digest,
+          });
+          const retry = await get(svc, o);
+          const pid = "failed-" + randomUUID();
+          const facts = payment(o, pid, "FAILED");
+          const resolved = await record(svc, a, pid, "declined", facts);
+          assert.equal(resolved.state, "declined");
+          assert.equal(resolved.providerPaymentId, pid);
+          assert.equal((await get(svc, o)).id, retry.id);
+          const historyCount = async () =>
+            (
+              await admin.query(
+                "select count(*)::int as n from checkout_payment_attempt_history where attempt_id=$1",
+                [a.id],
+              )
+            ).rows[0].n;
+          const beforeReplay = await historyCount();
+          assert.deepEqual(await record(svc, a, pid, "declined", facts), resolved);
+          assert.equal(await historyCount(), beforeReplay);
+          for (const [id, state, proof] of [
+            [pid, "pending", payment(o, pid, "APPROVED")],
+            [pid, "succeeded", payment(o, pid, "COMPLETED")],
+            [pid, "canceled", payment(o, pid, "CANCELED")],
+            ["different-payment", "declined", payment(o, "different-payment", "FAILED")],
+            [pid, "declined", { ...facts, amountCents: 1 }],
+            [pid, "declined", { ...facts, orderId: randomUUID() }],
+          ])
+            await assert.rejects(record(svc, a, id, state, proof));
+          assert.equal(await historyCount(), beforeReplay);
+          assert.equal((await get(svc, o)).id, retry.id);
+        },
+      );
+      await t.test(
         "ordinary RPC and storage privileges are restricted to their intended roles",
         async () => {
           for (const role of ["anon", "authenticated"]) {

@@ -36,6 +36,7 @@ const suites = [
   ["reservation-races", operations + "Preparation/reservation-races.postgres.test.mjs"],
   ["work-storage", operations + "Recovery/work-storage.postgres.test.mjs"],
   ["recovery-fairness", operations + "Recovery/recovery-fairness.postgres.test.mjs"],
+  ["recovery-capacity", operations + "Recovery/recovery-capacity.postgres.test.mjs"],
   ["expiry-races", operations + "Recovery/expiry-races.postgres.test.mjs"],
   ["checkout-controls", operations + "Operations/checkout-controls.postgres.test.mjs"],
   ["checkout-health", operations + "Operations/checkout-health.postgres.test.mjs"],
@@ -120,7 +121,7 @@ test("database shards collectively execute exactly the full commands and retain 
   }
   const ordered = (calls) => [...calls].sort(([a], [b]) => a.localeCompare(b));
   assert.deepEqual(ordered(combined), ordered(full.slice(1)));
-  assert.equal(new Set(combined.map(([name]) => name)).size, 28);
+  assert.equal(new Set(combined.map(([name]) => name)).size, 30);
 });
 
 test("stock failure injection is preserved on its owning shard and cannot report success when explicitly broken", async () => {

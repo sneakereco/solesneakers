@@ -7,6 +7,40 @@ const release = "8e6a574e29066654b17f1031e25f1df9c202c469";
 
 afterEach(() => jest.restoreAllMocks());
 
+it("preserves allowlisted failure codes and preparation phases while discarding private errors", () => {
+  const sink = jest.spyOn(console, "error").mockImplementation(() => {});
+  logError(new Error("checkout_provider_busy"), {
+    layer: "api",
+    route: "/api/checkout/prepare",
+    phase: "provider_calculate",
+    requestId,
+  });
+  expect(JSON.parse(String(sink.mock.calls[0][0]))).toMatchObject({
+    errorCode: "checkout_provider_busy",
+    errorType: "Error",
+    phase: "provider_calculate",
+    requestId,
+  });
+  logError(
+    Object.assign(new Error("PRIVATE_CUSTOMER_ADDRESS"), {
+      code: "23505",
+      body: "PRIVATE_PROVIDER_BODY",
+    }),
+    { phase: "PRIVATE_PHASE" },
+  );
+  expect(JSON.parse(String(sink.mock.calls[1][0]))).toMatchObject({
+    errorCode: "database_unique_conflict",
+    errorType: "Error",
+  });
+  expect(String(sink.mock.calls[1][0])).not.toContain("PRIVATE_");
+  logError(new Error("PRIVATE_UNKNOWN_ERROR"));
+  expect(JSON.parse(String(sink.mock.calls[2][0]))).toMatchObject({
+    errorCode: "unclassified",
+    errorType: "Error",
+  });
+  expect(String(sink.mock.calls[2][0])).not.toContain("PRIVATE_");
+});
+
 it("synthetic_credentials_cannot_escape_nested_url_or_error_logging", () => {
   const info = jest.spyOn(console, "info").mockImplementation(() => {});
   const error = jest.spyOn(console, "error").mockImplementation(() => {});

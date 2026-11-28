@@ -1,3 +1,5 @@
+import { diagnosticPhases, errorCodes, errorTypes } from "./error-diagnostics";
+
 // Values that reach stdout must come from this vocabulary or from typed, bounded fields.
 // Never traverse request bodies, arbitrary metadata, error causes or stacks.
 const events = [
@@ -167,6 +169,7 @@ const routes = [
   "/api/cron/expire-checkouts",
   "/api/cron/checkout-notifications",
   "/api/cron/checkout-health",
+  "/api/cron/analytics",
   "/api/admin/shipping/labels",
 ] as const;
 const outcomes = [
@@ -307,7 +310,9 @@ function safeFields(v: Record<string, unknown>) {
       ] as const,
       v.alert,
     ),
-    phase: member(["load", "create", "attach", "tokenize"] as const, v.phase),
+    phase: member(diagnosticPhases, v.phase),
+    errorType: member(errorTypes, v.errorType),
+    errorCode: member(errorCodes, v.errorCode),
     admissionPhase: member(["preflight", "authority"] as const, v.admissionPhase),
     denialReason: member(["quota", "paused", "not_payable"] as const, v.denialReason),
     operation: member(operations, v.operation),

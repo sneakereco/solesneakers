@@ -96,6 +96,9 @@ jobs:
           "$@" >"$log" 2>&1
           status=$?
           printf '%s exit=%d sha256=%s\n' "$name" "$status" "$(sha256sum "$log" | cut -d' ' -f1)"
+          if [ "$status" -ne 0 ] && [ "$name" = "measurement" ]; then
+            node scripts/summarize-browser-failure.mjs "$log"
+          fi
           exit "$status"
           CHECK
           chmod 700 "$RUNNER_TEMP/checkout-check"
@@ -203,6 +206,9 @@ jobs:
           "$@" >"$log" 2>&1
           status=$?
           printf '%s exit=%d sha256=%s\n' "$name" "$status" "$(sha256sum "$log" | cut -d' ' -f1)"
+          if [ "$status" -ne 0 ] && [ "$name" = "measurement" ]; then
+            node scripts/summarize-browser-failure.mjs "$log"
+          fi
           exit "$status"
           CHECK
           chmod 700 "$RUNNER_TEMP/checkout-check"

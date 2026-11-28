@@ -284,6 +284,7 @@ export async function runCheckoutDatabaseChecks(gate, flags = []) {
         [3, 4, "Preparation/reservation-races"],
         [4, 2, "Recovery/work-storage"],
         [2, 3, "Recovery/recovery-fairness"],
+        [4, 4, "Recovery/recovery-capacity"],
         [3, 4, "Recovery/expiry-races"],
         [4, 2, "Operations/checkout-controls"],
         [2, 3, "Operations/checkout-health"],
