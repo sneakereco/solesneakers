@@ -114,3 +114,47 @@ test("invalid arguments cannot bypass the browser checks", async () => {
   );
   assert.equal(calls, 0);
 });
+
+test("four browser shards retain the exact complete commands and fault options", async () => {
+  const full = await collect();
+  const combined = [];
+  for (const shard of [1, 2, 3, 4]) {
+    const calls = await collect([`--shard=${shard}/4`]);
+    assert.deepEqual(calls[0], full[0]);
+    assert.ok(calls.length > 1);
+    combined.push(...calls.slice(1));
+  }
+  const ordered = (calls) => [...calls].sort(([a], [b]) => a.localeCompare(b));
+  assert.deepEqual(ordered(combined), ordered(full.slice(1)));
+  assert.equal(new Set(combined.map(([name]) => name)).size, 17);
+});
+
+test("browser fault injection remains a failing gate on its owning shard", async () => {
+  const calls = await collect(["--shard=1/4", "--break-cart"]);
+  assert.equal(
+    calls.find(([name]) => name === "original-basket-row-disappeared")[2]
+      .propagateFailure,
+    true,
+  );
+});
+
+for (const flags of [
+  ["--shard=0/4"],
+  ["--shard=5/4"],
+  ["--shard=1/3"],
+  ["--shard="],
+  ["--shard=01/4"],
+  ["--shard=1/4", "--shard=2/4"],
+  ["--break-cart", "--break-cart"],
+  ["--shard=2/4", "--break-cart"],
+]) {
+  test(`browser rejects ${flags.join(" ")} before executing any gate`, async () => {
+    let visited = 0;
+    await assert.rejects(
+      (await runner())(async () => {
+        visited++;
+      }, flags),
+    );
+    assert.equal(visited, 0);
+  });
+}
