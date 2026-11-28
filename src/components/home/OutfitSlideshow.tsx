@@ -113,17 +113,27 @@ export function OutfitSlideshow() {
             <div
               key={outfit.image}
               aria-hidden={activeIndex !== index}
-              className={`absolute inset-0 flex items-center justify-center bg-[length:100%_100%] motion-safe:transition-opacity motion-safe:duration-[550ms] motion-safe:ease-in-out ${activeIndex === index ? "opacity-100" : "opacity-0"}`}
-              style={{ backgroundImage: isInView ? `url("${src}")` : undefined }}
+              className={`absolute inset-0 flex items-center justify-center motion-safe:transition-opacity motion-safe:duration-[550ms] motion-safe:ease-in-out ${activeIndex === index ? "opacity-100" : "opacity-0"}`}
             >
+              {isInView && (
+                <Image
+                  src={src}
+                  alt=""
+                  aria-hidden="true"
+                  fill
+                  sizes="100vw"
+                  draggable={false}
+                  className="object-fill"
+                />
+              )}
               <Image
                 src={src}
                 alt={outfit.alt}
                 width={2172}
                 height={724}
-                sizes="(min-width: 768px) 75vw, 100vw"
+                sizes="100vw"
                 draggable={false}
-                className="h-full w-auto max-w-none shrink-0 object-contain"
+                className="relative h-full w-auto max-w-none shrink-0 object-contain"
                 style={{
                   maskImage:
                     "linear-gradient(90deg, transparent, black 10%, black 90%, transparent)",

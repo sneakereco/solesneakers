@@ -1,5 +1,6 @@
 import assert from "node:assert/strict";
 import { spawnSync } from "node:child_process";
+import { readFileSync } from "node:fs";
 import { test } from "node:test";
 import { buildManifest } from "../../scripts/admin-analytics-manifest.mjs";
 import {
@@ -16,6 +17,24 @@ const canary = "PROVIDER_SECRET_CANARY";
 const org = "80d87d84-6ef4-4c36-8dfd-d616292c5a72";
 const host = "https://us.posthog.com";
 const base = "/api/projects/501/";
+const revisedNames = [
+  "sole_analytics_acquisition",
+  "sole_analytics_acquisition_series",
+  "sole_analytics_active",
+  "sole_analytics_discovery",
+  "sole_analytics_discovery_series",
+  "sole_analytics_inventory_demand",
+  "sole_analytics_products",
+  "sole_analytics_sessions",
+  "sole_analytics_visitor_series",
+];
+const activeName = "sole_analytics_active";
+const activeV1 = readFileSync(
+  new URL("./fixtures/analytics-active-v1.sql", import.meta.url),
+  "utf8",
+)
+  .replaceAll("\r\n", "\n")
+  .replaceAll("'2026-11-27T18:00:00Z'", "'2026-12-01T12:00:00Z'");
 const env = {
   NEXT_PUBLIC_MEASUREMENT_ENVIRONMENT: "staging",
   NEXT_PUBLIC_POSTHOG_HOST: "https://us.i.posthog.com",
@@ -34,6 +53,7 @@ const env = {
 function provider() {
   const variables = new Map();
   const endpoints = new Map();
+  const history = new Map();
   const writes = [];
   const reads = [];
   const control = {};
@@ -56,7 +76,7 @@ function provider() {
     assert.equal(init.headers.Authorization, "Bearer " + provisionKey);
     if (init.method === "POST") {
       const body = JSON.parse(init.body);
-      writes.push({ path: url.pathname, body });
+      writes.push({ method: init.method, path: url.pathname, body });
       if (url.pathname === base + "insight_variables/") {
         const variable = {
           ...body,
@@ -91,6 +111,27 @@ function provider() {
       if (control.endpointConflict) return no(409);
       return Response.json({ name: body.name, current_version: 1 }, { status: 201 });
     }
+    if (init.method === "PATCH") {
+      const body = JSON.parse(init.body);
+      writes.push({ method: init.method, path: url.pathname, body });
+      assert.deepEqual(Object.keys(body), ["query"]);
+      const name = url.pathname.split("/").at(-2);
+      const prior = endpoints.get(name);
+      if (control.rejectPatchWithoutWrite) return no(409);
+      history.set(name + ":" + prior.version, prior);
+      const version = prior.version + 1;
+      const revised = {
+        ...prior,
+        version,
+        version_id: "revised-version",
+        query: { ...body.query, limit: null },
+      };
+      endpoints.set(name, revised);
+      if (control.advanceAfterPatch)
+        control.advanceOnPinned = { name, version, remainingReads: 1 };
+      if (control.losePatchResponse) throw new Error(canary);
+      return Response.json({ name, current_version: version });
+    }
     assert.equal(init.method, "GET");
     reads.push(url.pathname + url.search);
     if (url.pathname === base + "insight_variables/") {
@@ -116,16 +157,47 @@ function provider() {
       control.pinnedSeen = true;
       return no(404);
     }
-    return Response.json(
-      url.search ? endpoint : { name, current_version: control.currentVersion ?? 1 },
-    );
+    if (!url.search) {
+      if (control.lagCurrent?.name === name && control.lagCurrent.afterPinned) {
+        const { version } = control.lagCurrent;
+        delete control.lagCurrent;
+        return version === null
+          ? no(404)
+          : Response.json({ name, current_version: version });
+      }
+      return Response.json({
+        name,
+        current_version: control.currentVersion ?? endpoint.version,
+      });
+    }
+    const version = Number(url.searchParams.get("version"));
+    const pinned =
+      version === endpoint.version ? endpoint : history.get(name + ":" + version);
+    if (version === 2 && pinned?.version === version && control.lagCurrent?.name === name)
+      control.lagCurrent.afterPinned = true;
+    const advance = control.advanceOnPinned;
+    if (
+      pinned?.version === version &&
+      advance?.name === name &&
+      advance.version === version &&
+      --advance.remainingReads === 0
+    ) {
+      history.set(name + ":" + version, pinned);
+      endpoints.set(name, {
+        ...pinned,
+        version: version + 1,
+        version_id: "concurrent-version",
+      });
+    }
+    return pinned?.version === version ? Response.json(pinned) : no(404);
   };
   return { variables, endpoints, writes, reads, control, fetch };
 }
 
-function write(p, settings = env) {
+function write(p, settings = env, scope = {}) {
   return provisionAnalytics({
     ...args,
+    ...scope,
     write: true,
     env: settings,
     fetch: p.fetch,
@@ -133,7 +205,19 @@ function write(p, settings = env) {
   });
 }
 
-test("preview matches the canonical initial definitions without reading credentials or fetching", async () => {
+function installLegacyActive(p) {
+  const final = p.endpoints.get(activeName);
+  const legacy = {
+    ...final,
+    version: 1,
+    version_id: "legacy-version",
+    query: { ...final.query, query: activeV1 },
+  };
+  p.endpoints.set(activeName, legacy);
+  return legacy;
+}
+
+test("preview matches the canonical definitions without reading credentials or fetching", async () => {
   const manifest = buildManifest({
     environment: args.environment,
     datasetId: "sole-staging",
@@ -150,8 +234,19 @@ test("preview matches the canonical initial definitions without reading credenti
   assert.equal(preview.mode, "dry-run");
   assert.deepEqual(preview.manifest, manifest);
   assert.equal(manifest.endpoints.length, 22);
-  assert.ok(manifest.endpoints.every((endpoint) => endpoint.version === 1));
+  assert.deepEqual(
+    manifest.endpoints
+      .filter((endpoint) => endpoint.version === 2)
+      .map(({ name }) => name)
+      .sort(),
+    revisedNames,
+  );
+  assert.equal(
+    manifest.endpoints.filter((endpoint) => endpoint.version === 1).length,
+    13,
+  );
   const variables = new Map(preview.variables.map((v) => [v.name, v]));
+  assert.equal(variables.size, 31);
   for (const endpoint of manifest.endpoints) {
     const names = new Set(
       Array.from(endpoint.sql.matchAll(/\{variables\.(\w+)\}/g), (m) => m[1]),
@@ -182,24 +277,209 @@ test("actual CLI dry run needs no credentials and rejects invalid calendar insta
   assert.equal(run("2026-02-30T00:00:00Z").status, 1);
 });
 
-test("writes once, binds server variable UUIDs and re-runs exactly across pagination", async () => {
+test("fresh install seeds each v2, publishes its exact pinned definition and re-runs without writes", async () => {
   const p = provider();
-  const first = await write(p);
+  const scope = { archiveCutoff: "2026-12-01T00:00:00Z" };
+  const expected = planProvisioning({ ...args, ...scope }).manifest;
+  const first = await write(p, env, scope);
   assert.equal(first.createdEndpoints, 22);
+  assert.equal(first.revisedEndpoints, 9);
   assert.equal(first.verifiedEndpoints, 22);
   assert.equal(first.createdVariables, p.variables.size);
-  assert.equal(p.writes.length, 22 + p.variables.size);
+  assert.equal(p.writes.length, 22 + 9 + p.variables.size);
+  for (const { name, version, sql } of expected.endpoints) {
+    const post = p.writes.find(
+      ({ method, body }) => method === "POST" && body.name === name,
+    );
+    const endpoint = p.endpoints.get(name);
+    assert.equal(endpoint.version, version);
+    assert.equal(endpoint.query.query, sql);
+    assert.deepEqual(endpoint.query.variables, post.body.query.variables);
+    if (version === 2) {
+      assert.match(post.body.query.query, /^-- .*bootstrap[^\n]*\n(?:SELECT|WITH)/i);
+      assert.equal(
+        post.body.query.query.slice(post.body.query.query.indexOf("\n") + 1),
+        sql,
+      );
+      assert.ok(
+        p.reads.indexOf(base + `endpoints/${name}/?version=1`) <
+          p.reads.indexOf(base + `endpoints/${name}/?version=2`),
+      );
+    } else {
+      assert.equal(post.body.query.query, sql);
+    }
+  }
   assert.ok(
     p.reads.includes(base + "endpoints/sole_analytics_reconciliation_raw/?version=1"),
   );
   const before = p.writes.length;
   p.control.paginate = true;
-  const second = await write(p);
+  const second = await write(p, env, scope);
   assert.equal(second.createdEndpoints, 0);
+  assert.equal(second.revisedEndpoints, 0);
   assert.equal(second.createdVariables, 0);
   assert.equal(second.verifiedEndpoints, 22);
   assert.equal(p.writes.length, before);
   assert.ok(p.reads.includes(base + "insight_variables/?offset=3"));
+});
+
+test("publishes a known legacy definition once and preserves the executable v1 query and bindings", async () => {
+  const p = provider();
+  await write(p);
+  const legacy = installLegacyActive(p);
+  p.writes.length = 0;
+  const result = await write(p);
+  assert.equal(result.createdEndpoints, 0);
+  assert.equal(result.revisedEndpoints, 1);
+  assert.equal(result.verifiedEndpoints, 22);
+  assert.deepEqual(
+    p.writes.map(({ method, path }) => ({ method, path })),
+    [{ method: "PATCH", path: base + "endpoints/" + activeName + "/" }],
+  );
+  const preserved = await p.fetch(
+    host + base + "endpoints/" + activeName + "/?version=1",
+    {
+      method: "GET",
+      headers: { Authorization: "Bearer " + provisionKey },
+      redirect: "error",
+      signal: new AbortController().signal,
+    },
+  );
+  assert.equal(preserved.status, 200);
+  assert.deepEqual(await preserved.json(), legacy);
+  assert.equal(p.endpoints.get(activeName).version, 2);
+});
+
+test("preflight rejects unknown v1 SQL, wrong scopes and malformed legacy bindings before writes", async () => {
+  const p = provider();
+  await write(p);
+  const legacy = installLegacyActive(p);
+  p.endpoints.delete("sole_analytics_journey");
+  p.writes.length = 0;
+  const [id, binding] = Object.entries(legacy.query.variables)[0];
+  for (const query of [
+    { ...legacy.query, query: "SELECT 1" },
+    {
+      ...legacy.query,
+      query: legacy.query.query.replaceAll("'sole-staging'", "'sole-production'"),
+    },
+    {
+      ...legacy.query,
+      query: legacy.query.query.replaceAll("'staging'", "'production'"),
+    },
+    {
+      ...legacy.query,
+      query: legacy.query.query.replaceAll(
+        "'2026-12-01T12:00:00Z'",
+        "'2026-11-27T18:00:00Z'",
+      ),
+    },
+    {
+      ...legacy.query,
+      variables: {
+        ...legacy.query.variables,
+        [id]: { ...binding, value: "foreign-default" },
+      },
+    },
+  ]) {
+    p.endpoints.set(activeName, { ...legacy, query });
+    await assert.rejects(write(p), /definition/);
+    assert.equal(p.writes.length, 0);
+  }
+});
+
+test("resumes an exact interrupted bootstrap seed and rejects malformed seed bindings", async () => {
+  const p = provider();
+  p.control.rejectPatchWithoutWrite = true;
+  await assert.rejects(write(p), /unconfirmed/);
+  assert.equal(p.writes.filter(({ method }) => method === "PATCH").length, 1);
+  const seed = p.endpoints.get("sole_analytics_sessions");
+  assert.equal(seed.version, 1);
+  p.writes.length = 0;
+  p.control.rejectPatchWithoutWrite = false;
+  p.endpoints.set(seed.name, { ...seed, query: { ...seed.query, variables: {} } });
+  await assert.rejects(write(p), /definition/);
+  assert.equal(p.writes.length, 0);
+  p.endpoints.set(seed.name, seed);
+  assert.equal((await write(p)).verifiedEndpoints, 22);
+  assert.equal(
+    p.writes.filter(({ method, body }) => method === "POST" && body.name === seed.name)
+      .length,
+    0,
+  );
+  assert.equal(p.endpoints.get(seed.name).version, 2);
+});
+
+test("reconciles a lost PATCH acknowledgement without sending a duplicate PATCH", async () => {
+  const p = provider();
+  await write(p);
+  installLegacyActive(p);
+  p.writes.length = 0;
+  p.reads.length = 0;
+  p.control.losePatchResponse = true;
+  const result = await write(p);
+  assert.equal(result.revisedEndpoints, 0);
+  assert.equal(result.verifiedEndpoints, 22);
+  assert.equal(p.writes.length, 1);
+  assert.equal(p.writes[0].method, "PATCH");
+  assert.ok(p.reads.includes(base + "endpoints/" + activeName + "/?version=2"));
+});
+
+for (const [label, version] of [
+  ["404", null],
+  ["stale v1", 1],
+]) {
+  test(`retries the readback after a ${label} current version recheck without another PATCH`, async () => {
+    const p = provider();
+    await write(p);
+    installLegacyActive(p);
+    p.writes.length = 0;
+    p.reads.length = 0;
+    p.control.lagCurrent = { name: activeName, version };
+    const result = await write(p);
+    assert.equal(result.revisedEndpoints, 1);
+    assert.equal(result.verifiedEndpoints, 22);
+    assert.deepEqual(
+      p.writes.map(({ method }) => method),
+      ["PATCH"],
+    );
+    const pinnedV2 = base + "endpoints/" + activeName + "/?version=2";
+    assert.equal(p.reads.filter((path) => path === pinnedV2).length, 2);
+  });
+}
+
+test("rejects a concurrently published revision above the target after one PATCH", async () => {
+  const p = provider();
+  await write(p);
+  installLegacyActive(p);
+  p.writes.length = 0;
+  p.control.advanceAfterPatch = true;
+  await assert.rejects(write(p), /current PostHog Endpoint definition/);
+  assert.deepEqual(
+    p.writes.map(({ method }) => method),
+    ["PATCH"],
+  );
+});
+
+test("rejects v3 published during an already-v2 preflight pinned read without writing", async () => {
+  const p = provider();
+  await write(p);
+  p.writes.length = 0;
+  p.control.advanceOnPinned = { name: activeName, version: 2, remainingReads: 1 };
+  await assert.rejects(write(p), /current PostHog Endpoint definition/);
+  assert.equal(p.endpoints.get(activeName).version, 3);
+  assert.equal(p.writes.length, 0);
+});
+
+test("rejects v2 published during the last legacy pinned read without PATCH", async () => {
+  const p = provider();
+  await write(p);
+  installLegacyActive(p);
+  p.writes.length = 0;
+  p.control.advanceOnPinned = { name: activeName, version: 1, remainingReads: 2 };
+  await assert.rejects(write(p), /current PostHog Endpoint definition/);
+  assert.equal(p.writes.filter(({ method }) => method === "PATCH").length, 0);
+  assert.equal(p.endpoints.get(activeName).version, 2);
 });
 
 test("foreign project, key reuse, foreign pagination and invalid variable type fail before writes", async () => {
@@ -271,7 +551,7 @@ test("reconciles variable duplicates and ambiguous endpoint writes using GET onl
     p.control.pinnedDelayed = true;
     p.control[key] = true;
     assert.equal((await write(p)).verifiedEndpoints, 22);
-    assert.equal(p.writes.length, 22 + p.variables.size);
+    assert.equal(p.writes.length, 22 + 9 + p.variables.size);
   }
 });
 

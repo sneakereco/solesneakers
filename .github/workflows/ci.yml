@@ -111,6 +111,7 @@ jobs:
           node --test tests/database/migration-reconciliation.test.mjs tests/operations/migration-deployment.test.mjs
           tests/operations/admin-analytics-warehouse-bindings.test.mjs
           tests/operations/admin-analytics-runtime-sync.test.mjs tests/operations/admin-analytics-observers.test.mjs
+          tests/operations/admin-analytics-observer-deployment.test.mjs tests/operations/admin-analytics-provision.test.mjs
           tests/operations/admin-analytics-observer-clock.test.mjs tests/operations/checkout-validation-scope.test.mjs
           tests/fixtures/checkout-gate.test.mjs tests/operations/ci-parallel-validation.test.mjs
           tests/operations/checkout-browser-runner.test.mjs

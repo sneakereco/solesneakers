@@ -38,6 +38,10 @@ export function createStaffCostReader(client: TypedSupabaseClient) {
     const token = (await cookies()).get(security.proxy.adminSession.cookieName)?.value;
     if (!token || (await verifyAdminSessionToken(token))?.sub !== session.user.id)
       throw new Error("Staff session required");
+    // Verify on this client before its MFA helper reads the cookie-backed session.
+    const { data: userData, error: userError } = await client.auth.getUser();
+    if (userError || userData.user?.id !== session.user.id)
+      throw new Error("Staff session required");
     const { data, error } = await client.auth.mfa.getAuthenticatorAssuranceLevel();
     if (error || !data || (data.nextLevel === "aal2" && data.currentLevel !== "aal2"))
       throw new Error("Staff session assurance unavailable");

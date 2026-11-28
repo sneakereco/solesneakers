@@ -58,12 +58,15 @@ function acquisitionSql(scope: DatasetScope, discovery: boolean) {
  )`;
   const sums =
     "sum(sessions) AS traffic,sum(purchasing) AS bought,sum(confirmed) AS orders,sum(amount) AS net,sum(known) AS known_amounts,sum(missing) AS missing_amounts";
+  const pageStart = "toInt({variables.page_start})",
+    pageEnd = "toInt({variables.page_end})";
   const table = `${source}, axes AS (${dimensions.map((k) => "SELECT '" + k + "' AS axis").join(" UNION ALL ")}),
  grouped AS (SELECT axis,CASE axis ${dimensions.map((k) => "WHEN '" + k + "' THEN " + k).join(" ")} END AS label,${sums} FROM flows CROSS JOIN axes GROUP BY axis,label),
- ranked AS (SELECT *,row_number() OVER(PARTITION BY axis ORDER BY CASE {variables.sort} WHEN 'revenue' THEN net WHEN 'confirmedOrders' THEN orders WHEN 'purchasingSessions' THEN bought ELSE traffic END DESC,label) AS rank_num FROM grouped),
- totals AS (SELECT axis,count(*) AS total FROM grouped GROUP BY axis)
- SELECT a.axis AS axis,nullIf(r.label,'') AS label,r.traffic AS sessions,r.bought AS purchasing,r.orders AS confirmed,toString(r.net) AS revenue,r.known_amounts AS known,r.missing_amounts AS missing,
- coalesce(t.total,0) AS total,${attributionSql},${invalidTimingCount(devicePredicate + " AND " + segmentPredicate(prefix))} AS invalid_events FROM axes a LEFT JOIN totals t ON t.axis=a.axis LEFT JOIN ranked r ON r.axis=a.axis AND r.rank_num>toInt({variables.page_start}) AND r.rank_num<=toInt({variables.page_end}) ORDER BY a.axis,r.rank_num`;
+ ranked AS (SELECT *,row_number() OVER(PARTITION BY axis ORDER BY CASE {variables.sort} WHEN 'revenue' THEN net WHEN 'confirmedOrders' THEN orders WHEN 'purchasingSessions' THEN bought ELSE traffic END DESC,label) AS rank_num,
+ count(*) OVER(PARTITION BY axis) AS total FROM grouped),
+ paged AS (SELECT * FROM ranked WHERE (rank_num>${pageStart} AND rank_num<=${pageEnd}) OR (rank_num=1 AND total<=${pageStart}))
+ SELECT a.axis AS axis,CASE WHEN r.rank_num>${pageStart} THEN nullIf(r.label,'') ELSE NULL END AS label,r.traffic AS sessions,r.bought AS purchasing,r.orders AS confirmed,toString(r.net) AS revenue,r.known_amounts AS known,r.missing_amounts AS missing,
+ coalesce(r.total,0) AS total,${attributionSql},${invalidTimingCount(devicePredicate + " AND " + segmentPredicate(prefix))} AS invalid_events FROM axes a LEFT JOIN paged r ON r.axis=a.axis ORDER BY a.axis,r.rank_num`;
   const series = `${source} SELECT ${localBucket} AS period,${sums.replace("sum(amount) AS net", "toString(sum(amount)) AS net")},count(DISTINCT visitor) AS visitors FROM flows GROUP BY period ORDER BY period`;
   return { table, series };
 }

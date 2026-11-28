@@ -3,6 +3,11 @@ import { setTimeout as delay } from "node:timers/promises";
 import { pathToFileURL } from "node:url";
 import { parseArgs } from "node:util";
 import { buildManifest } from "./admin-analytics-manifest.mjs";
+import {
+  bootstrapV1,
+  legacyV1,
+  scopedLegacyHash,
+} from "./analytics-endpoint-revisions.mjs";
 import { requireAnalytics } from "./analytics-operator-runtime.mjs";
 
 const maxPageRows = 500;
@@ -42,7 +47,8 @@ export function planProvisioning({ environment, at, archiveCutoff = null }) {
     });
     const variables = new Map();
     for (const definition of manifest.endpoints) {
-      if (definition.version !== 1) throw Error();
+      if (definition.version !== (Object.hasOwn(legacyV1, definition.name) ? 2 : 1))
+        throw Error();
       for (const { code_name: name, type } of definition.variables) {
         if (type !== "String" || !/^[a-z][a-z\d_]*$/.test(name)) throw Error();
         variables.set(name, {
@@ -57,7 +63,7 @@ export function planProvisioning({ environment, at, archiveCutoff = null }) {
     return { manifest, variables: [...variables.values()] };
   } catch {
     throw new ProvisionError(
-      "Invalid initial analytics manifest or UTC activation instant.",
+      "Invalid analytics provisioning manifest or UTC activation instant.",
     );
   }
 }
@@ -130,7 +136,7 @@ function boundedExchange(request) {
   };
 }
 
-async function provisionInitial(plan, env, request, sleep) {
+async function applyProvisioning(plan, env, request, sleep) {
   const provisioningKey = env.POSTHOG_PROVISIONING_KEY ?? "";
   if (
     !/^phx_[a-z\d_-]{20,}$/i.test(provisioningKey) ||
@@ -178,25 +184,25 @@ async function provisionInitial(plan, env, request, sleep) {
       throw new ProvisionError("PostHog read rejected or malformed.");
     return body;
   };
-  const create = async (url, body, readBack) => {
+  const mutate = async (method, url, body, readBack) => {
     let acknowledged = false;
     try {
       const { status } = await exchange(
         url.href,
         {
-          method: "POST",
+          method,
           headers: { ...headers, "Content-Type": "application/json" },
           body: JSON.stringify(body),
         },
         false,
         20_000,
       );
-      acknowledged = status === 201;
+      acknowledged = status === (method === "POST" ? 201 : 200);
     } catch (error) {
       if (!(error instanceof ReadUnavailable)) throw error;
     }
     // A lost acknowledgement or duplicate can leave a committed definition.
-    // Read the exact target with bounded retries and never repeat a POST here.
+    // Read the exact target with bounded retries and never repeat a mutation here.
     for (const wait of [0, 500, 1_000]) {
       if (wait) await sleep(wait);
       try {
@@ -207,7 +213,7 @@ async function provisionInitial(plan, env, request, sleep) {
       }
     }
     throw new ProvisionError(
-      "PostHog create outcome unconfirmed. Inspect the project and re-run only after it settles.",
+      "PostHog write outcome unconfirmed. Inspect the project and re-run only after it settles.",
     );
   };
 
@@ -275,18 +281,18 @@ async function provisionInitial(plan, env, request, sleep) {
     return { kind: "HogQLQuery", query: definition.sql, variables: bindings };
   }
 
-  async function readEndpoint(definition, variables, awaitingCreate = false) {
-    const url = new URL(`endpoints/${definition.name}/`, project);
+  async function readCurrentVersion(url, definition) {
     const current = await get(url, true);
     if (current === null) return null;
     if (
       current.name !== definition.name ||
-      current.current_version !== definition.version
+      (current.current_version !== 1 && current.current_version !== definition.version)
     )
       throw new ProvisionError("Conflicting current PostHog Endpoint definition.");
-    url.searchParams.set("version", definition.version);
-    const pinned = await get(url, true);
-    if (pinned === null && awaitingCreate) return null;
+    return current.current_version;
+  }
+
+  function verifyPinned(pinned, definition, variables) {
     const expected = queryFor(definition, variables);
     const actual = pinned?.query;
     const bindings = actual?.variables;
@@ -322,42 +328,93 @@ async function provisionInitial(plan, env, request, sleep) {
       })
     )
       throw new ProvisionError("Conflicting pinned PostHog Endpoint definition.");
-    return true;
+  }
+
+  async function readEndpoint(definition, variables, awaitingMutation = false) {
+    const url = new URL(`endpoints/${definition.name}/`, project);
+    const version = await readCurrentVersion(url, definition);
+    if (version === null || (awaitingMutation && version < definition.version))
+      return null;
+    const pinned = await get(new URL(`?version=${version}`, url), true);
+    if (pinned === null && awaitingMutation) return null;
+    let expected = definition;
+    if (version !== definition.version) {
+      expected = bootstrapV1(definition);
+      const sql = pinned?.query?.query;
+      if (sql !== expected.sql) {
+        const legacy = legacyV1[definition.name];
+        if (scopedLegacyHash(sql, plan.manifest.scope) !== legacy.hash)
+          throw new ProvisionError("Conflicting legacy PostHog Endpoint definition.");
+        expected = {
+          ...expected,
+          sql,
+          variables: legacy.names.map((code_name) => ({ code_name })),
+        };
+      }
+    }
+    verifyPinned(pinned, expected, variables);
+    // A pinned revision stays readable if a concurrent write advances the Endpoint.
+    const latest = await readCurrentVersion(url, definition);
+    if (awaitingMutation && (latest === null || latest < version)) return null;
+    if (latest !== version)
+      throw new ProvisionError("Conflicting current PostHog Endpoint definition.");
+    return version === definition.version ? "verified" : "revise";
   }
 
   let variables = await listVariables();
-  const missingEndpoints = [];
+  const pendingEndpoints = [];
   for (const definition of plan.manifest.endpoints) {
-    if (!(await readEndpoint(definition, variables))) missingEndpoints.push(definition);
+    const existing = await readEndpoint(definition, variables);
+    if (existing !== "verified") pendingEndpoints.push({ definition, existing });
   }
   let createdVariables = 0;
   let createdEndpoints = 0;
+  let revisedEndpoints = 0;
   for (const [name, body] of wanted) {
     if (variables.has(name)) continue;
-    const { acknowledged, proof } = await create(collection, body, async () => {
+    const { acknowledged, proof } = await mutate("POST", collection, body, async () => {
       const reread = await listVariables();
       return reread.has(name) ? reread : null;
     });
     variables = proof;
     createdVariables += Number(acknowledged);
   }
-  for (const definition of missingEndpoints) {
-    const body = {
-      name: definition.name,
-      query: queryFor(definition, variables),
-      is_active: true,
-      is_materialized: false,
-    };
-    const { acknowledged } = await create(new URL("endpoints/", project), body, () =>
-      readEndpoint(definition, variables, true),
+  for (const { definition, existing } of pendingEndpoints) {
+    if (existing === null) {
+      const initial = definition.version === 1 ? definition : bootstrapV1(definition);
+      const body = {
+        name: initial.name,
+        query: queryFor(initial, variables),
+        is_active: true,
+        is_materialized: false,
+      };
+      const { acknowledged } = await mutate(
+        "POST",
+        new URL("endpoints/", project),
+        body,
+        () => readEndpoint(initial, variables, true),
+      );
+      createdEndpoints += Number(acknowledged);
+    }
+    if (definition.version === 1) continue;
+    const latest = await readEndpoint(definition, variables);
+    if (latest === "verified") continue;
+    if (latest !== "revise")
+      throw new ProvisionError("Conflicting current PostHog Endpoint definition.");
+    const { acknowledged } = await mutate(
+      "PATCH",
+      new URL(`endpoints/${definition.name}/`, project),
+      { query: queryFor(definition, variables) },
+      () => readEndpoint(definition, variables, true),
     );
-    createdEndpoints += Number(acknowledged);
+    revisedEndpoints += Number(acknowledged);
   }
   return {
     mode: "write",
     environment: config.environment,
     createdVariables,
     createdEndpoints,
+    revisedEndpoints,
     verifiedVariables: wanted.size,
     verifiedEndpoints: plan.manifest.endpoints.length,
   };
@@ -375,7 +432,7 @@ export async function provisionAnalytics({
   const plan = planProvisioning({ environment, at, archiveCutoff });
   if (write !== true) return { mode: "dry-run", ...plan };
   try {
-    return await provisionInitial(plan, env, request, sleep);
+    return await applyProvisioning(plan, env, request, sleep);
   } catch (error) {
     if (error instanceof ProvisionError) throw error;
     throw new ProvisionError("Analytics provisioning unavailable.");
