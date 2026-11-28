@@ -628,13 +628,192 @@ test("limited optional behavior preserves newer independently verified product s
     state: "ready",
   });
 });
-test("expired owners or busy followers cannot bypass shared admission", async () => {
-  const { deps } = setup();
-  deps.store!.lock = () => Promise.resolve(false);
-  deps.deadline = performance.now() + 80;
-  const r = await loadAnalyticsReport(request("sales"), deps);
-  expect(r).toMatchObject({ data: null, state: "unavailable" });
-  expect(deps.execute).not.toHaveBeenCalled();
+describe("shared report waits", () => {
+  beforeEach(() => jest.useFakeTimers());
+  afterEach(() => jest.useRealTimers());
+
+  const sleep = (ms: number) => new Promise<void>((resolve) => setTimeout(resolve, ms));
+  const query: CompiledQuery = {
+    endpoint: "sole_analytics_sales",
+    version: 1,
+    variables: {},
+    limit: 1,
+    offset: 0,
+  };
+
+  test("a cold follower in another worker receives a slow owner's report", async () => {
+    const { deps, f } = setup();
+    f.sale("guest", "guest");
+    // A separate module registry has its own in-memory flights but shares the store.
+    let followerLoad!: typeof loadAnalyticsReport;
+    jest.isolateModules(() => {
+      const worker = jest.requireActual<{
+        loadAnalyticsReport: typeof loadAnalyticsReport;
+      }>("../../../Source/Features/Reporting/report-cache");
+      followerLoad = worker.loadAnalyticsReport;
+    });
+    expect(followerLoad).not.toBe(loadAnalyticsReport);
+    const r = request("sales");
+    const ownerExecute = jest.fn(async (compiled: CompiledQuery) => {
+      await sleep(10_000);
+      return f.execute(compiled);
+    });
+    const owner = loadAnalyticsReport(r, { ...deps, execute: ownerExecute });
+    await jest.advanceTimersByTimeAsync(0);
+    expect(ownerExecute).toHaveBeenCalledTimes(2);
+    const follower = followerLoad(r, deps);
+    await jest.advanceTimersByTimeAsync(11_000);
+    const expected = await owner;
+    expect(expected).toMatchObject({ state: "ready", data: { confirmedOrders: 1 } });
+    await expect(follower).resolves.toEqual(expected);
+    expect(deps.execute).not.toHaveBeenCalled();
+  });
+
+  test("a cold follower exhausts its deadline without bypassing the lock", async () => {
+    const { deps } = setup();
+    deps.store!.lock = jest.fn().mockResolvedValue(false);
+    const complete = jest.fn();
+    const pending = loadAnalyticsReport(request("sales"), deps).then(complete);
+    await jest.advanceTimersByTimeAsync(19_999);
+    expect(complete).not.toHaveBeenCalled();
+    await jest.advanceTimersByTimeAsync(1);
+    await pending;
+    expect(complete).toHaveBeenCalledWith(
+      expect.objectContaining({ state: "unavailable", data: null }),
+    );
+    expect(deps.store!.lock).toHaveBeenCalledTimes(1);
+    expect(deps.execute).not.toHaveBeenCalled();
+  });
+
+  test("an eligible stale report is returned promptly while another worker refreshes", async () => {
+    const { deps, tick } = setup();
+    deps.history = { ...deps.history, observation: laggingObservation };
+    const r = request("sales");
+    const prior = await loadAnalyticsReport(r, deps);
+    tick(301);
+    jest.mocked(deps.execute).mockClear();
+    deps.store!.lock = jest.fn().mockResolvedValue(false);
+    const complete = jest.fn();
+    const pending = loadAnalyticsReport(r, deps).then(complete);
+    await jest.advanceTimersByTimeAsync(1_250);
+    expect(complete).toHaveBeenCalledWith(
+      expect.objectContaining({ state: "stale", asOf: prior.asOf, data: prior.data }),
+    );
+    await pending;
+    expect(deps.execute).not.toHaveBeenCalled();
+  });
+
+  test("a report uses both shared permits after the observer releases them", async () => {
+    const { deps, f } = setup();
+    f.sale("guest", "guest");
+    const permits = new Set<string>();
+    const store = deps.store!;
+    store.admit = (_, permit) => {
+      if (permits.size === 2) return Promise.resolve("busy");
+      permits.add(permit);
+      return Promise.resolve("ok");
+    };
+    store.release = (_, permit) => {
+      permits.delete(permit);
+      return Promise.resolve();
+    };
+    const budget = createObservationQueryBudget(
+      { ...deps, execute: () => sleep(3_000) },
+      performance.now() + 20_000,
+    );
+    const observing = Promise.all([budget.execute(query), budget.execute(query)]);
+    await jest.advanceTimersByTimeAsync(0);
+    expect(permits.size).toBe(2);
+    const reporting = loadAnalyticsReport(request("sales"), deps);
+    await jest.advanceTimersByTimeAsync(2_999);
+    expect(deps.execute).not.toHaveBeenCalled();
+    await jest.advanceTimersByTimeAsync(1_001);
+    await expect(reporting).resolves.toMatchObject({
+      state: "ready",
+      data: { confirmedOrders: 1 },
+    });
+    expect(deps.execute).toHaveBeenCalledTimes(2);
+    await observing;
+    await budget.close();
+    expect(permits.size).toBe(0);
+  });
+
+  test("late Redis admission leaves time to return verified Overview sales", async () => {
+    const { deps, f } = setup();
+    f.sale("guest", "guest");
+    const store = deps.store!;
+    const reportDeadline = 20_000;
+    const redisDelay = 1_000;
+    const settlementMargin = 250;
+    const latestAdmission = reportDeadline - 3 * redisDelay - settlementMargin;
+    const optionalAttempts: number[] = [];
+    store.admit = jest
+      .fn()
+      .mockResolvedValueOnce("ok")
+      .mockResolvedValueOnce("ok")
+      .mockImplementation(() => {
+        const at = performance.now();
+        optionalAttempts.push(at);
+        return at < latestAdmission + settlementMargin
+          ? Promise.resolve("busy")
+          : sleep(redisDelay).then(() => "ok");
+      });
+    store.release = () => sleep(redisDelay);
+    const finish = store.finish;
+    store.finish = async (...args) => {
+      await sleep(redisDelay);
+      await finish(...args);
+    };
+    const pending = loadAnalyticsReport(request("overview"), deps);
+    await jest.advanceTimersByTimeAsync(reportDeadline);
+    await expect(pending).resolves.toMatchObject({
+      state: "ready",
+      data: { summary: { confirmedOrders: 1, sessions: null } },
+      coverage: expect.arrayContaining([
+        expect.objectContaining({ code: "component-unavailable", metric: "sessions" }),
+      ]),
+    });
+    expect(optionalAttempts.length).toBeGreaterThan(0);
+    expect(Math.max(...optionalAttempts)).toBeLessThan(latestAdmission);
+    expect(deps.execute).toHaveBeenCalledTimes(2);
+  });
+
+  test("busy admission reaches the query deadline without starting provider work", async () => {
+    const { deps } = setup();
+    const store = deps.store!;
+    store.admit = jest.fn().mockResolvedValue("busy");
+    const budget = createObservationQueryBudget(deps, performance.now() + 1_873);
+    const failure = jest.fn();
+    const pending = budget.execute(query).catch(failure);
+    await jest.advanceTimersByTimeAsync(1_872);
+    expect(failure).not.toHaveBeenCalled();
+    await jest.advanceTimersByTimeAsync(1);
+    await pending;
+    expect(failure).toHaveBeenCalledWith(expect.objectContaining({ reason: "timeout" }));
+    expect(deps.execute).not.toHaveBeenCalled();
+    await budget.close();
+  });
+
+  test.each(["limited", "store failure"])(
+    "admission stops polling when a busy permit is followed by %s",
+    async (outcome) => {
+      const { deps } = setup();
+      const store = deps.store!;
+      const admit = jest.fn().mockResolvedValueOnce("busy");
+      if (outcome === "limited") admit.mockResolvedValue("limited");
+      else admit.mockRejectedValue(new Error("shared store unavailable"));
+      store.admit = admit;
+      const budget = createObservationQueryBudget(deps, performance.now() + 20_000);
+      const failure = jest.fn();
+      const pending = budget.execute(query).catch(failure);
+      await jest.advanceTimersByTimeAsync(1_000);
+      expect(failure).toHaveBeenCalledTimes(1);
+      expect(admit).toHaveBeenCalledTimes(2);
+      expect(deps.execute).not.toHaveBeenCalled();
+      await pending;
+      await budget.close();
+    },
+  );
 });
 test("a live-only selection becomes wholly unavailable when its sole reading expires during loading", async () => {
   const { deps, tick, f } = setup();
