@@ -602,9 +602,9 @@ for (const [state, timing] of [
       };
       const user = { id: "account-a", email: "a@fixture.invalid" };
       const calls = [];
-      let releasePrepare;
+      let releaseSubmission;
       const delayed = new Promise((resolve) => {
-        releasePrepare = resolve;
+        releaseSubmission = resolve;
       });
       let sessionUser = user;
       const { page, close } = await mountCheckoutBrowser({
@@ -645,7 +645,9 @@ for (const [state, timing] of [
             return route.fulfill({
               json: { completeness: "exact", quoteFingerprint: "a".repeat(64), totals },
             });
-          if (url.pathname === "/api/checkout/prepare") {
+          if (url.pathname === "/api/checkout/review")
+            return route.fulfill({ json: { reviewed: true, totals } });
+          if (url.pathname === "/api/checkout/submit") {
             if (timing !== "immediate") await delayed;
             return route.fulfill({
               status: 409,
@@ -671,7 +673,7 @@ for (const [state, timing] of [
       await page.getByLabel("Name on card", { exact: true }).fill("Shopper A");
       await page.getByRole("button", { name: /Pay .* now/i }).click();
       if (timing !== "immediate") {
-        await expect.poll(() => calls.includes("/api/checkout/prepare")).toBe(true);
+        await expect.poll(() => calls.includes("/api/checkout/submit")).toBe(true);
         if (timing === "reverified" || timing === "superseded owner") {
           await page.evaluate(() => {
             window.oldApply = window.testCart.applyStockConflicts;
@@ -720,9 +722,9 @@ for (const [state, timing] of [
             };
           });
         const handled = page.waitForResponse(
-          (r) => new URL(r.url()).pathname === "/api/checkout/prepare",
+          (r) => new URL(r.url()).pathname === "/api/checkout/submit",
         );
-        releasePrepare();
+        releaseSubmission();
         await handled;
         if (timing === "denied cart write") {
           await page.waitForFunction(() => !window.testCart.isReady);
@@ -756,7 +758,19 @@ for (const [state, timing] of [
             "replacement-pair",
           );
         }
-        await expect(page.getByText(/check your order status/i)).toHaveCount(0);
+        if (timing === "superseded owner")
+          await expect(page.getByText(/check your order status/i)).toHaveCount(0);
+        else {
+          // The final request was already sent. Its stale response cannot prove
+          // that the original payment failed or authorize another charge.
+          await expect(page.getByText(/check your order status/i)).toBeVisible();
+          const dismiss = page.getByRole("button", { name: "Return to checkout" });
+          if (await dismiss.isVisible()) await dismiss.click();
+          await expect(
+            page.getByRole("button", { name: "Pay now", exact: true }),
+          ).toBeDisabled();
+        }
+        await expect(page.getByText(/haven't been charged/i)).toHaveCount(0);
         assert.ok(
           await page.evaluate(() =>
             window.testCart.items.every((row) => !row.orderScoped && !row.availability),
@@ -837,7 +851,8 @@ for (const [state, timing] of [
           ).toBeDisabled();
         }
       }
-      assert.equal(calls.filter((p) => p === "/api/checkout/prepare").length, 1);
+      assert.equal(calls.filter((p) => p === "/api/checkout/review").length, 1);
+      assert.equal(calls.filter((p) => p === "/api/checkout/submit").length, 1);
       assert.equal(
         calls.includes("/api/checkout/payment-permit") ||
           calls.includes("/api/checkout/pay"),
