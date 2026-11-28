@@ -9,9 +9,17 @@ const { load } = require("js-yaml");
 const workflow = load(
   readFileSync(new URL("../../.github/workflows/ci.yml", import.meta.url), "utf8"),
 );
-const lanes = ["scope", "checks", "database", "browser"];
+const databaseLanes = ["database-1", "database-2", "database-3", "database-4"];
+const browserLanes = ["browser-1", "browser-2", "browser-3", "browser-4"];
+const lanes = ["scope", "checks", ...databaseLanes, ...browserLanes];
 const jobs = workflow.jobs;
-const steps = Object.values(jobs).flatMap((job) => job.steps ?? []);
+const steps = [
+  jobs.scope,
+  jobs.checks,
+  jobs["database-1"],
+  jobs["browser-1"],
+  jobs.validate,
+].flatMap((job) => job?.steps ?? []);
 const step = (name) => {
   const matches = steps.filter((entry) => entry.name === name);
   assert.equal(matches.length, 1, `Expected exactly one ${name} step`);
@@ -21,7 +29,7 @@ const step = (name) => {
 test("database and browser lanes can start together without waiting for ordinary validation", () => {
   assert.deepEqual(Object.keys(jobs).sort(), [...lanes, "validate"].sort());
   assert.equal(jobs.checks.needs, undefined);
-  for (const name of ["database", "browser"]) {
+  for (const name of [...databaseLanes, ...browserLanes]) {
     assert.deepEqual([jobs[name].needs].flat(), ["scope"]);
     assert.equal(jobs[name].if, undefined, "Unconditional suites must still run");
   }
@@ -29,22 +37,39 @@ test("database and browser lanes can start together without waiting for ordinary
   assert.match(jobs.validate.if, /always\(\)/);
 });
 
-test("each checkout family schedules all four isolated shards without cancelling siblings", async () => {
+test("each checkout family schedules four individually required isolated jobs", async () => {
   const { runCheckoutDatabaseChecks } = await import(
     "../../scripts/test-checkout-hardening-db.mjs"
   );
   const { runCheckoutBrowserChecks } = await import("../browser/checkout-hardening.mjs");
-  for (const [family, runner, label] of [
-    ["database", runCheckoutDatabaseChecks, "Isolated checkout database gates"],
-    ["browser", runCheckoutBrowserChecks, "Checkout Chromium gates"],
+  for (const [names, runner, label, runtime] of [
+    [
+      databaseLanes,
+      runCheckoutDatabaseChecks,
+      "Isolated checkout database gates",
+      "owned-runtime",
+    ],
+    [
+      browserLanes,
+      runCheckoutBrowserChecks,
+      "Checkout Chromium gates",
+      "chromium-runtime",
+    ],
   ]) {
-    const job = jobs[family];
-    assert.deepEqual(job.strategy?.matrix?.shard, [1, 2, 3, 4]);
-    assert.equal(job.strategy["fail-fast"], false);
-    assert.equal(job["continue-on-error"], undefined);
     const executed = [];
-    for (const shard of job.strategy.matrix.shard) {
-      const command = step(label).run.replace("${{ matrix.shard }}", String(shard));
+    for (const [index, name] of names.entries()) {
+      const job = jobs[name];
+      assert.ok(job, `Missing required shard ${name}`);
+      assert.equal(
+        job.strategy,
+        undefined,
+        "Individual shard results must not be hidden by a matrix aggregate",
+      );
+      assert.equal(job["continue-on-error"], undefined);
+      assert.equal(job.env.CI_CHECKOUT_SHARD, String(index + 1));
+      const command = job.steps
+        .find((entry) => entry.name === label)
+        .run.replace("${{ env.CI_CHECKOUT_SHARD }}", job.env.CI_CHECKOUT_SHARD);
       const match = / (--shard=[1-4]\/4)$/.exec(command);
       assert.ok(match, command);
       await runner(
@@ -58,7 +83,6 @@ test("each checkout family schedules all four isolated shards without cancelling
     await runner(async (name) => {
       all.push(name);
     });
-    const runtime = family === "database" ? "owned-runtime" : "chromium-runtime";
     assert.equal(executed.filter((name) => name === runtime).length, 4);
     assert.deepEqual(
       executed.filter((name) => name !== runtime).sort(),
@@ -128,12 +152,12 @@ test("retains every nonduplicate validation command and the existing scope rules
   );
   assert.equal(
     step("Rehearse hosted bootstrap and checkout migration ordering").if,
-    "matrix.shard == 1",
+    "env.CI_CHECKOUT_SHARD == '1'",
   );
   for (const name of ["Measurement browser suites", "Analytics browser suites"])
     assert.equal(
       step(name).if,
-      "matrix.shard == 2",
+      "env.CI_CHECKOUT_SHARD == '2'",
       `${name} must run regardless of checkout scope`,
     );
 });
@@ -145,7 +169,7 @@ test("each parallel lane installs its own dependencies and required runtimes", (
     undefined,
     "The scope-only job must not publish an empty npm download cache",
   );
-  for (const name of ["checks", "database", "browser"]) {
+  for (const name of ["checks", ...databaseLanes, ...browserLanes]) {
     assert.ok(jobs[name], `Missing ${name} lane`);
     const lane = jobs[name].steps;
     assert.ok(lane.some(({ uses }) => uses?.startsWith("actions/checkout@")));
@@ -158,14 +182,14 @@ test("each parallel lane installs its own dependencies and required runtimes", (
     assert.ok(lane.some(({ run }) => run === "npm ci"));
   }
   assert.ok(
-    jobs.browser.steps.some(
+    jobs["browser-1"].steps.some(
       ({ run, if: condition }) =>
         run?.includes("playwright install --with-deps chromium") &&
         condition === undefined,
     ),
   );
   assert.ok(
-    jobs.database.steps.some(
+    jobs["database-1"].steps.some(
       ({ run }) =>
         run?.includes("docker pull redis@sha256:") &&
         run.includes("docker pull postgrest/postgrest@sha256:"),

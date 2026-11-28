@@ -4,7 +4,7 @@
 
 **Goal:** Reduce CI elapsed time and repeated branch updates without dropping coverage or integration protection.
 
-**Architecture:** Four isolated matrix runners for each checkout family, existing aggregate validate gate, and native GitHub merge-group validation. Preserve full local runner commands and every fixture guard.
+**Architecture:** Four individually required isolated jobs for each checkout family, existing validate gate, and native GitHub merge-group validation. Preserve full local runner commands and every fixture guard. Independent review replaced matrix aggregate results with eight individual job results to reject missing or cancelled shards reliably.
 
 **Tech Stack:** GitHub Actions, Node 24.14.1, Ubuntu 24.04, existing Supabase/Docker and Playwright fixtures.
 
@@ -29,7 +29,7 @@
 
 **Files:** Modify scripts/test-checkout-hardening-db.mjs and tests/browser/checkout-hardening.mjs; create tests/fixtures/checkout-shards.mjs and tests/operations/checkout-database-runner.test.mjs; extend tests/operations/checkout-browser-runner.test.mjs.
 
-**Interfaces:** Both exported runCheckoutDatabaseChecks(gate, flags = []) and runCheckoutBrowserChecks(gate, flags = []) execute their existing gate contracts. Shared selectCheckoutShard(checks, flags, faultFlag) validates optional --shard=N/4 and returns selected checks and broken flag.
+**Interfaces:** Both exported runCheckoutDatabaseChecks(gate, flags = []) and runCheckoutBrowserChecks(gate, flags = []) execute their existing gate contracts. Shared selectCheckoutShard(checks, flags, faultFlag) validates optional --shard=N/4 and fault flags and returns selected checks.
 
 - [ ] Add behavioral coverage tests for the literal baseline commands, union of four shards, repeated runtime controls, unchanged environments, negative controls, bad flags, and thrown gate errors.
 - [ ] Run the runner tests; confirm new sharding tests fail before implementation.
@@ -37,11 +37,11 @@
 - [ ] Run node --test tests/operations/checkout-database-runner.test.mjs tests/operations/checkout-browser-runner.test.mjs tests/fixtures/checkout-gate.test.mjs and confirm all pass.
 - [ ] Commit the runner change.
 
-### Task 2: Queue-capable workflow and complete matrix result gate
+### Task 2: Queue-capable workflow and individual shard result gate
 
 **Files:** Modify .github/workflows/ci.yml, tests/operations/ci-parallel-validation.test.mjs and tests/operations/checkout-validation-scope.test.mjs; add docs/operations/ci-merge-queue.md.
 
-**Interfaces:** Matrix shard values are 1, 2, 3, 4; runner flags are --shard=N/4. validate consumes scope/checks/database/browser aggregate results and accepts only success.
+**Interfaces:** database-1 through database-4 and browser-1 through browser-4 have shard values 1, 2, 3, 4; runner flags are --shard=N/4. validate consumes scope/checks and eight individual shard results and accepts only success.
 
 - [ ] Add failing tests that inspect the actual expanded matrix commands and execute the real validate script for all non-success results; pin full merge-group scope behavior with the actual scope CLI.
 - [ ] Add merge_group trigger, event-separated concurrency, four-shard matrices with fail-fast false, and shard-specific unconditional suites. Include new orchestration tests in ordinary CI.

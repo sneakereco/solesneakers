@@ -47,6 +47,14 @@ const suites = [
 
 test("full database command preserves both modes of every original suite and both safety controls", async () => {
   const calls = await collect();
+  assert.deepEqual(calls[0], [
+    "owned-runtime",
+    [
+      "--input-type=module",
+      "-e",
+      'import {localDockerSocket} from "./tests/database/fixtures/checkout-hardening.mjs"; import {execFileSync} from "node:child_process"; await localDockerSocket(); execFileSync("docker",["version","--format","{{.Server.Version}}"],{timeout:10000});',
+    ],
+  ]);
   assert.deepEqual(
     calls.map(([name]) => name),
     [

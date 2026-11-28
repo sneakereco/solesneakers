@@ -2,9 +2,9 @@
 
 Checkout database and browser validation each use four isolated Ubuntu runners. Within a runner, suites still execute sequentially using their original fixtures. Every database suite receives its own owned project and cleanup. Every original fresh/populated suite and every unique browser suite remains present.
 
-`validate` requires successful scope, ordinary checks, database matrix, and browser matrix results. Both matrices disable fail-fast, have no continue-on-error, and include shards 1 through 4. A failure in a matrix blocks its aggregate result. A failed, cancelled, skipped, or missing prerequisite blocks `validate`.
+`validate` individually requires successful scope, ordinary checks, database-1 through database-4, and browser-1 through browser-4 results. Shards are separate jobs with shared step definitions, not matrix aggregates. No job uses continue-on-error. A failed, cancelled, skipped, or missing prerequisite blocks `validate`, including a shard that never acquires a runner. Sibling jobs continue independently so all failures remain visible.
 
-The inexpensive Docker/Chromium runtime control runs on every corresponding shard. Stock and basket fault controls run on shard 1. Migration rehearsals run on database shard 1 regardless of checkout scope. Measurement and analytics suites run on browser shard 2 regardless of checkout scope. Each remains a required part of its matrix.
+The inexpensive Docker/Chromium runtime control runs on every corresponding shard. Stock and basket fault controls run on shard 1. Migration rehearsals run on database shard 1 regardless of checkout scope. Measurement and analytics suites run on browser shard 2 regardless of checkout scope. Each remains part of an individually required job.
 
 Local commands still run the complete family:
 

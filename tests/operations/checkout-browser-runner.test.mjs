@@ -24,6 +24,80 @@ async function collect(flags = []) {
 
 test("runs every unique browser suite once and keeps both runtime/fault controls", async () => {
   const calls = await collect();
+  assert.deepEqual(calls, [
+    [
+      "chromium-runtime",
+      [
+        "--input-type=module",
+        "-e",
+        'import {chromium} from "@playwright/test"; const b=await chromium.launch(); await b.close()',
+      ],
+    ],
+    [
+      "original-basket-row-disappeared",
+      [
+        "--test",
+        "--test-reporter=tap",
+        "src/Modules/Cart/Tests/Features/ManageBasket/retained-cart.browser.mjs",
+      ],
+      {
+        env: { CHECKOUT_GATE_FAULT: "cart" },
+        expectedFailure: "original basket row disappeared before confirmation",
+        propagateFailure: false,
+      },
+    ],
+    [
+      "retained-cart",
+      [
+        "--test",
+        "src/Modules/Cart/Tests/Features/ManageBasket/retained-cart.browser.mjs",
+      ],
+    ],
+    ["fixture", ["--test", "tests/browser/checkout-hardening-fixture.test.mjs"]],
+    [
+      "identity-and-validation",
+      ["--test", "src/Modules/Cart/Tests/Features/ManageBasket/basket-state.browser.mjs"],
+    ],
+    [
+      "original-units",
+      [
+        "--test",
+        "src/Modules/Cart/Tests/Features/ManageBasket/purchase-capture.browser.mjs",
+      ],
+    ],
+    [
+      "availability",
+      [
+        "--test",
+        "src/Modules/Cart/Tests/Features/ValidateBasket/availability.browser.mjs",
+      ],
+    ],
+    [
+      "guest-context",
+      [
+        "--test",
+        "src/Modules/Checkout/Tests/Features/Preparation/guest-context.browser.test.mjs",
+      ],
+    ],
+    [
+      "observations",
+      [
+        "--test",
+        "src/Modules/Checkout/Tests/Features/Outcomes/checkout-outcome.browser.mjs",
+      ],
+    ],
+    ...[
+      "payment-methods",
+      "checkout-ui",
+      "shipping-validation",
+      "admin-transaction-detail",
+      "admin-button-contrast",
+      "shipping-settings-modal",
+      "ux-checkout",
+      "ux-receipt-authority",
+      "ux-account-auth",
+    ].map((name) => [name, ["tests/browser/" + name + ".mjs"]]),
+  ]);
   assert.deepEqual(
     calls.map(([name]) => name),
     [

@@ -10,7 +10,7 @@ The user approved the recommended merge queue and database/browser sharding on N
 
 ## Design
 
-Keep ordinary checks in their current job. Database and browser jobs each use four matrix shards, with fail-fast disabled and no continue-on-error. Their existing required `validate` job accepts success only from scope, checks, and both complete matrices. Test the matrix configuration and execute the real final result gate against failures, cancellations, skips, and missing results.
+Keep ordinary checks in their current job. Database and browser validation each use four individually named jobs with no continue-on-error. Their existing required `validate` job accepts success only from scope, checks, and all eight shard jobs individually. Shared YAML step anchors avoid copying commands. Independent review identified a reported GitHub matrix cancellation edge case, so individual job results replace the initially proposed matrices. Execute the real final result gate against failures, cancellations, skips, and missing shard results while every sibling succeeds.
 
 Each runner supports an optional `--shard=N/4` argument. No shard argument retains the complete local command. Reject malformed, unsupported, duplicate, empty, and unknown arguments before executing any checks. Export the database runner's gate boundary, as the browser runner already does, to verify literal commands and failure propagation without provisioning test databases in orchestration unit tests.
 
