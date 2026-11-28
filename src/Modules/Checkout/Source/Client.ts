@@ -5,6 +5,9 @@ export {
   getOrCreateCheckoutDeviceSessionId,
   readGuestOrderAccess,
   needsOriginalRecovery,
+  observeStoredGuestAccess,
+  originalRecoveryContext,
+  resolveCheckoutAttempt,
 } from "./Features/Outcomes/client-session";
 export { CheckoutOutcome } from "./Features/Outcomes/CheckoutOutcome";
 export {

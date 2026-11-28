@@ -52,6 +52,7 @@ export async function capturePreparedAttempt(
       result.status === "captured" ? result.applyStockConflicts : undefined,
     resumed: attempt.mode === "resume",
     requireRecovery: (orderId?: string) => attempt.requireRecovery(ownerId, orderId),
+    clearRecovery: (orderId: string) => attempt.clearRecovery(ownerId ?? null, orderId),
     key: attempt.key,
     current: () => attempt.current() && (!discoverOriginal || attempt.issuedTo(ownerId)),
     discoverOriginal,

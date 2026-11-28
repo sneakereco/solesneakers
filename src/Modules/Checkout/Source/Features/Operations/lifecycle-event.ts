@@ -160,6 +160,8 @@ const routes = [
   "/api/orders/:orderId",
   "/order-status/:orderId",
   "/api/checkout/prepare",
+  "/api/checkout/review",
+  "/api/checkout/submit",
   "/api/checkout/quote",
   "/api/checkout/payment-permit",
   "/api/checkout/pay",

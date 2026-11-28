@@ -118,6 +118,7 @@ async function fixture(browser) {
     ctx,
     quoteCalls: 0,
     prepareCalls: [],
+    reviewCalls: [],
     payCalls: 0,
     permitCalls: 0,
     scriptCalls: 0,
@@ -125,7 +126,7 @@ async function fixture(browser) {
     session: { user: buyer, role: "customer" },
     errors: [],
   };
-  await ctx.route("**/*", async (route) => {
+  const handle = async (route) => {
     const u = new URL(route.request().url()),
       path = u.pathname;
     if (u.hostname === "sandbox.web.squarecdn.com") {
@@ -141,6 +142,64 @@ async function fixture(browser) {
       });
     }
     if (u.hostname !== "ux.test") return route.abort();
+    if (path === "/api/checkout/review") {
+      const input = route.request().postDataJSON();
+      f.reviewCalls.push(input);
+      if (f.reviewHold) await f.reviewHold.promise;
+      const suggested = f.suggestion
+        ? "Private Suggested Street"
+        : f.lastUnit?.suggestion;
+      if (suggested && !input.shippingConfirmation && input.paymentMethod !== "applePay")
+        return route.fulfill({
+          status: 422,
+          json: {
+            code: "SHIPPING_ADDRESS_SUGGESTION",
+            error: "Review address",
+            suggestedAddress: { ...input.shippingAddress, line1: suggested },
+            shippingConfirmation: "fixture",
+          },
+        });
+      return route.fulfill({ json: { reviewed: true, totals } });
+    }
+    if (path === "/api/checkout/submit") {
+      const body = route.request().postDataJSON();
+      const internal = (path, input) =>
+        handle({
+          request: () => ({
+            url: () => "https://ux.test" + path,
+            postDataJSON: () => input,
+          }),
+          fulfill: async (result) => result,
+          abort: async () => ({ status: 503, json: { error: "Unavailable" } }),
+        });
+      const preparedResponse = await internal("/api/checkout/prepare", body.preparation);
+      if (
+        (preparedResponse.status ?? 200) >= 400 ||
+        preparedResponse.json?.code === "CHECKOUT_RECOVERY_REQUIRED"
+      )
+        return route.fulfill(preparedResponse);
+      const permit = await internal("/api/checkout/payment-permit", {
+        orderId: preparedResponse.json.orderId,
+        deviceSessionId: body.preparation.deviceSessionId,
+        guestAccessToken: preparedResponse.json.guestAccessToken,
+        method: body.preparation.paymentMethod,
+        turnstileToken: body.turnstileToken,
+      });
+      const result =
+        (permit.status ?? 200) >= 400
+          ? { status: permit.status, json: { status: "UNKNOWN" } }
+          : await internal("/api/checkout/pay", {
+              permit: permit.json.permit,
+              sourceId: body.sourceId,
+            });
+      return route.fulfill({
+        json: {
+          ...preparedResponse.json,
+          paymentResult: { status: result.status ?? 200, body: result.json },
+        },
+      });
+    }
+
     if (path === "/api/cart/validate") {
       const input = route.request().postDataJSON();
       if (f.lastUnit?.reservation) {
@@ -362,7 +421,8 @@ async function fixture(browser) {
       return;
     }
     return route.fulfill({ status: 404, body: "" });
-  });
+  };
+  await ctx.route("**/*", handle);
   f.open = async (path = "/checkout", init) => {
     const page = await ctx.newPage();
     page.on("pageerror", (e) => f.errors.push(e.message));
@@ -650,9 +710,15 @@ async function retryDeclinedLastUnit(
   );
   assert.deepEqual(await financialPair(), originalPair);
   assert.equal(
-    f.prepareCalls.filter((input) => !input.recoveryOnly).length,
-    suggestion ? 2 : 1,
+    await p.evaluate(
+      () =>
+        JSON.parse(sessionStorage.getItem("checkout_original_recovery_v1") || "null")
+          ?.orderId,
+    ),
+    order.id,
+    "a retry must save recovery before its payment submission too",
   );
+  assert.equal(f.prepareCalls.filter((input) => !input.recoveryOnly).length, 1);
   assert.ok(f.prepareCalls.some((input) => input.recoveryOnly));
   assert.equal(f.permitCalls, 2);
   assert.equal(f.payCalls, 2);
@@ -680,29 +746,23 @@ async function controlledPost(f, stage, mode) {
         if (url !== "/api/checkout/" + stage) return real(url, options);
         window.postCount = (window.postCount || 0) + 1;
         if (window.postCount > 1) return real(url, options);
+        const accepted = await real(url, options);
+        const body = await accepted.json();
         if (mode === "drop") throw new TypeError("Failed to fetch");
         if (mode === "decline")
-          return Response.json({ error: "Payment was declined." }, { status: 402 });
+          return Response.json({
+            ...body,
+            paymentResult: {
+              status: 402,
+              body: {
+                error: "Payment was declined.",
+                status: "FAILED",
+                attemptId: "71111111-1111-4111-8111-111111111114",
+              },
+            },
+          });
         if (mode === "unreadable") return new Response("<html>");
         const held = new Promise((r) => (window.releasePost = r));
-        const body =
-          stage === "payment-permit"
-            ? { permit: "fixture" }
-            : stage === "prepare"
-              ? {
-                  orderId: "71111111-1111-4111-8111-111111111111",
-                  reused: false,
-                  totals: {
-                    subtotalCents: 200,
-                    shippingCents: 20,
-                    taxCents: 10,
-                    totalCents: 230,
-                  },
-                }
-              : {
-                  statusUrl:
-                    "/checkout/success?orderId=71111111-1111-4111-8111-111111111111",
-                };
         if (mode === "headers") {
           await held;
           return Response.json(body);
@@ -785,7 +845,7 @@ async function copiedCheckout(f, missingOriginal) {
     await b.evaluate((x) => window.cart.addItem(x).then((r) => r.status), item),
     "saved",
   );
-  await pay(b);
+  await b.getByRole("button", { name: "Check original order" }).press("Enter");
   await expect
     .poll(() => f.prepareCalls.length)
     .toBe(2)
@@ -812,7 +872,7 @@ async function copiedCheckout(f, missingOriginal) {
   assert.equal(await b.evaluate(() => window.tokenCalls ?? 0), 0);
   if (missingOriginal) {
     await expect(b.getByRole("button", { name: "Check original order" })).toBeVisible();
-    await expect(b.getByRole("link", { name: "Check order status" })).toBeVisible();
+    await expect(b.getByText(/We could not find your original order/)).toBeVisible();
     assert.equal(
       await b.evaluate(() => sessionStorage.getItem("checkout_idempotency_key")),
       original.idempotencyKey,
@@ -824,18 +884,20 @@ async function copiedCheckout(f, missingOriginal) {
   assert.equal(await b.evaluate(() => window.cart.itemCount), 1);
   f.prepareHold.resolve();
   await expect(a.getByRole("heading", { name: "Order Confirmed!" })).toBeVisible();
-  assert.equal(f.permitCalls, 0);
-  assert.equal(await a.evaluate(() => window.tokenCalls ?? 0), 0);
+  assert.equal(f.permitCalls, 1);
+  assert.equal(await a.evaluate(() => window.tokenCalls ?? 0), 1);
   assert.equal(await a.evaluate(() => window.cart.itemCount), 1);
-  assert.equal(f.payCalls, 0);
+  assert.equal(f.payCalls, 1);
 }
 
 const cases = {
   async lostPayment(f) {
     for (const mode of ["drop", "headers", "body", "unreadable"]) {
       f.orderHold = gate();
-      const p = await controlledPost(f, "pay", mode);
+      const p = await controlledPost(f, "submit", mode);
       await p.clock.fastForward(16000);
+      await p.getByRole("button", { name: "Return to checkout" }).click();
+      await p.getByRole("button", { name: "Check original order" }).press("Enter");
       await expect(p).toHaveURL(
         /checkout\/processing\?orderId=71111111-1111-4111-8111-111111111111/,
       );
@@ -863,7 +925,7 @@ const cases = {
     }
   },
   async decline(f) {
-    const p = await controlledPost(f, "pay", "decline");
+    const p = await controlledPost(f, "submit", "decline");
     await expect(p.getByRole("dialog").getByText("Payment was declined.")).toBeVisible();
     assert.equal(f.statusCalls, 0);
   },
@@ -914,8 +976,9 @@ const cases = {
   lastUnitDeclineLateQualification: (f) =>
     retryDeclinedLastUnit(f, { failure: "late qualification" }),
   async earlyDeadline(f) {
-    for (const stage of ["prepare", "payment-permit"])
+    for (const stage of ["review", "submit"])
       for (const mode of ["headers", "body"]) {
+        const beforePay = f.payCalls;
         const p = await controlledPost(f, stage, mode);
         const key = await p.evaluate(() =>
           sessionStorage.getItem("checkout_idempotency_key"),
@@ -923,11 +986,14 @@ const cases = {
         await p.waitForFunction(() => window.postCount === 1);
         await p.clock.runFor(16001);
         await expect(p.getByRole("dialog").getByRole("alert")).toContainText(
-          /try again/i,
+          /try again|original order/i,
         );
         await p.evaluate(() => window.releasePost());
-        assert.equal(await p.evaluate(() => window.tokenCalls || 0), 0);
-        assert.equal(f.payCalls, 0);
+        assert.equal(
+          await p.evaluate(() => window.tokenCalls || 0),
+          stage === "submit" ? 1 : 0,
+        );
+        assert.equal(f.payCalls - beforePay, stage === "submit" ? 1 : 0);
         assert.equal(
           await p.evaluate(() => sessionStorage.getItem("checkout_idempotency_key")),
           key,
@@ -1312,7 +1378,8 @@ const cases = {
     await p.evaluate(() => window.session.refreshSession());
     await expect(p.getByText("Private Suggested Street")).toHaveCount(0);
     await expect(p.getByRole("link", { name: "Reload checkout" })).toBeVisible();
-    assert.equal(f.prepareCalls.length, 1);
+    assert.equal(f.prepareCalls.length, 0);
+    assert.equal(f.reviewCalls.length, 1);
     assert.equal(f.payCalls, 0);
   },
   async privateWallet(f) {
@@ -1352,19 +1419,19 @@ const cases = {
   },
   async privateLate(f) {
     f.suggestion = true;
-    f.prepareHold = gate();
+    f.reviewHold = gate();
     const p = await f.open();
     await pay(p);
-    await expect.poll(() => f.prepareCalls.length).toBe(1);
+    await expect.poll(() => f.reviewCalls.length).toBe(1);
     f.session = { user: null, role: null };
     await p.evaluate(() => window.session.refreshSession());
-    f.prepareHold.resolve();
+    f.reviewHold.resolve();
     await expect(p.getByRole("link", { name: "Reload checkout" })).toBeVisible();
     await expect(p.getByText("Private Suggested Street")).toHaveCount(0);
     await expect(p.getByRole("button", { name: "Accept suggested address" })).toHaveCount(
       0,
     );
-    assert.equal(f.prepareCalls.length, 1);
+    assert.equal(f.prepareCalls.length, 0);
     assert.equal(f.payCalls, 0);
   },
   async cashChange(f) {
@@ -1543,6 +1610,7 @@ try {
       for (const hold of [
         "quoteHold",
         "prepareHold",
+        "reviewHold",
         "sessionHold",
         "orderHold",
         "scriptHold",

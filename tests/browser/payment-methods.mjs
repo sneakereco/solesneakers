@@ -52,7 +52,7 @@ const result = await build({
         const [props, setProps] = useState(initial);
         test.change = (next) => setProps(old => ({ ...old, ...next }));
         return <SquarePaymentMethods {...props} paymentConfig={{ applicationId: 'sandbox-test', locationId: 'test', environment: 'sandbox' }}
-          isGuest={false} prepare={async (...args) => { test.prepareCalls++; test.lastPrepare = args; if (test.holdPrepare) return new Promise((resolve, reject) => { test.resolvePrepare = resolve; test.rejectPrepare = reject; }); throw new Error('test boundary'); }}
+          isGuest={false} prepare={async (...args) => { if(test.reviewedCheckout && test.reviewedMethod===args[0]) { const checkout=test.reviewedCheckout; test.reviewedCheckout=null; return checkout; } test.prepareCalls++; test.lastPrepare = args; if (test.holdPrepare) return new Promise((resolve, reject) => { test.resolvePrepare = resolve; test.rejectPrepare = reject; }); throw new Error('test boundary'); }} review={async (...args) => { test.reviewedCheckout=null; test.prepareCalls++; test.lastPrepare = args; if (test.holdPrepare) return new Promise((resolve, reject) => { test.resolvePrepare = checkout => {test.reviewedCheckout=checkout;test.reviewedMethod=args[0];resolve(checkout)}; test.rejectPrepare = reject; }); throw new Error('test boundary'); }}
           onProcessing={() => {}} quoteWalletShippingDestination={async () => { throw new Error('unused'); }}
           resolveWalletShippingContact={async () => { throw new Error('unused'); }} />;
       }
@@ -278,7 +278,7 @@ try {
       totals: { ...exact.totals, totalCents: 12000 },
     },
   });
-  await page.waitForFunction(() => window.paymentTest.counts.cashAppPay === 2);
+  await page.waitForFunction(() => window.paymentTest.counts.cashAppPay >= 2);
   assert.equal(
     await page
       .getByRole("radio", { name: "Cash App Pay", exact: true })

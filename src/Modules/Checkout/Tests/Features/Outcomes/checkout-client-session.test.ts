@@ -5,6 +5,7 @@ import {
   readGuestOrderAccess,
   readPreparedScope,
   storeGuestOrderAccess,
+  needsOriginalRecovery,
 } from "@/Modules/Checkout/Source/Features/Outcomes/client-session";
 
 function memoryStorage(): Storage {
@@ -26,6 +27,28 @@ function memoryStorage(): Storage {
 }
 
 describe("checkout client session", () => {
+  it("clears submission uncertainty only for a correlated definitive negative", () => {
+    const storage = memoryStorage();
+    getOrCreateCheckoutDeviceSessionId(
+      storage,
+      () => "55555555-5555-4555-8555-555555555555",
+    );
+    const attempt = resolveCheckoutAttempt(
+      "cart",
+      storage,
+      () => "33333333-3333-4333-8333-333333333333",
+    );
+    attempt.commit(null);
+    const order = "44444444-4444-4444-8444-444444444444";
+    attempt.requireRecovery(null, order);
+    expect(needsOriginalRecovery(null, storage)).toBe(true);
+    expect(attempt.clearRecovery(null, "66666666-6666-4666-8666-666666666666")).toBe(
+      false,
+    );
+    expect(attempt.clearRecovery(null, order)).toBe(true);
+    expect(needsOriginalRecovery(null, storage)).toBe(false);
+    expect(attempt.current()).toBe(true);
+  });
   it("reuses an idempotency key only while the cart fingerprint is unchanged", () => {
     const storage = memoryStorage();
     const createId = jest

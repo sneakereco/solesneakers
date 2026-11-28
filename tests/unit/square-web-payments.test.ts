@@ -14,7 +14,7 @@ describe("Square Web Payments adapter", () => {
     );
   });
 
-  it("requests a bound permit before tokenizing", async () => {
+  it("requests a fresh bound permit only after tokenization finishes", async () => {
     const fetchImpl = jest.fn().mockResolvedValue({
       ok: true,
       json: () => Promise.resolve({ permit: "permit-1" }),
@@ -36,8 +36,8 @@ describe("Square Web Payments adapter", () => {
         fetchImpl: fetchImpl as never,
       }),
     ).resolves.toEqual({ permit: "permit-1", sourceId: "source-1" });
-    expect(fetchImpl.mock.invocationCallOrder[0]).toBeLessThan(
-      paymentMethod.tokenize.mock.invocationCallOrder[0],
+    expect(paymentMethod.tokenize.mock.invocationCallOrder[0]).toBeLessThan(
+      fetchImpl.mock.invocationCallOrder[0],
     );
   });
 

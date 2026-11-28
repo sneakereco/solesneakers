@@ -62,6 +62,12 @@ export interface CartPurchaseActions {
     signal?: AbortSignal,
     requireOriginalUnits?: true,
   ): Promise<boolean>;
+  bindRecoveredOrder?(
+    attemptKey: string,
+    orderId: string,
+    signal: AbortSignal,
+    isCurrentAttempt: () => boolean,
+  ): Promise<boolean>;
   consumeConfirmedPurchase(
     orderId: string,
     purchased: readonly PurchaseLine[],

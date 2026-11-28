@@ -45,6 +45,10 @@ describe("direct checkout API routes", () => {
       body: "{}",
     });
     await expect(route(request as never)).resolves.toBe(expected);
-    expect(handler).toHaveBeenCalledWith(request, expect.any(Object));
+    expect(handler).toHaveBeenCalledWith(
+      request,
+      expect.any(Object),
+      ...(path === "prepare" ? [{ resumeOnly: true }] : []),
+    );
   });
 });

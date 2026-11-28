@@ -20,6 +20,7 @@ import type { ShippingAddressValidationError } from "@/lib/checkout/shipping-add
 type PaymentDialogProps = {
   open: boolean;
   preparing?: boolean;
+  cancellable?: boolean;
   cartRecovery?: boolean;
   providerActive?: boolean;
   loadingProvider?: "Afterpay" | "Cash App Pay" | null;
@@ -64,6 +65,7 @@ function PaymentDialogContent({
   open,
   providerActive = false,
   preparing = false,
+  cancellable = false,
   cartRecovery = false,
   loadingProvider = null,
   error,
@@ -112,6 +114,7 @@ function PaymentDialogContent({
         onCancel={(event) => {
           event.preventDefault();
           if (
+            cancellable ||
             error ||
             addressReview ||
             totalReview !== null ||
@@ -194,7 +197,8 @@ function PaymentDialogContent({
           </button>
         )}
         {cashAppReapproval && <div id="cash-app-address-confirmation" className="mt-5" />}
-        {(error ||
+        {(cancellable ||
+          error ||
           addressReview ||
           totalReview !== null ||
           cashAppReapproval ||
@@ -204,7 +208,11 @@ function PaymentDialogContent({
             onClick={onDismiss}
             className="mt-6 rounded-lg bg-zinc-900 px-5 py-3 font-medium text-white"
           >
-            {addressReview || totalReview !== null || cashAppReapproval || walletReview
+            {cancellable ||
+            addressReview ||
+            totalReview !== null ||
+            cashAppReapproval ||
+            walletReview
               ? "Cancel checkout"
               : "Return to checkout"}
           </button>

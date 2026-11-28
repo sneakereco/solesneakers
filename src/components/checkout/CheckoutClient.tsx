@@ -27,6 +27,7 @@ import {
 } from "@/components/checkout/CheckoutOrderSummary";
 import {
   SquarePaymentMethods,
+  CheckoutCartUnavailable,
   type CheckoutPreparationContext,
   type CheckoutPaymentAddress,
   type PaymentMethod,
@@ -39,6 +40,9 @@ import {
   capturePreparedAttempt,
   readGuestOrderAccess,
   needsOriginalRecovery,
+  observeStoredGuestAccess,
+  originalRecoveryContext,
+  resolveCheckoutAttempt,
   recoverOriginalOrder,
   useCheckoutRegistration,
   useProcessingCredential,
@@ -249,9 +253,6 @@ function OwnerCheckout({
   } | null>(null);
   const [quoteRevision, setQuoteRevision] = useState(0);
   const requestSequence = useRef(0);
-  const lastQuote = useRef<{ current: () => boolean; fingerprint: string | null } | null>(
-    null,
-  );
   const [needsRecovery, setNeedsRecovery] = useState(() =>
     needsOriginalRecovery(initialData.ownerId),
   );
@@ -492,10 +493,6 @@ function OwnerCheckout({
         .then((quote) => {
           if (!controller.signal.aborted && requestSequence.current === requestId) {
             setResolvedQuote({ key: quoteKey, observation: isCurrent });
-            lastQuote.current = {
-              current: isCurrent,
-              fingerprint: quote.quoteFingerprint,
-            };
             setQuoteState({ status: "ready", quote });
           }
         })
@@ -504,7 +501,6 @@ function OwnerCheckout({
             return;
           }
           setResolvedQuote({ key: quoteKey, observation: isCurrent });
-          lastQuote.current = { current: isCurrent, fingerprint: null };
           setQuoteState({
             status: "error",
             message:
@@ -628,6 +624,94 @@ function OwnerCheckout({
     };
   }
 
+  async function review(method: PaymentMethod, context: CheckoutPreparationContext) {
+    if (originalRetry) return prepare(method, context);
+    await requireOwner();
+    if (needsOriginalRecovery(initialData.ownerId) || needsRecovery) {
+      setNeedsRecovery(true);
+      throw Error("Check your original order status before trying another payment.");
+    }
+    const assertCurrentBasket = () => {
+      if (basketKey !== currentBasket.current)
+        throw Error("Your cart changed. Review your items before paying.");
+    };
+    assertCurrentBasket();
+    const selectedQuote = context.quote ?? exactQuote;
+    if (!selectedQuote) throw Error("Complete your address to calculate your total.");
+    const selectedAddress = context.shippingAddress ?? shippingAddress;
+    const { response, data } = await postCheckoutJson(
+      "/api/checkout/review",
+      buildCheckoutPreparePayload({
+        items: checkoutItems,
+        fulfillment,
+        paymentMethod: method,
+        buyerEmail: (initialData.isGuest ? (context.buyerEmail ?? email) : email)
+          .trim()
+          .toLowerCase(),
+        shippingAddress: selectedAddress,
+        billingAddress: context.billingAddress ?? null,
+        pickupContact:
+          fulfillment === "pickup"
+            ? (context.pickupContact ?? { name: address.name, phone: address.phone })
+            : null,
+        quoteFingerprint: selectedQuote.quoteFingerprint,
+        shippingConfirmation: context.shippingConfirmation,
+        shippingAddressOverride: context.shippingAddressOverride,
+        idempotencyKey: crypto.randomUUID(),
+        deviceSessionId: getOrCreateCheckoutDeviceSessionId(),
+      }),
+    );
+    await requireOwner();
+    assertCurrentBasket();
+    if (!response.ok) {
+      if (data?.code === "CHECKOUT_TOTALS_CHANGED")
+        setQuoteRevision((value) => value + 1);
+      if (data?.code === "INVENTORY_CONFLICT") {
+        const conflicts = inventoryConflict.array().nonempty().safeParse(data.conflicts);
+        if (conflicts.success)
+          await latestCart.current.applyStockConflicts(
+            conflicts.data,
+            false,
+            () => basketKey === currentBasket.current,
+          );
+        await requireOwner();
+        await latestCart.current.recheckAvailability().catch(() => false);
+        throw new CheckoutCartUnavailable(
+          "An item is no longer available in the requested quantity. Review your cart before continuing.",
+        );
+      }
+      if (
+        selectedAddress &&
+        [
+          "SHIPPING_ADDRESS_INVALID",
+          "SHIPPING_ADDRESS_SUGGESTION",
+          "SHIPPING_ADDRESS_UNAVAILABLE",
+        ].includes(data?.code)
+      ) {
+        const suggestion = checkoutShippingAddressSchema.safeParse(data.suggestedAddress);
+        throw new ShippingAddressValidationError(
+          data.error || "Check your shipping address.",
+          selectedAddress,
+          suggestion.success ? suggestion.data : undefined,
+          data.shippingConfirmation,
+          data.enteredShippingConfirmation,
+          data.code,
+        );
+      }
+      throw Error(
+        data?.error || "Unable to review checkout. Review your cart and try again.",
+      );
+    }
+    if (
+      data?.reviewed !== true ||
+      Object.entries(selectedQuote.totals).some(
+        ([key, value]) => data?.totals?.[key] !== value,
+      )
+    )
+      throw Error("Checkout totals changed. Review your total before paying.");
+    return { totals: selectedQuote.totals, assertCurrentBasket };
+  }
+
   async function prepare(
     method: PaymentMethod,
     context?: CheckoutPreparationContext,
@@ -711,16 +795,36 @@ function OwnerCheckout({
           throw Error(basketChanged);
       };
       assertCurrentBasket();
+      const retryAttempt = resolveCheckoutAttempt(original.fingerprint);
+      if (retryAttempt.mode !== "resume" || retryAttempt.key !== original.key)
+        throw Error("Your checkout changed. Review your original order before paying.");
+      const onVerifiedNegative = () => {
+        assertFinancialAttempt();
+        if (retryAttempt.clearRecovery(initialData.ownerId, original.scope.orderId))
+          setNeedsRecovery(false);
+        onDefinitiveDecline();
+      };
       return {
         ...original.scope,
         deviceSessionId: original.payload.deviceSessionId,
         totals: original.quote.totals,
         assertCurrentBasket,
         assertFinancialAttempt,
-        onDefinitiveDecline,
+        protectSubmission: () => {
+          assertCurrentBasket();
+          retryAttempt.requireRecovery(initialData.ownerId, original.scope.orderId);
+          if (!needsOriginalRecovery(initialData.ownerId))
+            throw Error(
+              "Checkout could not save your recovery details. No payment was submitted. Enable browser storage and try again.",
+            );
+          setNeedsRecovery(true);
+        },
+        onDefinitiveDecline: onVerifiedNegative,
+        onPaymentNotSubmitted: onVerifiedNegative,
       };
     }
     const deviceSessionId = getOrCreateCheckoutDeviceSessionId();
+    const submittedGrantCurrent = observeStoredGuestAccess();
     activeAttempt.current?.abort();
     const lifetime = new AbortController();
     activeAttempt.current = lifetime;
@@ -730,7 +834,15 @@ function OwnerCheckout({
         ...latestCart.current,
         bindPreparedOrder: async (id, order, signal) => {
           await requireOwner({ waitForQuote: true });
-          return latestCart.current.bindPreparedOrder(id, order, signal, true);
+          // Final submission may already have paid while shopping changed. Bind
+          // the captured unit lineage for receipt settlement; no further charge
+          // may depend on today's basket matching that historical capture.
+          return latestCart.current.bindPreparedOrder(
+            id,
+            order,
+            signal,
+            context?.sourceId ? undefined : true,
+          );
         },
       },
       checkoutItems,
@@ -742,6 +854,9 @@ function OwnerCheckout({
       initialData.ownerId,
     );
     const attemptKey = attempt.key;
+    const rejectUnsubmitted = () => {
+      if (attempt.reject()) setNeedsRecovery(false);
+    };
     await requireOwner();
     assertRenderedBasket();
     if (!attempt.current() || lifetime.signal.aborted)
@@ -764,32 +879,69 @@ function OwnerCheckout({
         throw Error("Checking your original order status.");
       }
     }
+    const preparation = buildCheckoutPreparePayload({
+      items: attempt.items,
+      fulfillment,
+      paymentMethod: method,
+      buyerEmail,
+      shippingAddress: selectedShippingAddress,
+      billingAddress: selectedBillingAddress,
+      pickupContact: selectedPickupContact,
+      quoteFingerprint: selectedQuote.quoteFingerprint,
+      shippingConfirmation: attempt.recoveryOnly
+        ? undefined
+        : context?.shippingConfirmation,
+      shippingAddressOverride: attempt.recoveryOnly
+        ? undefined
+        : context?.shippingAddressOverride,
+      ...(attempt.recoveryOnly ? { recoveryOnly: true as const } : {}),
+      idempotencyKey: attemptKey,
+      deviceSessionId,
+      ...(!attempt.recoveryOnly && isCurrent()
+        ? { trackingContext: getCheckoutTrackingContext() }
+        : {}),
+    });
+    if (context?.sourceId && !attempt.recoveryOnly) {
+      attempt.requireRecovery();
+      if (!needsOriginalRecovery(initialData.ownerId)) {
+        if (!attempt.resumed) rejectUnsubmitted();
+        throw Error(
+          "Checkout could not save your recovery details. No payment was submitted. Enable browser storage and try again.",
+        );
+      }
+      setNeedsRecovery(true);
+    }
     const { response, data } = await postCheckoutJson(
-      "/api/checkout/prepare",
-      buildCheckoutPreparePayload({
-        items: attempt.items,
-        fulfillment,
-        paymentMethod: method,
-        buyerEmail,
-        shippingAddress: selectedShippingAddress,
-        billingAddress: selectedBillingAddress,
-        pickupContact: selectedPickupContact,
-        quoteFingerprint: selectedQuote.quoteFingerprint,
-        shippingConfirmation: attempt.recoveryOnly
-          ? undefined
-          : context?.shippingConfirmation,
-        shippingAddressOverride: attempt.recoveryOnly
-          ? undefined
-          : context?.shippingAddressOverride,
-        ...(attempt.recoveryOnly ? { recoveryOnly: true as const } : {}),
-        idempotencyKey: attemptKey,
-        deviceSessionId,
-        ...(!attempt.recoveryOnly && isCurrent()
-          ? { trackingContext: getCheckoutTrackingContext() }
-          : {}),
-      }),
-    );
+      context?.sourceId && !attempt.recoveryOnly
+        ? "/api/checkout/submit"
+        : "/api/checkout/prepare",
+      context?.sourceId && !attempt.recoveryOnly
+        ? {
+            preparation,
+            sourceId: context.sourceId,
+            turnstileToken: context.turnstileToken,
+          }
+        : preparation,
+    ).catch(() => {
+      attempt.requireRecovery();
+      setNeedsRecovery(true);
+      throw Error(
+        "Payment confirmation is taking longer than expected. Check your original order status before trying another payment.",
+      );
+    });
     await requireOwner();
+    if (
+      context?.sourceId &&
+      initialData.isGuest &&
+      data?.paymentResult?.status >= 400 &&
+      !submittedGrantCurrent()
+    ) {
+      attempt.requireRecovery();
+      setNeedsRecovery(true);
+      throw Error(
+        "Your checkout changed. Check your original order before paying again.",
+      );
+    }
     if (lifetime.signal.aborted || !attempt.current())
       throw Error(
         data?.code === "INVENTORY_CONFLICT"
@@ -799,11 +951,19 @@ function OwnerCheckout({
     const reverified = !isCurrent();
     // A successful prepare may have already reserved our last unit. Its scoped
     // validation below must establish the original lines before a permit can issue.
-    if (!response.ok || !reverified) assertRenderedBasket();
+    if (!data?.paymentResult && (!response.ok || !reverified)) assertRenderedBasket();
     const observeOnly =
       data?.code === "CHECKOUT_RECOVERY_REQUIRED" &&
       z.uuid().safeParse(data?.orderId).success;
     if (!response.ok && !observeOnly) {
+      if (
+        !attempt.resumed &&
+        data?.code === "PAYMENT_NOT_SUBMITTED" &&
+        data?.paymentState === "not_submitted"
+      ) {
+        rejectUnsubmitted();
+        throw Error(data.error || "Complete the security check and try again.");
+      }
       if (
         attempt.recoveryOnly ||
         (attempt.resumed &&
@@ -863,7 +1023,7 @@ function OwnerCheckout({
                 ),
               )
               .join(" ");
-            attempt.reject();
+            rejectUnsubmitted();
             throw new Error(message);
           }
           throw new Error("Your cart changed. Review your items before paying.");
@@ -879,6 +1039,7 @@ function OwnerCheckout({
           "SHIPPING_ADDRESS_UNAVAILABLE",
         ].includes(data?.code)
       ) {
+        if (response.status === 422 && !attempt.resumed) rejectUnsubmitted();
         const suggestion = checkoutShippingAddressSchema.safeParse(
           data?.suggestedAddress,
         );
@@ -896,7 +1057,7 @@ function OwnerCheckout({
         );
       }
       if (response.status === 409) {
-        attempt.reject();
+        rejectUnsubmitted();
         setQuoteRevision((value) => value + 1);
       }
       throw new Error(data?.error || "Unable to prepare checkout");
@@ -916,6 +1077,7 @@ function OwnerCheckout({
       initialData.isGuest && typeof data.guestAccessToken === "string"
         ? data.guestAccessToken
         : undefined;
+    if (context?.sourceId) attempt.requireRecovery(data.orderId);
     if (observeOnly) attempt.requireRecovery(data.orderId);
     const bound = await attempt.prepared(data.orderId, token, observeOnly);
     await requireOwner();
@@ -942,11 +1104,9 @@ function OwnerCheckout({
       const release = registerScope(orderScope);
       scopes?.register(data.orderId, guestAccessToken ?? null, release);
     } else pendingScope.current = orderScope;
-    const boundBasketCurrent = await latestCart.current.boundBasketGuard(
-      orderScope,
-      items,
-      reverified,
-    );
+    const boundBasketCurrent = data.paymentResult
+      ? () => true
+      : await latestCart.current.boundBasketGuard(orderScope, items, reverified);
     await requireOwner();
     if (!boundBasketCurrent()) {
       attempt.requireRecovery(data.orderId);
@@ -954,10 +1114,7 @@ function OwnerCheckout({
       throw new Error(basketChanged);
     }
     if (reverified) {
-      const refreshedQuote = lastQuote.current;
       if (
-        (refreshedQuote?.current() &&
-          refreshedQuote.fingerprint !== selectedQuote.quoteFingerprint) ||
         Object.entries(selectedQuote.totals).some(
           ([key, cents]) => data.totals[key] !== cents,
         )
@@ -977,18 +1134,25 @@ function OwnerCheckout({
       )
         throw Error("Your checkout changed. Review your current order.");
     };
+    const onVerifiedNegative = () => {
+      assertFinancialAttempt();
+      if (attempt.clearRecovery(data.orderId)) setNeedsRecovery(false);
+      onDefinitiveDecline();
+    };
     return {
       assertCurrentBasket: () => {
         if (!boundBasketCurrent()) throw new Error(basketChanged);
         assertFinancialAttempt();
       },
       assertFinancialAttempt,
-      onDefinitiveDecline,
+      onDefinitiveDecline: onVerifiedNegative,
+      onPaymentNotSubmitted: onVerifiedNegative,
       orderId: data.orderId,
       guestAccessToken,
       transientGuestAccessToken,
       deviceSessionId,
       totals: data.totals,
+      paymentResult: data.paymentResult,
     };
   }
 
@@ -1004,6 +1168,25 @@ function OwnerCheckout({
         controller.signal,
       );
       if (controller.signal.aborted) return;
+      // Reassociate existing captured units without creating a new capture or
+      // requiring today's basket to match. A busy/unwritable Cart cannot block
+      // financial status: this optional local association has a short deadline.
+      const original = originalRecoveryContext(initialData.ownerId);
+      const bind = latestCart.current.bindRecoveredOrder;
+      if (original?.current() && latestCart.current.isReady && bind) {
+        const bound = await withRequestDeadline(
+          (signal) => bind(original.key, reference.orderId, signal, original.current),
+          controller.signal,
+          1_000,
+        ).catch(() => false);
+        if (bound)
+          original.recordCapturedOrder(
+            reference.orderId,
+            reference.transientGuestAccessToken,
+          );
+      }
+      await requireOwner();
+      if (controller.signal.aborted || (original && !original.current())) return;
       onProcessing(reference.orderId, reference.transientGuestAccessToken);
       router.replace(
         "/checkout/processing?orderId=" + encodeURIComponent(reference.orderId),
@@ -1187,6 +1370,7 @@ function OwnerCheckout({
                 quoteWalletShippingDestination={quoteWalletShippingDestination}
                 resolveWalletShippingContact={resolveWalletShippingContact}
                 prepare={prepare}
+                review={review}
                 onProcessing={onProcessing}
               >
                 <CheckoutContactSection
