@@ -318,6 +318,12 @@ try {
   await page.clock.runFor(6500);
   assert.equal(await slideshow.getByRole("img").getAttribute("alt"), offscreen);
   await slideshow.scrollIntoViewIfNeeded();
+  await slideshow.locator("div[aria-hidden]").nth(1).waitFor({ state: "attached" });
+  assert.equal(
+    await slideshow.locator('[style*="background-image"]').count(),
+    0,
+    "visible slides do not bypass the optimizer with raw CSS backgrounds",
+  );
   await page.mouse.move(0, 0);
   await page.clock.runFor(6500);
   assert.notEqual(await slideshow.getByRole("img").getAttribute("alt"), offscreen);

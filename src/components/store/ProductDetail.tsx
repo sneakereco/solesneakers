@@ -181,8 +181,7 @@ function OrdinaryProductDetail({ product }: ProductDetailProps) {
                     alt={`${product.name}, view ${index + 1}`}
                     fill
                     sizes="72px"
-                    loading="eager"
-                    priority={index < 4}
+                    loading="lazy"
                     className="object-contain p-1 mix-blend-multiply"
                     quality={75}
                   />
