@@ -55,6 +55,35 @@ test("combines the independent database and browser requirements", () => {
   );
 });
 
+test("an observer and endpoint revision PR skips checkout gates unless it also changes checkout", () => {
+  const analyticsChanges = [
+    ".github/workflows/analytics-observers.yml",
+    ".github/workflows/ci.yml",
+    "scripts/provision-admin-analytics.mjs",
+    "scripts/analytics-endpoint-revisions.mjs",
+    "scripts/resolve-analytics-observer-release.mjs",
+    "scripts/resolve-analytics-observer-deployment.mjs",
+    "src/Modules/Analytics/Source/Features/Reporting/query-contract.ts",
+    "tests/operations/admin-analytics-observer-deployment.test.mjs",
+    "tests/operations/admin-analytics-provision.test.mjs",
+    "tests/operations/ci-parallel-validation.test.mjs",
+    "tests/operations/fixtures/analytics-active-v1.sql",
+  ];
+  assert.deepEqual(scope(analyticsChanges), { database: false, chromium: false });
+  assert.deepEqual(scope([...analyticsChanges, "src/components/checkout/checkout.css"]), {
+    database: false,
+    chromium: true,
+  });
+  assert.deepEqual(scope([...analyticsChanges, "src/app/api/cart/validate/route.ts"]), {
+    database: true,
+    chromium: true,
+  });
+  assert.deepEqual(scope([...analyticsChanges, "tests/operations/fixtures/other.sql"]), {
+    database: true,
+    chromium: true,
+  });
+});
+
 const script = fileURLToPath(
   new URL("../../scripts/checkout-validation-scope.mjs", import.meta.url),
 );

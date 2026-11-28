@@ -33,6 +33,7 @@ import {
   devicePredicate,
   invalidTimingCount,
   segmentPredicate,
+  sessionEntryPredicate,
 } from "./behavior-source";
 import { localBucket, decomposed } from "./financial";
 import type { CompiledReportQueries } from "../query-contract";
@@ -107,7 +108,7 @@ export function visitorEndpoints(scope: DatasetScope) {
     activeEndpoint(scope),
     endpoint(
       "sole_analytics_visitor_series",
-      `${session} SELECT ${localBucket.replaceAll("report_at", "entered_at")} AS period,count(DISTINCT session_visitor) AS visitors,count(*) AS sessions FROM sessions GROUP BY period ORDER BY period`,
+      `WITH ${observationSql(scope)} SELECT ${localBucket.replaceAll("report_at", "entered_at")} AS period,count(DISTINCT session_visitor) AS visitors,count(*) AS sessions FROM session_entries WHERE ${sessionEntryPredicate} GROUP BY period ORDER BY period`,
     ),
     endpoint("sole_analytics_customers", customerSql),
     endpoint("sole_analytics_customer_cohorts", cohortSql),

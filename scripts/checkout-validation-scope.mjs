@@ -5,13 +5,20 @@ const full = { database: true, chromium: true };
 const observerClockMigration =
   "supabase/migrations/20261127135000_analytics_observer_clock.sql";
 const independentFiles = new Set([
+  ".github/workflows/analytics-observers.yml",
   ".github/workflows/ci.yml",
   "scripts/checkout-validation-scope.mjs",
   "tests/operations/checkout-validation-scope.test.mjs",
+  "tests/operations/ci-parallel-validation.test.mjs",
   "tests/database/migration-reconciliation.test.mjs",
+  "tests/operations/fixtures/analytics-active-v1.sql",
+  "scripts/analytics-endpoint-revisions.mjs",
   "scripts/analytics-native-readback.mjs",
   "scripts/check-analytics-deployment.mjs",
+  "scripts/provision-admin-analytics.mjs",
   "scripts/refresh-admin-analytics.mjs",
+  "scripts/resolve-analytics-observer-deployment.mjs",
+  "scripts/resolve-analytics-observer-release.mjs",
   "scripts/run-admin-analytics-observers.mjs",
 ]);
 

@@ -4,13 +4,40 @@ on:
   schedule:
     - cron: "2-59/5 * * * *"
   workflow_dispatch:
+    inputs:
+      environment:
+        description: Environment to observe
+        type: choice
+        required: true
+        default: both
+        options: [both, staging, production]
+  workflow_run:
+    workflows: [Staging Deployment, Production Deployment]
+    types: [completed]
 
 permissions:
   contents: read
 
 jobs:
   staging:
-    if: github.ref == 'refs/heads/main' && (github.event_name == 'schedule' || github.event.repository.default_branch == 'main') && vars.ANALYTICS_OBSERVERS_STAGING_ENABLED == 'true'
+    if: >-
+      github.ref == 'refs/heads/main' &&
+      vars.ANALYTICS_OBSERVERS_STAGING_ENABLED == 'true' &&
+      (github.event_name == 'schedule' ||
+       (github.event.repository.default_branch == 'main' &&
+        ((github.event_name == 'workflow_dispatch' &&
+          (inputs.environment == 'both' || inputs.environment == 'staging')) ||
+         (github.event_name == 'workflow_run' &&
+          github.event.workflow_run.name == 'Staging Deployment' &&
+          github.event.workflow_run.repository.full_name == github.repository &&
+          github.event.workflow_run.head_repository.full_name == github.repository &&
+          github.event.workflow_run.event == 'push' &&
+          github.event.workflow_run.status == 'completed' &&
+          github.event.workflow_run.conclusion == 'success' &&
+          github.event.workflow_run.head_branch == 'main' &&
+          (github.event.workflow_run.path == '.github/workflows/staging.yml' ||
+           github.event.workflow_run.path == '.github/workflows/staging.yml@main' ||
+           github.event.workflow_run.path == '.github/workflows/staging.yml@refs/heads/main')))))
     runs-on: ubuntu-latest
     timeout-minutes: 10
     environment: analytics-observer-staging
@@ -22,7 +49,18 @@ jobs:
         uses: actions/checkout@11d5960a326750d5838078e36cf38b85af677262 # v4
         with:
           ref: refs/heads/main
+          fetch-depth: ${{ github.event_name == 'workflow_run' && '0' || '1' }}
           persist-credentials: false
+
+      - name: Checkout the successful staging deployment
+        if: github.event_name == 'workflow_run'
+        env:
+          DEPLOYED_COMMIT: ${{ github.event.workflow_run.head_sha }}
+        shell: bash
+        run: |
+          [[ "$DEPLOYED_COMMIT" =~ ^[0-9a-f]{40}$ ]]
+          git merge-base --is-ancestor "$DEPLOYED_COMMIT" refs/remotes/origin/main
+          git checkout --detach "$DEPLOYED_COMMIT"
 
       - name: Setup Node
         uses: actions/setup-node@49933ea5288caeca8642d1e84afbd3f7d6820020 # v4
@@ -43,7 +81,24 @@ jobs:
         run: npm run analytics:observe -- --environment staging --run
 
   production:
-    if: github.ref == 'refs/heads/main' && (github.event_name == 'schedule' || github.event.repository.default_branch == 'main') && vars.ANALYTICS_OBSERVERS_PRODUCTION_ENABLED == 'true' && vars.ANALYTICS_OBSERVERS_PRODUCTION_TAG != ''
+    if: >-
+      github.ref == 'refs/heads/main' &&
+      vars.ANALYTICS_OBSERVERS_PRODUCTION_ENABLED == 'true' &&
+      (github.event_name == 'schedule' ||
+       (github.event.repository.default_branch == 'main' &&
+        ((github.event_name == 'workflow_dispatch' &&
+          (inputs.environment == 'both' || inputs.environment == 'production')) ||
+         (github.event_name == 'workflow_run' &&
+          github.event.workflow_run.name == 'Production Deployment' &&
+          github.event.workflow_run.repository.full_name == github.repository &&
+          github.event.workflow_run.head_repository.full_name == github.repository &&
+          github.event.workflow_run.event == 'push' &&
+          github.event.workflow_run.status == 'completed' &&
+          github.event.workflow_run.conclusion == 'success' &&
+          startsWith(github.event.workflow_run.head_branch, 'v')))))
+    permissions:
+      actions: read
+      contents: read
     runs-on: ubuntu-latest
     timeout-minutes: 10
     environment: analytics-observer-production
@@ -65,12 +120,11 @@ jobs:
 
       - name: Checkout the selected production release
         env:
-          ANALYTICS_OBSERVERS_PRODUCTION_TAG: ${{ vars.ANALYTICS_OBSERVERS_PRODUCTION_TAG }}
+          GITHUB_TOKEN: ${{ github.token }}
         shell: bash
         run: |
-          commit=$(node scripts/resolve-analytics-observer-release.mjs "$ANALYTICS_OBSERVERS_PRODUCTION_TAG")
+          commit=$(node scripts/resolve-analytics-observer-deployment.mjs)
           git checkout --detach "$commit"
-          test -f scripts/run-admin-analytics-observers.mjs
 
       - name: Install observer dependencies
         run: npm ci --ignore-scripts

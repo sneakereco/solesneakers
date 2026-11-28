@@ -2,11 +2,71 @@ import assert from "node:assert/strict";
 import { spawnSync } from "node:child_process";
 import { EventEmitter } from "node:events";
 import { existsSync, readFileSync, statSync } from "node:fs";
+import { createRequire } from "node:module";
 import { PassThrough } from "node:stream";
 import { test } from "node:test";
 import { readNativeMarkers } from "../../scripts/analytics-native-readback.mjs";
 import { resolveObserverRelease } from "../../scripts/resolve-analytics-observer-release.mjs";
 import { runObservers } from "../../scripts/run-admin-analytics-observers.mjs";
+
+const require = createRequire(import.meta.url);
+const { load } = require("js-yaml");
+
+test("the observer entry points keep each environment on its own protected job", () => {
+  const workflow = load(
+    readFileSync(
+      new URL("../../.github/workflows/analytics-observers.yml", import.meta.url),
+      "utf8",
+    ),
+  );
+  assert.deepEqual(workflow.on.workflow_dispatch?.inputs?.environment, {
+    description: "Environment to observe",
+    type: "choice",
+    required: true,
+    default: "both",
+    options: ["both", "staging", "production"],
+  });
+  assert.deepEqual(workflow.on.workflow_run, {
+    workflows: ["Staging Deployment", "Production Deployment"],
+    types: ["completed"],
+  });
+  assert.deepEqual(workflow.on.schedule, [{ cron: "2-59/5 * * * *" }]);
+  for (const [environment, deployment] of [
+    ["staging", "Staging Deployment"],
+    ["production", "Production Deployment"],
+  ]) {
+    const job = workflow.jobs[environment];
+    assert.equal(job.environment, `analytics-observer-${environment}`);
+    assert.deepEqual(job.concurrency, {
+      group: `analytics-observers-${environment}`,
+      "cancel-in-progress": false,
+    });
+    assert.ok(job.if.includes(`inputs.environment == '${environment}'`));
+    assert.ok(job.if.includes(`github.event.workflow_run.name == '${deployment}'`));
+    assert.ok(
+      job.if.includes(
+        `vars.ANALYTICS_OBSERVERS_${environment.toUpperCase()}_ENABLED == 'true'`,
+      ),
+    );
+    assert.ok(job.if.includes("github.event.workflow_run.event == 'push'"));
+    assert.ok(job.if.includes("github.event.workflow_run.conclusion == 'success'"));
+    const selectionIndex = job.steps.findIndex(({ run }) =>
+      run?.includes("git checkout --detach"),
+    );
+    const settingsIndex = job.steps.findIndex(({ uses }) =>
+      uses?.startsWith("dopplerhq/secrets-fetch-action@"),
+    );
+    assert.ok(selectionIndex >= 0 && selectionIndex < settingsIndex);
+    assert.equal(job.steps[0].with.ref, "refs/heads/main");
+    assert.equal(job.steps[0].with["persist-credentials"], false);
+  }
+  const production = workflow.jobs.production;
+  assert.deepEqual(production.permissions, { actions: "read", contents: "read" });
+  const select = production.steps.find(({ run }) =>
+    run?.includes("resolve-analytics-observer-deployment.mjs"),
+  );
+  assert.equal(select?.env.GITHUB_TOKEN, "${{ github.token }}");
+});
 
 const markerResult = (markers) => ({
   columns: ["visible_events", "markers"],
@@ -104,7 +164,7 @@ const env = {
   SUPABASE_DB_URL: "DB_OWNER_CANARY",
 };
 
-function harness(scenario) {
+function harness(scenario, sleepDrift = () => 0) {
   let at = 0;
   const events = [];
   const invocations = [];
@@ -117,7 +177,7 @@ function harness(scenario) {
   const clock = {
     now: () => at,
     sleep: async (ms) => {
-      at += ms;
+      at += ms + sleepDrift(at, ms);
     },
     setTimer: (callback, ms) => {
       const event = { callback, at: at + ms };
@@ -236,9 +296,10 @@ test("uses the 240-second window and sequential cadence while a native failure l
     [0, 180000],
   );
   const warehouse = h.invocations.filter((item) => item.source === "warehouse");
-  assert.ok(warehouse.length >= 20 && warehouse.length <= 24);
+  assert.equal(warehouse.length, 18);
   assert.equal(warehouse[0].at, 500);
-  assert.ok(warehouse.at(-1).at < 240000);
+  assert.equal(warehouse.at(-1).at, 200_500);
+  assert.ok(warehouse.every(({ at }) => at <= 144_000 || at >= 180_000));
   assert.ok(warehouse.slice(1).every((item, i) => item.at - warehouse[i].at >= 10000));
   assert.equal(warehouse[0].options.env.NEXT_PUBLIC_POSTHOG_ENABLED, undefined);
   assert.equal(h.invocations[0].options.env.NEXT_PUBLIC_POSTHOG_ENABLED, "true");
@@ -253,6 +314,40 @@ test("uses the 240-second window and sequential cadence while a native failure l
       assert.equal(invocation.options.env[variable], undefined);
   }
   assert.equal(existsSync(h.attestationPath()), false);
+});
+
+test("warehouse workers only start when a full slot remains in the window", async () => {
+  const h = harness((source, at) => ({ hang: source === "warehouse" && at > 204_000 }));
+  const result = await h.run();
+  assert.equal(result.status, "completed");
+  assert.deepEqual(result.failures, {});
+  assert.ok(h.invocations.every(({ at }) => at <= 204_000));
+});
+
+test("reserves the second native start even when a warehouse worker would run across it", async () => {
+  const h = harness((source, at) =>
+    source === "warehouse" && at === 170_000 ? { duration: 20_000 } : {},
+  );
+  const result = await h.run();
+  assert.equal(result.status, "completed");
+  const native = h.invocations.filter(({ source }) => source === "native");
+  assert.deepEqual(
+    native.map(({ at }) => at),
+    [0, 180_000],
+  );
+});
+
+test("rechecks the native reservation after sleep drifts across the warehouse cutoff", async () => {
+  const h = harness(
+    (source, at) =>
+      source === "warehouse" && at === 145_000 ? { duration: 35_000 } : {},
+    (at) => (at === 130_000 ? 5_000 : 0),
+  );
+  const result = await h.run();
+  assert.equal(result.status, "completed");
+  assert.ok(
+    !h.invocations.some(({ source, at }) => source === "warehouse" && at === 145_000),
+  );
 });
 
 test("one confirmed native proof completes the window after an earlier pending result", async () => {

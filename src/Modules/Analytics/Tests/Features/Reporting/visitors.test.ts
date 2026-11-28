@@ -38,6 +38,27 @@ it("uses native identity merge, ordered events and entry boundaries", async () =
     activeFiveMinuteVisitors: 0,
   });
 });
+it("uses the latest identity for sessions selected by their entry device", async () => {
+  const f = makeAudienceFixture();
+  const returningVisitor = f.sid(12);
+  f.event(1, "public_page_viewed");
+  f.event(1, "product_viewed", 2);
+  f.event(1, "product_added_to_cart", 2, returningVisitor);
+  f.event(2, "public_page_viewed", 0, returningVisitor);
+  f.db
+    .prepare(
+      "update events set properties=json_set(properties,'$.device','desktop') where uuid=?",
+    )
+    .run(f.sid(3));
+
+  const r = await service.getReport(
+    { ...request("overview", "device=mobile"), report: "overview" },
+    f.deps,
+  );
+  expect(r.data?.summary).toMatchObject({ visitors: 1, sessions: 2 });
+  expect(r.data?.series).toEqual([expect.objectContaining({ visitors: 1, sessions: 2 })]);
+  expect(r.data?.funnel.map((step) => step.sessions)).toEqual([2, 1, 1, 0, 0]);
+});
 it("counts a returning shopper's usable checkout once despite duplicate events and orders", async () => {
   const f = makeAudienceFixture();
   const buyer = "sole-buyer:v1:" + "a".repeat(64);
