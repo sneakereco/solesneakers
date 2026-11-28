@@ -186,6 +186,45 @@ function dependencies() {
   };
 }
 
+it("reviews an exact checkout without reserving inventory or creating an order", async () => {
+  const deps = dependencies();
+  const response = await prepareCheckoutHandler(request(), deps, { reviewOnly: true });
+  expect(response.status).toBe(200);
+  expect(await response.json()).toEqual({
+    reviewed: true,
+    totals: {
+      subtotalCents: 10000,
+      shippingCents: 1000,
+      taxCents: 800,
+      totalCents: 11800,
+    },
+  });
+  expect(deps.reserve).not.toHaveBeenCalled();
+  expect(deps.createSquareOrder).not.toHaveBeenCalled();
+  expect(deps.createGuestAccessToken).not.toHaveBeenCalled();
+  expect(deps.checkAttempt).not.toHaveBeenCalled();
+});
+
+it("still refuses a changed quote during nonreserving review", async () => {
+  const deps = dependencies();
+  const response = await prepareCheckoutHandler(request("a".repeat(64)), deps, {
+    reviewOnly: true,
+  });
+  expect(response.status).toBe(409);
+  expect(deps.reserve).not.toHaveBeenCalled();
+});
+
+it("does not let the compatibility prepare endpoint start a new inventory hold", async () => {
+  const deps = dependencies();
+  const response = await prepareCheckoutHandler(request(), deps, { resumeOnly: true });
+  expect(response.status).toBe(409);
+  expect(await response.json()).toMatchObject({
+    code: "CHECKOUT_UPDATED",
+    paymentState: "not_submitted",
+  });
+  expect(deps.reserve).not.toHaveBeenCalled();
+});
+
 describe("prepareCheckoutHandler", () => {
   async function existingCheckout(version: 3 | 4, changes: Record<string, unknown> = {}) {
     const deps = dependencies();
@@ -878,6 +917,7 @@ describe("prepareCheckoutHandler", () => {
     expect(response.status).toBe(409);
     await expect(response.json()).resolves.toEqual({
       error: "Checkout totals changed. Review the updated total and try again.",
+      code: "CHECKOUT_TOTALS_CHANGED",
     });
     expect(deps.reserve).not.toHaveBeenCalled();
     expect(deps.createSquareOrder).not.toHaveBeenCalled();

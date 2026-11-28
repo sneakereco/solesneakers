@@ -18,6 +18,16 @@ initBotId({
       advancedOptions: { checkLevel: "deepAnalysis" },
     },
     {
+      path: "/api/checkout/review",
+      method: "POST",
+      advancedOptions: { checkLevel: "deepAnalysis" },
+    },
+    {
+      path: "/api/checkout/submit",
+      method: "POST",
+      advancedOptions: { checkLevel: "deepAnalysis" },
+    },
+    {
       path: "/api/checkout/prepare",
       method: "POST",
       advancedOptions: { checkLevel: "deepAnalysis" },

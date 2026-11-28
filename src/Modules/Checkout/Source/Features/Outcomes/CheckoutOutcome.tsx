@@ -173,6 +173,20 @@ function Observation({ entry }: { entry: Entry }) {
           return;
         }
         if (
+          state === "error" &&
+          order?.status === "canceled" &&
+          !order.financialReview &&
+          order.financial.source === "ledger" &&
+          order.financial.snapshot.orderId === order.id &&
+          order.financial.snapshot.financialState === "unpaid" &&
+          order.financial.snapshot.capturedCents === 0 &&
+          order.financial.snapshot.refundedCents === 0 &&
+          order.financial.snapshot.reviewReason === null
+        )
+          access.retireUnpaidScope(order.id, token, () => {
+            ownClear.current = { access, orderId, token, pair: observedPair };
+          });
+        if (
           order &&
           (state === "confirmed" ||
             state === "refunded" ||

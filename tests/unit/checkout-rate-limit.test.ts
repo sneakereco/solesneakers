@@ -4,6 +4,8 @@ describe("checkout proxy rate-limit ownership", () => {
   it("retains coarse request protection for checkout routes", () => {
     for (const path of [
       "/api/checkout/prepare",
+      "/api/checkout/review",
+      "/api/checkout/submit",
       "/api/checkout/payment-permit",
       "/api/checkout/pay",
     ]) {

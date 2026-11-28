@@ -37,6 +37,7 @@ import type { AdminOrderItem } from "@/components/admin/orders/OrderItemDetailsM
 import { Toast } from "@/components/ui/Toast";
 import { shouldShowOrderProfit } from "@/lib/orders/metrics";
 import { paymentMethodLabel } from "@/lib/orders/payment-method";
+import { checkoutStatusLabel } from "@/lib/orders/checkout-status-label";
 
 type ProductImage = { url: string; is_primary?: boolean; sort_order?: number };
 
@@ -88,6 +89,7 @@ type Order = {
   id: string;
   user_id?: string | null;
   status?: string | null;
+  expires_at?: string | null;
   total?: number | null;
   subtotal?: number | null;
   shipping?: number | null;
@@ -432,6 +434,9 @@ function TransactionDetail({ orderId }: { orderId: string }) {
       </div>
     );
   const statusMeta = getOrderStatusMeta(order.status);
+  statusMeta.label =
+    checkoutStatusLabel(order.status, order.failure_reason, order.expires_at) ??
+    statusMeta.label;
   const shippingAddr = Array.isArray(order.shipping_address)
     ? order.shipping_address[0]
     : order.shipping_address;

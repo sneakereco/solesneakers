@@ -25,6 +25,7 @@ export async function runCheckoutBrowserChecks(gate, flags = []) {
         [4, "availability", cart + "ValidateBasket/availability.browser.mjs"],
         [2, "guest-context", checkout + "Preparation/guest-context.browser.test.mjs"],
         [2, "observations", checkout + "Outcomes/checkout-outcome.browser.mjs"],
+        [2, "final-payment", "tests/browser/checkout-final-payment.mjs"],
       ].map(([shard, name, file]) => [shard, name, ["--test", file]]),
       ...[
         [2, "payment-methods"],

@@ -86,6 +86,7 @@ test("runs every unique browser suite once and keeps both runtime/fault controls
         "src/Modules/Checkout/Tests/Features/Outcomes/checkout-outcome.browser.mjs",
       ],
     ],
+    ["final-payment", ["--test", "tests/browser/checkout-final-payment.mjs"]],
     ...[
       "payment-methods",
       "checkout-ui",
@@ -110,6 +111,7 @@ test("runs every unique browser suite once and keeps both runtime/fault controls
       "availability",
       "guest-context",
       "observations",
+      "final-payment",
       "payment-methods",
       "checkout-ui",
       "shipping-validation",
@@ -200,7 +202,7 @@ test("four browser shards retain the exact complete commands and fault options",
   }
   const ordered = (calls) => [...calls].sort(([a], [b]) => a.localeCompare(b));
   assert.deepEqual(ordered(combined), ordered(full.slice(1)));
-  assert.equal(new Set(combined.map(([name]) => name)).size, 17);
+  assert.equal(new Set(combined.map(([name]) => name)).size, 18);
 });
 
 test("browser fault injection remains a failing gate on its owning shard", async () => {

@@ -164,16 +164,11 @@ export async function authorizeAndTokenize(input: {
   verificationDetails?: Record<string, unknown>;
   fetchImpl?: typeof fetch;
 }): Promise<{ permit: string; sourceId: string }> {
-  const permit = await requestPermit(
-    input.permitRequest,
-    input.fetchImpl,
-    input.onExistingPaymentReview,
-  );
   const token = await input.paymentMethod.tokenize(input.verificationDetails);
   if (token.status !== "OK" || !token.token) {
     throw new Error("Payment details could not be verified");
   }
-  return { permit, sourceId: token.token };
+  return authorizeTokenizedSource({ ...input, sourceId: token.token });
 }
 
 // The deadline covers response headers and body. Callers perform all subsequent

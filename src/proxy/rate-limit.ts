@@ -84,6 +84,8 @@ function isCheckoutTraffic(path: string, method: string) {
       [
         "/api/checkout/quote",
         "/api/checkout/prepare",
+        "/api/checkout/review",
+        "/api/checkout/submit",
         "/api/checkout/payment-permit",
         "/api/checkout/pay",
       ].includes(path)) ||

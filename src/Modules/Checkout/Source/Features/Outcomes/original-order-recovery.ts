@@ -1,6 +1,10 @@
 import { z } from "zod";
 import { prepareCheckoutRequestSchema } from "@/lib/checkout/checkout-request";
-import { observePreparedCheckout, originalRecoveryContext } from "./client-session";
+import {
+  observePreparedCheckout,
+  originalRecoveryContext,
+  readGuestOrderAccess,
+} from "./client-session";
 import { withRequestDeadline } from "@/lib/http/request-deadline";
 
 const originalFields = new Set([
@@ -109,20 +113,24 @@ export async function recoverOriginalOrder(
   await requireOwner();
   const original = originalRecoveryContext(ownerId);
   if (!original || !original.current() || signal.aborted) throw Error(recoveryFailure);
-  if (original.orderId) return { orderId: original.orderId };
+  if (original.orderId && (ownerId !== null || readGuestOrderAccess(original.orderId)))
+    return { orderId: original.orderId };
   let payload;
   try {
     payload = recoveryPayload(original);
   } catch {
     throw Error(recoveryFailure);
   }
-  const response = await fetch("/api/checkout/prepare", {
-    method: "POST",
-    headers: { "Content-Type": "application/json" },
-    body: JSON.stringify(payload),
-    signal,
-  });
-  const data = await response.json().catch(() => null);
+  const { response, data } = await withRequestDeadline(async (requestSignal) => {
+    const reply = await fetch("/api/checkout/prepare", {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify(payload),
+      signal: requestSignal,
+    });
+    const body = await reply.json().catch(() => null);
+    return { response: reply, data: body };
+  }, signal);
   await requireOwner();
   if (
     signal.aborted ||

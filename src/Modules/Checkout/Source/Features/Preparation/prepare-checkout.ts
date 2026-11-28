@@ -193,6 +193,7 @@ async function guestToken(
 export async function prepareCheckoutHandler(
   request: NextRequest,
   deps: PrepareCheckoutDependencies,
+  options: { reviewOnly?: true; resumeOnly?: true } = {},
 ): Promise<Response> {
   const effectiveAt = deps.now().toISOString();
   let stage: OperationalOutcome["stage"] = "checkout";
@@ -280,6 +281,15 @@ export async function prepareCheckoutHandler(
     failurePhase = "existing";
     const existing = await deps.findExisting(tenantId, parsed.data.idempotencyKey);
     if (parsed.data.recoveryOnly && !existing?.squareOrderId) return recoveryRequired();
+    if (options.resumeOnly && !existing)
+      return json(
+        {
+          code: "CHECKOUT_UPDATED",
+          paymentState: "not_submitted",
+          error: "Checkout has been updated. Refresh checkout before continuing.",
+        },
+        409,
+      );
     const contextHash = existing
       ? contexts.find((hash) => verifyGuestPreparationReuse(existing, hash))
       : contexts[0];
@@ -424,7 +434,7 @@ export async function prepareCheckoutHandler(
     }
 
     failurePhase = "admission";
-    if (!existing) {
+    if (!existing && !options.reviewOnly) {
       const attempt = await deps.checkAttempt(admissionRequest);
       if (!attempt.allowed) {
         failure("blocked");
@@ -510,9 +520,17 @@ export async function prepareCheckoutHandler(
       return json(
         {
           error: "Checkout totals changed. Review the updated total and try again.",
+          code: "CHECKOUT_TOTALS_CHANGED",
         },
         409,
       );
+    }
+
+    // Review never creates a financial identity, inventory claim, or credential.
+    // Final submission repeats these checks immediately before its atomic claim.
+    if (options.reviewOnly) {
+      if (existing || parsed.data.recoveryOnly) return recoveryRequired();
+      return json({ reviewed: true, totals: calculatedTotals }, 200);
     }
 
     const terminalOriginal =

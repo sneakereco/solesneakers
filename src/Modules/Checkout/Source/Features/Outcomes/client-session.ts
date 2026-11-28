@@ -104,6 +104,30 @@ export function originalRecoveryContext(
     device,
     orderId: original.orderId ?? readPreparedScope(ownerId, storage)?.orderId ?? null,
     current,
+    recordCapturedOrder(orderId: string, token?: string) {
+      try {
+        const active = recoveryRecord(ownerId, storage);
+        if (!current() || active?.orderId !== orderId) return false;
+        const guestToken =
+          ownerId === null
+            ? (token ?? readGuestOrderAccess(orderId, storage))
+            : undefined;
+        if (ownerId === null && !guestToken) return false;
+        storage.setItem(
+          HOUSEKEEPING,
+          JSON.stringify({
+            orderId,
+            key: original.pair[0],
+            fingerprint: original.pair[1],
+            ownerId,
+            guestToken,
+          }),
+        );
+        return current();
+      } catch {
+        return false;
+      }
+    },
     accept(orderId: string, token?: string) {
       const active = recoveryRecord(ownerId, storage);
       if (
@@ -301,6 +325,18 @@ export function resolveCheckoutAttempt(
     },
     requireRecovery(ownerId?: string | null, orderId?: string) {
       if (current()) markRecovery(storage, ownerId, original, orderId, issuedDevice);
+    },
+    clearRecovery(ownerId: string | null, orderId: string) {
+      try {
+        if (!current()) return false;
+        const record = recoveryRecord(ownerId, storage);
+        if (!record) return true;
+        if (record.orderId !== orderId || record.deviceId !== issuedDevice) return false;
+        storage.removeItem(RECOVERY);
+        return recoveryRecord(ownerId, storage) === null;
+      } catch {
+        return false;
+      }
     },
     rejectCapture() {
       forget(started);
