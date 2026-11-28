@@ -4,11 +4,15 @@ name: Pull Request CI
   pull_request:
     branches:
       - main
+  merge_group:
+    types: [checks_requested]
+    branches:
+      - main
   workflow_dispatch:
 permissions:
   contents: read
 concurrency:
-  group: ci-${{ github.event.pull_request.number || github.ref }}
+  group: ci-${{ github.event_name }}-${{ github.event.pull_request.number || github.ref }}
   cancel-in-progress: true
 
 env:
@@ -110,15 +114,18 @@ jobs:
           tests/operations/admin-analytics-observer-clock.test.mjs tests/operations/checkout-validation-scope.test.mjs
           tests/fixtures/checkout-gate.test.mjs tests/operations/ci-parallel-validation.test.mjs
           tests/operations/checkout-browser-runner.test.mjs
+          tests/operations/checkout-database-runner.test.mjs
           tests/operations/analytics-runtime-verification.test.mjs
       - name: Build without deployment credentials
         run: '"$RUNNER_TEMP/checkout-check" fixture-build ./node_modules/.bin/next build'
 
-  database:
+  database-1:
     needs: scope
+    env:
+      CI_CHECKOUT_SHARD: "1"
     runs-on: ubuntu-24.04
     timeout-minutes: 90
-    steps:
+    steps: &database_steps
       - name: Checkout
         uses: actions/checkout@11d5960a326750d5838078e36cf38b85af677262 # v4
         with:
@@ -137,15 +144,42 @@ jobs:
         if: needs.scope.outputs.database == 'true'
       - name: Isolated checkout database gates
         if: needs.scope.outputs.database == 'true'
-        run: npm run test:checkout:db
+        run: npm run test:checkout:db -- --shard=${{ env.CI_CHECKOUT_SHARD }}/4
       - name: Rehearse hosted bootstrap and checkout migration ordering
+        if: env.CI_CHECKOUT_SHARD == '1'
         run: node --test --test-concurrency=1 tests/database/checkout-migration-order.test.mjs
 
-  browser:
+  database-2:
     needs: scope
+    env:
+      CI_CHECKOUT_SHARD: "2"
     runs-on: ubuntu-24.04
     timeout-minutes: 90
-    steps:
+    steps: *database_steps
+
+  database-3:
+    needs: scope
+    env:
+      CI_CHECKOUT_SHARD: "3"
+    runs-on: ubuntu-24.04
+    timeout-minutes: 90
+    steps: *database_steps
+
+  database-4:
+    needs: scope
+    env:
+      CI_CHECKOUT_SHARD: "4"
+    runs-on: ubuntu-24.04
+    timeout-minutes: 90
+    steps: *database_steps
+
+  browser-1:
+    needs: scope
+    env:
+      CI_CHECKOUT_SHARD: "1"
+    runs-on: ubuntu-24.04
+    timeout-minutes: 90
+    steps: &browser_steps
       - name: Checkout
         uses: actions/checkout@11d5960a326750d5838078e36cf38b85af677262 # v4
         with:
@@ -180,18 +214,50 @@ jobs:
           chmod 700 "$RUNNER_TEMP/checkout-check"
       - name: Checkout Chromium gates
         if: needs.scope.outputs.chromium == 'true'
-        run: npm run test:checkout:browser
+        run: npm run test:checkout:browser -- --shard=${{ env.CI_CHECKOUT_SHARD }}/4
       - name: Measurement browser suites
+        if: env.CI_CHECKOUT_SHARD == '2'
         run: '"$RUNNER_TEMP/checkout-check" measurement npm run test:measurement:browser'
       - name: Analytics browser suites
+        if: env.CI_CHECKOUT_SHARD == '2'
         run: npm run test:analytics:browser
+
+  browser-2:
+    needs: scope
+    env:
+      CI_CHECKOUT_SHARD: "2"
+    runs-on: ubuntu-24.04
+    timeout-minutes: 90
+    steps: *browser_steps
+
+  browser-3:
+    needs: scope
+    env:
+      CI_CHECKOUT_SHARD: "3"
+    runs-on: ubuntu-24.04
+    timeout-minutes: 90
+    steps: *browser_steps
+
+  browser-4:
+    needs: scope
+    env:
+      CI_CHECKOUT_SHARD: "4"
+    runs-on: ubuntu-24.04
+    timeout-minutes: 90
+    steps: *browser_steps
 
   validate:
     needs:
       - scope
       - checks
-      - database
-      - browser
+      - database-1
+      - database-2
+      - database-3
+      - database-4
+      - browser-1
+      - browser-2
+      - browser-3
+      - browser-4
     if: ${{ always() }}
     runs-on: ubuntu-24.04
     timeout-minutes: 5
@@ -201,7 +267,7 @@ jobs:
           CI_JOB_RESULTS: ${{ toJSON(needs) }}
         run: |
           node --input-type=module -e '
-            const required = ["scope", "checks", "database", "browser"];
+            const required = ["scope", "checks", "database-1", "database-2", "database-3", "database-4", "browser-1", "browser-2", "browser-3", "browser-4"];
             const results = JSON.parse(process.env.CI_JOB_RESULTS);
             const failed = required.filter(name => results?.[name]?.result !== "success");
             if (failed.length) {

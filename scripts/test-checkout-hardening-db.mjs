@@ -9,6 +9,7 @@ import {
   rejectedStockDiagnostic,
   reportCheckoutFixtureError,
 } from "../tests/fixtures/checkout-gate.mjs";
+import { selectCheckoutShard } from "../tests/fixtures/checkout-shards.mjs";
 import {
   localDockerSocket,
   root,
@@ -24,8 +25,7 @@ function parseArgs(args) {
     throw new Error("Database targets are allocated by the harness");
   }
   if (args.length === 1 && args[0] === "--self-test") return { selfTest: true };
-  if (["--acceptance", "--acceptance --break-stock"].includes(args.join(" ")))
-    return { acceptance: true, brokenStock: args.length === 2 };
+  if (args[0] === "--acceptance") return { acceptance: true, flags: args.slice(1) };
   let mode = "fresh";
   let testPath;
   while (args.length) {
@@ -230,78 +230,108 @@ async function selfTest() {
   );
 }
 
-try {
-  const args = parseArgs(process.argv.slice(2));
-  if (args.acceptance) {
-    const gate = await createCheckoutGate("database");
-    const operations = "src/Modules/Checkout/Tests/Features/";
-    const stock = "tests/database/checkout-hardening-acceptance.test.mjs";
-    const run = (mode, file) => [
-      "scripts/test-checkout-hardening-db.mjs",
-      "--mode",
-      mode,
-      "--test",
-      file,
-    ];
-    await gate("owned-runtime", [
-      "--input-type=module",
-      "-e",
-      'import {localDockerSocket} from "./tests/database/fixtures/checkout-hardening.mjs"; import {execFileSync} from "node:child_process"; await localDockerSocket(); execFileSync("docker",["version","--format","{{.Server.Version}}"],{timeout:10000});',
-    ]);
-    await gate("stock-negative", run("fresh", stock), {
-      env: { CHECKOUT_GATE_FAULT: "stock" },
-      expectedFailure: rejectedStockDiagnostic,
-      propagateFailure: args.brokenStock,
-    });
-    await gate("barrier-and-relay", [
-      "--test",
-      "src/Modules/Checkout/Tests/Features/Operations/request-barrier.test.mjs",
-      "tests/database/checkout-hardening-docker-relay.test.mjs",
-    ]);
-    for (const mode of ["fresh", "populated"]) {
-      const env = {
-        CHECKOUT_HARDENING_SELF_TEST_MODE: mode,
-        CHECKOUT_AUTHORITY_MODE: mode,
-        CHECKOUT_LEDGER_MODE: mode,
-        CHECKOUT_WORK_STORAGE_MODE: mode,
-      };
-      for (const [name, file] of [
-        ["fixture", "tests/database/checkout-hardening-fixture.test.mjs"],
-        ["stock", stock],
-        ["reseller-mail", "tests/database/reseller-order-notifications.test.mjs"],
-        [
-          "authority",
-          "src/Modules/Orders/Tests/Features/TrustedMutations/authority.postgres.test.mjs",
-        ],
-        ...[
-          "Payments/attempt-ledger",
-          "Payments/financial-projection",
-          "Preparation/reservation-races",
-          "Recovery/work-storage",
-          "Recovery/recovery-fairness",
-          "Recovery/recovery-capacity",
-          "Recovery/expiry-races",
-          "Operations/checkout-controls",
-          "Operations/checkout-health",
-          "Operations/shared-network-checkout",
-        ].map((p) => [p.split("/")[1], operations + p + ".postgres.test.mjs"]),
-      ])
-        await gate(mode + "-" + name, run(mode, file), { env });
-    }
-  } else if (args.selfTest) {
-    await selfTest();
-  } else {
-    const file = await resolveTestPath(args.testPath);
-    let result;
-    await withCheckoutProject(args.mode, async (fixture) => {
-      report(fixture);
-      result = await nodeTest(file, fixture);
-    });
-    console.log("Verified owned checkout project cleanup");
-    checkTestResult(result);
+export async function runCheckoutDatabaseChecks(gate, flags = []) {
+  const operations = "src/Modules/Checkout/Tests/Features/";
+  const stock = "tests/database/checkout-hardening-acceptance.test.mjs";
+  const run = (mode, file) => [
+    "scripts/test-checkout-hardening-db.mjs",
+    "--mode",
+    mode,
+    "--test",
+    file,
+  ];
+  const entries = [
+    [
+      1,
+      "stock-negative",
+      run("fresh", stock),
+      {
+        env: { CHECKOUT_GATE_FAULT: "stock" },
+        expectedFailure: rejectedStockDiagnostic,
+        propagateFailure: flags.includes("--break-stock"),
+      },
+    ],
+    [
+      1,
+      "barrier-and-relay",
+      [
+        "--test",
+        "src/Modules/Checkout/Tests/Features/Operations/request-barrier.test.mjs",
+        "tests/database/checkout-hardening-docker-relay.test.mjs",
+      ],
+    ],
+  ];
+  for (const mode of ["fresh", "populated"]) {
+    const env = {
+      CHECKOUT_HARDENING_SELF_TEST_MODE: mode,
+      CHECKOUT_AUTHORITY_MODE: mode,
+      CHECKOUT_LEDGER_MODE: mode,
+      CHECKOUT_WORK_STORAGE_MODE: mode,
+    };
+    for (const [freshShard, populatedShard, name, file] of [
+      [1, 1, "fixture", "tests/database/checkout-hardening-fixture.test.mjs"],
+      [1, 2, "stock", stock],
+      [2, 3, "reseller-mail", "tests/database/reseller-order-notifications.test.mjs"],
+      [
+        3,
+        4,
+        "authority",
+        "src/Modules/Orders/Tests/Features/TrustedMutations/authority.postgres.test.mjs",
+      ],
+      ...[
+        [4, 2, "Payments/attempt-ledger"],
+        [2, 3, "Payments/financial-projection"],
+        [3, 4, "Preparation/reservation-races"],
+        [4, 2, "Recovery/work-storage"],
+        [2, 3, "Recovery/recovery-fairness"],
+        [4, 4, "Recovery/recovery-capacity"],
+        [3, 4, "Recovery/expiry-races"],
+        [4, 2, "Operations/checkout-controls"],
+        [2, 3, "Operations/checkout-health"],
+        [3, 4, "Operations/shared-network-checkout"],
+      ].map(([fresh, populated, p]) => [
+        fresh,
+        populated,
+        p.split("/")[1],
+        operations + p + ".postgres.test.mjs",
+      ]),
+    ])
+      entries.push([
+        mode === "fresh" ? freshShard : populatedShard,
+        mode + "-" + name,
+        run(mode, file),
+        { env },
+      ]);
   }
-} catch (error) {
-  reportCheckoutFixtureError(error);
-  console.error(scrub(error.message));
-  process.exitCode = 1;
+  const checks = selectCheckoutShard(entries, flags, "--break-stock");
+  await gate("owned-runtime", [
+    "--input-type=module",
+    "-e",
+    'import {localDockerSocket} from "./tests/database/fixtures/checkout-hardening.mjs"; import {execFileSync} from "node:child_process"; await localDockerSocket(); execFileSync("docker",["version","--format","{{.Server.Version}}"],{timeout:10000});',
+  ]);
+  for (const check of checks) await gate(...check);
+}
+
+if (import.meta.main) {
+  try {
+    const args = parseArgs(process.argv.slice(2));
+    if (args.acceptance) {
+      await runCheckoutDatabaseChecks(await createCheckoutGate("database"), args.flags);
+    } else if (args.selfTest) {
+      await selfTest();
+    } else {
+      const file = await resolveTestPath(args.testPath);
+      let result;
+      await withCheckoutProject(args.mode, async (fixture) => {
+        report(fixture);
+        result = await nodeTest(file, fixture);
+      });
+      console.log("Verified owned checkout project cleanup");
+      checkTestResult(result);
+    }
+  } catch (error) {
+    reportCheckoutFixtureError(error);
+    console.error(scrub(error.message));
+    process.exitCode = 1;
+  }
 }

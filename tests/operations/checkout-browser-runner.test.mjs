@@ -24,6 +24,80 @@ async function collect(flags = []) {
 
 test("runs every unique browser suite once and keeps both runtime/fault controls", async () => {
   const calls = await collect();
+  assert.deepEqual(calls, [
+    [
+      "chromium-runtime",
+      [
+        "--input-type=module",
+        "-e",
+        'import {chromium} from "@playwright/test"; const b=await chromium.launch(); await b.close()',
+      ],
+    ],
+    [
+      "original-basket-row-disappeared",
+      [
+        "--test",
+        "--test-reporter=tap",
+        "src/Modules/Cart/Tests/Features/ManageBasket/retained-cart.browser.mjs",
+      ],
+      {
+        env: { CHECKOUT_GATE_FAULT: "cart" },
+        expectedFailure: "original basket row disappeared before confirmation",
+        propagateFailure: false,
+      },
+    ],
+    [
+      "retained-cart",
+      [
+        "--test",
+        "src/Modules/Cart/Tests/Features/ManageBasket/retained-cart.browser.mjs",
+      ],
+    ],
+    ["fixture", ["--test", "tests/browser/checkout-hardening-fixture.test.mjs"]],
+    [
+      "identity-and-validation",
+      ["--test", "src/Modules/Cart/Tests/Features/ManageBasket/basket-state.browser.mjs"],
+    ],
+    [
+      "original-units",
+      [
+        "--test",
+        "src/Modules/Cart/Tests/Features/ManageBasket/purchase-capture.browser.mjs",
+      ],
+    ],
+    [
+      "availability",
+      [
+        "--test",
+        "src/Modules/Cart/Tests/Features/ValidateBasket/availability.browser.mjs",
+      ],
+    ],
+    [
+      "guest-context",
+      [
+        "--test",
+        "src/Modules/Checkout/Tests/Features/Preparation/guest-context.browser.test.mjs",
+      ],
+    ],
+    [
+      "observations",
+      [
+        "--test",
+        "src/Modules/Checkout/Tests/Features/Outcomes/checkout-outcome.browser.mjs",
+      ],
+    ],
+    ...[
+      "payment-methods",
+      "checkout-ui",
+      "shipping-validation",
+      "admin-transaction-detail",
+      "admin-button-contrast",
+      "shipping-settings-modal",
+      "ux-checkout",
+      "ux-receipt-authority",
+      "ux-account-auth",
+    ].map((name) => [name, ["tests/browser/" + name + ".mjs"]]),
+  ]);
   assert.deepEqual(
     calls.map(([name]) => name),
     [
@@ -114,3 +188,47 @@ test("invalid arguments cannot bypass the browser checks", async () => {
   );
   assert.equal(calls, 0);
 });
+
+test("four browser shards retain the exact complete commands and fault options", async () => {
+  const full = await collect();
+  const combined = [];
+  for (const shard of [1, 2, 3, 4]) {
+    const calls = await collect([`--shard=${shard}/4`]);
+    assert.deepEqual(calls[0], full[0]);
+    assert.ok(calls.length > 1);
+    combined.push(...calls.slice(1));
+  }
+  const ordered = (calls) => [...calls].sort(([a], [b]) => a.localeCompare(b));
+  assert.deepEqual(ordered(combined), ordered(full.slice(1)));
+  assert.equal(new Set(combined.map(([name]) => name)).size, 17);
+});
+
+test("browser fault injection remains a failing gate on its owning shard", async () => {
+  const calls = await collect(["--shard=1/4", "--break-cart"]);
+  assert.equal(
+    calls.find(([name]) => name === "original-basket-row-disappeared")[2]
+      .propagateFailure,
+    true,
+  );
+});
+
+for (const flags of [
+  ["--shard=0/4"],
+  ["--shard=5/4"],
+  ["--shard=1/3"],
+  ["--shard="],
+  ["--shard=01/4"],
+  ["--shard=1/4", "--shard=2/4"],
+  ["--break-cart", "--break-cart"],
+  ["--shard=2/4", "--break-cart"],
+]) {
+  test(`browser rejects ${flags.join(" ")} before executing any gate`, async () => {
+    let visited = 0;
+    await assert.rejects(
+      (await runner())(async () => {
+        visited++;
+      }, flags),
+    );
+    assert.equal(visited, 0);
+  });
+}
