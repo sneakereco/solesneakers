@@ -112,8 +112,8 @@ export function createPrepareCheckoutDependencies(
         ),
       ),
     releaseReservation: (orderId, reason) => reservations.release(orderId, reason),
-    reportError: (error) =>
-      logError(error, { layer: "api", route: "/api/checkout/prepare", requestId }),
+    reportError: (error, phase) =>
+      logError(error, { layer: "api", route: "/api/checkout/prepare", requestId, phase }),
     now: () => new Date(),
   };
 }

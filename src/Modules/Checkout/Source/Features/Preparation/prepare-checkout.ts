@@ -1,4 +1,5 @@
 import type { OperationalOutcome } from "@/Modules/Analytics/Source/Features/CommerceFacts/operational-outcome";
+import type { DiagnosticPhase } from "../Operations/error-diagnostics";
 import type { SourceContext } from "@/Modules/Analytics/Source/Features/CommerceFacts/source-context";
 import { isIP } from "node:net";
 import {
@@ -123,7 +124,7 @@ export type PrepareCheckoutDependencies = {
     idempotencyKey: string,
   ): Promise<void>;
   releaseReservation(orderId: string, reason: string): Promise<boolean>;
-  reportError(error: unknown): void;
+  reportError(error: unknown, phase?: DiagnosticPhase): void;
   now(): Date;
 };
 
@@ -195,6 +196,7 @@ export async function prepareCheckoutHandler(
 ): Promise<Response> {
   const effectiveAt = deps.now().toISOString();
   let stage: OperationalOutcome["stage"] = "checkout";
+  let failurePhase: DiagnosticPhase = "tenant";
   let method: OperationalOutcome["method"] = null;
   const failure = (reason: OperationalOutcome["reason"]) => {
     try {
@@ -217,7 +219,9 @@ export async function prepareCheckoutHandler(
     if (!tenantId) {
       return json({ error: "Checkout is temporarily unavailable" }, 503);
     }
+    failurePhase = "configuration";
     const paymentConfig = deps.getSquareClientConfig();
+    failurePhase = "browser_verification";
     const bot = await deps.verifyBrowser();
     if (!bot.allowed) {
       stage = "verification";
@@ -240,6 +244,7 @@ export async function prepareCheckoutHandler(
       return json({ error: "Checkout protection is temporarily unavailable" }, 503);
     }
 
+    failurePhase = "session";
     const session = await deps.getSession();
     const accountEmail = session?.user.email
       ? normalizeCheckoutEmail(session.user.email)
@@ -266,11 +271,13 @@ export async function prepareCheckoutHandler(
       pickupContact: parsed.data.pickupContact,
       items: parsed.data.items,
     };
+    failurePhase = "identity";
     const cartHash = createCheckoutCartHash(cartHashInput);
     const contexts = session
       ? []
       : readGuestContexts(request, deps.shippingConfirmationSecret());
     if (!session && contexts.length === 0) return recoveryRequired();
+    failurePhase = "existing";
     const existing = await deps.findExisting(tenantId, parsed.data.idempotencyKey);
     if (parsed.data.recoveryOnly && !existing?.squareOrderId) return recoveryRequired();
     const contextHash = existing
@@ -308,6 +315,7 @@ export async function prepareCheckoutHandler(
       }
     }
 
+    failurePhase = "access";
     if (existing && !existing.squareOrderId) {
       const merchant = await deps.getAccess(tenantId, "resume");
       if (!merchant.open) return json({ error: merchant.message }, 503);
@@ -362,6 +370,7 @@ export async function prepareCheckoutHandler(
       parsed.data.paymentMethod !== "applePay" &&
       !confirmed
     ) {
+      failurePhase = "admission";
       const validationAttempt =
         await deps.checkAddressValidationAttempt(admissionRequest);
       if (!validationAttempt.allowed) {
@@ -375,6 +384,7 @@ export async function prepareCheckoutHandler(
             : undefined,
         );
       }
+      failurePhase = "address_verification";
       const validation = await deps.validateShippingAddress(parsed.data.shippingAddress);
       if (validation.status !== "valid") {
         const unavailable = validation.status === "unavailable";
@@ -413,6 +423,7 @@ export async function prepareCheckoutHandler(
       }
     }
 
+    failurePhase = "admission";
     if (!existing) {
       const attempt = await deps.checkAttempt(admissionRequest);
       if (!attempt.allowed) {
@@ -440,6 +451,7 @@ export async function prepareCheckoutHandler(
       };
     } else {
       try {
+        failurePhase = "catalog";
         cart = await deps.resolveCart(tenantId, parsed.data.items);
       } catch (error) {
         if (!(error instanceof CheckoutCatalogUnavailable)) throw error;
@@ -456,6 +468,7 @@ export async function prepareCheckoutHandler(
           409,
         );
       }
+      failurePhase = "pricing";
       pricing = await deps.quote({
         tenantId,
         fulfillment: parsed.data.fulfillment,
@@ -470,6 +483,7 @@ export async function prepareCheckoutHandler(
       ...cart,
       items: [...cart.items].sort((a, b) => a.variantId.localeCompare(b.variantId)),
     };
+    failurePhase = "provider_calculate";
     const calculatedTotals = existing?.squareOrderId
       ? totals(existing)
       : await deps.calculateSquareOrder({
@@ -509,7 +523,10 @@ export async function prepareCheckoutHandler(
       const retryExpiresAt =
         parsed.data.recoveryOnly && !terminalOriginal
           ? await deps.readRetryExpiration(tenantId, existing).catch(() => {
-              deps.reportError(new Error("checkout_retry_qualification_unavailable"));
+              deps.reportError(
+                new Error("checkout_retry_qualification_unavailable"),
+                "original_retry",
+              );
               return null;
             })
           : null;
@@ -553,6 +570,7 @@ export async function prepareCheckoutHandler(
             ),
           )
           .catch(() => null)) ?? null);
+    failurePhase = "reservation";
     const reservation = await deps.reserve({
       analyticsContext,
       ownerBinding,
@@ -613,6 +631,7 @@ export async function prepareCheckoutHandler(
       );
     }
 
+    failurePhase = "provider_create";
     const squareOrder = await deps.createSquareOrder({
       pickupContact: parsed.data.pickupContact,
       localOrderId: reservation.orderId,
@@ -650,8 +669,10 @@ export async function prepareCheckoutHandler(
       );
     }
     // An ambiguous attach may have committed. Retry the same preparation key.
+    failurePhase = "provider_attach";
     await deps.attachSquareOrder(reservation.orderId, squareOrder);
 
+    failurePhase = "guest_access";
     return json(
       {
         orderId: reservation.orderId,
@@ -677,7 +698,7 @@ export async function prepareCheckoutHandler(
       "message" in error &&
       error.message === "checkout_inventory_unavailable";
     failure(unavailableInventory ? "inventory" : "unavailable");
-    deps.reportError(error);
+    deps.reportError(error, failurePhase);
     return json({ error: "Checkout is temporarily unavailable" }, 503);
   }
 }

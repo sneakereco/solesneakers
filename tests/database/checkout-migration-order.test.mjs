@@ -14,6 +14,7 @@ import {
 
 const shippingThrough = "20261127034000";
 const bootstrapVersion = "20261127134000";
+const recoveryBindingVersion = "20261127195500";
 
 async function readCanonicalMigrations() {
   const directory = join(root, "supabase", "migrations");
@@ -216,6 +217,10 @@ for (const mode of ["fresh", "populated"]) {
       { timeout: 240_000 },
       async () => {
         const expected = await readCanonicalMigrations();
+        assert.ok(
+          expected.some(({ version }) => version === recoveryBindingVersion),
+          "Canonical inventory must include the checkout decline inquiry binding",
+        );
         const resources = [];
         await withCheckoutProject(
           mode,

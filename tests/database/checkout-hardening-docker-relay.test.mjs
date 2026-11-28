@@ -65,6 +65,69 @@ test("only the owned database publish address is narrowed to IPv4 loopback", () 
   assert.equal(result.HostConfig.PortBindings["5432/tcp"][0].HostPort, "56123");
 });
 
+test("the CLI can pull and create the pinned fixtures using its registry fallbacks", () => {
+  for (const registry of ["public.ecr.aws/", "ghcr.io/", "", "docker.io/"]) {
+    const database = registry + "supabase/postgres:17.6.1.167";
+    const initializer = registry + "supabase/gotrue:v2.196.0";
+    for (const image of [database, initializer]) {
+      const [repository, tag] = image.split(":");
+      assert.equal(
+        rewriteStartupRequest(
+          "POST",
+          "/v1.47/images/create?" + new URLSearchParams({ fromImage: repository, tag }),
+          null,
+          options,
+        ),
+        null,
+      );
+    }
+    const db = create(names.container, {
+      ...structuredClone(container),
+      Image: database,
+    });
+    assert.equal(db.Image, database);
+    assert.equal(db.HostConfig.PortBindings["5432/tcp"][0].HostIp, "127.0.0.1");
+    const auth = {
+      Image: initializer,
+      Cmd: ["gotrue", "migrate"],
+      Entrypoint: null,
+      Labels: { ...labels },
+      HostConfig: { NetworkMode: names.network, AutoRemove: true },
+    };
+    assert.equal(
+      rewriteStartupRequest("POST", "/containers/create", auth, options).Image,
+      initializer,
+    );
+    assert.throws(() =>
+      rewriteStartupRequest(
+        "POST",
+        "/containers/create",
+        { ...auth, Cmd: ["sh"] },
+        options,
+      ),
+    );
+  }
+});
+
+test("registry fallbacks do not authorize unpinned images or unrelated pull sources", () => {
+  for (const fromImage of [
+    "ghcr.io/supabase/postgres:latest",
+    "ghcr.io/supabase/postgres:17.6.1.168",
+    "ghcr.io/supabase/pgmeta:0.99.0",
+    "ghcr.io/other/postgres:17.6.1.167",
+    "foreign.invalid/supabase/postgres:17.6.1.167",
+  ]) {
+    assert.throws(() =>
+      rewriteStartupRequest(
+        "POST",
+        "/images/create?" + new URLSearchParams({ fromImage }),
+        null,
+        options,
+      ),
+    );
+  }
+});
+
 test("a refused startup request retains its validation cause for bounded diagnostics", async () => {
   const workspace = await mkdtemp(join(tmpdir(), "checkout-relay-cause-"));
   const projectId = "checkout-hardening-test-" + randomBytes(7).toString("hex");
