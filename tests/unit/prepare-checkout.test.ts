@@ -763,6 +763,26 @@ describe("prepareCheckoutHandler", () => {
     expect(deps.reserve).not.toHaveBeenCalled();
     expect(deps.createSquareOrder).not.toHaveBeenCalled();
   });
+  it.each([
+    ["createSquareOrder", "provider_create"],
+    ["attachSquareOrder", "provider_attach"],
+    ["createGuestAccessToken", "guest_access"],
+  ] as const)(
+    "identifies the failing preparation phase at %s without changing recovery safety",
+    async (dependency, phase) => {
+      const deps = dependencies();
+      const error = Error("SYNTHETIC_PRIVATE_PROVIDER_DATA");
+      deps[dependency].mockRejectedValue(error);
+      const response = await prepareCheckoutHandler(request(), deps);
+      expect(response.status).toBe(503);
+      expect(await response.json()).toEqual({
+        error: "Checkout is temporarily unavailable",
+      });
+      expect(deps.reportError).toHaveBeenCalledWith(error, phase);
+      expect(deps.releaseReservation).not.toHaveBeenCalled();
+      expect(deps.cancelSquareOrder).not.toHaveBeenCalled();
+    },
+  );
   it("preserves the reservation for an ambiguous Square attach", async () => {
     const deps = dependencies();
     deps.attachSquareOrder.mockRejectedValue(Error("reply lost"));

@@ -11,6 +11,8 @@ const root = fileURLToPath(new URL("../../", import.meta.url));
 const bootstrap = "20261127134000";
 const recoveryBindingPath =
   "supabase/migrations/20261127195500_checkout_decline_inquiry_binding.sql";
+const terminalEvidencePath =
+  "supabase/migrations/20261127202000_checkout_terminal_negative_evidence.sql";
 const checkout = [
   "20261127040000",
   "20261127041000",
@@ -71,8 +73,10 @@ test("production-shaped registry produces the exact reviewed backfill plan", () 
     checkout.length + ordinarySuffix.length,
   );
   assert.ok(
-    result.migrationPlan.pendingFiles.includes(recoveryBindingPath),
-    "The checkout decline inquiry binding must be included as an ordinary pending migration",
+    [recoveryBindingPath, terminalEvidencePath].every((path) =>
+      result.migrationPlan.pendingFiles.includes(path),
+    ),
+    "Both checkout recovery migrations must be included as ordinary pending migrations",
   );
   for (const field of ["inventoryDigest", "recordedDigest", "databaseFingerprint"])
     assert.match(result.migrationPlan[field], /^[a-f0-9]{64}$/);
@@ -96,6 +100,14 @@ test("every sequential partial retry permits only the remaining reviewed suffix"
     assert.equal(
       result.migrationPlan.pendingFiles.length,
       checkout.length - count + ordinarySuffix.length,
+    );
+    assert.deepEqual(
+      result.migrationPlan.pendingFiles,
+      inventory.entries
+        .filter(
+          ({ version }) => checkout.slice(count).includes(version) || version > bootstrap,
+        )
+        .map(({ path }) => path),
     );
   }
 });

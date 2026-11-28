@@ -279,6 +279,7 @@ try {
           "Preparation/reservation-races",
           "Recovery/work-storage",
           "Recovery/recovery-fairness",
+          "Recovery/recovery-capacity",
           "Recovery/expiry-races",
           "Operations/checkout-controls",
           "Operations/checkout-health",
